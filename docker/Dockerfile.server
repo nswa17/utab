@@ -1,0 +1,30 @@
+FROM node:20-alpine AS base
+
+RUN corepack enable
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/core/package.json packages/core/package.json
+COPY packages/server/package.json packages/server/package.json
+COPY packages/web/package.json packages/web/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY packages/core packages/core
+COPY packages/server packages/server
+
+RUN pnpm -C packages/core build
+RUN pnpm -C packages/server build
+
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=base /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/
+COPY --from=base /app/node_modules /app/node_modules
+COPY --from=base /app/packages/core /app/packages/core
+COPY --from=base /app/packages/server /app/packages/server
+
+EXPOSE 3000
+CMD ["node", "packages/server/dist/server.js"]

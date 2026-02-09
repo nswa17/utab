@@ -1,0 +1,41 @@
+{
+  "name": "utab",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:server": "pnpm --filter @utab/server dev",
+    "dev:web": "pnpm --filter @utab/web dev",
+    "debug": "node scripts/codex-debug.js",
+    "debug:server": "node scripts/codex-debug.js pnpm -C packages/server dev",
+    "build": "turbo run build",
+    "lint": "pnpm -C packages/core build && pnpm -C packages/server build",
+    "lint:web": "pnpm -C packages/web exec tsc -p tsconfig.lint.json --noEmit",
+    "test": "turbo run test",
+    "test:watch": "turbo run test -- --watch",
+    "format": "prettier --write \"packages/**/*.{ts,tsx,vue,js,cjs,mjs,json,md,yml,yaml}\" \"docs/**/*.md\" \"*.md\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "seed:demo:docker": "CORS_ORIGIN=http://localhost:8080 MONGODB_URI=mongodb://admin:password@localhost:27017/utab?authSource=admin pnpm -C packages/server run seed-organizer-demo",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.31",
+    "@types/underscore": "^1.13.0",
+    "prettier": "^3.2.5",
+    "turbo": "^1.13.3",
+    "typescript": "5.4.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "typescript": "5.4.5",
+      "tar": "^7.5.7",
+      "esbuild": "^0.25.0"
+    }
+  }
+}

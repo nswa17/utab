@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # pnpm をセットアップ
+      - uses: pnpm/action-setup@v2
+        with:
+          # pnpm-lock.yaml (lockfileVersion: 9) と package.json の packageManager に合わせる
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: 'pnpm'
+      
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm lint:web
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build

@@ -1,0 +1,2171 @@
+<template>
+  <section class="stack">
+    <div class="row section-row">
+      <h3>{{ activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理') }}</h3>
+      <ReloadButton
+        class="section-reload"
+        @click="refresh"
+        :disabled="isLoading"
+        :loading="isLoading"
+      />
+    </div>
+    <p v-if="activeSection === 'overview'" class="muted small">
+      {{ $t('大会の基本情報と公開設定を管理します。') }}
+    </p>
+    <p v-else class="muted small">
+      {{ $t('チーム・ジャッジ・スピーカー・所属機関・会場を管理します。') }}
+    </p>
+
+    <LoadingState v-if="isSectionLoading" />
+
+    <div class="card stack" v-else-if="tournament && activeSection === 'overview'">
+      <Field :label="$t('大会名')" required v-slot="{ id, describedBy }">
+        <input v-model="tournamentForm.name" :id="id" :aria-describedby="describedBy" type="text" />
+      </Field>
+      <Field :label="$t('スタイル')" v-slot="{ id, describedBy }">
+        <select v-model.number="tournamentForm.style" :id="id" :aria-describedby="describedBy">
+          <option v-for="style in styles.styles" :key="style.id" :value="style.id">
+            {{ style.id }}: {{ style.name }}
+          </option>
+        </select>
+      </Field>
+      <label class="checkbox-field small">
+        <input v-model="tournamentForm.hidden" type="checkbox" />
+        {{ $t('大会を非公開') }}
+      </label>
+      <label class="checkbox-field small">
+        <input v-model="tournamentForm.accessRequired" type="checkbox" />
+        {{ $t('大会パスワード必須') }}
+      </label>
+      <Field
+        v-if="tournamentForm.accessRequired"
+        class="password-field"
+        :label="$t('大会パスワード')"
+        :help="accessPasswordHelpText"
+      >
+        <template #label-suffix>
+          <button
+            type="button"
+            class="password-toggle"
+            :aria-label="passwordVisible ? $t('パスワードを隠す') : $t('パスワードを表示')"
+            @click="passwordVisible = !passwordVisible"
+          >
+            <svg
+              v-if="passwordVisible"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M3 3l18 18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <path
+                d="M10.7 6a12 12 0 0 1 1.3-.1c6.5 0 10 6.1 10 6.1a16 16 0 0 1-3.3 4.3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M14.9 14.9a3 3 0 0 1-4.3-4.3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <path
+                d="M6.1 9A16 16 0 0 0 2 12s3.5 6.1 10 6.1c.4 0 .8 0 1.2-.1"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </template>
+        <template #default="{ id, describedBy }">
+          <input
+            v-model="tournamentForm.accessPassword"
+            :id="id"
+            :aria-describedby="describedBy"
+            :type="passwordVisible ? 'text' : 'password'"
+            autocomplete="new-password"
+          />
+        </template>
+      </Field>
+      <Field :label="$t('重要なお知らせ（Markdown形式対応）')" v-slot="{ id, describedBy }">
+        <div class="markdown-grid">
+          <textarea
+            v-model="tournamentForm.infoText"
+            :id="id"
+            :aria-describedby="describedBy"
+            rows="10"
+          />
+          <div class="markdown-preview">
+            <div class="muted small">{{ $t('プレビュー') }}</div>
+            <div
+              v-if="tournamentForm.infoText.trim().length > 0"
+              class="markdown-content"
+              v-html="infoPreviewHtml"
+            ></div>
+            <p v-else class="muted">{{ $t('プレビューはここに表示されます。') }}</p>
+          </div>
+        </div>
+      </Field>
+      <div class="row">
+        <Button size="sm" @click="saveTournament" :disabled="isLoading">
+          {{ $t('更新') }}
+        </Button>
+      </div>
+    </div>
+
+    <section v-else-if="activeSection === 'data'" class="stack entity-panel">
+      <p v-if="csvError" class="error">{{ csvError }}</p>
+
+      <div class="row entity-switch">
+        <button
+          v-for="tab in entityTabs"
+          :key="tab.key"
+          type="button"
+          class="entity-tab"
+          :class="{ active: activeEntityTab === tab.key }"
+          @click="activeEntityTab = tab.key"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <div class="card stack" v-show="activeEntityTab === 'teams'">
+        <section class="stack entity-block">
+          <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
+          <div class="row entry-mode-row">
+            <span class="muted small">{{ $t('入力方式') }}</span>
+            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.teams === 'manual' }"
+                @click="entityEntryModes.teams = 'manual'"
+              >
+                {{ $t('手動入力') }}
+              </button>
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.teams === 'csv' }"
+                @click="entityEntryModes.teams = 'csv'"
+              >
+                {{ $t('CSV取り込み') }}
+              </button>
+            </div>
+          </div>
+          <section v-if="entityEntryModes.teams === 'manual'" class="stack block-panel">
+            <form class="grid team-form-grid" @submit.prevent="handleCreateTeam">
+              <Field
+                class="team-name-field"
+                :label="$t('チーム名')"
+                required
+                v-slot="{ id, describedBy }"
+              >
+                <input
+                  v-model="teamForm.name"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <Field
+                class="team-institution-field"
+                :label="$t('所属機関')"
+                v-slot="{ id, describedBy }"
+              >
+                <select v-model="teamForm.institutionId" :id="id" :aria-describedby="describedBy">
+                  <option value="">{{ $t('未選択') }}</option>
+                  <option
+                    v-for="inst in institutions.institutions"
+                    :key="inst._id"
+                    :value="inst._id"
+                  >
+                    {{ inst.name }}
+                  </option>
+                </select>
+              </Field>
+              <Field
+                class="full"
+                :label="$t('追加スピーカー（カンマ(,)区切り）')"
+                v-slot="{ id, describedBy }"
+              >
+                <input
+                  v-model="teamForm.speakers"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <Field
+                class="full"
+                :label="$t('既存スピーカーから選択')"
+                v-slot="{ id, describedBy }"
+              >
+                <div class="stack relation-group">
+                  <input
+                    v-model="teamSpeakerSearch"
+                    type="text"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                    :placeholder="$t('スピーカー名で絞り込み')"
+                  />
+                  <div class="relation-picker">
+                    <label
+                      v-for="speaker in filteredTeamSpeakerOptions"
+                      :key="speaker._id"
+                      class="row small relation-item"
+                    >
+                      <input
+                        v-model="teamSelectedSpeakerIds"
+                        type="checkbox"
+                        :value="speaker._id"
+                      />
+                      <span>{{ speaker.name }}</span>
+                    </label>
+                  </div>
+                  <p class="muted small">
+                    {{ $t('選択済み: {count}名', { count: teamSelectedSpeakerIds.length }) }}
+                  </p>
+                </div>
+              </Field>
+              <div class="row entity-submit-row">
+                <Button type="submit" size="sm" :disabled="teams.loading">{{ $t('追加') }}</Button>
+              </div>
+            </form>
+          </section>
+          <section v-else class="stack block-panel">
+            <label class="stack">
+              <span class="muted small">{{
+                $t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+              }}</span>
+              <input
+                class="csv-file-input"
+                type="file"
+                accept=".csv"
+                @change="handleCsvUpload('teams', $event)"
+              />
+            </label>
+          </section>
+        </section>
+
+        <section class="stack entity-block">
+          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
+            <input
+              v-model="teamSearch"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('名前/所属/スピーカーで検索')"
+            />
+          </Field>
+          <p v-if="teams.error" class="error">{{ teams.error }}</p>
+          <ul class="list compact">
+            <li v-for="team in visibleTeams" :key="team._id" class="list-item entity-list-item">
+              <div class="entity-primary">
+                <strong>{{ team.name }}</strong>
+                <span class="muted small entity-inline-meta">
+                  {{ institutionLabel(team.institution) || $t('所属機関なし') }}
+                </span>
+              </div>
+              <div class="muted entity-secondary">{{ team.speakers?.map((s) => s.name).join(', ') }}</div>
+              <div class="row">
+                <Button variant="ghost" size="sm" @click="startEditEntity('team', team)">
+                  {{ $t('編集') }}
+                </Button>
+                <Button variant="danger" size="sm" @click="removeTeam(team._id)">
+                  {{ $t('削除') }}
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <Button
+            v-if="filteredTeams.length > visibleTeams.length"
+            variant="ghost"
+            size="sm"
+            @click="teamLimit += 20"
+          >
+            {{ $t('もっと見る') }}
+          </Button>
+        </section>
+      </div>
+
+      <div class="card stack" v-show="activeEntityTab === 'adjudicators'">
+        <section class="stack entity-block">
+          <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
+          <div class="row entry-mode-row">
+            <span class="muted small">{{ $t('入力方式') }}</span>
+            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.adjudicators === 'manual' }"
+                @click="entityEntryModes.adjudicators = 'manual'"
+              >
+                {{ $t('手動入力') }}
+              </button>
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.adjudicators === 'csv' }"
+                @click="entityEntryModes.adjudicators = 'csv'"
+              >
+                {{ $t('CSV取り込み') }}
+              </button>
+            </div>
+          </div>
+          <section v-if="entityEntryModes.adjudicators === 'manual'" class="stack block-panel">
+            <form class="grid" @submit.prevent="handleCreateAdjudicator">
+              <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+                <input
+                  v-model="adjudicatorForm.name"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
+                <input
+                  v-model.number="adjudicatorForm.strength"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.1"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <Field
+                :label="$t('事前評価')"
+                :help="$t('推奨範囲: 0〜10')"
+                v-slot="{ id, describedBy }"
+              >
+                <input
+                  v-model.number="adjudicatorForm.preev"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.1"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <Field :label="$t('大会参加可能（デフォルト値）')" v-slot="{ id }">
+                <label class="row small">
+                  <input :id="id" v-model="adjudicatorForm.active" type="checkbox" />
+                  <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
+                </label>
+              </Field>
+              <div class="stack full relation-group">
+                <span class="field-label">{{ $t('所属機関') }}</span>
+                <input
+                  v-model="adjudicatorInstitutionSearch"
+                  type="text"
+                  :placeholder="$t('機関名で検索')"
+                />
+                <div class="relation-picker">
+                  <label
+                    v-for="inst in filteredAdjudicatorInstitutionOptions"
+                    :key="inst._id"
+                    class="row small relation-item"
+                  >
+                    <input v-model="adjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                    <span>{{ inst.name }}</span>
+                  </label>
+                </div>
+                <p class="muted small">
+                  {{ $t('選択済み: {count}件', { count: adjudicatorInstitutionIds.length }) }}
+                </p>
+              </div>
+              <div class="stack full relation-group">
+                <span class="field-label">{{ $t('衝突チーム') }}</span>
+                <input
+                  v-model="adjudicatorConflictSearch"
+                  type="text"
+                  :placeholder="$t('検索してチームを絞り込む')"
+                />
+                <div class="relation-picker">
+                  <label
+                    v-for="team in filteredAdjudicatorConflictTeams"
+                    :key="team._id"
+                    class="row small relation-item"
+                  >
+                    <input v-model="adjudicatorConflictIds" type="checkbox" :value="team._id" />
+                    <span>{{ team.name }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="row entity-submit-row">
+                <Button type="submit" size="sm" :disabled="adjudicators.loading">{{
+                  $t('追加')
+                }}</Button>
+              </div>
+            </form>
+          </section>
+          <section v-else class="stack block-panel">
+            <label class="stack">
+              <span class="muted small">{{
+                $t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
+              }}</span>
+              <input
+                class="csv-file-input"
+                type="file"
+                accept=".csv"
+                @change="handleCsvUpload('adjudicators', $event)"
+              />
+            </label>
+          </section>
+        </section>
+
+        <section class="stack entity-block">
+          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
+            <input
+              v-model="adjudicatorSearch"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('名前で検索')"
+            />
+          </Field>
+          <p v-if="adjudicators.error" class="error">{{ adjudicators.error }}</p>
+          <ul class="list compact">
+            <li
+              v-for="adj in visibleAdjudicators"
+              :key="adj._id"
+              class="list-item entity-list-item"
+            >
+              <div class="entity-primary">
+                <strong>{{ adj.name }}</strong>
+                <span class="muted small entity-inline-meta">{{ adjudicatorInstitutionsLabel(adj) }}</span>
+              </div>
+              <div class="muted entity-secondary">
+                {{ $t('事前評価') }} {{ adj.preev ?? 0 }} / {{ $t('強さ') }} {{ adj.strength ?? 0 }}
+              </div>
+              <div class="row">
+                <Button variant="ghost" size="sm" @click="startEditEntity('adjudicator', adj)">
+                  {{ $t('編集') }}
+                </Button>
+                <Button variant="danger" size="sm" @click="removeAdjudicator(adj._id)">
+                  {{ $t('削除') }}
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <Button
+            v-if="filteredAdjudicators.length > visibleAdjudicators.length"
+            variant="ghost"
+            size="sm"
+            @click="adjudicatorLimit += 20"
+          >
+            {{ $t('もっと見る') }}
+          </Button>
+        </section>
+      </div>
+
+      <div class="card stack" v-show="activeEntityTab === 'venues'">
+        <section class="stack entity-block">
+          <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
+          <div class="row entry-mode-row">
+            <span class="muted small">{{ $t('入力方式') }}</span>
+            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.venues === 'manual' }"
+                @click="entityEntryModes.venues = 'manual'"
+              >
+                {{ $t('手動入力') }}
+              </button>
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.venues === 'csv' }"
+                @click="entityEntryModes.venues = 'csv'"
+              >
+                {{ $t('CSV取り込み') }}
+              </button>
+            </div>
+          </div>
+          <section v-if="entityEntryModes.venues === 'manual'" class="stack block-panel">
+            <form class="grid" @submit.prevent="handleCreateVenue">
+              <Field :label="$t('会場名')" required v-slot="{ id, describedBy }">
+                <input
+                  v-model="venueForm.name"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <div class="row entity-submit-row">
+                <Button type="submit" size="sm" :disabled="venues.loading">{{ $t('追加') }}</Button>
+              </div>
+            </form>
+          </section>
+          <section v-else class="stack block-panel">
+            <label class="stack">
+              <span class="muted small">{{ $t('CSV例: Room 101') }}</span>
+              <input
+                class="csv-file-input"
+                type="file"
+                accept=".csv"
+                @change="handleCsvUpload('venues', $event)"
+              />
+            </label>
+          </section>
+        </section>
+
+        <section class="stack entity-block">
+          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
+            <input
+              v-model="venueSearch"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('会場名で検索')"
+            />
+          </Field>
+          <p v-if="venues.error" class="error">{{ venues.error }}</p>
+          <ul class="list compact">
+            <li v-for="venue in visibleVenues" :key="venue._id" class="list-item entity-list-item">
+              <div>
+                <strong>{{ venue.name }}</strong>
+              </div>
+              <div class="row">
+                <Button variant="ghost" size="sm" @click="startEditEntity('venue', venue)">
+                  {{ $t('編集') }}
+                </Button>
+                <Button variant="danger" size="sm" @click="removeVenue(venue._id)">
+                  {{ $t('削除') }}
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <Button
+            v-if="filteredVenues.length > visibleVenues.length"
+            variant="ghost"
+            size="sm"
+            @click="venueLimit += 20"
+          >
+            {{ $t('もっと見る') }}
+          </Button>
+        </section>
+      </div>
+
+      <div class="card stack" v-show="activeEntityTab === 'speakers'">
+        <section class="stack entity-block">
+          <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
+          <div class="row entry-mode-row">
+            <span class="muted small">{{ $t('入力方式') }}</span>
+            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.speakers === 'manual' }"
+                @click="entityEntryModes.speakers = 'manual'"
+              >
+                {{ $t('手動入力') }}
+              </button>
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.speakers === 'csv' }"
+                @click="entityEntryModes.speakers = 'csv'"
+              >
+                {{ $t('CSV取り込み') }}
+              </button>
+            </div>
+          </div>
+          <section v-if="entityEntryModes.speakers === 'manual'" class="stack block-panel">
+            <form class="grid" @submit.prevent="handleCreateSpeaker">
+              <Field :label="$t('スピーカー名')" required v-slot="{ id, describedBy }">
+                <input
+                  v-model="speakerForm.name"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <div class="row entity-submit-row">
+                <Button type="submit" size="sm" :disabled="speakers.loading">{{
+                  $t('追加')
+                }}</Button>
+              </div>
+            </form>
+          </section>
+          <section v-else class="stack block-panel">
+            <label class="stack">
+              <span class="muted small">{{ $t('CSV例: Speaker A') }}</span>
+              <input
+                class="csv-file-input"
+                type="file"
+                accept=".csv"
+                @change="handleCsvUpload('speakers', $event)"
+              />
+            </label>
+          </section>
+        </section>
+
+        <section class="stack entity-block">
+          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
+            <input
+              v-model="speakerSearch"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('名前で検索')"
+            />
+          </Field>
+          <p v-if="speakers.error" class="error">{{ speakers.error }}</p>
+          <ul class="list compact">
+            <li
+              v-for="speaker in visibleSpeakers"
+              :key="speaker._id"
+              class="list-item entity-list-item"
+            >
+              <div>
+                <strong>{{ speaker.name }}</strong>
+              </div>
+              <div class="row">
+                <Button variant="ghost" size="sm" @click="startEditEntity('speaker', speaker)">
+                  {{ $t('編集') }}
+                </Button>
+                <Button variant="danger" size="sm" @click="removeSpeaker(speaker._id)">
+                  {{ $t('削除') }}
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <Button
+            v-if="filteredSpeakers.length > visibleSpeakers.length"
+            variant="ghost"
+            size="sm"
+            @click="speakerLimit += 20"
+          >
+            {{ $t('もっと見る') }}
+          </Button>
+        </section>
+      </div>
+
+      <div class="card stack" v-show="activeEntityTab === 'institutions'">
+        <section class="stack entity-block">
+          <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
+          <div class="row entry-mode-row">
+            <span class="muted small">{{ $t('入力方式') }}</span>
+            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.institutions === 'manual' }"
+                @click="entityEntryModes.institutions = 'manual'"
+              >
+                {{ $t('手動入力') }}
+              </button>
+              <button
+                type="button"
+                class="entry-mode-button"
+                :class="{ active: entityEntryModes.institutions === 'csv' }"
+                @click="entityEntryModes.institutions = 'csv'"
+              >
+                {{ $t('CSV取り込み') }}
+              </button>
+            </div>
+          </div>
+          <section v-if="entityEntryModes.institutions === 'manual'" class="stack block-panel">
+            <form class="grid" @submit.prevent="handleCreateInstitution">
+              <Field :label="$t('機関名')" required v-slot="{ id, describedBy }">
+                <input
+                  v-model="institutionForm.name"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+              <div class="row entity-submit-row">
+                <Button type="submit" size="sm" :disabled="institutions.loading">{{
+                  $t('追加')
+                }}</Button>
+              </div>
+            </form>
+          </section>
+          <section v-else class="stack block-panel">
+            <label class="stack">
+              <span class="muted small">{{ $t('CSV例: Institution A') }}</span>
+              <input
+                class="csv-file-input"
+                type="file"
+                accept=".csv"
+                @change="handleCsvUpload('institutions', $event)"
+              />
+            </label>
+          </section>
+        </section>
+
+        <section class="stack entity-block">
+          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
+            <input
+              v-model="institutionSearch"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('機関名で検索')"
+            />
+          </Field>
+          <p v-if="institutions.error" class="error">{{ institutions.error }}</p>
+          <ul class="list compact">
+            <li
+              v-for="inst in visibleInstitutions"
+              :key="inst._id"
+              class="list-item entity-list-item"
+            >
+              <div>
+                <strong>{{ inst.name }}</strong>
+              </div>
+              <div class="row">
+                <Button variant="ghost" size="sm" @click="startEditEntity('institution', inst)">
+                  {{ $t('編集') }}
+                </Button>
+                <Button variant="danger" size="sm" @click="removeInstitution(inst._id)">
+                  {{ $t('削除') }}
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <Button
+            v-if="filteredInstitutions.length > visibleInstitutions.length"
+            variant="ghost"
+            size="sm"
+            @click="institutionLimit += 20"
+          >
+            {{ $t('もっと見る') }}
+          </Button>
+        </section>
+      </div>
+    </section>
+
+    <div v-else class="card stack">
+      <p class="muted">{{ $t('大会情報が見つかりません。') }}</p>
+    </div>
+
+    <div
+      v-if="activeSection === 'data' && editingEntity"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="cancelEditEntity"
+    >
+      <div class="modal card stack entity-edit-modal" role="dialog" aria-modal="true">
+        <div class="row">
+          <strong>{{ editingTitle }}</strong>
+          <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('閉じる') }}</Button>
+        </div>
+        <div class="grid" v-if="editingEntity.type === 'team'">
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+          <Field :label="$t('所属機関')" v-slot="{ id, describedBy }">
+            <select v-model="entityForm.institutionId" :id="id" :aria-describedby="describedBy">
+              <option value="">{{ $t('未選択') }}</option>
+              <option v-for="inst in institutions.institutions" :key="inst._id" :value="inst._id">
+                {{ inst.name }}
+              </option>
+            </select>
+          </Field>
+          <Field
+            class="full"
+            :label="$t('追加スピーカー（カンマ(,)区切り）')"
+            v-slot="{ id, describedBy }"
+          >
+            <input
+              v-model="entityForm.speakers"
+              type="text"
+              :id="id"
+              :aria-describedby="describedBy"
+            />
+          </Field>
+          <Field class="full" :label="$t('既存スピーカーから選択')" v-slot="{ id, describedBy }">
+            <div class="stack relation-group">
+              <input
+                v-model="editTeamSpeakerSearch"
+                type="text"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('スピーカー名で絞り込み')"
+              />
+              <div class="relation-picker">
+                <label
+                  v-for="speaker in filteredEditTeamSpeakerOptions"
+                  :key="speaker._id"
+                  class="row small relation-item"
+                >
+                  <input
+                    v-model="editTeamSelectedSpeakerIds"
+                    type="checkbox"
+                    :value="speaker._id"
+                  />
+                  <span>{{ speaker.name }}</span>
+                </label>
+              </div>
+              <p class="muted small">
+                {{ $t('選択済み: {count}名', { count: editTeamSelectedSpeakerIds.length }) }}
+              </p>
+            </div>
+          </Field>
+        </div>
+        <div class="grid" v-else-if="editingEntity.type === 'adjudicator'">
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
+            <input
+              v-model.number="entityForm.strength"
+              type="number"
+              min="0"
+              max="10"
+              step="0.1"
+              :id="id"
+              :aria-describedby="describedBy"
+            />
+          </Field>
+          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
+            <input
+              v-model.number="entityForm.preev"
+              type="number"
+              min="0"
+              max="10"
+              step="0.1"
+              :id="id"
+              :aria-describedby="describedBy"
+            />
+          </Field>
+          <Field :label="$t('大会参加可能（デフォルト値）')" v-slot="{ id }">
+            <label class="row small">
+              <input :id="id" v-model="entityForm.active" type="checkbox" />
+              <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
+            </label>
+          </Field>
+          <div class="stack full relation-group">
+            <span class="field-label">{{ $t('所属機関') }}</span>
+            <input
+              v-model="editAdjudicatorInstitutionSearch"
+              type="text"
+              :placeholder="$t('機関名で検索')"
+            />
+            <div class="relation-picker">
+              <label
+                v-for="inst in filteredEditAdjudicatorInstitutionOptions"
+                :key="inst._id"
+                class="row small relation-item"
+              >
+                <input v-model="editAdjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                <span>{{ inst.name }}</span>
+              </label>
+            </div>
+            <p class="muted small">
+              {{ $t('選択済み: {count}件', { count: editAdjudicatorInstitutionIds.length }) }}
+            </p>
+          </div>
+          <div class="stack full relation-group">
+            <span class="field-label">{{ $t('衝突チーム') }}</span>
+            <input
+              v-model="editAdjudicatorConflictSearch"
+              type="text"
+              :placeholder="$t('検索してチームを絞り込む')"
+            />
+            <div class="relation-picker">
+              <label
+                v-for="team in filteredEditAdjudicatorConflictTeams"
+                :key="team._id"
+                class="row small relation-item"
+              >
+                <input v-model="editAdjudicatorConflictIds" type="checkbox" :value="team._id" />
+                <span>{{ team.name }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="grid" v-else-if="editingEntity.type === 'venue'">
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+        </div>
+        <div class="grid" v-else>
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+        </div>
+        <div v-if="editingEntity.type === 'venue' && detailRows.length > 0" class="card stack">
+          <h4>{{ $t('ラウンド詳細') }}</h4>
+          <div v-for="row in detailRows" :key="row.r" class="detail-row">
+            <div class="row">
+              <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
+              <label class="row small">
+                <input v-model="row.available" type="checkbox" />
+                {{ $t('有効') }}
+              </label>
+            </div>
+            <div class="grid">
+              <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
+                <input
+                  v-model.number="row.priority"
+                  type="number"
+                  min="1"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
+            </div>
+          </div>
+        </div>
+        <p v-if="entityError" class="error">{{ entityError }}</p>
+        <p v-if="csvError" class="error">{{ csvError }}</p>
+        <div class="row">
+          <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+          <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { api } from '@/utils/api'
+import { useTournamentStore } from '@/stores/tournament'
+import { useStylesStore } from '@/stores/styles'
+import { useRoundsStore } from '@/stores/rounds'
+import { useTeamsStore } from '@/stores/teams'
+import { useAdjudicatorsStore } from '@/stores/adjudicators'
+import { useVenuesStore } from '@/stores/venues'
+import { useSpeakersStore } from '@/stores/speakers'
+import { useInstitutionsStore } from '@/stores/institutions'
+import { renderMarkdown } from '@/utils/markdown'
+import Button from '@/components/common/Button.vue'
+import Field from '@/components/common/Field.vue'
+import ReloadButton from '@/components/common/ReloadButton.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+
+const route = useRoute()
+const tournamentStore = useTournamentStore()
+const styles = useStylesStore()
+const rounds = useRoundsStore()
+const teams = useTeamsStore()
+const adjudicators = useAdjudicatorsStore()
+const venues = useVenuesStore()
+const speakers = useSpeakersStore()
+const institutions = useInstitutionsStore()
+const { t } = useI18n({ useScope: 'global' })
+
+const tournamentId = computed(() => route.params.tournamentId as string)
+const tournament = computed(() =>
+  tournamentStore.tournaments.find((t) => t._id === tournamentId.value)
+)
+const activeSection = computed(() =>
+  String(route.query.section ?? 'overview') === 'data' ? 'data' : 'overview'
+)
+const sectionLoading = ref(true)
+const isSectionLoading = computed(() => sectionLoading.value)
+
+const isLoading = computed(
+  () =>
+    tournamentStore.loading ||
+    styles.loading ||
+    rounds.loading ||
+    teams.loading ||
+    adjudicators.loading ||
+    venues.loading ||
+    speakers.loading ||
+    institutions.loading
+)
+
+const tournamentForm = reactive({
+  name: '',
+  style: 1,
+  hidden: false,
+  accessRequired: false,
+  accessPassword: '',
+  infoText: '',
+})
+const passwordVisible = ref(false)
+const accessPasswordConfigured = ref(false)
+
+const teamForm = reactive({
+  name: '',
+  institutionId: '',
+  speakers: '',
+})
+const teamSpeakerSearch = ref('')
+const teamSelectedSpeakerIds = ref<string[]>([])
+
+const adjudicatorForm = reactive({
+  name: '',
+  strength: 5,
+  preev: 0,
+  active: true,
+})
+const adjudicatorInstitutionIds = ref<string[]>([])
+const adjudicatorInstitutionSearch = ref('')
+const adjudicatorConflictIds = ref<string[]>([])
+const adjudicatorConflictSearch = ref('')
+const venueForm = reactive({ name: '' })
+const speakerForm = reactive({ name: '' })
+const institutionForm = reactive({ name: '' })
+
+type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
+const activeEntityTab = ref<EntityTabKey>('teams')
+type EntityEntryMode = 'manual' | 'csv'
+const entityEntryModes = reactive<Record<EntityTabKey, EntityEntryMode>>({
+  teams: 'manual',
+  adjudicators: 'manual',
+  venues: 'manual',
+  speakers: 'manual',
+  institutions: 'manual',
+})
+const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
+  { key: 'teams', label: t('チーム') },
+  { key: 'adjudicators', label: t('ジャッジ') },
+  { key: 'speakers', label: t('スピーカー') },
+  { key: 'institutions', label: t('所属機関') },
+  { key: 'venues', label: t('会場') },
+])
+
+const teamSearch = ref('')
+const adjudicatorSearch = ref('')
+const speakerSearch = ref('')
+const venueSearch = ref('')
+const institutionSearch = ref('')
+
+const teamLimit = ref(20)
+const adjudicatorLimit = ref(20)
+const venueLimit = ref(20)
+const speakerLimit = ref(20)
+const institutionLimit = ref(20)
+
+const editingEntity = ref<{ type: string; id: string } | null>(null)
+const entityForm = reactive<any>({
+  name: '',
+  institutionId: '',
+  speakers: '',
+  strength: 5,
+  preev: 0,
+  active: true,
+})
+const editTeamSpeakerSearch = ref('')
+const editTeamSelectedSpeakerIds = ref<string[]>([])
+const editAdjudicatorInstitutionIds = ref<string[]>([])
+const editAdjudicatorInstitutionSearch = ref('')
+const editAdjudicatorConflictIds = ref<string[]>([])
+const editAdjudicatorConflictSearch = ref('')
+const entityError = ref<string | null>(null)
+const detailRows = ref<any[]>([])
+const csvError = ref<string | null>(null)
+
+const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
+const managedRoundNumbers = computed(() => {
+  if (sortedRounds.value.length > 0) {
+    return sortedRounds.value.map((item) => item.round)
+  }
+  const total = Number(tournament.value?.total_round_num ?? 0)
+  if (!Number.isFinite(total) || total <= 0) return []
+  return Array.from({ length: Math.floor(total) }, (_, index) => index + 1)
+})
+
+const filteredTeams = computed(() => {
+  const q = teamSearch.value.trim().toLowerCase()
+  if (!q) return teams.teams
+  return teams.teams.filter((team) => {
+    const speakersText =
+      team.speakers
+        ?.map((s: any) => s.name)
+        .join(', ')
+        .toLowerCase() ?? ''
+    const institutionText = institutionLabel(team.institution).toLowerCase()
+    return (
+      team.name?.toLowerCase().includes(q) ||
+      institutionText.includes(q) ||
+      speakersText.includes(q)
+    )
+  })
+})
+
+const filteredAdjudicators = computed(() => {
+  const q = adjudicatorSearch.value.trim().toLowerCase()
+  if (!q) return adjudicators.adjudicators
+  return adjudicators.adjudicators.filter((adj) => adj.name?.toLowerCase().includes(q))
+})
+
+const filteredSpeakers = computed(() => {
+  const q = speakerSearch.value.trim().toLowerCase()
+  if (!q) return speakers.speakers
+  return speakers.speakers.filter((sp) => sp.name?.toLowerCase().includes(q))
+})
+
+const filteredVenues = computed(() => {
+  const q = venueSearch.value.trim().toLowerCase()
+  if (!q) return venues.venues
+  return venues.venues.filter((venue) => venue.name?.toLowerCase().includes(q))
+})
+
+const filteredInstitutions = computed(() => {
+  const q = institutionSearch.value.trim().toLowerCase()
+  if (!q) return institutions.institutions
+  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+})
+
+const visibleTeams = computed(() => filteredTeams.value.slice(0, teamLimit.value))
+const visibleAdjudicators = computed(() =>
+  filteredAdjudicators.value.slice(0, adjudicatorLimit.value)
+)
+const visibleVenues = computed(() => filteredVenues.value.slice(0, venueLimit.value))
+const visibleSpeakers = computed(() => filteredSpeakers.value.slice(0, speakerLimit.value))
+const visibleInstitutions = computed(() =>
+  filteredInstitutions.value.slice(0, institutionLimit.value)
+)
+
+const filteredTeamSpeakerOptions = computed(() => {
+  const q = teamSpeakerSearch.value.trim().toLowerCase()
+  const list = speakers.speakers
+  if (!q) return list
+  return list.filter((speaker) => speaker.name?.toLowerCase().includes(q))
+})
+
+const filteredEditTeamSpeakerOptions = computed(() => {
+  const q = editTeamSpeakerSearch.value.trim().toLowerCase()
+  const list = speakers.speakers
+  if (!q) return list
+  return list.filter((speaker) => speaker.name?.toLowerCase().includes(q))
+})
+
+const filteredAdjudicatorInstitutionOptions = computed(() => {
+  const q = adjudicatorInstitutionSearch.value.trim().toLowerCase()
+  if (!q) return institutions.institutions
+  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+})
+
+const filteredAdjudicatorConflictTeams = computed(() => {
+  const q = adjudicatorConflictSearch.value.trim().toLowerCase()
+  if (!q) return teams.teams
+  return teams.teams.filter((team) => team.name?.toLowerCase().includes(q))
+})
+
+const filteredEditAdjudicatorInstitutionOptions = computed(() => {
+  const q = editAdjudicatorInstitutionSearch.value.trim().toLowerCase()
+  if (!q) return institutions.institutions
+  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+})
+
+const filteredEditAdjudicatorConflictTeams = computed(() => {
+  const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
+  if (!q) return teams.teams
+  return teams.teams.filter((team) => team.name?.toLowerCase().includes(q))
+})
+
+const accessPasswordHelpText = computed(() => {
+  if (accessPasswordConfigured.value) {
+    return t('大会パスワードは表示・編集できます。空欄で保存すると解除されます。')
+  }
+  return t('大会パスワードを設定すると、参加者に入力を求められます。')
+})
+const infoPreviewHtml = computed(() => renderMarkdown(tournamentForm.infoText ?? ''))
+
+const editingTitle = computed(() => {
+  if (!editingEntity.value) return ''
+  const label = entityTypeLabel(editingEntity.value.type)
+  const name = String(entityForm.name ?? '').trim()
+  return name ? `${label}${t('編集')}: ${name}` : `${label}${t('編集')}`
+})
+
+function entityTypeLabel(type: string) {
+  const map: Record<string, string> = {
+    team: t('チーム'),
+    adjudicator: t('ジャッジ'),
+    venue: t('会場'),
+    speaker: t('スピーカー'),
+    institution: t('所属機関'),
+  }
+  return map[type] ?? type
+}
+
+function applyTournamentForm() {
+  if (!tournament.value) return
+  tournamentForm.name = tournament.value.name
+  tournamentForm.style = tournament.value.style
+  tournamentForm.hidden = Boolean(tournament.value.user_defined_data?.hidden)
+  tournamentForm.accessRequired = Boolean(tournament.value.auth?.access?.required)
+  const savedAccessPassword =
+    typeof tournament.value.auth?.access?.password === 'string'
+      ? String(tournament.value.auth.access.password)
+      : ''
+  accessPasswordConfigured.value = Boolean(
+    tournament.value.auth?.access?.hasPassword || savedAccessPassword
+  )
+  tournamentForm.accessPassword = savedAccessPassword
+  passwordVisible.value = false
+  tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
+}
+
+async function refresh() {
+  if (!tournamentId.value) return
+  sectionLoading.value = true
+  try {
+    await Promise.all([
+      tournamentStore.fetchTournaments(),
+      styles.fetchStyles(),
+      rounds.fetchRounds(tournamentId.value),
+      teams.fetchTeams(tournamentId.value),
+      adjudicators.fetchAdjudicators(tournamentId.value),
+      venues.fetchVenues(tournamentId.value),
+      speakers.fetchSpeakers(tournamentId.value),
+      institutions.fetchInstitutions(tournamentId.value),
+    ])
+    applyTournamentForm()
+  } finally {
+    sectionLoading.value = false
+  }
+}
+
+async function refreshEntities() {
+  await Promise.all([
+    rounds.fetchRounds(tournamentId.value),
+    teams.fetchTeams(tournamentId.value),
+    adjudicators.fetchAdjudicators(tournamentId.value),
+    venues.fetchVenues(tournamentId.value),
+    speakers.fetchSpeakers(tournamentId.value),
+    institutions.fetchInstitutions(tournamentId.value),
+  ])
+}
+
+async function saveTournament() {
+  if (!tournament.value) return
+  const passwordInput = tournamentForm.accessPassword.trim()
+  const info = {
+    text: tournamentForm.infoText,
+    time: new Date().toISOString(),
+  }
+  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  delete nextUserDefined.submission_policy
+  const authPayload: Record<string, any> = {}
+  authPayload.access = { required: tournamentForm.accessRequired }
+  if (tournamentForm.accessRequired) {
+    authPayload.access.password = passwordInput || null
+  }
+  const updated = await tournamentStore.updateTournament({
+    tournamentId: tournament.value._id,
+    name: tournamentForm.name,
+    style: tournamentForm.style,
+    auth: authPayload,
+    user_defined_data: {
+      ...nextUserDefined,
+      hidden: tournamentForm.hidden,
+      info,
+    },
+  })
+  if (updated) {
+    const savedAccessPassword =
+      typeof updated.auth?.access?.password === 'string' ? String(updated.auth.access.password) : ''
+    accessPasswordConfigured.value = Boolean(
+      updated.auth?.access?.hasPassword || savedAccessPassword
+    )
+    tournamentForm.accessPassword = savedAccessPassword
+    passwordVisible.value = false
+  }
+}
+
+function parseNameList(value: string) {
+  return value
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+function speakerNamesFromIds(ids: string[]) {
+  return ids
+    .map((id) => speakers.speakers.find((item) => item._id === id)?.name ?? '')
+    .filter(Boolean)
+}
+
+function resolveInstitutionName(id: string) {
+  if (!id) return ''
+  return institutions.institutions.find((inst) => inst._id === id)?.name ?? ''
+}
+
+function institutionLabel(value?: string) {
+  if (!value) return ''
+  const token = String(value)
+  const matched = institutions.institutions.find(
+    (inst) => inst._id === token || inst.name === token
+  )
+  return matched?.name ?? token
+}
+
+function resolveInstitutionId(value?: string) {
+  if (!value) return ''
+  const token = String(value)
+  const matched = institutions.institutions.find(
+    (inst) => inst._id === token || inst.name === token
+  )
+  return matched?._id ?? ''
+}
+
+function resolveTeamSpeakerIds(entity: any): string[] {
+  const detailIds: string[] = Array.isArray(entity.details)
+    ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
+    : []
+  const normalizedDetailIds = Array.from(new Set(detailIds.filter(Boolean)))
+  if (normalizedDetailIds.length > 0) return normalizedDetailIds
+
+  const nameBasedIds: string[] = (entity.speakers ?? [])
+    .map((speaker: any) => {
+      const name = speaker?.name
+      if (!name) return ''
+      return speakers.speakers.find((item) => item.name === name)?._id ?? ''
+    })
+    .filter(Boolean)
+  return Array.from(new Set(nameBasedIds))
+}
+
+function resolveAdjudicatorInstitutionIds(entity: any): string[] {
+  if (!Array.isArray(entity.details)) return []
+  const ids = entity.details.flatMap((detail: any) =>
+    (detail?.institutions ?? []).map((id: any) => String(id))
+  )
+  return Array.from(new Set(ids.filter(Boolean)))
+}
+
+function resolveAdjudicatorConflictIds(entity: any): string[] {
+  if (!Array.isArray(entity.details)) return []
+  const ids = entity.details.flatMap((detail: any) =>
+    (detail?.conflicts ?? []).map((id: any) => String(id))
+  )
+  return Array.from(new Set(ids.filter(Boolean)))
+}
+
+async function handleCreateTeam() {
+  if (!teamForm.name) return
+  const selectedNames = speakerNamesFromIds(teamSelectedSpeakerIds.value)
+  const manualNames = parseNameList(teamForm.speakers)
+  const speakersList = Array.from(new Set([...selectedNames, ...manualNames])).map((name) => ({
+    name,
+  }))
+  const institutionName = resolveInstitutionName(teamForm.institutionId)
+  const targetRounds = managedRoundNumbers.value
+  const details =
+    targetRounds.length > 0 && (teamSelectedSpeakerIds.value.length > 0 || teamForm.institutionId)
+      ? targetRounds.map((roundNumber) => ({
+          r: roundNumber,
+          available: true,
+          institutions: teamForm.institutionId ? [teamForm.institutionId] : [],
+          speakers: teamSelectedSpeakerIds.value.slice(),
+        }))
+      : undefined
+  await teams.createTeam({
+    tournamentId: tournamentId.value,
+    name: teamForm.name,
+    institution: institutionName || undefined,
+    speakers: speakersList,
+    details,
+  })
+  teamForm.name = ''
+  teamForm.institutionId = ''
+  teamForm.speakers = ''
+  teamSelectedSpeakerIds.value = []
+  teamSpeakerSearch.value = ''
+}
+
+async function handleCreateAdjudicator() {
+  if (!adjudicatorForm.name) return
+  const targetRounds = managedRoundNumbers.value.length > 0 ? managedRoundNumbers.value : [1]
+  const details =
+    targetRounds.length > 0 &&
+    (adjudicatorInstitutionIds.value.length > 0 || adjudicatorConflictIds.value.length > 0)
+      ? targetRounds.map((roundNumber) => ({
+          r: roundNumber,
+          available: true,
+          institutions: adjudicatorInstitutionIds.value.slice(),
+          conflicts: adjudicatorConflictIds.value.slice(),
+        }))
+      : undefined
+  await adjudicators.createAdjudicator({
+    tournamentId: tournamentId.value,
+    name: adjudicatorForm.name,
+    strength: adjudicatorForm.strength,
+    active: adjudicatorForm.active,
+    preev: adjudicatorForm.preev,
+    details,
+  })
+  adjudicatorForm.name = ''
+  adjudicatorForm.strength = 5
+  adjudicatorForm.preev = 0
+  adjudicatorForm.active = true
+  adjudicatorInstitutionIds.value = []
+  adjudicatorInstitutionSearch.value = ''
+  adjudicatorConflictIds.value = []
+  adjudicatorConflictSearch.value = ''
+}
+
+async function handleCreateVenue() {
+  if (!venueForm.name) return
+  await venues.createVenue({ tournamentId: tournamentId.value, name: venueForm.name })
+  venueForm.name = ''
+}
+
+async function handleCreateSpeaker() {
+  if (!speakerForm.name) return
+  await speakers.createSpeaker({ tournamentId: tournamentId.value, name: speakerForm.name })
+  speakerForm.name = ''
+}
+
+async function handleCreateInstitution() {
+  if (!institutionForm.name) return
+  await institutions.createInstitution({
+    tournamentId: tournamentId.value,
+    name: institutionForm.name,
+  })
+  institutionForm.name = ''
+}
+
+async function removeTeam(id: string) {
+  const ok = window.confirm(t('チームを削除しますか？'))
+  if (!ok) return
+  await teams.deleteTeam(tournamentId.value, id)
+}
+
+async function removeAdjudicator(id: string) {
+  const ok = window.confirm(t('ジャッジを削除しますか？'))
+  if (!ok) return
+  await adjudicators.deleteAdjudicator(tournamentId.value, id)
+}
+
+async function removeVenue(id: string) {
+  const ok = window.confirm(t('会場を削除しますか？'))
+  if (!ok) return
+  await venues.deleteVenue(tournamentId.value, id)
+}
+
+async function removeSpeaker(id: string) {
+  const ok = window.confirm(t('スピーカーを削除しますか？'))
+  if (!ok) return
+  await speakers.deleteSpeaker(tournamentId.value, id)
+}
+
+async function removeInstitution(id: string) {
+  const ok = window.confirm(t('機関を削除しますか？'))
+  if (!ok) return
+  await institutions.deleteInstitution(tournamentId.value, id)
+}
+
+function startEditEntity(type: string, entity: any) {
+  editingEntity.value = { type, id: entity._id }
+  entityForm.name = entity.name ?? ''
+  entityForm.institutionId = resolveInstitutionId(entity.institution)
+  entityForm.speakers = Array.isArray(entity.speakers)
+    ? entity.speakers.map((s: any) => s.name).join(', ')
+    : ''
+  entityForm.strength = entity.strength ?? 5
+  entityForm.preev = entity.preev ?? 0
+  entityForm.active = entity.active ?? true
+  editTeamSelectedSpeakerIds.value = type === 'team' ? resolveTeamSpeakerIds(entity) : []
+  editTeamSpeakerSearch.value = ''
+  editAdjudicatorInstitutionIds.value =
+    type === 'adjudicator' ? resolveAdjudicatorInstitutionIds(entity) : []
+  editAdjudicatorInstitutionSearch.value = ''
+  editAdjudicatorConflictIds.value =
+    type === 'adjudicator' ? resolveAdjudicatorConflictIds(entity) : []
+  editAdjudicatorConflictSearch.value = ''
+  detailRows.value = type === 'venue' ? buildDetailRows(entity) : []
+  entityError.value = null
+}
+
+function cancelEditEntity() {
+  editingEntity.value = null
+  detailRows.value = []
+  editTeamSelectedSpeakerIds.value = []
+  editTeamSpeakerSearch.value = ''
+  editAdjudicatorInstitutionIds.value = []
+  editAdjudicatorInstitutionSearch.value = ''
+  editAdjudicatorConflictIds.value = []
+  editAdjudicatorConflictSearch.value = ''
+}
+
+async function saveEntityEdit() {
+  if (!editingEntity.value) return
+  entityError.value = null
+
+  const id = editingEntity.value.id
+  if (editingEntity.value.type === 'team') {
+    const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
+    const manualNames = parseNameList(entityForm.speakers)
+    const speakersList = Array.from(new Set([...selectedNames, ...manualNames])).map(
+      (name: string) => ({ name })
+    )
+    const institutionName = resolveInstitutionName(entityForm.institutionId)
+    await teams.updateTeam({
+      tournamentId: tournamentId.value,
+      teamId: id,
+      name: entityForm.name,
+      institution: institutionName || undefined,
+      speakers: speakersList,
+    })
+  } else if (editingEntity.value.type === 'adjudicator') {
+    const targetRounds = managedRoundNumbers.value.length > 0 ? managedRoundNumbers.value : [1]
+    const existing = adjudicators.adjudicators.find((item) => item._id === id)
+    const details =
+      targetRounds.length > 0 &&
+      (editAdjudicatorInstitutionIds.value.length > 0 ||
+        editAdjudicatorConflictIds.value.length > 0)
+        ? targetRounds.map((roundNumber) => {
+            const currentDetail = existing?.details?.find(
+              (detail: any) => Number(detail.r) === Number(roundNumber)
+            )
+            return {
+              r: roundNumber,
+              available: currentDetail?.available ?? true,
+              institutions: editAdjudicatorInstitutionIds.value.slice(),
+              conflicts: editAdjudicatorConflictIds.value.slice(),
+            }
+          })
+        : undefined
+    await adjudicators.updateAdjudicator({
+      tournamentId: tournamentId.value,
+      adjudicatorId: id,
+      name: entityForm.name,
+      strength: Number(entityForm.strength),
+      preev: Number(entityForm.preev),
+      active: Boolean(entityForm.active),
+      details,
+    })
+  } else if (editingEntity.value.type === 'venue') {
+    const details = detailRows.value.length > 0 ? detailRows.value.map((row) => ({ ...row })) : []
+    await venues.updateVenue({
+      tournamentId: tournamentId.value,
+      venueId: id,
+      name: entityForm.name,
+      details: details.map((row: any) => ({
+        r: row.r,
+        available: row.available,
+        priority: row.priority ?? 1,
+      })),
+    })
+  } else if (editingEntity.value.type === 'speaker') {
+    await speakers.updateSpeaker({
+      tournamentId: tournamentId.value,
+      speakerId: id,
+      name: entityForm.name,
+    })
+  } else if (editingEntity.value.type === 'institution') {
+    await institutions.updateInstitution({
+      tournamentId: tournamentId.value,
+      institutionId: id,
+      name: entityForm.name,
+    })
+  }
+  cancelEditEntity()
+}
+
+function buildDetailRows(entity: any) {
+  if (!managedRoundNumbers.value.length) return []
+  return managedRoundNumbers.value.map((roundNumber) => {
+    const existing =
+      (entity.details ?? []).find((d: any) => Number(d.r) === Number(roundNumber)) ?? {}
+    return {
+      r: roundNumber,
+      available: existing.available ?? true,
+      priority: existing.priority ?? 1,
+    }
+  })
+}
+
+function adjudicatorInstitutionsLabel(adjudicator: any) {
+  const ids: string[] = Array.isArray(adjudicator?.details)
+    ? adjudicator.details.flatMap((detail: any) =>
+        (detail?.institutions ?? []).map((id: any) => String(id))
+      )
+    : []
+  const unique = Array.from(
+    new Set(
+      ids
+        .map((id: string) => institutionLabel(id))
+        .filter((name: string): name is string => Boolean(name))
+    )
+  )
+  return unique.length > 0 ? unique.join(', ') : t('未設定')
+}
+
+function parseCsv(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (lines.length === 0) return { headers: [], rows: [] }
+  const first = lines[0].split(',').map((cell) => cell.trim())
+  const headerKeys = [
+    'name',
+    'institution',
+    'speakers',
+    'strength',
+    'preev',
+    'priority',
+    'active',
+    'available',
+    'availability',
+    'conflict',
+    'conflicts',
+  ]
+  const hasHeader = first.some((cell) => {
+    const key = cell.toLowerCase()
+    return (
+      headerKeys.includes(key) ||
+      /^available_r\d+$/.test(key) ||
+      /^availability_r\d+$/.test(key) ||
+      /^conflicts?_r\d+$/.test(key)
+    )
+  })
+  const headers = hasHeader ? first.map((h) => h.toLowerCase()) : []
+  const rows = lines.slice(hasHeader ? 1 : 0).map((line) => line.split(',').map((c) => c.trim()))
+  return { headers, rows }
+}
+
+function splitList(value: string) {
+  return value
+    .split(/[;|]/)
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
+function toBooleanCell(value: string, defaultValue: boolean) {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return defaultValue
+  if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+  if (['false', '0', 'no', 'n'].includes(normalized)) return false
+  return defaultValue
+}
+
+function findHeaderValue(headers: string[], row: string[], keyCandidates: string[]) {
+  for (const key of keyCandidates) {
+    const index = headers.indexOf(key)
+    if (index >= 0) return row[index] ?? ''
+  }
+  return ''
+}
+
+async function handleCsvUpload(type: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  csvError.value = null
+  try {
+    const text = await file.text()
+    const { headers, rows } = parseCsv(text)
+    const payload: any[] = []
+    const get = (row: string[], key: string, fallbackIndex: number) => {
+      if (headers.length === 0) return row[fallbackIndex] ?? ''
+      const idx = headers.indexOf(key)
+      return idx >= 0 ? (row[idx] ?? '') : ''
+    }
+    const teamNameMap = new Map<string, string>()
+    teams.teams.forEach((team) => {
+      teamNameMap.set(team._id, team._id)
+      teamNameMap.set(team.name.toLowerCase(), team._id)
+    })
+    const institutionIdMap = new Map<string, string>()
+    institutions.institutions.forEach((inst) => {
+      institutionIdMap.set(inst._id, inst._id)
+      institutionIdMap.set(inst.name, inst._id)
+      institutionIdMap.set(inst.name.toLowerCase(), inst._id)
+    })
+    const resolveConflictIds = (cell: string) => {
+      const ids = splitList(cell).map((token) => {
+        const normalized = token.trim()
+        if (!normalized) return ''
+        return teamNameMap.get(normalized) ?? teamNameMap.get(normalized.toLowerCase()) ?? ''
+      })
+      return Array.from(new Set(ids.filter(Boolean)))
+    }
+    const resolveInstitutionIds = (cell: string) => {
+      const ids = splitList(cell).map((token) => {
+        const normalized = token.trim()
+        if (!normalized) return ''
+        return (
+          institutionIdMap.get(normalized) ?? institutionIdMap.get(normalized.toLowerCase()) ?? ''
+        )
+      })
+      return Array.from(new Set(ids.filter(Boolean)))
+    }
+    const hasRoundAvailabilityHeader = headers.some(
+      (header) => /^available_r\d+$/.test(header) || /^availability_r\d+$/.test(header)
+    )
+    const hasRoundConflictHeader = headers.some((header) => /^conflicts?_r\d+$/.test(header))
+    for (const row of rows) {
+      if (type === 'teams') {
+        const name = get(row, 'name', 0)
+        if (!name) continue
+        const institution = get(row, 'institution', 1)
+        const speakersCell = get(row, 'speakers', 2)
+        const speakersList = splitList(speakersCell).map((n) => ({ name: n }))
+        payload.push({
+          tournamentId: tournamentId.value,
+          name,
+          institution: institution || undefined,
+          speakers: speakersList,
+        })
+      } else if (type === 'adjudicators') {
+        const name = get(row, 'name', 0)
+        if (!name) continue
+        const strength = Number(get(row, 'strength', 1) || 0)
+        const preev = Number(get(row, 'preev', 2) || 0)
+        const activeValue = get(row, 'active', 3)
+        const active = toBooleanCell(activeValue, true)
+        const institutionCell = findHeaderValue(headers, row, ['institutions', 'institution'])
+        const baseInstitutionIds = resolveInstitutionIds(institutionCell)
+        const defaultAvailableCell =
+          headers.length === 0
+            ? (row[4] ?? '')
+            : findHeaderValue(headers, row, ['available', 'availability'])
+        const defaultAvailable = toBooleanCell(defaultAvailableCell, true)
+        const baseConflictCell =
+          headers.length === 0
+            ? (row[5] ?? '')
+            : findHeaderValue(headers, row, ['conflicts', 'conflict'])
+        const baseConflicts = resolveConflictIds(baseConflictCell)
+        const includeDetails =
+          sortedRounds.value.length > 0 &&
+          (defaultAvailable === false ||
+            baseInstitutionIds.length > 0 ||
+            baseConflicts.length > 0 ||
+            hasRoundAvailabilityHeader ||
+            hasRoundConflictHeader)
+        const details = includeDetails
+          ? sortedRounds.value.map((roundItem) => {
+              const availableCell = findHeaderValue(headers, row, [
+                `available_r${roundItem.round}`,
+                `availability_r${roundItem.round}`,
+              ])
+              const available = toBooleanCell(availableCell, defaultAvailable)
+              const conflictCell = findHeaderValue(headers, row, [
+                `conflicts_r${roundItem.round}`,
+                `conflict_r${roundItem.round}`,
+              ])
+              const conflictIds = Array.from(
+                new Set([...baseConflicts, ...resolveConflictIds(conflictCell)])
+              )
+              return {
+                r: roundItem.round,
+                available,
+                institutions: baseInstitutionIds,
+                conflicts: conflictIds,
+              }
+            })
+          : undefined
+        payload.push({
+          tournamentId: tournamentId.value,
+          name,
+          strength,
+          preev,
+          active,
+          details,
+        })
+      } else if (type === 'venues') {
+        const name = get(row, 'name', 0)
+        if (!name) continue
+        const priority = Number(get(row, 'priority', 1) || 1)
+        payload.push({
+          tournamentId: tournamentId.value,
+          name,
+          details: sortedRounds.value.map((round) => ({
+            r: round.round,
+            available: true,
+            priority,
+          })),
+        })
+      } else if (type === 'speakers') {
+        const name = get(row, 'name', 0)
+        if (!name) continue
+        payload.push({ tournamentId: tournamentId.value, name })
+      } else if (type === 'institutions') {
+        const name = get(row, 'name', 0)
+        if (!name) continue
+        payload.push({ tournamentId: tournamentId.value, name })
+      }
+    }
+
+    if (payload.length === 0) return
+    const endpoint =
+      type === 'teams'
+        ? '/teams'
+        : type === 'adjudicators'
+          ? '/adjudicators'
+          : type === 'venues'
+            ? '/venues'
+            : type === 'speakers'
+              ? '/speakers'
+              : '/institutions'
+    await api.post(endpoint, payload)
+    await refreshEntities()
+  } catch (err: any) {
+    csvError.value = err?.response?.data?.errors?.[0]?.message ?? t('CSV取り込みに失敗しました')
+  } finally {
+    input.value = ''
+  }
+}
+
+watch(
+  tournamentId,
+  () => {
+    if (editingEntity.value) cancelEditEntity()
+    refresh()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  window.addEventListener('keydown', onGlobalKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
+})
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && editingEntity.value) {
+    cancelEditEntity()
+  }
+}
+</script>
+
+<style scoped>
+.grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.grid .full {
+  grid-column: 1 / -1;
+}
+
+.team-form-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.entity-submit-row {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+textarea {
+  font-family:
+    'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+}
+
+.markdown-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.markdown-preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface-muted);
+  min-height: 180px;
+}
+
+.markdown-content {
+  color: var(--color-text);
+}
+
+.markdown-content :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.password-toggle {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  background: var(--color-surface-muted);
+}
+
+.password-toggle:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.password-field :deep(.field-label) {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.detail-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section-row {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.section-row h3 {
+  margin: 0;
+}
+
+.section-reload {
+  margin-left: auto;
+}
+
+.entity-switch {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.entity-tab {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.entity-tab.active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border-color: var(--color-primary);
+}
+
+.entity-panel :deep(.btn--sm) {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.entity-block {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface);
+}
+
+.entity-block-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.block-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface-muted);
+}
+
+.entry-mode-row {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.entry-mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.entry-mode-button {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.entry-mode-button + .entry-mode-button {
+  border-left: 1px solid var(--color-border);
+}
+
+.entry-mode-button.active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.relation-group {
+  gap: 6px;
+}
+
+.relation-group input[type='text'] {
+  margin-bottom: 0;
+}
+
+.csv-file-input {
+  width: 100%;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.csv-file-input::file-selector-button {
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 12px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.csv-file-input::file-selector-button:hover {
+  filter: brightness(0.96);
+}
+
+.relation-picker {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  max-height: 180px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  background: var(--color-surface);
+}
+
+.relation-item {
+  padding: 2px 0;
+}
+
+.tight {
+  gap: 4px;
+}
+
+.entity-list-item {
+  padding: 10px 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.entity-primary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.entity-inline-meta {
+  white-space: nowrap;
+}
+
+.entity-secondary {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entity-list-item .row {
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.entity-edit-modal {
+  gap: var(--space-4);
+}
+
+@media (max-width: 960px) {
+  .entity-list-item {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .entity-list-item .row {
+    justify-content: flex-start;
+  }
+
+  .team-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 960px) {
+  .markdown-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
