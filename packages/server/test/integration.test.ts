@@ -1303,4 +1303,174 @@ describe('Server integration', () => {
       .send({ name: 'Membership Open Updated' })
     expect(forbiddenPatch.status).toBe(403)
   })
+
+  it('returns validation errors for malformed payloads and unknown routes', async () => {
+    const notFoundRoute = await request(app).get('/api/does-not-exist')
+    expect(notFoundRoute.status).toBe(404)
+    expect(notFoundRoute.body.errors[0].name).toBe('NotFound')
+
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'validator-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'validator-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const invalidProtectedCreate = await organizer.post('/api/tournaments').send({
+      name: 'Invalid Protected Open',
+      style: 1,
+      options: {},
+      auth: { access: { required: true } },
+    })
+    expect(invalidProtectedCreate.status).toBe(400)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Validation Open',
+      style: 1,
+      options: {},
+      auth: { access: { required: true, password: 'secret-123' } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const emptyPatch = await organizer.patch(`/api/tournaments/${tournamentId}`).send({})
+    expect(emptyPatch.status).toBe(400)
+    expect(emptyPatch.body.errors[0].message).toBe('update payload is required')
+
+    const invalidPasswordPatch = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
+      auth: { access: { password: 123 } },
+    })
+    expect(invalidPasswordPatch.status).toBe(400)
+
+    const invalidRoundFilter = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=0`
+    )
+    expect(invalidRoundFilter.status).toBe(400)
+    expect(invalidRoundFilter.body.errors.some((issue: any) => issue.path === 'round')).toBe(true)
+  })
+
+  it('deduplicates submissions for the same submitted entity per round', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-dedupe', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-dedupe', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Dedupe Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const firstBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      comment: 'first submission',
+      submittedEntityId: 'team-a',
+    })
+    expect(firstBallot.status).toBe(201)
+
+    const secondBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-b',
+      scoresA: [70],
+      scoresB: [76],
+      comment: 'second submission',
+      submittedEntityId: 'team-a',
+    })
+    expect(secondBallot.status).toBe(201)
+
+    const adminList = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
+    )
+    expect(adminList.status).toBe(200)
+    expect(adminList.body.data.length).toBe(1)
+    expect(adminList.body.data[0].payload.comment).toBe('second submission')
+
+    const participantList = await organizer.get(
+      `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=ballot&submittedEntityId=team-a`
+    )
+    expect(participantList.status).toBe(200)
+    expect(participantList.body.data.length).toBe(1)
+    expect(participantList.body.data[0].payload.winnerId).toBe('team-b')
+  })
+
+  it('applies forced public draw sanitization even for admins', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'draw-public-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'draw-public-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Draw Public Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const upsert = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      drawOpened: true,
+      allocationOpened: false,
+      locked: true,
+      allocation: [
+        {
+          venue: 'Room A',
+          teams: { gov: 'team-a', opp: 'team-b' },
+          chairs: ['chair-1'],
+          panels: ['panel-1'],
+          trainees: ['trainee-1'],
+        },
+      ],
+    })
+    expect(upsert.status).toBe(201)
+
+    const adminDraws = await organizer.get(`/api/draws?tournamentId=${tournamentId}`)
+    expect(adminDraws.status).toBe(200)
+    expect(adminDraws.body.data[0].allocation[0].chairs).toEqual(['chair-1'])
+    expect(adminDraws.body.data[0].locked).toBe(true)
+
+    const forcedPublic = await organizer.get(`/api/draws?tournamentId=${tournamentId}&public=1`)
+    expect(forcedPublic.status).toBe(200)
+    expect(forcedPublic.body.data[0].allocation[0].chairs).toEqual([])
+    expect(forcedPublic.body.data[0].allocation[0].panels).toEqual([])
+    expect(forcedPublic.body.data[0].allocation[0].trainees).toEqual([])
+    expect('locked' in forcedPublic.body.data[0]).toBe(false)
+    expect('createdBy' in forcedPublic.body.data[0]).toBe(false)
+  })
+
+  it('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
+    const statuses: number[] = []
+    const agent = request.agent(app)
+    for (let i = 0; i < 30; i += 1) {
+      const res = await agent
+        .post('/api/auth/login')
+        .send({ username: 'missing-user', password: 'wrong-password' })
+      statuses.push(res.status)
+    }
+    expect(statuses).not.toContain(429)
+    expect(statuses.every((status) => status === 401)).toBe(true)
+  })
 })
