@@ -72,7 +72,7 @@
 レスポンスは `createdAt` 降順でページング対応（`limit`/`cursor`）とし、`ip`/`userAgent`/`actorRole` を含める。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/MIGRATION_PLAN.md
+- /Users/neon/Desktop/utab/PLAN.md
 - /Users/neon/Desktop/utab/docs/task11-validation.md
 
 ## Phase 1: 認証・権限制御の基盤改修
@@ -282,6 +282,6 @@
 
 **編集候補ファイル**
 - /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
-- /Users/neon/Desktop/utab/MIGRATION.md
-- /Users/neon/Desktop/utab/MIGRATION_PLAN.md
+- /Users/neon/Desktop/utab/README.md
+- /Users/neon/Desktop/utab/PLAN.md
 - /Users/neon/Desktop/utab/packages/server/src/scripts/migrate-security-phase8.ts (新規)

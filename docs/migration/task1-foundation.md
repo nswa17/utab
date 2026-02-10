@@ -32,7 +32,7 @@ utab/
 ├── .prettierrc
 ├── .gitignore
 ├── README.md
-└── MIGRATION_PLAN.md
+└── PLAN.md
 ```
 
 ## メモ
