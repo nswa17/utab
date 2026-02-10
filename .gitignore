@@ -12,4 +12,3 @@ legacy/
 .DS_Store
 .pnpm-store
 *.tsbuildinfo
-tabbycat
