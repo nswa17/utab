@@ -23,7 +23,7 @@
           <input v-model="sortBySender" type="checkbox" />
           <span class="muted">{{ $t('送信者でグループ化') }}</span>
         </label>
-        <Button variant="ghost" size="sm" @click="downloadCsv">
+        <Button variant="secondary" size="sm" @click="downloadCsv">
           {{ $t('CSVダウンロード') }}
         </Button>
       </div>
@@ -38,7 +38,7 @@
     <div v-else class="card stack">
       <div class="row">
         <strong>{{ $t('{label} 結果', { label: labelDisplay(activeLabel) }) }}</strong>
-        <Button variant="ghost" size="sm" @click="deleteAll">{{ $t('全削除') }}</Button>
+        <Button variant="danger" size="sm" @click="deleteAll">{{ $t('全削除') }}</Button>
       </div>
       <p class="muted">
         {{ $t('{count} 件', { count: activeResults.length }) }}

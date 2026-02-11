@@ -181,3 +181,16 @@
 | **Task 10** | ドキュメント整備 | ✅ 完了 | 本ドキュメント他 |
 | **Task 11** | 動作検証 | ✅ 完了 | [詳細](docs/migration/task11-validation.md) |
 | **Task 12** | デプロイ準備 | ✅ 完了 | |
+
+---
+
+## 継続開発ガードレール（UI統一）
+
+- [ ] 新規UI追加・既存UI変更時は、`docs/ui/button-guidelines.md` の運用ルールに沿ってボタン種別を選ぶ
+- [ ] タブ/表示切替は「実行ボタン」ではなくセグメントUIとして実装する
+- [ ] 1つのカード/モーダル内で `primary` を複数並べない（主操作は原則1つ）
+- [ ] 破壊的操作のみ `danger` を使い、戻る/閉じる/補助操作は `ghost` または `secondary` を使う
+- [ ] PR前に以下を必須実行する
+  - `pnpm --filter @utab/web typecheck`
+  - `pnpm --filter @utab/web test`
+- [ ] UI関連変更を入れたPRでは、影響画面を `docs/ui/ui-map.md` に追記・更新する

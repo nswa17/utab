@@ -175,6 +175,10 @@ const searchQuery = ref('')
 const sectionLoading = ref(true)
 const expandedIds = ref<Set<string>>(new Set())
 const payloadExpandedIds = ref<Set<string>>(new Set())
+const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
+  numeric: true,
+  sensitivity: 'base',
+})
 const isLoading = computed(
   () =>
     submissions.loading ||
@@ -211,12 +215,21 @@ const items = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const round = Number(roundFilter.value)
   const hasRoundFilter = roundFilter.value !== '' && Number.isFinite(round)
-  return submissions.submissions.filter((item) => {
+  const filtered = submissions.submissions.filter((item) => {
     const matchesType = typeFilter.value === 'all' ? true : item.type === typeFilter.value
     const matchesRound = hasRoundFilter ? Number(item.round) === round : true
     const submittedByText = submittedBySearchText(item).toLowerCase()
     const matchesSearch = q ? submittedByText.includes(q) : true
     return matchesType && matchesRound && matchesSearch
+  })
+  return filtered.slice().sort((a, b) => {
+    const roundDiff = Number(a.round) - Number(b.round)
+    if (roundDiff !== 0) return roundDiff
+    const nameA = submittedBySearchText(a)
+    const nameB = submittedBySearchText(b)
+    const nameCompare = naturalSortCollator.compare(nameA, nameB)
+    if (nameCompare !== 0) return nameCompare
+    return naturalSortCollator.compare(String(a._id ?? ''), String(b._id ?? ''))
   })
 })
 
@@ -531,18 +544,11 @@ function isPayloadExpanded(id: string) {
 async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
-  const type = typeFilter.value === 'all' ? undefined : typeFilter.value
-  const round = roundFilter.value ? Number(roundFilter.value) : undefined
-  const roundParam = round && !Number.isNaN(round) ? round : undefined
   try {
     await Promise.all([
-      submissions.fetchSubmissions({
-        tournamentId: tournamentId.value,
-        type,
-        round: roundParam,
-      }),
+      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
       rounds.fetchRounds(tournamentId.value),
-      draws.fetchDraws(tournamentId.value, roundParam),
+      draws.fetchDraws(tournamentId.value),
       teams.fetchTeams(tournamentId.value),
       speakers.fetchSpeakers(tournamentId.value),
       adjudicators.fetchAdjudicators(tournamentId.value),
@@ -553,10 +559,6 @@ async function refresh() {
     sectionLoading.value = false
   }
 }
-
-watch([typeFilter, roundFilter], () => {
-  refresh()
-})
 
 watch(
   () => route.query.round,

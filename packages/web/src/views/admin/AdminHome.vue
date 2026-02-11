@@ -67,7 +67,7 @@
             <td>{{ item.user_defined_data?.hidden ? $t('非公開') : $t('公開') }}</td>
             <td>
               <div class="row">
-                <Button variant="ghost" size="sm" :to="`/admin/${item._id}/home`">
+                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/home`">
                   {{ $t('大会管理') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
@@ -108,11 +108,21 @@ const visibleTournaments = computed(() => {
 })
 
 const searchQuery = ref('')
+const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
+  numeric: true,
+  sensitivity: 'base',
+})
 const filteredTournaments = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return visibleTournaments.value
-  return visibleTournaments.value.filter((item) => {
-    return item.name?.toLowerCase().includes(q) || item._id?.toLowerCase().includes(q)
+  const filtered = q
+    ? visibleTournaments.value.filter((item) => {
+        return item.name?.toLowerCase().includes(q) || item._id?.toLowerCase().includes(q)
+      })
+    : visibleTournaments.value
+  return filtered.slice().sort((a, b) => {
+    const nameCompare = naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+    if (nameCompare !== 0) return nameCompare
+    return naturalSortCollator.compare(String(a._id ?? ''), String(b._id ?? ''))
   })
 })
 

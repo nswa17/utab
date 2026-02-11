@@ -5,11 +5,11 @@
       <span>UTab</span>
     </RouterLink>
     <nav v-if="showPrimaryNav" class="primary-nav" aria-label="Primary">
-      <RouterLink to="/admin" :class="{ active: isPrimaryActive('admin') }">
-        {{ $t('大会管理') }}
-      </RouterLink>
       <RouterLink to="/user" :class="{ active: isPrimaryActive('user') }">
         {{ $t('参加者') }}
+      </RouterLink>
+      <RouterLink to="/admin" :class="{ active: isPrimaryActive('admin') }">
+        {{ $t('大会管理') }}
       </RouterLink>
     </nav>
     <div v-else class="primary-nav-placeholder" aria-hidden="true"></div>
@@ -35,10 +35,10 @@
           {{ $t('English') }}
         </button>
       </div>
-      <Button v-if="auth.isAuthenticated" variant="ghost" size="sm" @click="handleLogout">
+      <Button v-if="auth.isAuthenticated" variant="secondary" size="sm" @click="handleLogout">
         {{ $t('ログアウト') }}
       </Button>
-      <Button v-else variant="ghost" size="sm" to="/login">{{ $t('運営ログイン') }}</Button>
+      <Button v-else variant="secondary" size="sm" to="/login">{{ $t('運営ログイン') }}</Button>
     </div>
   </header>
 </template>

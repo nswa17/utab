@@ -75,9 +75,9 @@
             <div class="grid status-grid">
               <div class="card soft stack status-card">
                 <div class="stack status-head status-head-vertical">
-                  <span class="muted small">{{ $t('モーション公開') }}</span>
+                  <h4 class="status-card-title">{{ $t('モーション公開') }}</h4>
                   <div class="switch-state">
-                    <span class="muted small">{{ $t('非公開') }}</span>
+                    <span class="switch-label">{{ $t('非公開') }}</span>
                     <label class="switch">
                       <input
                         type="checkbox"
@@ -87,15 +87,15 @@
                       />
                       <span class="switch-slider"></span>
                     </label>
-                    <span class="muted small">{{ $t('公開') }}</span>
+                    <span class="switch-label">{{ $t('公開') }}</span>
                   </div>
                 </div>
               </div>
               <div class="card soft stack status-card">
                 <div class="stack status-head status-head-vertical">
-                  <span class="muted small">{{ $t('チーム割り当て') }}</span>
+                  <h4 class="status-card-title">{{ $t('チーム割り当て') }}</h4>
                   <div class="switch-state">
-                    <span class="muted small">{{ $t('非公開') }}</span>
+                    <span class="switch-label">{{ $t('非公開') }}</span>
                     <label class="switch">
                       <input
                         type="checkbox"
@@ -105,15 +105,15 @@
                       />
                       <span class="switch-slider"></span>
                     </label>
-                    <span class="muted small">{{ $t('公開') }}</span>
+                    <span class="switch-label">{{ $t('公開') }}</span>
                   </div>
                 </div>
               </div>
               <div class="card soft stack status-card">
                 <div class="stack status-head status-head-vertical">
-                  <span class="muted small">{{ $t('ジャッジ割り当て') }}</span>
+                  <h4 class="status-card-title">{{ $t('ジャッジ割り当て') }}</h4>
                   <div class="switch-state">
-                    <span class="muted small">{{ $t('非公開') }}</span>
+                    <span class="switch-label">{{ $t('非公開') }}</span>
                     <label class="switch">
                       <input
                         type="checkbox"
@@ -123,12 +123,12 @@
                       />
                       <span class="switch-slider"></span>
                     </label>
-                    <span class="muted small">{{ $t('公開') }}</span>
+                    <span class="switch-label">{{ $t('公開') }}</span>
                   </div>
                 </div>
               </div>
               <div class="card soft stack status-card">
-                <span class="muted small">{{ $t('提出状況') }}</span>
+                <h4 class="status-card-title">{{ $t('提出状況') }}</h4>
                 <div class="status-line">
                   <span>{{ $t('スコアシート') }}</span>
                   <strong>{{ ballotSubmittedCount(round) }}/{{ ballotExpectedCount(round) }}</strong>
@@ -140,7 +140,7 @@
                   >
                 </div>
                 <div class="row">
-                  <Button variant="ghost" size="sm" @click="openMissingModal(round.round)">
+                  <Button variant="secondary" size="sm" @click="openMissingModal(round.round)">
                     {{ $t('未提出者を表示') }}
                   </Button>
                 </div>
@@ -157,176 +157,14 @@
                 />
               </Field>
               <div class="row motion-actions">
-                <Button variant="ghost" size="sm" :disabled="isLoading" @click="saveRoundMotion(round)">
-                  {{ $t('モーションを更新') }}
-                </Button>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
+                  class="motion-update-button"
                   size="sm"
-                  class="advanced-toggle-button"
                   :disabled="isLoading"
-                  @click="toggleAdvancedSettings(round._id)"
+                  @click="saveRoundMotion(round)"
                 >
-                  {{
-                    isAdvancedSettingsExpanded(round._id)
-                      ? $t('詳細設定を隠す')
-                      : $t('詳細設定を表示')
-                  }}
-                </Button>
-              </div>
-            </div>
-
-            <div v-show="isAdvancedSettingsExpanded(round._id)" class="stack advanced-settings">
-              <div class="grid weight-grid">
-                <Field :label="$t('チェア重み')" v-slot="{ id, describedBy }">
-                  <input
-                    v-model.number="roundDraft(round).weights.chair"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                    type="number"
-                  />
-                </Field>
-                <Field :label="$t('パネル重み')" v-slot="{ id, describedBy }">
-                  <input
-                    v-model.number="roundDraft(round).weights.panel"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                    type="number"
-                  />
-                </Field>
-                <Field :label="$t('トレーニー重み')" v-slot="{ id, describedBy }">
-                  <input
-                    v-model.number="roundDraft(round).weights.trainee"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                    type="number"
-                  />
-                </Field>
-              </div>
-
-              <section class="stack settings-group">
-                <h5 class="settings-group-title">{{ $t('評価提出設定') }}</h5>
-                <div class="grid settings-options-grid">
-                  <label class="row small setting-option">
-                    <input
-                      v-model="roundDraft(round).userDefined.evaluate_from_adjudicators"
-                      type="checkbox"
-                    />
-                    <span>{{ $t('評価をジャッジから') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('ジャッジからのフィードバック入力を有効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <label class="row small setting-option">
-                    <input v-model="roundDraft(round).userDefined.evaluate_from_teams" type="checkbox" />
-                    <span>{{ $t('評価をチームから') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('チーム/スピーカーからのフィードバック入力を有効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <label class="row small setting-option">
-                    <input
-                      v-model="roundDraft(round).userDefined.chairs_always_evaluated"
-                      type="checkbox"
-                    />
-                    <span>{{ $t('チェアを常に評価') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('チェア評価を必須にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
-                    <select
-                      v-model="roundDraft(round).userDefined.evaluator_in_team"
-                      :id="id"
-                      :aria-describedby="describedBy"
-                    >
-                      <option value="team">{{ $t('チーム') }}</option>
-                      <option value="speaker">{{ $t('スピーカー') }}</option>
-                    </select>
-                    <p class="muted small">
-                      {{ $t('評価者の単位をチームかスピーカーから選択します。') }}
-                    </p>
-                  </Field>
-                </div>
-              </section>
-
-              <section class="stack settings-group">
-                <h5 class="settings-group-title">{{ $t('スコア設定') }}</h5>
-                <div class="grid settings-options-grid">
-                  <label class="row small setting-option">
-                    <input v-model="roundDraft(round).userDefined.no_speaker_score" type="checkbox" />
-                    <span>{{ $t('スピーカースコア無し') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('スピーカースコア入力を無効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <label class="row small setting-option">
-                    <input v-model="roundDraft(round).userDefined.allow_low_tie_win" type="checkbox" />
-                    <span>{{ $t('低勝ち/同点勝ち許可') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('低勝ち・同点勝ちを許可します。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <label class="row small setting-option">
-                    <input
-                      v-model="roundDraft(round).userDefined.score_by_matter_manner"
-                      type="checkbox"
-                    />
-                    <span>{{ $t('Matter/Manner採点') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('Matter/Manner の個別入力を有効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                </div>
-              </section>
-
-              <section class="stack settings-group">
-                <h5 class="settings-group-title">{{ $t('賞設定') }}</h5>
-                <div class="grid settings-options-grid">
-                  <label class="row small setting-option">
-                    <input v-model="roundDraft(round).userDefined.poi" type="checkbox" />
-                    <span>{{ $t('POI賞') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('POI賞の入力を有効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <label class="row small setting-option">
-                    <input v-model="roundDraft(round).userDefined.best" type="checkbox" />
-                    <span>{{ $t('Best Speaker賞') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="$t('ベストスピーカー賞の入力を有効にします。')"
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                </div>
-              </section>
-
-              <div class="row">
-                <Button size="sm" :disabled="isLoading" @click="saveRoundSettings(round)">
-                  {{ $t('設定を保存') }}
+                  {{ $t('モーションを更新') }}
                 </Button>
               </div>
             </div>
@@ -334,26 +172,183 @@
         </div>
 
         <div class="row round-shortcuts">
-          <Button variant="ghost" size="sm" @click="openRoundModal(round.round, 'allocation')">
+          <Button variant="secondary" size="sm" @click="openRoundPage(round.round, 'allocation')">
             {{ $t('対戦表設定') }}
           </Button>
-          <Button variant="ghost" size="sm" @click="openRoundModal(round.round, 'submissions')">
+          <Button variant="secondary" size="sm" @click="openRoundPage(round.round, 'submissions')">
             {{ $t('提出データ閲覧') }}
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="advanced-toggle-button"
+            :class="{ active: isAdvancedSettingsExpanded(round._id) }"
+            :aria-pressed="isAdvancedSettingsExpanded(round._id) ? 'true' : 'false'"
+            :disabled="isLoading"
+            @click="toggleAdvancedSettings(round._id)"
+          >
+            {{ $t('ラウンド詳細設定') }}
+          </Button>
+        </div>
+
+        <div
+          v-show="isExpanded(round._id) && isAdvancedSettingsExpanded(round._id)"
+          class="stack advanced-settings"
+        >
+          <div class="grid weight-grid">
+            <Field :label="$t('チェア重み')" v-slot="{ id, describedBy }">
+              <input
+                v-model.number="roundDraft(round).weights.chair"
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+              />
+            </Field>
+            <Field :label="$t('パネル重み')" v-slot="{ id, describedBy }">
+              <input
+                v-model.number="roundDraft(round).weights.panel"
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+              />
+            </Field>
+            <Field :label="$t('トレーニー重み')" v-slot="{ id, describedBy }">
+              <input
+                v-model.number="roundDraft(round).weights.trainee"
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+              />
+            </Field>
+          </div>
+
+          <section class="stack settings-group">
+            <h5 class="settings-group-title">{{ $t('評価提出設定') }}</h5>
+            <div class="grid settings-options-grid">
+              <label class="row small setting-option">
+                <input
+                  v-model="roundDraft(round).userDefined.evaluate_from_adjudicators"
+                  type="checkbox"
+                />
+                <span>{{ $t('評価をジャッジから') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('ジャッジからのフィードバック入力を有効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDraft(round).userDefined.evaluate_from_teams" type="checkbox" />
+                <span>{{ $t('評価をチームから') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('チーム/スピーカーからのフィードバック入力を有効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <label class="row small setting-option">
+                <input
+                  v-model="roundDraft(round).userDefined.chairs_always_evaluated"
+                  type="checkbox"
+                />
+                <span>{{ $t('チェアを常に評価') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('チェア評価を必須にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
+                <select
+                  v-model="roundDraft(round).userDefined.evaluator_in_team"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                >
+                  <option value="team">{{ $t('チーム') }}</option>
+                  <option value="speaker">{{ $t('スピーカー') }}</option>
+                </select>
+                <p class="muted small">
+                  {{ $t('評価者の単位をチームかスピーカーから選択します。') }}
+                </p>
+              </Field>
+            </div>
+          </section>
+
+          <section class="stack settings-group">
+            <h5 class="settings-group-title">{{ $t('スコア設定') }}</h5>
+            <div class="grid settings-options-grid">
+              <label class="row small setting-option">
+                <input v-model="roundDraft(round).userDefined.no_speaker_score" type="checkbox" />
+                <span>{{ $t('スピーカースコア無し') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('スピーカースコア入力を無効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDraft(round).userDefined.allow_low_tie_win" type="checkbox" />
+                <span>{{ $t('低勝ち/同点勝ち許可') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('低勝ち・同点勝ちを許可します。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <label class="row small setting-option">
+                <input
+                  v-model="roundDraft(round).userDefined.score_by_matter_manner"
+                  type="checkbox"
+                />
+                <span>{{ $t('Matter/Manner採点') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('Matter/Manner の個別入力を有効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+            </div>
+          </section>
+
+          <section class="stack settings-group">
+            <h5 class="settings-group-title">{{ $t('賞設定') }}</h5>
+            <div class="grid settings-options-grid">
+              <label class="row small setting-option">
+                <input v-model="roundDraft(round).userDefined.poi" type="checkbox" />
+                <span>{{ $t('POI賞') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('POI賞の入力を有効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDraft(round).userDefined.best" type="checkbox" />
+                <span>{{ $t('Best Speaker賞') }}</span>
+                <span
+                  class="help-badge"
+                  :title="$t('ベストスピーカー賞の入力を有効にします。')"
+                  aria-hidden="true"
+                  >?</span
+                >
+              </label>
+            </div>
+          </section>
+
+          <div class="row">
+            <Button size="sm" :disabled="isLoading" @click="saveRoundSettings(round)">
+              {{ $t('設定を保存') }}
+            </Button>
+          </div>
         </div>
       </article>
-    </div>
-
-    <div v-if="quickView" class="modal-backdrop" role="presentation" @click.self="closeQuickView">
-      <div class="modal card stack quick-modal" role="dialog" aria-modal="true">
-        <div class="modal-head">
-          <strong>{{ quickViewTitle }}</strong>
-          <button type="button" class="modal-close" :aria-label="$t('閉じる')" @click="closeQuickView">
-            ×
-          </button>
-        </div>
-        <iframe :src="quickViewSrc" class="quick-frame" />
-      </div>
     </div>
 
     <div
@@ -414,7 +409,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
@@ -428,6 +423,7 @@ import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 
 const route = useRoute()
+const router = useRouter()
 const roundsStore = useRoundsStore()
 const drawsStore = useDrawsStore()
 const submissionsStore = useSubmissionsStore()
@@ -442,7 +438,6 @@ const expandedRounds = ref<Record<string, boolean>>({})
 const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
 const sectionLoading = ref(true)
-const quickView = ref<{ round: number; type: 'allocation' | 'submissions' } | null>(null)
 const isLoading = computed(
   () =>
     roundsStore.loading ||
@@ -553,22 +548,6 @@ function roundLabel(roundNumber: number) {
   const round = sortedRounds.value.find((item) => Number(item.round) === Number(roundNumber))
   return round?.name || t('ラウンド {round}', { round: roundNumber })
 }
-
-const quickViewTitle = computed(() => {
-  if (!quickView.value) return ''
-  const label = roundLabel(quickView.value.round)
-  return quickView.value.type === 'allocation'
-    ? `${label} ${t('対戦表設定')}`
-    : `${label} ${t('提出データ閲覧')}`
-})
-
-const quickViewSrc = computed(() => {
-  if (!quickView.value) return ''
-  if (quickView.value.type === 'allocation') {
-    return `/admin-embed/${tournamentId.value}/rounds/${quickView.value.round}/allocation`
-  }
-  return `/admin-embed/${tournamentId.value}/submissions?round=${quickView.value.round}`
-})
 
 const missingModalRoundConfig = computed(() => {
   if (missingModalRound.value === null) return null
@@ -837,12 +816,15 @@ async function saveRoundMotion(round: any) {
   })
 }
 
-function openRoundModal(roundNumber: number, type: 'allocation' | 'submissions') {
-  quickView.value = { round: roundNumber, type }
-}
-
-function closeQuickView() {
-  quickView.value = null
+function openRoundPage(roundNumber: number, type: 'allocation' | 'submissions') {
+  if (type === 'allocation') {
+    router.push(`/admin/${tournamentId.value}/rounds/${roundNumber}/allocation`)
+    return
+  }
+  router.push({
+    path: `/admin/${tournamentId.value}/submissions`,
+    query: { round: String(roundNumber) },
+  })
 }
 
 function openMissingModal(roundNumber: number) {
@@ -1014,6 +996,16 @@ watch(
   flex-wrap: wrap;
 }
 
+.motion-update-button {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.motion-update-button:hover {
+  background: #fed7aa;
+}
+
 .motion-field {
   width: 100%;
 }
@@ -1024,6 +1016,12 @@ watch(
 
 .advanced-toggle-button {
   white-space: nowrap;
+  border-color: var(--color-border);
+}
+
+.advanced-toggle-button.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .advanced-settings {
@@ -1065,6 +1063,13 @@ watch(
   border: 1px solid var(--color-border);
 }
 
+.status-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 .status-head {
   justify-content: space-between;
   align-items: center;
@@ -1081,6 +1086,12 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.switch-label {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .status-line {
@@ -1177,18 +1188,6 @@ watch(
   width: 100%;
   max-height: 90vh;
   overflow: auto;
-}
-
-.quick-modal {
-  max-width: min(1200px, 95vw);
-}
-
-.quick-frame {
-  width: 100%;
-  height: min(80vh, 860px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
 }
 
 .missing-modal {

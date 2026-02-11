@@ -146,6 +146,7 @@ const round = computed(() => Number(route.params.round))
 const viewMode = ref<'card' | 'table'>('card')
 const sortKey = ref<'venue' | 'gov' | 'opp'>('venue')
 const sortDirection = ref<'asc' | 'desc'>('asc')
+const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
 const isLoading = computed(
   () =>
@@ -190,7 +191,7 @@ const tableRows = computed(() => {
     .sort((a, b) => {
       const left = rowSortValue(a.row, sortKey.value)
       const right = rowSortValue(b.row, sortKey.value)
-      const diff = left.localeCompare(right, 'ja')
+      const diff = sortCollator.compare(left, right)
       if (diff !== 0) return sortDirection.value === 'asc' ? diff : -diff
       return a.index - b.index
     })
@@ -330,6 +331,10 @@ onMounted(() => {
 
 .draw-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.draw-table tbody tr:nth-child(even) td {
+  background: var(--color-surface-muted);
 }
 
 .match-sides {

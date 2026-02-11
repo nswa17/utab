@@ -66,6 +66,43 @@ describe('submissions store', () => {
     expect(store.error).toBeNull()
   })
 
+  it('keeps only the latest admin submissions response when requests resolve out of order', async () => {
+    const store = useSubmissionsStore()
+    const staleRows = [{ _id: 'stale', type: 'ballot', round: 1, payload: {} }]
+    const latestRows = [{ _id: 'latest', type: 'feedback', round: 2, payload: {} }]
+    let resolveFirst: (value: any) => void = () => {}
+    let resolveSecond: (value: any) => void = () => {}
+
+    mockedApi.get
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve
+          })
+      )
+
+    const first = store.fetchSubmissions({ tournamentId: 'tournament-1' })
+    const second = store.fetchSubmissions({
+      tournamentId: 'tournament-1',
+      type: 'feedback',
+    })
+
+    resolveSecond({ data: { data: latestRows } })
+    await second
+    resolveFirst({ data: { data: staleRows } })
+    const firstResult = await first
+
+    expect(firstResult).toEqual([])
+    expect(store.submissions).toEqual(latestRows)
+    expect(store.loading).toBe(false)
+  })
+
   it('clears stale participant submissions when fetch fails', async () => {
     const store = useSubmissionsStore()
     store.submissions = [{ _id: 'old-row' } as any]

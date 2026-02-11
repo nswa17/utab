@@ -112,7 +112,7 @@
         <section class="card stack">
           <div class="row">
             <h4>{{ $t('一覧') }}</h4>
-            <Button variant="ghost" size="sm" @click="downloadCsv">
+            <Button variant="secondary" size="sm" @click="downloadCsv">
               {{ $t('CSVダウンロード') }}
             </Button>
           </div>
@@ -141,10 +141,10 @@
           <div class="row">
             <h4>{{ $t('スライド') }}</h4>
             <div class="inline">
-              <Button variant="ghost" size="sm" @click="showSlides = !showSlides">
+              <Button variant="secondary" size="sm" @click="showSlides = !showSlides">
                 {{ showSlides ? $t('閉じる') : $t('表示') }}
               </Button>
-              <Button variant="ghost" size="sm" @click="slideSettingsOpen = !slideSettingsOpen">
+              <Button variant="secondary" size="sm" @click="slideSettingsOpen = !slideSettingsOpen">
                 {{ slideSettingsOpen ? $t('設定を隠す') : $t('設定を表示') }}
               </Button>
             </div>
@@ -229,7 +229,7 @@
                 <span class="muted">{{ $t('表彰枠') }}</span>
                 <input v-model.number="awardCopyLimit" type="number" min="1" />
               </label>
-              <Button variant="ghost" size="sm" @click="copyAwardText">
+              <Button variant="secondary" size="sm" @click="copyAwardText">
                 {{ $t('コピー') }}
               </Button>
             </div>

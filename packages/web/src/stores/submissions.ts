@@ -45,6 +45,19 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const submissions = ref<Submission[]>([])
+  const pendingRequests = ref(0)
+  const adminFetchSequence = ref(0)
+  const participantFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
 
   async function postWithTimeout(path: string, payload: unknown, timeoutMs = SUBMISSION_TIMEOUT_MS) {
     const controller = new AbortController()
@@ -68,17 +81,24 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
-    loading.value = true
+    const sequence = ++adminFetchSequence.value
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/submissions', { params })
+      if (sequence !== adminFetchSequence.value) {
+        return []
+      }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
+      if (sequence !== adminFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -88,18 +108,25 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
-    loading.value = true
+    const sequence = ++participantFetchSequence.value
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/submissions/mine', { params })
+      if (sequence !== participantFetchSequence.value) {
+        return []
+      }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
+      if (sequence !== participantFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
       submissions.value = []
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -109,7 +136,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   async function submitBallot(payload: BallotSubmissionPayload) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       return await postWithTimeout('/submissions/ballots', payload)
@@ -117,12 +144,12 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function submitFeedback(payload: FeedbackSubmissionPayload) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       return await postWithTimeout('/submissions/feedback', payload)
@@ -130,7 +157,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

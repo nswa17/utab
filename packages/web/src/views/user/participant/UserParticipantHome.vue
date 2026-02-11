@@ -48,68 +48,6 @@
       </div>
 
       <template v-if="isAudience">
-        <div class="row audience-toolbar">
-          <div class="view-switch" role="group" :aria-label="$t('表示形式')">
-            <button
-              type="button"
-              class="view-button"
-              :class="{ active: audienceViewMode === 'card' }"
-              :aria-pressed="audienceViewMode === 'card' ? 'true' : 'false'"
-              :title="$t('カード表示')"
-              @click="manualAudienceViewMode = 'card'"
-            >
-              <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-                <rect
-                  x="3"
-                  y="4"
-                  width="14"
-                  height="5"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
-                <rect
-                  x="3"
-                  y="11"
-                  width="14"
-                  height="5"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="view-button"
-              :class="{ active: audienceViewMode === 'table' }"
-              :aria-pressed="audienceViewMode === 'table' ? 'true' : 'false'"
-              :title="$t('テーブル表示')"
-              @click="manualAudienceViewMode = 'table'"
-            >
-              <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-                <rect
-                  x="3"
-                  y="4"
-                  width="14"
-                  height="12"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
-                <path
-                  d="M3 8h14M8 4v12M13 4v12"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
         <div v-for="round in visibleRounds" :key="round._id" class="card stack compact-round">
           <button
             type="button"
@@ -265,7 +203,7 @@
                     <span v-if="task.description" class="muted small">{{ task.description }}</span>
                   </div>
                   <Button
-                    :variant="task.completed ? 'ghost' : 'primary'"
+                    :variant="task.completed ? 'secondary' : 'primary'"
                     size="sm"
                     class="task-action"
                     :to="task.to"
@@ -284,7 +222,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTournamentStore } from '@/stores/tournament'
 import { useStylesStore } from '@/stores/styles'
@@ -313,6 +251,7 @@ type TaskItem = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const tournamentStore = useTournamentStore()
 const stylesStore = useStylesStore()
 const roundsStore = useRoundsStore()
@@ -410,15 +349,16 @@ const errorMessage = computed(
 )
 
 const roundExpanded = ref<Record<number, boolean>>({})
-const manualAudienceViewMode = ref<'card' | 'table' | null>(null)
 type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair'
 type AudienceSortDirection = 'asc' | 'desc'
 type AudienceSortState = { key: AudienceSortKey; direction: AudienceSortDirection }
 const audienceTableSortByRound = ref<Record<number, AudienceSortState>>({})
 const audienceViewMode = computed<'card' | 'table'>(() => {
-  if (manualAudienceViewMode.value) return manualAudienceViewMode.value
+  if (route.query.viewMode === 'table') return 'table'
+  if (route.query.viewMode === 'card') return 'card'
   return teamsStore.teams.length >= 20 ? 'table' : 'card'
 })
+const audienceSortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
 const feedbackSubmittedKeySet = computed(() => {
   const set = new Set<string>()
@@ -643,7 +583,7 @@ function sortedAudienceTableAllocation(roundNumber: number) {
     .sort((a: { row: DrawAllocationRow; index: number }, b: { row: DrawAllocationRow; index: number }) => {
       const left = audienceSortValue(a.row, state.key)
       const right = audienceSortValue(b.row, state.key)
-      const diff = left.localeCompare(right, 'ja')
+      const diff = audienceSortCollator.compare(left, right)
       if (diff !== 0) {
         return state.direction === 'asc' ? diff : -diff
       }
@@ -819,9 +759,23 @@ watch([activeSubmittedEntityId, speakerIdentityId, speakerSelectionRequired], ()
 })
 
 watch(
+  [participant, tournamentId, () => teamsStore.teams.length, () => route.query.viewMode],
+  () => {
+    if (!isAudience.value) return
+    if (route.query.viewMode === 'card' || route.query.viewMode === 'table') return
+    router.replace({
+      query: {
+        ...route.query,
+        viewMode: 'table',
+      },
+    })
+  },
+  { immediate: true }
+)
+
+watch(
   [tournamentId, participant],
   () => {
-    manualAudienceViewMode.value = null
     refresh()
   },
   { immediate: true }
@@ -878,39 +832,6 @@ select {
 .compact-round {
   padding-top: var(--space-3);
   padding-bottom: var(--space-3);
-}
-
-.audience-toolbar {
-  justify-content: flex-start;
-}
-
-.view-switch {
-  display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-
-.view-button {
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.view-button + .view-button {
-  border-left: 1px solid var(--color-border);
-}
-
-.view-button.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
 }
 
 .round-toggle {
@@ -980,6 +901,10 @@ select {
 
 .draw-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.draw-table tbody tr:nth-child(even) td {
+  background: var(--color-surface-muted);
 }
 
 .draw-row {

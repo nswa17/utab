@@ -8,8 +8,16 @@
 
 ## 表示位置
 
-- 画面: `packages/web/src/views/admin/AdminTournament.vue`
-- 表示ブロック: 重複提出警告・大会お知らせの下、タブナビゲーションの上
+- 画面: `packages/web/src/views/admin/AdminTournamentHome.vue`
+- 表示条件: `/admin/:tournamentId/home` かつ `section=overview`（大会設定タブ）
+- 表示ブロック: 大会設定カードの直下
+
+## 参加者画面での表示
+
+- 画面: `packages/web/src/views/user/UserTournament.vue`
+- 表示位置: 大会名（ヘッダー見出し）の左側
+- 表示内容: コンパクトQR（クリックで大会アクセスURLをコピー）
+- 生成URL: 管理画面と同じく `/user/:tournamentId/home`
 
 ## URL 生成仕様
 
