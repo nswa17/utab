@@ -5,6 +5,8 @@
     :class="[`btn--${variant}`, `btn--${size}`, { 'is-loading': loading, 'is-disabled': isDisabled }]"
     :to="to"
     :href="href"
+    :target="isAnchor ? target : undefined"
+    :rel="isAnchor ? rel : undefined"
     :type="isButton ? type : undefined"
     :aria-label="ariaLabel"
     :aria-busy="loading ? 'true' : undefined"
@@ -31,6 +33,8 @@ const props = withDefaults(
     type?: 'button' | 'submit' | 'reset'
     to?: string
     href?: string
+    target?: string
+    rel?: string
     ariaLabel?: string
   }>(),
   {
@@ -41,6 +45,8 @@ const props = withDefaults(
     type: 'button',
     to: undefined,
     href: undefined,
+    target: undefined,
+    rel: undefined,
     ariaLabel: undefined,
   }
 )
@@ -52,6 +58,7 @@ const component = computed(() => {
   return 'button'
 })
 const isButton = computed(() => component.value === 'button')
+const isAnchor = computed(() => component.value === 'a')
 
 function handleClick(event: MouseEvent) {
   if (!isDisabled.value) return
