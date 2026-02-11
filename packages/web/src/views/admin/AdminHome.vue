@@ -36,7 +36,7 @@
           v-model="searchQuery"
           :id="id"
           :aria-describedby="describedBy"
-          :placeholder="$t('大会名またはIDで検索')"
+          :placeholder="$t('大会名で検索')"
         />
       </Field>
       <LoadingState v-if="tournament.loading || styles.loading" />
@@ -50,8 +50,7 @@
           <tr>
             <th>{{ $t('大会名') }}</th>
             <th>{{ $t('スタイル') }}</th>
-            <th>ID</th>
-            <th>{{ $t('公開') }}</th>
+            <th>{{ $t('更新日') }}</th>
             <th>{{ $t('操作') }}</th>
           </tr>
         </thead>
@@ -60,11 +59,13 @@
             <td>
               <RouterLink class="name-link" :to="`/admin/${item._id}/home`">
                 <strong>{{ item.name }}</strong>
+                <span v-if="item.user_defined_data?.hidden" class="visibility-badge">
+                  {{ $t('非公開') }}
+                </span>
               </RouterLink>
             </td>
             <td>{{ styleName(item.style) }}</td>
-            <td><code>{{ item._id }}</code></td>
-            <td>{{ item.user_defined_data?.hidden ? $t('非公開') : $t('公開') }}</td>
+            <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
             <td>
               <div class="row">
                 <Button variant="secondary" size="sm" :to="`/admin/${item._id}/home`">
@@ -116,7 +117,7 @@ const filteredTournaments = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const filtered = q
     ? visibleTournaments.value.filter((item) => {
-        return item.name?.toLowerCase().includes(q) || item._id?.toLowerCase().includes(q)
+        return item.name?.toLowerCase().includes(q)
       })
     : visibleTournaments.value
   return filtered.slice().sort((a, b) => {
@@ -157,6 +158,19 @@ function styleName(styleId: number) {
   return styles.styles.find((s) => s.id === styleId)?.name ?? String(styleId)
 }
 
+function formatDate(raw?: string) {
+  if (!raw) return '—'
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 async function refresh() {
   await Promise.all([tournament.fetchTournaments(), styles.fetchStyles()])
   if (!form.style && styles.styles.length > 0) {
@@ -183,7 +197,23 @@ async function remove(id: string) {
 }
 
 .name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   color: inherit;
+}
+
+.visibility-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.55rem;
 }
 
 .section-title {
