@@ -766,7 +766,7 @@ watch(
     router.replace({
       query: {
         ...route.query,
-        viewMode: teamsStore.teams.length >= 20 ? 'table' : 'card',
+        viewMode: 'table',
       },
     })
   },
