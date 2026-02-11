@@ -23,7 +23,7 @@
           :aria-pressed="locale === 'ja' ? 'true' : 'false'"
           @click="changeLocale('ja')"
         >
-          日本語
+          {{ $t('日本語') }}
         </button>
         <button
           type="button"

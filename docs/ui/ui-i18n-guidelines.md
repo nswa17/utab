@@ -20,8 +20,20 @@
 - Numbers: use locale-aware formatting (`toLocaleString`, Highcharts locale labels).
 - Ordinal or ranking labels must branch by locale when needed.
 
+## Default Locale Policy
+- Default locale is English (`en`) when no user preference is stored.
+- Persist explicit user locale selection in local storage.
+- Keep fallback locale as English so missing entries do not fall back to Japanese unexpectedly.
+
+## Debate Terminology Policy (English)
+- `対戦表` => `Draw`
+- `スコアシート` => `Ballot`
+- `ジャッジ` => `Adjudicator`
+- Use debate-context wording consistently across admin and participant screens.
+
 ## Review Checklist
 - No raw UI strings in `.vue` templates (except IDs/classes).
 - No missing key warnings in runtime logs.
 - Long labels remain readable in both Japanese and English.
 - Placeholders are substituted correctly in both languages.
+- New/updated keys should be checked with a static scan so `$t('...')` keys are all present in `messages.ts`.

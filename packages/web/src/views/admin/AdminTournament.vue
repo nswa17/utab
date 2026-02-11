@@ -1,10 +1,21 @@
 <template>
   <section class="stack">
-    <div class="row">
-      <Button variant="ghost" size="sm" @click="goBack">← {{ $t('大会一覧') }}</Button>
-      <h2>{{ tournament?.name ?? $t('大会詳細') }}</h2>
-      <span class="muted small tournament-id">{{ $t('大会ID: {id}', { id: tournamentId }) }}</span>
-      <ReloadButton @click="refreshSection" :disabled="sectionLoading" :loading="sectionLoading" />
+    <div class="row header-row">
+      <div class="row header-main">
+        <Button variant="secondary" size="sm" @click="goBack">← {{ $t('大会一覧') }}</Button>
+        <div class="stack header-title-block">
+          <h2>{{ tournament?.name ?? $t('大会詳細') }}</h2>
+          <span class="muted small tournament-id">{{
+            $t('大会ID: {id}', { id: tournamentId })
+          }}</span>
+        </div>
+      </div>
+      <ReloadButton
+        class="header-reload"
+        @click="refreshSection"
+        :disabled="sectionLoading"
+        :loading="sectionLoading"
+      />
     </div>
     <LoadingState v-if="sectionLoading" />
     <template v-else>
@@ -40,17 +51,29 @@
     <nav class="subnav">
       <button
         type="button"
-        class="tab-link"
+        class="subnav-link"
         :class="{ active: isOverviewActive }"
         @click="openOverview"
       >
         {{ $t('大会設定') }}
       </button>
-      <RouterLink :to="`/admin/${tournamentId}/rounds`">{{ $t('ラウンド管理') }}</RouterLink>
-      <button type="button" class="tab-link" :class="{ active: isDataActive }" @click="openData">
+      <RouterLink
+        :to="`/admin/${tournamentId}/rounds`"
+        class="subnav-link"
+        :class="{ active: isRoundsActive }"
+      >
+        {{ $t('ラウンド管理') }}
+      </RouterLink>
+      <button type="button" class="subnav-link" :class="{ active: isDataActive }" @click="openData">
         {{ $t('大会データ管理') }}
       </button>
-      <RouterLink :to="`/admin/${tournamentId}/compiled`">{{ $t('レポート生成') }}</RouterLink>
+      <RouterLink
+        :to="`/admin/${tournamentId}/compiled`"
+        class="subnav-link"
+        :class="{ active: isCompiledActive }"
+      >
+        {{ $t('レポート生成') }}
+      </RouterLink>
     </nav>
 
     <RouterView v-if="!sectionLoading" />
@@ -89,6 +112,10 @@ const isDataActive = computed(() => {
   if (route.path !== `/admin/${tournamentId.value}/home`) return false
   return String(route.query.section ?? '') === 'data'
 })
+const isRoundsActive = computed(() => route.path.startsWith(`/admin/${tournamentId.value}/rounds`))
+const isCompiledActive = computed(() =>
+  route.path.startsWith(`/admin/${tournamentId.value}/compiled`)
+)
 
 function goBack() {
   router.push('/admin')
@@ -175,41 +202,71 @@ watch(
 </script>
 
 <style scoped>
+.header-row {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.header-main {
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.header-title-block {
+  gap: 2px;
+  min-width: 0;
+}
+
+.header-title-block h2 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.header-reload {
+  margin-left: auto;
+}
+
 .subnav {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
 
-.subnav a {
+.subnav-link {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-muted);
   background: var(--color-surface);
-}
-
-.tab-link {
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  background: var(--color-surface);
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
   font: inherit;
 }
 
-.subnav a.router-link-active,
-.tab-link.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+.subnav-link:hover {
+  border-color: #bfdbfe;
+  color: var(--color-primary);
+}
+
+.subnav-link.router-link-active,
+.subnav-link.active {
+  background: var(--color-secondary);
+  color: var(--color-primary);
   border-color: var(--color-primary);
 }
 
 .tournament-id {
-  margin-left: auto;
+  margin: 0;
 }
 
 .duplicate-warning {
@@ -238,5 +295,13 @@ watch(
   justify-content: center;
   font-size: 0.8rem;
   font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .subnav-link {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+  }
 }
 </style>

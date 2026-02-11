@@ -194,3 +194,38 @@
   - `pnpm --filter @utab/web typecheck`
   - `pnpm --filter @utab/web test`
 - [ ] UI関連変更を入れたPRでは、影響画面を `docs/ui/ui-map.md` に追記・更新する
+- [ ] 文言追加・変更時は `docs/ui/ui-i18n-guidelines.md` の用語方針（Draw/Ballot/Adjudicator）と英語デフォルト方針を確認する
+
+### UI Philosophy（詳細）
+
+1. 目的
+- 「最初に見る人が、次に押すべき操作を迷わない」ことを最優先にする。
+- 同じ意味の操作は、画面が違っても同じ見た目・同じ位置関係で表現する。
+
+2. 操作優先度の原則
+- `primary`: その領域で最重要の実行操作。原則1つのみ。
+- `secondary`: 実行操作だが主操作ではないもの（遷移・更新・コピー等）。
+- `ghost`: 補助操作（戻る、閉じる、展開、詳細表示）。
+- `danger`: 破壊的操作のみ（削除、全削除）。
+
+3. ナビゲーションの原則
+- タブ、表示切替、モード切替は「実行ボタン」と分離してセグメントUIで扱う。
+- active状態は「薄い強調背景 + ブランド色文字」を基本とし、濃色塗りは多用しない。
+- `admin/:tournamentId` 配下と `user/:tournamentId` 配下で、同種UIは同じトーンに揃える。
+
+4. 視覚トークンの原則
+- 色・余白・角丸は既存トークン（`packages/web/src/styles.css`）を優先し、個別色の直書きを増やさない。
+- 新しいUIパーツは既存コンポーネント（`Button`, `Field`, `Table`, `ReloadButton`）を再利用する。
+- 単発の例外スタイルを追加した場合は、後続で共通化できるかを必ず検討する。
+
+5. 実装時チェック（Definition of Done）
+- 新規/変更UIが `docs/ui/button-guidelines.md` と矛盾しない。
+- active/inactive/hover/disabled の状態差が視認可能で、意味づけが一貫している。
+- 同一画面内で `primary` が複数存在しない。
+- 影響範囲を `docs/ui/ui-map.md` に追記済み。
+- `pnpm --filter @utab/web typecheck` と `pnpm --filter @utab/web test` が通過している。
+
+6. レビュー観点（UI崩れ防止）
+- 「この操作は本当に `ghost` か？」を必ずレビューで確認する。
+- 「これはタブか、実行ボタンか？」を分離して命名・見た目を決める。
+- 既存画面との比較スクリーンショットで、色調と操作階層の不整合を確認する。

@@ -433,9 +433,9 @@ const awardCopyText = computed(() => {
         Array.isArray(row.teams) && row.teams.length > 0 ? `（${row.teams.map((item: any) => String(item)).join('/')}）` : ''
       const metric =
         activeLabel.value === 'poi'
-          ? `${Math.round(Number(row.poi ?? 0) * 1000) / 1000}回`
+          ? formatTimesCount(Number(row.poi ?? 0))
           : activeLabel.value === 'best'
-            ? `${Math.round(Number(row.best ?? 0) * 1000) / 1000}回`
+            ? formatTimesCount(Number(row.best ?? 0))
             : locale.value === 'ja'
               ? `${row.ranking}位`
               : ordinal(Number(row.ranking))
@@ -713,6 +713,12 @@ function ordinal(value: number) {
   if (mod10 === 2 && mod100 !== 12) return `${v}nd`
   if (mod10 === 3 && mod100 !== 13) return `${v}rd`
   return `${v}th`
+}
+
+function formatTimesCount(value: number) {
+  const rounded = Math.round(value * 1000) / 1000
+  if (locale.value === 'ja') return `${rounded}回`
+  return `${rounded} times`
 }
 
 function labelDisplay(label: string) {
@@ -1012,7 +1018,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
-  color: var(--color-text);
+  color: var(--color-muted);
   min-height: 34px;
   padding: 0 12px;
   font-size: 0.85rem;
@@ -1020,9 +1026,14 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   cursor: pointer;
 }
 
+.label-tab:hover {
+  border-color: #bfdbfe;
+  color: var(--color-primary);
+}
+
 .label-tab.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-secondary);
+  color: var(--color-primary);
   border-color: var(--color-primary);
 }
 

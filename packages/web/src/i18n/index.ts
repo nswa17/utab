@@ -10,28 +10,28 @@ function normalizeLocale(value: string | null | undefined): Locale | null {
   return null
 }
 
-function detectBrowserLocale(): Locale {
-  if (typeof navigator === 'undefined') return 'ja'
-  const lang = navigator.language?.toLowerCase() ?? ''
-  return lang.startsWith('ja') ? 'ja' : 'en'
-}
-
 export function resolveLocale(): Locale {
-  if (typeof window === 'undefined') return 'ja'
-  const stored = normalizeLocale(window.localStorage.getItem(STORAGE_KEY))
-  return stored ?? detectBrowserLocale()
+  if (typeof window === 'undefined') return 'en'
+  const storage = window.localStorage as Storage | undefined
+  const stored = normalizeLocale(
+    storage && typeof storage.getItem === 'function' ? storage.getItem(STORAGE_KEY) : null
+  )
+  return stored ?? 'en'
 }
 
 export function persistLocale(locale: Locale) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, locale)
+  const storage = window.localStorage as Storage | undefined
+  if (storage && typeof storage.setItem === 'function') {
+    storage.setItem(STORAGE_KEY, locale)
+  }
 }
 
 export const i18n = createI18n({
   legacy: false,
   globalInjection: true,
   locale: resolveLocale(),
-  fallbackLocale: 'ja',
+  fallbackLocale: 'en',
   messages,
   missingWarn: false,
   fallbackWarn: false,
