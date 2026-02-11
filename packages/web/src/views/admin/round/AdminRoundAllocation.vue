@@ -23,7 +23,7 @@
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           @click="refreshSubmissions"
           :disabled="submissionsStore.loading"
@@ -381,7 +381,7 @@
         <div class="row allocation-toolbar">
           <div class="row action-row">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               @click="showAutoGenerateModal = true"
               :disabled="isLoading || requestLoading"
@@ -389,7 +389,7 @@
               {{ $t('自動生成') }}
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               @click="clearAllocation"
               :disabled="locked || allocation.length === 0"
@@ -398,7 +398,7 @@
             </Button>
             <Button size="sm" @click="save" :disabled="isLoading || locked">{{ $t('保存') }}</Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               @click="revertAllocation"
               :disabled="!allocationChanged"

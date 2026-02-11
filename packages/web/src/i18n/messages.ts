@@ -278,6 +278,7 @@ const en = {
   参加者に非公開: 'Hidden from participants',
   大会を非公開: 'Hide tournament',
   参加者ダッシュボード: 'Participant dashboard',
+  現在公開中の大会: 'Currently open tournaments',
   '参加者ホームでジャッジを選択してください。': 'Select a judge on the participant home.',
   '参加者ホームでジャッジを選択すると、割当の試合に絞り込めます。':
     'Selecting a judge on the participant home filters assigned matches.',
@@ -295,6 +296,7 @@ const en = {
     'Selecting a team on the participant home filters evaluables.',
   参加者ログイン: 'Participant login',
   '参加者のログイン要否とキーを設定します。': 'Configure participant login requirements and keys.',
+  大会を公開: 'Publish tournament',
   大会アクセス: 'Tournament access',
   参加者アクセス用QRコード: 'Participant access QR code',
   '参加者がスマホで読み取って大会ページを開けます。':
@@ -308,6 +310,9 @@ const en = {
   'クリップボードへのコピーに失敗しました。': 'Failed to copy to clipboard.',
   '大会パスワードが必要な場合、参加者は表示された画面で入力します。':
     'If a tournament password is required, participants enter it on the shown screen.',
+  大会パスワード設定: 'Tournament password setting',
+  不要: 'Off',
+  設定: 'Set',
   大会パスワード: 'Tournament password',
   大会パスワード必須: 'Require tournament password',
   '大会パスワードを入力してください。': 'Enter the tournament password.',
@@ -336,6 +341,7 @@ const en = {
   '大会情報 (Markdown)': 'Tournament info (Markdown)',
   '大会情報（Markdown形式対応）': 'Tournament info (Markdown supported)',
   '重要なお知らせ（Markdown形式対応）': 'Important notice (Markdown supported)',
+  重要なお知らせを更新: 'Update important notice',
   '大会情報が見つかりません。': 'Tournament not found.',
   '大会パスワードを設定すると、参加者に入力を求められます。':
     'When enabled, participants are asked for the tournament password.',
@@ -348,6 +354,7 @@ const en = {
   大会編集: 'Edit tournament',
   大会設定: 'Tournament settings',
   '大会参加可能（デフォルト値）': 'Eligible for tournament participation (default)',
+  '使用可能（デフォルト値）': 'Available (default)',
   大会詳細: 'Tournament details',
   対戦相手: 'Opponents',
   検索してチームを絞り込む: 'Filter teams by search',
@@ -563,6 +570,7 @@ const en = {
   行を追加: 'Add row',
   設定を表示: 'Show settings',
   設定を隠す: 'Hide settings',
+  ラウンド詳細設定: 'Round detail settings',
   詳細設定を表示: 'Show advanced settings',
   詳細設定を隠す: 'Hide advanced settings',
   評価提出設定: 'Evaluation submission settings',

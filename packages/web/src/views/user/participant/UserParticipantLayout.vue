@@ -3,7 +3,7 @@
     <LoadingState v-if="checking" />
     <div v-else-if="blocked" class="card stack">
       <p class="muted">{{ blockReason }}</p>
-      <Button variant="ghost" size="sm" :to="homePath">
+      <Button variant="secondary" size="sm" :to="homePath">
         {{ $t('大会ホームに戻る') }}
       </Button>
     </div>

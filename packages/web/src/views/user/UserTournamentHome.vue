@@ -23,7 +23,7 @@
 
     <div v-else class="card stack">
       <p class="error">{{ errorMessage || $t('アクセス確認に失敗しました。') }}</p>
-      <Button variant="ghost" size="sm" to="/user">{{ $t('大会一覧') }}</Button>
+      <Button variant="secondary" size="sm" to="/user">{{ $t('大会一覧') }}</Button>
     </div>
   </section>
 </template>

@@ -1,7 +1,7 @@
 <template>
   <section class="stack">
     <div class="row">
-      <h2>{{ $t('参加者ダッシュボード') }}</h2>
+      <h2>{{ $t('現在公開中の大会') }}</h2>
       <ReloadButton @click="refresh" :disabled="isLoading" :loading="isLoading" />
     </div>
     <div class="card stack">

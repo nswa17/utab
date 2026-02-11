@@ -103,7 +103,6 @@
     <div v-if="successOpen" class="modal-backdrop" role="presentation">
       <div class="modal card stack success-modal" role="dialog" aria-modal="true">
         <h4>{{ $t('送信完了') }}</h4>
-        <p class="muted">{{ $t('送信しました。次の操作を選択してください。') }}</p>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
           <Button size="sm" @click="goToTaskList">{{ $t('タスク一覧に戻る') }}</Button>

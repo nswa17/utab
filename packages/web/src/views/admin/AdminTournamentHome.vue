@@ -18,124 +18,124 @@
 
     <LoadingState v-if="isSectionLoading" />
 
-    <div class="card stack" v-else-if="tournament && activeSection === 'overview'">
-      <Field :label="$t('大会名')" required v-slot="{ id, describedBy }">
-        <input v-model="tournamentForm.name" :id="id" :aria-describedby="describedBy" type="text" />
-      </Field>
-      <Field :label="$t('スタイル')" v-slot="{ id, describedBy }">
-        <select v-model.number="tournamentForm.style" :id="id" :aria-describedby="describedBy">
-          <option v-for="style in styles.styles" :key="style.id" :value="style.id">
-            {{ style.id }}: {{ style.name }}
-          </option>
-        </select>
-      </Field>
-      <label class="checkbox-field small">
-        <input v-model="tournamentForm.hidden" type="checkbox" />
-        {{ $t('大会を非公開') }}
-      </label>
-      <label class="checkbox-field small">
-        <input v-model="tournamentForm.accessRequired" type="checkbox" />
-        {{ $t('大会パスワード必須') }}
-      </label>
-      <Field
-        v-if="tournamentForm.accessRequired"
-        class="password-field"
-        :label="$t('大会パスワード')"
-        :help="accessPasswordHelpText"
-      >
-        <template #label-suffix>
-          <button
-            type="button"
-            class="password-toggle"
-            :aria-label="passwordVisible ? $t('パスワードを隠す') : $t('パスワードを表示')"
-            @click="passwordVisible = !passwordVisible"
-          >
-            <svg
-              v-if="passwordVisible"
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              aria-hidden="true"
-            >
-              <path
-                d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+    <template v-else-if="tournament && activeSection === 'overview'">
+      <div class="card stack">
+        <Field :label="$t('大会名')" required v-slot="{ id, describedBy }">
+          <input v-model="tournamentForm.name" :id="id" :aria-describedby="describedBy" type="text" />
+        </Field>
+
+        <div class="overview-setting-grid">
+          <article class="overview-setting-card stack">
+            <Field :label="$t('スタイル')" v-slot="{ id, describedBy }">
+              <select v-model.number="tournamentForm.style" :id="id" :aria-describedby="describedBy">
+                <option v-for="style in styles.styles" :key="style.id" :value="style.id">
+                  {{ style.id }}: {{ style.name }}
+                </option>
+              </select>
+            </Field>
+          </article>
+
+          <article class="overview-setting-card toggle-setting-card stack">
+            <h4>{{ $t('大会を公開') }}</h4>
+            <label class="switch-control" :aria-label="$t('大会を公開')">
+              <span class="switch-label">{{ $t('非公開') }}</span>
+              <span class="toggle-switch">
+                <input v-model="isTournamentPublic" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </span>
+              <span class="switch-label">{{ $t('公開') }}</span>
+            </label>
+          </article>
+
+          <article class="overview-setting-card toggle-setting-card password-setting-card stack">
+            <h4>{{ $t('大会パスワード設定') }}</h4>
+            <label class="switch-control" :aria-label="$t('大会パスワード設定')">
+              <span class="switch-label">{{ $t('不要') }}</span>
+              <span class="toggle-switch">
+                <input v-model="tournamentForm.accessRequired" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </span>
+              <span class="switch-label">{{ $t('設定') }}</span>
+            </label>
+            <input
+              v-model="tournamentForm.accessPassword"
+              :aria-label="$t('大会パスワード')"
+              type="password"
+              autocomplete="new-password"
+            />
+            <p class="muted small">{{ accessPasswordHelpText }}</p>
+          </article>
+        </div>
+        <article class="overview-setting-card notice-setting-card stack">
+          <Field :label="$t('重要なお知らせ（Markdown形式対応）')" v-slot="{ id, describedBy }">
+            <div class="markdown-grid">
+              <textarea
+                v-model="tournamentForm.infoText"
+                :id="id"
+                :aria-describedby="describedBy"
+                rows="10"
               />
-              <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path
-                d="M3 3l18 18"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-              />
-              <path
-                d="M10.7 6a12 12 0 0 1 1.3-.1c6.5 0 10 6.1 10 6.1a16 16 0 0 1-3.3 4.3"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M14.9 14.9a3 3 0 0 1-4.3-4.3"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-              />
-              <path
-                d="M6.1 9A16 16 0 0 0 2 12s3.5 6.1 10 6.1c.4 0 .8 0 1.2-.1"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
-        </template>
-        <template #default="{ id, describedBy }">
-          <input
-            v-model="tournamentForm.accessPassword"
-            :id="id"
-            :aria-describedby="describedBy"
-            :type="passwordVisible ? 'text' : 'password'"
-            autocomplete="new-password"
-          />
-        </template>
-      </Field>
-      <Field :label="$t('重要なお知らせ（Markdown形式対応）')" v-slot="{ id, describedBy }">
-        <div class="markdown-grid">
-          <textarea
-            v-model="tournamentForm.infoText"
-            :id="id"
-            :aria-describedby="describedBy"
-            rows="10"
-          />
-          <div class="markdown-preview">
-            <div class="muted small">{{ $t('プレビュー') }}</div>
-            <div
-              v-if="tournamentForm.infoText.trim().length > 0"
-              class="markdown-content"
-              v-html="infoPreviewHtml"
-            ></div>
-            <p v-else class="muted">{{ $t('プレビューはここに表示されます。') }}</p>
+              <div class="markdown-preview">
+                <div class="muted small">{{ $t('プレビュー') }}</div>
+                <div
+                  v-if="tournamentForm.infoText.trim().length > 0"
+                  class="markdown-content"
+                  v-html="infoPreviewHtml"
+                ></div>
+                <p v-else class="muted">{{ $t('プレビューはここに表示されます。') }}</p>
+              </div>
+            </div>
+          </Field>
+          <div class="row">
+            <Button size="sm" @click="saveTournament" :disabled="isLoading">
+              {{ $t('重要なお知らせを更新') }}
+            </Button>
+          </div>
+        </article>
+      </div>
+
+      <article class="card stack overview-qr-card">
+        <div class="row overview-qr-head">
+          <h4>{{ $t('参加者アクセス用QRコード') }}</h4>
+        </div>
+        <p class="muted small">{{ $t('参加者がスマホで読み取って大会ページを開けます。') }}</p>
+        <div v-if="participantUrl" class="qr-grid">
+          <div class="qr-box">
+            <LoadingState v-if="qrLoading" />
+            <img
+              v-else-if="qrCodeDataUrl"
+              class="qr-image"
+              :src="qrCodeDataUrl"
+              :alt="$t('QRコード')"
+            />
+            <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
+            <p v-if="qrError" class="error">{{ qrError }}</p>
+          </div>
+          <div class="stack">
+            <div class="muted small">{{ $t('大会アクセスURL') }}</div>
+            <code class="qr-url">{{ participantUrl }}</code>
+            <div class="row qr-actions">
+              <Button variant="secondary" size="sm" @click="copyParticipantUrl">
+                {{ copyStatus === 'copied' ? $t('コピーしました。') : $t('URLをコピー') }}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                :href="participantUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ $t('参加者画面を開く') }}
+              </Button>
+            </div>
+            <p v-if="copyStatus === 'error'" class="error small">{{ copyError }}</p>
+            <p class="muted small">
+              {{ $t('大会パスワードが必要な場合、参加者は表示された画面で入力します。') }}
+            </p>
           </div>
         </div>
-      </Field>
-      <div class="row">
-        <Button size="sm" @click="saveTournament" :disabled="isLoading">
-          {{ $t('更新') }}
-        </Button>
-      </div>
-    </div>
+      </article>
+    </template>
 
     <section v-else-if="activeSection === 'data'" class="stack entity-panel">
       <p v-if="csvError" class="error">{{ csvError }}</p>
@@ -162,22 +162,22 @@
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.teams === 'manual' }"
-                @click="entityEntryModes.teams = 'manual'"
+                :class="{ active: entityEntryMode === 'manual' }"
+                @click="entityEntryMode = 'manual'"
               >
                 {{ $t('手動入力') }}
               </button>
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.teams === 'csv' }"
-                @click="entityEntryModes.teams = 'csv'"
+                :class="{ active: entityEntryMode === 'csv' }"
+                @click="entityEntryMode = 'csv'"
               >
                 {{ $t('CSV取り込み') }}
               </button>
             </div>
           </div>
-          <section v-if="entityEntryModes.teams === 'manual'" class="stack block-panel">
+          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
             <form class="grid team-form-grid" @submit.prevent="handleCreateTeam">
               <Field
                 class="team-name-field"
@@ -321,22 +321,22 @@
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.adjudicators === 'manual' }"
-                @click="entityEntryModes.adjudicators = 'manual'"
+                :class="{ active: entityEntryMode === 'manual' }"
+                @click="entityEntryMode = 'manual'"
               >
                 {{ $t('手動入力') }}
               </button>
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.adjudicators === 'csv' }"
-                @click="entityEntryModes.adjudicators = 'csv'"
+                :class="{ active: entityEntryMode === 'csv' }"
+                @click="entityEntryMode = 'csv'"
               >
                 {{ $t('CSV取り込み') }}
               </button>
             </div>
           </div>
-          <section v-if="entityEntryModes.adjudicators === 'manual'" class="stack block-panel">
+          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateAdjudicator">
               <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
                 <input
@@ -372,12 +372,12 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('大会参加可能（デフォルト値）')" v-slot="{ id }">
+              <div class="availability-control">
                 <label class="row small">
-                  <input :id="id" v-model="adjudicatorForm.active" type="checkbox" />
+                  <input v-model="adjudicatorForm.active" type="checkbox" />
                   <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
                 </label>
-              </Field>
+              </div>
               <div class="stack full relation-group">
                 <span class="field-label">{{ $t('所属機関') }}</span>
                 <input
@@ -492,22 +492,22 @@
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.venues === 'manual' }"
-                @click="entityEntryModes.venues = 'manual'"
+                :class="{ active: entityEntryMode === 'manual' }"
+                @click="entityEntryMode = 'manual'"
               >
                 {{ $t('手動入力') }}
               </button>
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.venues === 'csv' }"
-                @click="entityEntryModes.venues = 'csv'"
+                :class="{ active: entityEntryMode === 'csv' }"
+                @click="entityEntryMode = 'csv'"
               >
                 {{ $t('CSV取り込み') }}
               </button>
             </div>
           </div>
-          <section v-if="entityEntryModes.venues === 'manual'" class="stack block-panel">
+          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateVenue">
               <Field :label="$t('会場名')" required v-slot="{ id, describedBy }">
                 <input
@@ -517,6 +517,12 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
+              <div class="availability-control">
+                <label class="row small">
+                  <input v-model="venueForm.available" type="checkbox" />
+                  <span>{{ $t('使用可能（デフォルト値）') }}</span>
+                </label>
+              </div>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="venues.loading">{{ $t('追加') }}</Button>
               </div>
@@ -580,22 +586,22 @@
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.speakers === 'manual' }"
-                @click="entityEntryModes.speakers = 'manual'"
+                :class="{ active: entityEntryMode === 'manual' }"
+                @click="entityEntryMode = 'manual'"
               >
                 {{ $t('手動入力') }}
               </button>
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.speakers === 'csv' }"
-                @click="entityEntryModes.speakers = 'csv'"
+                :class="{ active: entityEntryMode === 'csv' }"
+                @click="entityEntryMode = 'csv'"
               >
                 {{ $t('CSV取り込み') }}
               </button>
             </div>
           </div>
-          <section v-if="entityEntryModes.speakers === 'manual'" class="stack block-panel">
+          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateSpeaker">
               <Field :label="$t('スピーカー名')" required v-slot="{ id, describedBy }">
                 <input
@@ -674,22 +680,22 @@
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.institutions === 'manual' }"
-                @click="entityEntryModes.institutions = 'manual'"
+                :class="{ active: entityEntryMode === 'manual' }"
+                @click="entityEntryMode = 'manual'"
               >
                 {{ $t('手動入力') }}
               </button>
               <button
                 type="button"
                 class="entry-mode-button"
-                :class="{ active: entityEntryModes.institutions === 'csv' }"
-                @click="entityEntryModes.institutions = 'csv'"
+                :class="{ active: entityEntryMode === 'csv' }"
+                @click="entityEntryMode = 'csv'"
               >
                 {{ $t('CSV取り込み') }}
               </button>
             </div>
           </div>
-          <section v-if="entityEntryModes.institutions === 'manual'" class="stack block-panel">
+          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateInstitution">
               <Field :label="$t('機関名')" required v-slot="{ id, describedBy }">
                 <input
@@ -854,12 +860,12 @@
               :aria-describedby="describedBy"
             />
           </Field>
-          <Field :label="$t('大会参加可能（デフォルト値）')" v-slot="{ id }">
+          <div class="availability-control">
             <label class="row small">
-              <input :id="id" v-model="entityForm.active" type="checkbox" />
+              <input v-model="entityForm.active" type="checkbox" />
               <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
             </label>
-          </Field>
+          </div>
           <div class="stack full relation-group">
             <span class="field-label">{{ $t('所属機関') }}</span>
             <input
@@ -904,6 +910,12 @@
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
+          <div class="availability-control">
+            <label class="row small">
+              <input v-model="entityForm.active" type="checkbox" />
+              <span>{{ $t('使用可能（デフォルト値）') }}</span>
+            </label>
+          </div>
         </div>
         <div class="grid" v-else>
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
@@ -948,6 +960,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import QRCode from 'qrcode'
 import { api } from '@/utils/api'
 import { useTournamentStore } from '@/stores/tournament'
 import { useStylesStore } from '@/stores/styles'
@@ -1004,7 +1017,12 @@ const tournamentForm = reactive({
   accessPassword: '',
   infoText: '',
 })
-const passwordVisible = ref(false)
+const isTournamentPublic = computed({
+  get: () => !tournamentForm.hidden,
+  set: (value: boolean) => {
+    tournamentForm.hidden = !value
+  },
+})
 const accessPasswordConfigured = ref(false)
 
 const teamForm = reactive({
@@ -1025,20 +1043,14 @@ const adjudicatorInstitutionIds = ref<string[]>([])
 const adjudicatorInstitutionSearch = ref('')
 const adjudicatorConflictIds = ref<string[]>([])
 const adjudicatorConflictSearch = ref('')
-const venueForm = reactive({ name: '' })
+const venueForm = reactive({ name: '', available: true })
 const speakerForm = reactive({ name: '' })
 const institutionForm = reactive({ name: '' })
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
 type EntityEntryMode = 'manual' | 'csv'
-const entityEntryModes = reactive<Record<EntityTabKey, EntityEntryMode>>({
-  teams: 'manual',
-  adjudicators: 'manual',
-  venues: 'manual',
-  speakers: 'manual',
-  institutions: 'manual',
-})
+const entityEntryMode = ref<EntityEntryMode>('manual')
 const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
   { key: 'teams', label: t('チーム') },
   { key: 'adjudicators', label: t('ジャッジ') },
@@ -1052,6 +1064,10 @@ const adjudicatorSearch = ref('')
 const speakerSearch = ref('')
 const venueSearch = ref('')
 const institutionSearch = ref('')
+const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
+  numeric: true,
+  sensitivity: 'base',
+})
 
 const teamLimit = ref(20)
 const adjudicatorLimit = ref(20)
@@ -1090,44 +1106,120 @@ const managedRoundNumbers = computed(() => {
 
 const filteredTeams = computed(() => {
   const q = teamSearch.value.trim().toLowerCase()
-  if (!q) return teams.teams
-  return teams.teams.filter((team) => {
-    const speakersText =
-      team.speakers
-        ?.map((s: any) => s.name)
-        .join(', ')
-        .toLowerCase() ?? ''
-    const institutionText = institutionLabel(team.institution).toLowerCase()
-    return (
-      team.name?.toLowerCase().includes(q) ||
-      institutionText.includes(q) ||
-      speakersText.includes(q)
-    )
-  })
+  const filtered = q
+    ? teams.teams.filter((team) => {
+        const speakersText =
+          team.speakers
+            ?.map((s: any) => s.name)
+            .join(', ')
+            .toLowerCase() ?? ''
+        const institutionText = institutionLabel(team.institution).toLowerCase()
+        return (
+          team.name?.toLowerCase().includes(q) ||
+          institutionText.includes(q) ||
+          speakersText.includes(q)
+        )
+      })
+    : teams.teams
+  return filtered.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
 })
 
 const filteredAdjudicators = computed(() => {
   const q = adjudicatorSearch.value.trim().toLowerCase()
-  if (!q) return adjudicators.adjudicators
-  return adjudicators.adjudicators.filter((adj) => adj.name?.toLowerCase().includes(q))
+  const filtered = q
+    ? adjudicators.adjudicators.filter((adj) => adj.name?.toLowerCase().includes(q))
+    : adjudicators.adjudicators
+  return filtered.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
 })
 
 const filteredSpeakers = computed(() => {
   const q = speakerSearch.value.trim().toLowerCase()
-  if (!q) return speakers.speakers
-  return speakers.speakers.filter((sp) => sp.name?.toLowerCase().includes(q))
+  const filtered = q
+    ? speakers.speakers.filter((sp) => sp.name?.toLowerCase().includes(q))
+    : speakers.speakers
+  return filtered.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
 })
 
 const filteredVenues = computed(() => {
   const q = venueSearch.value.trim().toLowerCase()
-  if (!q) return venues.venues
-  return venues.venues.filter((venue) => venue.name?.toLowerCase().includes(q))
+  const filtered = q
+    ? venues.venues.filter((venue) => venue.name?.toLowerCase().includes(q))
+    : venues.venues
+  return filtered.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
 })
 
 const filteredInstitutions = computed(() => {
   const q = institutionSearch.value.trim().toLowerCase()
-  if (!q) return institutions.institutions
-  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+  const filtered = q
+    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+    : institutions.institutions
+  return filtered.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredTeamSpeakerOptions = computed(() => {
+  const q = teamSpeakerSearch.value.trim().toLowerCase()
+  const list = q
+    ? speakers.speakers.filter((speaker) => speaker.name?.toLowerCase().includes(q))
+    : speakers.speakers
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredEditTeamSpeakerOptions = computed(() => {
+  const q = editTeamSpeakerSearch.value.trim().toLowerCase()
+  const list = q
+    ? speakers.speakers.filter((speaker) => speaker.name?.toLowerCase().includes(q))
+    : speakers.speakers
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredAdjudicatorInstitutionOptions = computed(() => {
+  const q = adjudicatorInstitutionSearch.value.trim().toLowerCase()
+  const list = q
+    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+    : institutions.institutions
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredAdjudicatorConflictTeams = computed(() => {
+  const q = adjudicatorConflictSearch.value.trim().toLowerCase()
+  const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredEditAdjudicatorInstitutionOptions = computed(() => {
+  const q = editAdjudicatorInstitutionSearch.value.trim().toLowerCase()
+  const list = q
+    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+    : institutions.institutions
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+
+const filteredEditAdjudicatorConflictTeams = computed(() => {
+  const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
+  const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
 })
 
 const visibleTeams = computed(() => filteredTeams.value.slice(0, teamLimit.value))
@@ -1140,43 +1232,6 @@ const visibleInstitutions = computed(() =>
   filteredInstitutions.value.slice(0, institutionLimit.value)
 )
 
-const filteredTeamSpeakerOptions = computed(() => {
-  const q = teamSpeakerSearch.value.trim().toLowerCase()
-  const list = speakers.speakers
-  if (!q) return list
-  return list.filter((speaker) => speaker.name?.toLowerCase().includes(q))
-})
-
-const filteredEditTeamSpeakerOptions = computed(() => {
-  const q = editTeamSpeakerSearch.value.trim().toLowerCase()
-  const list = speakers.speakers
-  if (!q) return list
-  return list.filter((speaker) => speaker.name?.toLowerCase().includes(q))
-})
-
-const filteredAdjudicatorInstitutionOptions = computed(() => {
-  const q = adjudicatorInstitutionSearch.value.trim().toLowerCase()
-  if (!q) return institutions.institutions
-  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
-})
-
-const filteredAdjudicatorConflictTeams = computed(() => {
-  const q = adjudicatorConflictSearch.value.trim().toLowerCase()
-  if (!q) return teams.teams
-  return teams.teams.filter((team) => team.name?.toLowerCase().includes(q))
-})
-
-const filteredEditAdjudicatorInstitutionOptions = computed(() => {
-  const q = editAdjudicatorInstitutionSearch.value.trim().toLowerCase()
-  if (!q) return institutions.institutions
-  return institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
-})
-
-const filteredEditAdjudicatorConflictTeams = computed(() => {
-  const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
-  if (!q) return teams.teams
-  return teams.teams.filter((team) => team.name?.toLowerCase().includes(q))
-})
 
 const accessPasswordHelpText = computed(() => {
   if (accessPasswordConfigured.value) {
@@ -1185,6 +1240,73 @@ const accessPasswordHelpText = computed(() => {
   return t('大会パスワードを設定すると、参加者に入力を求められます。')
 })
 const infoPreviewHtml = computed(() => renderMarkdown(tournamentForm.infoText ?? ''))
+
+function joinUrl(base: string, path: string) {
+  const normalizedBase = base.replace(/\/+$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizedBase}${normalizedPath}`
+}
+
+const currentOrigin = computed(() => {
+  if (typeof window === 'undefined') return ''
+  return window.location.origin
+})
+const participantUrl = computed(() => {
+  if (!tournamentId.value) return ''
+  return joinUrl(currentOrigin.value, `/user/${tournamentId.value}/home`)
+})
+
+const qrLoading = ref(false)
+const qrError = ref('')
+const qrCodeDataUrl = ref('')
+let qrGenerationId = 0
+
+const copyStatus = ref<'idle' | 'copied' | 'error'>('idle')
+const copyError = ref('')
+let copyTimeout: number | null = null
+
+async function generateQrCode(url: string) {
+  const generationId = ++qrGenerationId
+  qrLoading.value = true
+  qrError.value = ''
+  qrCodeDataUrl.value = ''
+  try {
+    const dataUrl = await QRCode.toDataURL(url, {
+      width: 240,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+    })
+    if (generationId !== qrGenerationId) return
+    qrCodeDataUrl.value = dataUrl
+  } catch (err: any) {
+    if (generationId !== qrGenerationId) return
+    qrError.value = err?.message ?? t('QRコード生成に失敗しました。')
+  } finally {
+    if (generationId === qrGenerationId) {
+      qrLoading.value = false
+    }
+  }
+}
+
+async function copyParticipantUrl() {
+  const url = participantUrl.value
+  if (!url) return
+  copyStatus.value = 'idle'
+  copyError.value = ''
+  try {
+    await navigator.clipboard.writeText(url)
+    copyStatus.value = 'copied'
+    if (copyTimeout) {
+      window.clearTimeout(copyTimeout)
+    }
+    copyTimeout = window.setTimeout(() => {
+      copyStatus.value = 'idle'
+    }, 1200)
+  } catch {
+    copyStatus.value = 'error'
+    copyError.value = t('クリップボードへのコピーに失敗しました。')
+  }
+}
 
 const editingTitle = computed(() => {
   if (!editingEntity.value) return ''
@@ -1218,7 +1340,6 @@ function applyTournamentForm() {
     tournament.value.auth?.access?.hasPassword || savedAccessPassword
   )
   tournamentForm.accessPassword = savedAccessPassword
-  passwordVisible.value = false
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
 }
 
@@ -1285,7 +1406,6 @@ async function saveTournament() {
       updated.auth?.access?.hasPassword || savedAccessPassword
     )
     tournamentForm.accessPassword = savedAccessPassword
-    passwordVisible.value = false
   }
 }
 
@@ -1423,8 +1543,26 @@ async function handleCreateAdjudicator() {
 
 async function handleCreateVenue() {
   if (!venueForm.name) return
-  await venues.createVenue({ tournamentId: tournamentId.value, name: venueForm.name })
+  const targetRounds = managedRoundNumbers.value
+  const defaultAvailable = Boolean(venueForm.available)
+  const details =
+    targetRounds.length > 0
+      ? targetRounds.map((roundNumber) => ({
+          r: roundNumber,
+          available: defaultAvailable,
+          priority: 1,
+        }))
+      : undefined
+  await venues.createVenue({
+    tournamentId: tournamentId.value,
+    name: venueForm.name,
+    details,
+    userDefinedData: {
+      availableDefault: defaultAvailable,
+    },
+  })
   venueForm.name = ''
+  venueForm.available = true
 }
 
 async function handleCreateSpeaker() {
@@ -1482,6 +1620,12 @@ function startEditEntity(type: string, entity: any) {
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.active = entity.active ?? true
+  if (type === 'venue') {
+    entityForm.active =
+      typeof entity.userDefinedData?.availableDefault === 'boolean'
+        ? Boolean(entity.userDefinedData.availableDefault)
+        : true
+  }
   editTeamSelectedSpeakerIds.value = type === 'team' ? resolveTeamSpeakerIds(entity) : []
   editTeamSpeakerSearch.value = ''
   editAdjudicatorInstitutionIds.value =
@@ -1563,6 +1707,9 @@ async function saveEntityEdit() {
         available: row.available,
         priority: row.priority ?? 1,
       })),
+      userDefinedData: {
+        availableDefault: Boolean(entityForm.active),
+      },
     })
   } else if (editingEntity.value.type === 'speaker') {
     await speakers.updateSpeaker({
@@ -1582,12 +1729,16 @@ async function saveEntityEdit() {
 
 function buildDetailRows(entity: any) {
   if (!managedRoundNumbers.value.length) return []
+  const defaultAvailable =
+    typeof entity.userDefinedData?.availableDefault === 'boolean'
+      ? Boolean(entity.userDefinedData.availableDefault)
+      : true
   return managedRoundNumbers.value.map((roundNumber) => {
     const existing =
       (entity.details ?? []).find((d: any) => Number(d.r) === Number(roundNumber)) ?? {}
     return {
       r: roundNumber,
-      available: existing.available ?? true,
+      available: existing.available ?? defaultAvailable,
       priority: existing.priority ?? 1,
     }
   })
@@ -1827,6 +1978,19 @@ async function handleCsvUpload(type: string, event: Event) {
 }
 
 watch(
+  participantUrl,
+  (url) => {
+    if (!url) {
+      qrError.value = ''
+      qrCodeDataUrl.value = ''
+      return
+    }
+    generateQrCode(url)
+  },
+  { immediate: true }
+)
+
+watch(
   tournamentId,
   () => {
     if (editingEntity.value) cancelEditEntity()
@@ -1841,6 +2005,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
+  if (copyTimeout) {
+    window.clearTimeout(copyTimeout)
+  }
 })
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -1857,6 +2024,175 @@ function onGlobalKeydown(event: KeyboardEvent) {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.overview-setting-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.overview-setting-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background: var(--color-surface-muted);
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  height: 100%;
+}
+
+.toggle-setting-card {
+  gap: var(--space-2);
+}
+
+.password-setting-card {
+  gap: var(--space-2);
+}
+
+.password-setting-card input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.password-setting-card .muted.small {
+  margin: 0;
+}
+
+.notice-setting-card {
+  min-height: 0;
+}
+
+.overview-setting-card h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.switch-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+}
+
+.switch-label {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 54px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toggle-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.2s ease;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  top: 3px;
+  left: 3px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+  transition: transform 0.2s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+}
+
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.overview-qr-card h4 {
+  margin: 0;
+}
+
+.overview-qr-head {
+  justify-content: space-between;
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.qr-box {
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.qr-image {
+  width: 220px;
+  height: 220px;
+  display: block;
+}
+
+.qr-url {
+  display: block;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  word-break: break-all;
+}
+
+.qr-actions {
+  flex-wrap: wrap;
+}
+
+.qr-actions :deep(.btn) {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.qr-actions :deep(.btn--secondary) {
+  min-width: 140px;
+}
+
+.qr-actions :deep(.btn--ghost) {
+  min-width: 160px;
+  border-color: var(--color-border);
+}
+
+.qr-actions :deep(.btn--ghost):hover {
+  border-color: var(--color-primary);
+}
+
 .grid .full {
   grid-column: 1 / -1;
 }
@@ -1868,6 +2204,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .entity-submit-row {
   grid-column: 1 / -1;
   justify-content: flex-start;
+}
+
+.availability-control {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .field-label {
@@ -1901,33 +2243,6 @@ textarea {
 
 .markdown-content :deep(p:first-child) {
   margin-top: 0;
-}
-
-.password-toggle {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.password-toggle:hover {
-  background: var(--color-surface-muted);
-}
-
-.password-toggle:focus-visible {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 1px;
-}
-
-.password-field :deep(.field-label) {
-  justify-content: flex-start;
-  gap: 6px;
 }
 
 .detail-row {
@@ -2157,13 +2472,20 @@ textarea {
   color: var(--color-danger);
 }
 
-.checkbox-field {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 @media (max-width: 960px) {
+  .overview-setting-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-box {
+    width: min(320px, 100%);
+    margin: 0 auto;
+  }
+
   .markdown-grid {
     grid-template-columns: 1fr;
   }
