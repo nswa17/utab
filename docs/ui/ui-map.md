@@ -22,6 +22,9 @@
 | 集計結果 | `/admin/:tournamentId/compiled` | `packages/web/src/views/admin/AdminTournamentCompiled.vue` |
 | 結果（JSON） | `/admin/:tournamentId/results` | `packages/web/src/views/admin/AdminTournamentResults.vue` |
 
+補足:
+- `大会レイアウト（シェル）` では、参加者向け URL の QR コードを表示する（大会単位）。
+
 ### 参加者画面
 | 画面 | ルート | コンポーネント |
 | --- | --- | --- |

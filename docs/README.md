@@ -15,6 +15,7 @@
 - [UI Map](ui/ui-map.md)
 - [UI Inventory](ui/ui-inventory.md)
 - [UI Issues](ui/ui-issues.md)
+- [Admin Participant QR](ui/admin-participant-qr.md)
 - [UI i18n Guidelines](ui/ui-i18n-guidelines.md)
 - [UI QA Checklist](ui/ui-qa-checklist.md)
 

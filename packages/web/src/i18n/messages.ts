@@ -296,6 +296,18 @@ const en = {
   参加者ログイン: 'Participant login',
   '参加者のログイン要否とキーを設定します。': 'Configure participant login requirements and keys.',
   大会アクセス: 'Tournament access',
+  参加者アクセス用QRコード: 'Participant access QR code',
+  '参加者がスマホで読み取って大会ページを開けます。':
+    'Participants can scan to open the tournament page.',
+  QRコード: 'QR code',
+  'QRコードを生成できませんでした。': 'Failed to generate a QR code.',
+  'QRコード生成に失敗しました。': 'Failed to generate a QR code.',
+  大会アクセスURL: 'Tournament access URL',
+  'URLをコピー': 'Copy URL',
+  参加者画面を開く: 'Open participant page',
+  'クリップボードへのコピーに失敗しました。': 'Failed to copy to clipboard.',
+  '大会パスワードが必要な場合、参加者は表示された画面で入力します。':
+    'If a tournament password is required, participants enter it on the shown screen.',
   大会パスワード: 'Tournament password',
   大会パスワード必須: 'Require tournament password',
   '大会パスワードを入力してください。': 'Enter the tournament password.',
