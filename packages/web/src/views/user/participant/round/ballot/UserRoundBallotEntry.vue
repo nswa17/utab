@@ -331,6 +331,7 @@ const totalScoreB = computed(() =>
 )
 const lowTieWarning = computed(() => {
   if (allowLowTieWin.value) return false
+  if (noSpeakerScore.value) return false
   if (!winnerId.value) return true
   if (winnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
   if (winnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
