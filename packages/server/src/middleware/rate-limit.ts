@@ -2,7 +2,7 @@ import type { Request } from 'express'
 import os from 'node:os'
 import rateLimit from 'express-rate-limit'
 import slowDown from 'express-slow-down'
-import { env } from '../config/environment.js'
+import { env, rateLimitSettings } from '../config/environment.js'
 
 type RateLimitConfig = {
   windowMs: number
@@ -65,53 +65,53 @@ function createSlowDown(config: SlowDownConfig) {
 }
 
 export const apiRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
+  windowMs: rateLimitSettings.api.windowMs,
+  max: rateLimitSettings.api.max,
   message: 'Too many requests',
 })
 
 export const apiSlowDown = createSlowDown({
-  windowMs: 15 * 60 * 1000,
-  delayAfter: 200,
-  delayStepMs: 25,
-  maxDelayMs: 1000,
+  windowMs: rateLimitSettings.api.windowMs,
+  delayAfter: rateLimitSettings.api.delayAfter,
+  delayStepMs: rateLimitSettings.api.delayStepMs,
+  maxDelayMs: rateLimitSettings.api.maxDelayMs,
 })
 
 export const authRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 40,
+  windowMs: rateLimitSettings.auth.windowMs,
+  max: rateLimitSettings.auth.max,
   message: 'Too many authentication attempts',
 })
 
 export const authSlowDown = createSlowDown({
-  windowMs: 15 * 60 * 1000,
-  delayAfter: 10,
-  delayStepMs: 250,
-  maxDelayMs: 4000,
+  windowMs: rateLimitSettings.auth.windowMs,
+  delayAfter: rateLimitSettings.auth.delayAfter,
+  delayStepMs: rateLimitSettings.auth.delayStepMs,
+  maxDelayMs: rateLimitSettings.auth.maxDelayMs,
 })
 
 export const submissionRateLimiter = createRateLimiter({
-  windowMs: 5 * 60 * 1000,
-  max: 120,
+  windowMs: rateLimitSettings.submissions.windowMs,
+  max: rateLimitSettings.submissions.max,
   message: 'Too many submission requests',
 })
 
 export const submissionSlowDown = createSlowDown({
-  windowMs: 5 * 60 * 1000,
-  delayAfter: 20,
-  delayStepMs: 100,
-  maxDelayMs: 2500,
+  windowMs: rateLimitSettings.submissions.windowMs,
+  delayAfter: rateLimitSettings.submissions.delayAfter,
+  delayStepMs: rateLimitSettings.submissions.delayStepMs,
+  maxDelayMs: rateLimitSettings.submissions.maxDelayMs,
 })
 
 export const rawResultRateLimiter = createRateLimiter({
-  windowMs: 5 * 60 * 1000,
-  max: 80,
+  windowMs: rateLimitSettings.rawResults.windowMs,
+  max: rateLimitSettings.rawResults.max,
   message: 'Too many raw result requests',
 })
 
 export const rawResultSlowDown = createSlowDown({
-  windowMs: 5 * 60 * 1000,
-  delayAfter: 15,
-  delayStepMs: 120,
-  maxDelayMs: 3000,
+  windowMs: rateLimitSettings.rawResults.windowMs,
+  delayAfter: rateLimitSettings.rawResults.delayAfter,
+  delayStepMs: rateLimitSettings.rawResults.delayStepMs,
+  maxDelayMs: rateLimitSettings.rawResults.maxDelayMs,
 })

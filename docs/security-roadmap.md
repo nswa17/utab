@@ -236,6 +236,25 @@
 - [x] 統合テストに「CORS/Origin拒否」と「JSONボディサイズ超過(413)」を追加。
 - [x] 一覧APIのページングは「監査ログAPI（Phase 7）」と既存一覧API改修（Phase 8）の2段階で導入する方針に確定（Phase 6 では方針策定まで）。
 
+**運用Runbook（2026-02-12）**
+- [x] レートリミットとJSONボディサイズを環境変数化し、デプロイ後の閾値調整をコード変更なしで実施可能にした。
+- [x] `submissions` の既定値を NAT 集中提出に合わせて緩和（`max=240/5min`, `delayAfter=40`）し、低負荷時のスループット確保と高負荷時の抑制を両立。
+- 推奨の監視指標:
+  - `429` 比率（`/api/submissions/*`, `/api/compiled`）  
+  - P95/P99 レイテンシ（提出ピーク時）  
+  - compile 実行時間（100チーム超大会）
+- 初期の閾値調整手順:
+  1. 直近ピーク30分の `429` 比率が 1% を超える場合は `RATE_LIMIT_SUBMISSIONS_MAX` を段階的に +20%。
+  2. API 遅延が増加する場合は `RATE_LIMIT_SUBMISSIONS_DELAY_STEP_MS` を +20〜50ms で調整。
+  3. 認証総当たりが増える場合は `RATE_LIMIT_AUTH_MAX` を引き下げ、`RATE_LIMIT_AUTH_DELAY_STEP_MS` を増やす。
+  4. JSON超過(413)が頻発する場合のみ、用途別に `JSON_LIMIT_*` を最小限で拡張する。
+
+**主な環境変数（抜粋）**
+- `RATE_LIMIT_SUBMISSIONS_WINDOW_MS` / `RATE_LIMIT_SUBMISSIONS_MAX` / `RATE_LIMIT_SUBMISSIONS_DELAY_AFTER`
+- `RATE_LIMIT_AUTH_WINDOW_MS` / `RATE_LIMIT_AUTH_MAX` / `RATE_LIMIT_AUTH_DELAY_AFTER`
+- `RATE_LIMIT_RAW_RESULTS_WINDOW_MS` / `RATE_LIMIT_RAW_RESULTS_MAX` / `RATE_LIMIT_RAW_RESULTS_DELAY_AFTER`
+- `JSON_LIMIT_AUTH` / `JSON_LIMIT_SUBMISSIONS` / `JSON_LIMIT_RAW_RESULTS` / `JSON_LIMIT_DEFAULT`
+
 **編集候補ファイル**
 - /Users/neon/Desktop/utab/packages/server/src/app.ts
 - /Users/neon/Desktop/utab/packages/server/src/routes/*.ts

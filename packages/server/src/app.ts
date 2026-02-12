@@ -4,7 +4,14 @@ import MongoStore from 'connect-mongo'
 import cors from 'cors'
 import { httpLogger, logger } from './middleware/logging.js'
 import { createRoutes } from './routes/index.js'
-import { corsOrigins, env, isAllowedCorsOrigin, isProd, port } from './config/environment.js'
+import {
+  corsOrigins,
+  env,
+  isAllowedCorsOrigin,
+  isProd,
+  jsonBodyLimits,
+  port,
+} from './config/environment.js'
 import { errorHandler, notFound } from './middleware/error.js'
 import { connectDatabase } from './config/database.js'
 import { csrfOriginCheck } from './middleware/csrf.js'
@@ -19,11 +26,6 @@ import {
   submissionRateLimiter,
   submissionSlowDown,
 } from './middleware/rate-limit.js'
-
-const JSON_LIMIT_DEFAULT = '256kb'
-const JSON_LIMIT_AUTH = '32kb'
-const JSON_LIMIT_SUBMISSIONS = '256kb'
-const JSON_LIMIT_RAW_RESULTS = '1mb'
 
 export function createApp(): express.Express {
   const app = express()
@@ -48,10 +50,10 @@ export function createApp(): express.Express {
   app.use('/api/submissions', submissionSlowDown, submissionRateLimiter)
   app.use('/api/raw-results', rawResultSlowDown, rawResultRateLimiter)
 
-  app.use('/api/auth', express.json({ limit: JSON_LIMIT_AUTH }))
-  app.use('/api/submissions', express.json({ limit: JSON_LIMIT_SUBMISSIONS }))
-  app.use('/api/raw-results', express.json({ limit: JSON_LIMIT_RAW_RESULTS }))
-  app.use('/api', express.json({ limit: JSON_LIMIT_DEFAULT }))
+  app.use('/api/auth', express.json({ limit: jsonBodyLimits.auth }))
+  app.use('/api/submissions', express.json({ limit: jsonBodyLimits.submissions }))
+  app.use('/api/raw-results', express.json({ limit: jsonBodyLimits.rawResults }))
+  app.use('/api', express.json({ limit: jsonBodyLimits.default }))
 
   app.use(
     session({

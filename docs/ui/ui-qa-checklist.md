@@ -27,6 +27,14 @@
 - Submissions: filter/search and JSON collapse expand/collapse via keyboard; chart toggle accessible.
 - Compiled results: CSV download button reachable; warning texts readable and contrast-compliant.
 
+## Compile Regression (Phase 4)
+- Compile with options omitted (legacy request) and confirm ranking/output matches pre-Phase3 expectation.
+- Confirm compile options summary does not alter payload when untouched (default-compatible behavior).
+- CSV export smoke: header/row order remains stable for `teams/speakers/adjudicators/poi/best`.
+- Public `compiled` API response does not include internal compile fields (`compile_options`, `compile_warnings`, `compile_diff_meta`).
+- Diff indicators are understandable without color only (icon + text/tooltip meaning is present).
+- Submission summary in compiled screen matches submissions page counts (submitted/missing/duplicates/unknown).
+
 ## Smoke Scenarios (User)
 - Tournament list search/filter accessible; card/table layout remains readable in both languages.
 - Participant round pages: back buttons, ballot/feedback forms maintain label associations and keyboard order.
