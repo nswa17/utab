@@ -627,7 +627,6 @@ const includeLabelOptions: CompileIncludeLabel[] = [
   'best',
 ]
 const canRunCompile = computed(() => {
-  if (compileRounds.value.length === 0) return false
   if (compileDiffBaselineMode.value !== 'compiled') return true
   return compileDiffBaselineCompiledId.value.trim().length > 0
 })

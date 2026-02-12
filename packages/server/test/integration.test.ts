@@ -942,18 +942,18 @@ describe('Server integration', () => {
       speakerIdsB: [speakerId2],
       scoresA: [76],
       scoresB: [74],
-      submittedEntityId: 'judge-b',
+      submittedEntityId: 'judge-a',
     })
     expect(ballotRes2.status).toBe(201)
 
-    const compileError = await agent.post('/api/compiled').send({
+    const compileWithErrorPolicy = await agent.post('/api/compiled').send({
       tournamentId,
       source: 'submissions',
       options: {
         duplicate_normalization: { merge_policy: 'error' },
       },
     })
-    expect(compileError.status).toBe(400)
+    expect(compileWithErrorPolicy.status).toBe(201)
 
     const compileRes = await agent.post('/api/compiled').send({
       tournamentId,
@@ -1072,7 +1072,7 @@ describe('Server integration', () => {
     expect(typeof diffTeam1.diff.metrics.sum.delta).toBe('number')
   })
 
-  it('averages duplicate ballots for split votes when merge policy is average', async () => {
+  it('keeps adjudicator ballots distinct when merge policy is average', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1188,8 +1188,12 @@ describe('Server integration', () => {
     expect(teamResults.length).toBe(2)
     const team1 = teamResults.find((row: any) => row.id === teamId1)
     const team2 = teamResults.find((row: any) => row.id === teamId2)
-    expect(team1.win).toBe(0.5)
-    expect(team2.win).toBe(0.5)
+    expect(team1.details[0]?.acc).toBe(2)
+    expect(team2.details[0]?.acc).toBe(2)
+    expect(team1.vote).toBe(0)
+    expect(team2.vote).toBe(0)
+    expect(team1.win).toBe(0)
+    expect(team2.win).toBe(0)
   })
 
   it('adds and removes tournament users', async () => {

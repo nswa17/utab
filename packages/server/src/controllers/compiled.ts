@@ -30,6 +30,7 @@ type BallotPayload = {
   teamAId?: string
   teamBId?: string
   winnerId?: string
+  submittedEntityId?: string
   speakerIdsA?: unknown
   speakerIdsB?: unknown
   scoresA?: unknown
@@ -416,6 +417,22 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
   if (!teamA || !teamB) return `${round}:invalid`
   const ordered = [teamA, teamB].sort()
   return `${round}:${ordered[0]}:${ordered[1]}`
+}
+
+function resolveBallotSubmissionActor(submission: any): string {
+  const payloadActor = String((submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? '').trim()
+  if (payloadActor) return payloadActor
+  const submittedBy = String(submission?.submittedBy ?? '').trim()
+  if (submittedBy) return submittedBy
+  const submissionId = String(submission?._id ?? '').trim()
+  return submissionId ? `submission:${submissionId}` : ''
+}
+
+function canonicalBallotDuplicateKey(submission: any): string {
+  const round = Number(submission?.round)
+  const matchKey = canonicalBallotMatchKey(round, (submission?.payload ?? {}) as BallotPayload)
+  const actor = resolveBallotSubmissionActor(submission)
+  return actor ? `${matchKey}:${actor}` : matchKey
 }
 
 function toStringArray(value: unknown): string[] {
@@ -966,8 +983,7 @@ async function buildCompiledPayloadFromSubmissions(
 
   const ballotGroups = new Map<string, any[]>()
   ballotSubmissions.forEach((submission) => {
-    const round = Number(submission.round)
-    const key = canonicalBallotMatchKey(round, (submission.payload ?? {}) as BallotPayload)
+    const key = canonicalBallotDuplicateKey(submission)
     const grouped = ballotGroups.get(key) ?? []
     grouped.push(submission)
     ballotGroups.set(key, grouped)
