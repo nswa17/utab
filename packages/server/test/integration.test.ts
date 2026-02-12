@@ -989,6 +989,35 @@ describe('Server integration', () => {
     expect(team2.ranking).toBe(2)
     expect(compileRes.body.data.payload.compile_warnings).toEqual([])
 
+    const compileTieRankRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: {
+          preset: 'custom',
+          order: ['win'],
+        },
+        winner_policy: 'draw_on_missing',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'latest',
+          poi_aggregation: 'max',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileTieRankRes.status).toBe(201)
+
+    const tieRankResults = compileTieRankRes.body.data.payload.compiled_team_results
+    const tieRankTeam1 = tieRankResults.find((row: any) => row.id === teamId1)
+    const tieRankTeam2 = tieRankResults.find((row: any) => row.id === teamId2)
+    expect(tieRankTeam1.win).toBe(0.5)
+    expect(tieRankTeam2.win).toBe(0.5)
+    expect(tieRankTeam1.ranking).toBe(1)
+    expect(tieRankTeam2.ranking).toBe(1)
+
     const ballotRes3 = await agent.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
@@ -1020,11 +1049,17 @@ describe('Server integration', () => {
         },
         missing_data_policy: 'warn',
         include_labels: ['teams'],
-        diff_baseline: { mode: 'latest' },
+        diff_baseline: { mode: 'compiled', compiled_id: compileRes.body.data._id },
       },
     })
     expect(compileDiffRes.status).toBe(201)
-    expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_mode).toBe('latest')
+    expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_mode).toBe('compiled')
+    expect(compileDiffRes.body.data.payload.compile_diff_meta.requested_compiled_id).toBe(
+      compileRes.body.data._id
+    )
+    expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_compiled_id).toBe(
+      compileRes.body.data._id
+    )
     expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_found).toBe(true)
 
     const diffTeamResults = compileDiffRes.body.data.payload.compiled_team_results

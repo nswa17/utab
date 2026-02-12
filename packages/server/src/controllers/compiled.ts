@@ -188,7 +188,7 @@ function compareByNumericValue(
   return a < b ? -1 : 1
 }
 
-function compareTeamsByRankingPriority(
+function compareTeamsByRankingMetrics(
   left: any,
   right: any,
   order: CompileOptions['ranking_priority']['order']
@@ -198,6 +198,16 @@ function compareTeamsByRankingPriority(
     const compared = compareByNumericValue(left?.[metric], right?.[metric], mode)
     if (compared !== 0) return compared
   }
+  return 0
+}
+
+function compareTeamsByRankingPriority(
+  left: any,
+  right: any,
+  order: CompileOptions['ranking_priority']['order']
+): number {
+  const metricsCompared = compareTeamsByRankingMetrics(left, right, order)
+  if (metricsCompared !== 0) return metricsCompared
   const leftId = String(left?.id ?? '')
   const rightId = String(right?.id ?? '')
   if (leftId === rightId) return 0
@@ -216,7 +226,7 @@ function applyTeamRankingPriority(
   let currentRank = 1
   for (let index = 0; index < sorted.length; index += 1) {
     if (index > 0) {
-      const compared = compareTeamsByRankingPriority(
+      const compared = compareTeamsByRankingMetrics(
         sorted[index],
         sorted[index - 1],
         compileOptions.ranking_priority.order
