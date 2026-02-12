@@ -1072,6 +1072,126 @@ describe('Server integration', () => {
     expect(typeof diffTeam1.diff.metrics.sum.delta).toBe('number')
   })
 
+  it('averages duplicate ballots for split votes when merge policy is average', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-average', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-average', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Compile Average Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
+    expect(speakerRes1.status).toBe(201)
+    const speakerId1 = speakerRes1.body.data._id
+
+    const speakerRes2 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker B' })
+    expect(speakerRes2.status).toBe(201)
+    const speakerId2 = speakerRes2.body.data._id
+
+    const teamRes1 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      details: [{ r: 1, speakers: [speakerId1] }],
+    })
+    expect(teamRes1.status).toBe(201)
+    const teamId1 = teamRes1.body.data._id
+
+    const teamRes2 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+      details: [{ r: 1, speakers: [speakerId2] }],
+    })
+    expect(teamRes2.status).toBe(201)
+    const teamId2 = teamRes2.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamId1, opp: teamId2 },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes1 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [75],
+      scoresB: [72],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes1.status).toBe(201)
+
+    const ballotRes2 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId2,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [71],
+      scoresB: [74],
+      submittedEntityId: 'judge-b',
+    })
+    expect(ballotRes2.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: {
+          preset: 'custom',
+          order: ['win', 'sum', 'margin', 'vote', 'average', 'sd'],
+        },
+        winner_policy: 'winner_id_then_score',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'average',
+          poi_aggregation: 'average',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+    expect(compileRes.body.data.payload.compile_options.duplicate_normalization.merge_policy).toBe(
+      'average'
+    )
+
+    const teamResults = compileRes.body.data.payload.compiled_team_results
+    expect(teamResults.length).toBe(2)
+    const team1 = teamResults.find((row: any) => row.id === teamId1)
+    const team2 = teamResults.find((row: any) => row.id === teamId2)
+    expect(team1.win).toBe(0.5)
+    expect(team2.win).toBe(0.5)
+  })
+
   it('adds and removes tournament users', async () => {
     const agent = request.agent(app)
 

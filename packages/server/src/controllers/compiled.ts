@@ -418,6 +418,198 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
   return `${round}:${ordered[0]}:${ordered[1]}`
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item)).map((item) => item.trim()).filter(Boolean)
+}
+
+function toBooleanArray(value: unknown): boolean[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => Boolean(item))
+}
+
+function averageFiniteNumbers(values: number[]): number | null {
+  const finite = values.filter((value) => Number.isFinite(value))
+  if (finite.length === 0) return null
+  return sumScores(finite) / finite.length
+}
+
+function averageNumberArrays(values: number[][]): number[] {
+  const maxLength = values.reduce((current, list) => Math.max(current, list.length), 0)
+  const averaged: number[] = []
+  for (let index = 0; index < maxLength; index += 1) {
+    const atIndex = values
+      .map((list) => list[index])
+      .filter((value): value is number => Number.isFinite(value))
+    averaged.push(atIndex.length > 0 ? sumScores(atIndex) / atIndex.length : Number.NaN)
+  }
+  return averaged
+}
+
+function aggregateBooleanArrays(
+  values: boolean[][],
+  policy: CompileOptions['duplicate_normalization']['best_aggregation']
+): boolean[] {
+  const maxLength = values.reduce((current, list) => Math.max(current, list.length), 0)
+  const aggregated: boolean[] = []
+  for (let index = 0; index < maxLength; index += 1) {
+    const atIndex = values
+      .map((list) => list[index])
+      .filter((value): value is boolean => typeof value === 'boolean')
+    if (atIndex.length === 0) {
+      aggregated.push(false)
+      continue
+    }
+    if (policy === 'max') {
+      aggregated.push(atIndex.some(Boolean))
+      continue
+    }
+    const trueRate = atIndex.filter(Boolean).length / atIndex.length
+    aggregated.push(trueRate >= 0.5)
+  }
+  return aggregated
+}
+
+function orientBallotPayload(
+  payload: Record<string, unknown>,
+  teamAId: string,
+  teamBId: string
+): Record<string, unknown> | null {
+  const payloadTeamAId = String(payload.teamAId ?? '').trim()
+  const payloadTeamBId = String(payload.teamBId ?? '').trim()
+  if (!payloadTeamAId || !payloadTeamBId) return null
+  if (payloadTeamAId === teamAId && payloadTeamBId === teamBId) return { ...payload, teamAId, teamBId }
+  if (payloadTeamAId === teamBId && payloadTeamBId === teamAId) {
+    return {
+      ...payload,
+      teamAId,
+      teamBId,
+      speakerIdsA: payload.speakerIdsB,
+      speakerIdsB: payload.speakerIdsA,
+      scoresA: payload.scoresB,
+      scoresB: payload.scoresA,
+      bestA: payload.bestB,
+      bestB: payload.bestA,
+      poiA: payload.poiB,
+      poiB: payload.poiA,
+      matterA: payload.matterB,
+      matterB: payload.matterA,
+      mannerA: payload.mannerB,
+      mannerB: payload.mannerA,
+    }
+  }
+  return null
+}
+
+function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: CompileOptions): any {
+  const firstPayload = (grouped[0]?.payload ?? {}) as Record<string, unknown>
+  const teamAId = String(firstPayload.teamAId ?? '').trim()
+  const teamBId = String(firstPayload.teamBId ?? '').trim()
+  if (!teamAId || !teamBId || teamAId === teamBId) return grouped[0]
+
+  const orientedPayloads = grouped
+    .map((submission) =>
+      orientBallotPayload((submission?.payload ?? {}) as Record<string, unknown>, teamAId, teamBId)
+    )
+    .filter((payload): payload is Record<string, unknown> => Boolean(payload))
+  if (orientedPayloads.length === 0) return grouped[0]
+
+  const averagedScoresA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.scoresA))
+  )
+  const averagedScoresB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.scoresB))
+  )
+  const averagedMatterA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.matterA))
+  )
+  const averagedMannerA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.mannerA))
+  )
+  const averagedMatterB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.matterB))
+  )
+  const averagedMannerB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.mannerB))
+  )
+
+  const aggregatedBestA = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.bestA)),
+    compileOptions.duplicate_normalization.best_aggregation
+  )
+  const aggregatedBestB = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.bestB)),
+    compileOptions.duplicate_normalization.best_aggregation
+  )
+  const aggregatedPoiA = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.poiA)),
+    compileOptions.duplicate_normalization.poi_aggregation
+  )
+  const aggregatedPoiB = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.poiB)),
+    compileOptions.duplicate_normalization.poi_aggregation
+  )
+
+  const speakerIdsA =
+    orientedPayloads
+      .map((payload) => toStringArray(payload.speakerIdsA))
+      .find((value) => value.length > 0) ?? []
+  const speakerIdsB =
+    orientedPayloads
+      .map((payload) => toStringArray(payload.speakerIdsB))
+      .find((value) => value.length > 0) ?? []
+
+  const winsA = orientedPayloads.map((payload) => {
+    const totalA = sumScores(toNumberArray(payload.scoresA))
+    const totalB = sumScores(toNumberArray(payload.scoresB))
+    const winnerId = resolveWinnerForBallot(
+      payload as BallotPayload,
+      compileOptions.winner_policy,
+      totalA,
+      totalB
+    )
+    return winnerId === teamAId ? 1 : winnerId ? 0 : compileOptions.tie_points
+  })
+  const winsB = orientedPayloads.map((payload) => {
+    const totalA = sumScores(toNumberArray(payload.scoresA))
+    const totalB = sumScores(toNumberArray(payload.scoresB))
+    const winnerId = resolveWinnerForBallot(
+      payload as BallotPayload,
+      compileOptions.winner_policy,
+      totalA,
+      totalB
+    )
+    return winnerId === teamBId ? 1 : winnerId ? 0 : compileOptions.tie_points
+  })
+  const averagedWinA = averageFiniteNumbers(winsA)
+  const averagedWinB = averageFiniteNumbers(winsB)
+
+  return {
+    ...grouped[0],
+    _id: `avg:${key}`,
+    payload: {
+      ...orientedPayloads[0],
+      teamAId,
+      teamBId,
+      winnerId: '',
+      speakerIdsA,
+      speakerIdsB,
+      scoresA: averagedScoresA,
+      scoresB: averagedScoresB,
+      bestA: aggregatedBestA,
+      bestB: aggregatedBestB,
+      poiA: aggregatedPoiA,
+      poiB: aggregatedPoiB,
+      matterA: averagedMatterA,
+      mannerA: averagedMannerA,
+      matterB: averagedMatterB,
+      mannerB: averagedMannerB,
+    },
+    __normalizedWinA: averagedWinA ?? 0,
+    __normalizedWinB: averagedWinB ?? 0,
+  }
+}
+
 function resolveWinnerForBallot(
   payload: BallotPayload,
   policy: CompileOptions['winner_policy'],
@@ -804,7 +996,7 @@ async function buildCompiledPayloadFromSubmissions(
       if (latest) normalizedBallots.push(latest)
       return
     }
-    normalizedBallots.push(...grouped)
+    normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
   })
 
   normalizedBallots.forEach((submission: any) => {
@@ -849,8 +1041,23 @@ async function buildCompiledPayloadFromSubmissions(
     const totalA = sumScores(scoresA)
     const totalB = sumScores(scoresB)
     const winnerId = resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
-    const winA = winnerId === teamAId ? 1 : winnerId ? 0 : compileOptions.tie_points
-    const winB = winnerId === teamBId ? 1 : winnerId ? 0 : compileOptions.tie_points
+    const normalizedWinA = Number((submission as any).__normalizedWinA)
+    const normalizedWinB = Number((submission as any).__normalizedWinB)
+    const hasNormalizedWins = Number.isFinite(normalizedWinA) && Number.isFinite(normalizedWinB)
+    const winA = hasNormalizedWins
+      ? normalizedWinA
+      : winnerId === teamAId
+        ? 1
+        : winnerId
+          ? 0
+          : compileOptions.tie_points
+    const winB = hasNormalizedWins
+      ? normalizedWinB
+      : winnerId === teamBId
+        ? 1
+        : winnerId
+          ? 0
+          : compileOptions.tie_points
     const sideMap = sideByRoundTeam.get(round)
 
     rawTeamResults.push({
