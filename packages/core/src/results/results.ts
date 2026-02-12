@@ -133,22 +133,33 @@ export function summarizeTeamResults(
     let vote: number | null
     let voteRate: number | null
     let win: number
+    const winValues = filtered
+      .map((tr) => (typeof tr.win === 'number' ? tr.win : Number(tr.win)))
+      .filter((value) => Number.isFinite(value))
+    const hasFractionalWin = winValues.some((value) => value !== 0 && value !== 1)
     if (teamNum === 2) {
-      vote =
-        count(
-          filtered.map((tr) => tr.win),
-          1
-        ) -
-        count(
-          filtered.map((tr) => tr.win),
-          0
-        )
-      voteRate =
-        count(
-          filtered.map((tr) => tr.win),
-          1
-        ) / filtered.length
-      win = vote > 0 ? 1 : 0
+      if (hasFractionalWin) {
+        const winTotal = sum(winValues)
+        vote = winTotal - (filtered.length - winTotal)
+        voteRate = filtered.length === 0 ? 0 : winTotal / filtered.length
+        win = filtered.length === 0 ? 0 : winTotal / filtered.length
+      } else {
+        vote =
+          count(
+            filtered.map((tr) => tr.win),
+            1
+          ) -
+          count(
+            filtered.map((tr) => tr.win),
+            0
+          )
+        voteRate =
+          count(
+            filtered.map((tr) => tr.win),
+            1
+          ) / filtered.length
+        win = vote > 0 ? 1 : 0
+      }
     } else {
       vote = null
       voteRate = null

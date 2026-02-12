@@ -1,11 +1,21 @@
 import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { getSubmissionModel } from '../models/submission.js'
+import { getRoundModel } from '../models/round.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
   const token = String(submittedEntityId ?? sessionUserId ?? '').trim()
   return token
+}
+
+function toNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => (typeof item === 'number' ? item : Number(item)))
+}
+
+function sumScores(scores: number[]): number {
+  return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 }
 
 export const listSubmissions: RequestHandler = async (req, res, next) => {
@@ -143,7 +153,37 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     }
 
     const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
     const SubmissionModel = getSubmissionModel(connection)
+    const roundDoc = await RoundModel.findOne({ tournamentId, round }).lean().exec()
+    const allowLowTieWin = (roundDoc as any)?.userDefinedData?.allow_low_tie_win !== false
+    if (!allowLowTieWin) {
+      const normalizedWinner = String(winnerId ?? '').trim()
+      const winnerIsTeamA = normalizedWinner === teamAId
+      const winnerIsTeamB = normalizedWinner === teamBId
+      const validWinner = winnerIsTeamA || winnerIsTeamB
+      const parsedScoresA = toNumberArray(scoresA)
+      const parsedScoresB = toNumberArray(scoresB)
+      const hasComparableScores =
+        parsedScoresA.some((score) => Number.isFinite(score)) &&
+        parsedScoresB.some((score) => Number.isFinite(score))
+
+      let invalid = !validWinner
+      if (!invalid && hasComparableScores) {
+        const totalA = sumScores(parsedScoresA)
+        const totalB = sumScores(parsedScoresB)
+        if (winnerIsTeamA) invalid = totalA <= totalB
+        if (winnerIsTeamB) invalid = totalB <= totalA
+      }
+      if (invalid) {
+        res.status(400).json({
+          data: null,
+          errors: [{ name: 'BadRequest', message: 'low tie win is not allowed in this round' }],
+        })
+        return
+      }
+    }
+
     const actor = resolveSubmissionActor(submittedEntityId, req.session?.userId)
     if (actor) {
       await SubmissionModel.deleteMany({

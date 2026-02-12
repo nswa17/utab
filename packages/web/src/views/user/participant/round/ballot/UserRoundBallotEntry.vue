@@ -25,6 +25,7 @@
             <option :value="selectedTeamA?._id">{{ teamAName }}</option>
             <option :value="selectedTeamB?._id">{{ teamBName }}</option>
           </select>
+          <span v-if="allowLowTieWin" class="muted tiny">{{ $t('未選択で引き分けとして送信できます。') }}</span>
         </label>
       </div>
 
@@ -330,17 +331,16 @@ const totalScoreB = computed(() =>
 )
 const lowTieWarning = computed(() => {
   if (allowLowTieWin.value) return false
-  if (noSpeakerScore.value) return false
-  if (!winnerId.value) return false
+  if (!winnerId.value) return true
   if (winnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
   if (winnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
-  return false
+  return true
 })
 const identityReady = computed(() => Boolean(identityId.value))
 
 const canSubmit = computed(() => {
   if (!selectedTeamA.value || !selectedTeamB.value) return false
-  if (!winnerId.value) return false
+  if (!allowLowTieWin.value && !winnerId.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
   if (!allowLowTieWin.value && lowTieWarning.value) return false
   if (!identityReady.value) return false
@@ -349,6 +349,7 @@ const canSubmit = computed(() => {
 const winnerName = computed(() => {
   if (winnerId.value === teamAId.value) return teamAName.value
   if (winnerId.value === teamBId.value) return teamBName.value
+  if (allowLowTieWin.value) return t('引き分け')
   return t('未選択')
 })
 const confirmButtonLabel = computed(() =>
@@ -574,7 +575,7 @@ function validateBeforeSubmit() {
     submitError.value = t('参加者ホームでジャッジを選択してください。')
     return false
   }
-  if (!winnerId.value) {
+  if (!winnerId.value && !allowLowTieWin.value) {
     submitError.value = t('勝者を選択してください。')
     return false
   }

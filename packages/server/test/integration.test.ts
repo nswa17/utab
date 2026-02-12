@@ -402,12 +402,32 @@ describe('Server integration', () => {
     ])
     expect(rawAdjudicatorRes.status).toBe(201)
 
-    const compiledRes = await agent.post('/api/compiled').send({ tournamentId, source: 'raw' })
+    const compileOptions = {
+      ranking_priority: {
+        preset: 'custom',
+        order: ['win', 'sum', 'margin', 'vote', 'average', 'sd'],
+      },
+      winner_policy: 'score_only',
+      tie_points: 0.5,
+      duplicate_normalization: {
+        merge_policy: 'latest',
+        poi_aggregation: 'max',
+        best_aggregation: 'average',
+      },
+      missing_data_policy: 'exclude',
+      include_labels: ['teams', 'speakers', 'poi'],
+      diff_baseline: { mode: 'latest' as const },
+    }
+
+    const compiledRes = await agent
+      .post('/api/compiled')
+      .send({ tournamentId, source: 'raw', options: compileOptions })
     expect(compiledRes.status).toBe(201)
     expect(compiledRes.body.data.payload.rounds[0]?.name).toBe('Round One')
     expect(compiledRes.body.data.payload.compiled_team_results.length).toBe(2)
     expect(compiledRes.body.data.payload.compiled_speaker_results.length).toBe(2)
-    expect(compiledRes.body.data.payload.compiled_adjudicator_results.length).toBe(1)
+    expect(compiledRes.body.data.payload.compiled_adjudicator_results.length).toBe(0)
+    expect(compiledRes.body.data.payload.compile_options).toEqual(compileOptions)
 
     const compiledTeamsRes = await agent
       .post('/api/compiled/teams')
@@ -416,6 +436,7 @@ describe('Server integration', () => {
     expect(compiledTeamsRes.body.data.results.length).toBe(2)
     expect(compiledTeamsRes.body.data.rounds[0]?.name).toBe('Round One')
     expect(compiledTeamsRes.body.data.rounds.length).toBeGreaterThan(0)
+    expect(compiledTeamsRes.body.data.compile_options.winner_policy).toBe('winner_id_then_score')
 
     const compiledSpeakersRes = await agent
       .post('/api/compiled/speakers')
@@ -728,12 +749,27 @@ describe('Server integration', () => {
 
     const compiledRes = await agent
       .post('/api/compiled')
-      .send({ tournamentId, source: 'submissions' })
+      .send({
+        tournamentId,
+        source: 'submissions',
+        options: { diff_baseline: { mode: 'compiled', compiled_id: 'seed-compiled-1' } },
+      })
     expect(compiledRes.status).toBe(201)
     expect(compiledRes.body.data.payload.rounds[0]?.name).toBe('Main Round 1')
     expect(compiledRes.body.data.payload.compiled_team_results.length).toBe(2)
     expect(compiledRes.body.data.payload.compiled_speaker_results.length).toBe(2)
     expect(compiledRes.body.data.payload.compiled_adjudicator_results.length).toBe(1)
+    expect(compiledRes.body.data.payload.compile_options.diff_baseline).toEqual({
+      mode: 'compiled',
+      compiled_id: 'seed-compiled-1',
+    })
+    expect(compiledRes.body.data.payload.compile_options.tie_points).toBe(0.5)
+    expect(compiledRes.body.data.payload.compile_diff_meta).toEqual({
+      baseline_mode: 'compiled',
+      requested_compiled_id: 'seed-compiled-1',
+      baseline_compiled_id: null,
+      baseline_found: false,
+    })
     const compiledAdj = compiledRes.body.data.payload.compiled_adjudicator_results[0]
     expect(compiledAdj.num_experienced).toBe(1)
 
@@ -741,6 +777,264 @@ describe('Server integration', () => {
     expect(compiledList.status).toBe(200)
     expect(compiledList.body.data.payload.rounds[0]?.name).toBe('Main Round 1')
     expect(compiledList.body.data.payload.compiled_team_results.length).toBe(2)
+  })
+
+  it('rejects draw-like ballot submissions when low tie win is disabled', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'no-tie-round', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'no-tie-round', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'No Tie Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        allow_low_tie_win: false,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const noWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(noWinner.status).toBe(400)
+
+    const tieScoreWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(tieScoreWinner.status).toBe(400)
+
+    const validWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(validWinner.status).toBe(201)
+  })
+
+  it('applies compile options to submission-based aggregation', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-options-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-options-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const stylesRes = await agent.get('/api/styles')
+    expect(stylesRes.status).toBe(200)
+    const styleId = stylesRes.body.data[0].id ?? 1
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Compile Options Open',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Main Round',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker One' })
+    expect(speakerRes1.status).toBe(201)
+    const speakerId1 = speakerRes1.body.data._id
+    const speakerRes2 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker Two' })
+    expect(speakerRes2.status).toBe(201)
+    const speakerId2 = speakerRes2.body.data._id
+
+    const teamRes1 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team One',
+      details: [{ r: 1, speakers: [speakerId1] }],
+    })
+    expect(teamRes1.status).toBe(201)
+    const teamId1 = teamRes1.body.data._id
+    const teamRes2 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team Two',
+      details: [{ r: 1, speakers: [speakerId2] }],
+    })
+    expect(teamRes2.status).toBe(201)
+    const teamId2 = teamRes2.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamId1, opp: teamId2 },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes1 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId2,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [70],
+      scoresB: [74],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes1.status).toBe(201)
+
+    const ballotRes2 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: 'judge-b',
+    })
+    expect(ballotRes2.status).toBe(201)
+
+    const compileError = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        duplicate_normalization: { merge_policy: 'error' },
+      },
+    })
+    expect(compileError.status).toBe(400)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: {
+          preset: 'custom',
+          order: ['sum', 'win', 'margin', 'vote', 'average', 'sd'],
+        },
+        winner_policy: 'draw_on_missing',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'latest',
+          poi_aggregation: 'max',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+    expect(compileRes.body.data.payload.compile_options.winner_policy).toBe('draw_on_missing')
+    expect(compileRes.body.data.payload.compiled_speaker_results.length).toBe(0)
+    expect(compileRes.body.data.payload.compiled_adjudicator_results.length).toBe(0)
+
+    const teamResults = compileRes.body.data.payload.compiled_team_results
+    expect(teamResults.length).toBe(2)
+    const team1 = teamResults.find((row: any) => row.id === teamId1)
+    const team2 = teamResults.find((row: any) => row.id === teamId2)
+    expect(team1.win).toBe(0.5)
+    expect(team2.win).toBe(0.5)
+    expect(team1.ranking).toBe(1)
+    expect(team2.ranking).toBe(2)
+    expect(compileRes.body.data.payload.compile_warnings).toEqual([])
+
+    const ballotRes3 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId2,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [68],
+      scoresB: [80],
+      submittedEntityId: 'judge-c',
+    })
+    expect(ballotRes3.status).toBe(201)
+
+    const compileDiffRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: {
+          preset: 'custom',
+          order: ['sum', 'win', 'margin', 'vote', 'average', 'sd'],
+        },
+        winner_policy: 'draw_on_missing',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'latest',
+          poi_aggregation: 'max',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+        diff_baseline: { mode: 'latest' },
+      },
+    })
+    expect(compileDiffRes.status).toBe(201)
+    expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_mode).toBe('latest')
+    expect(compileDiffRes.body.data.payload.compile_diff_meta.baseline_found).toBe(true)
+
+    const diffTeamResults = compileDiffRes.body.data.payload.compiled_team_results
+    const diffTeam1 = diffTeamResults.find((row: any) => row.id === teamId1)
+    const diffTeam2 = diffTeamResults.find((row: any) => row.id === teamId2)
+    expect(diffTeam1.diff.ranking.trend).toBe('worsened')
+    expect(diffTeam1.diff.ranking.delta).toBe(1)
+    expect(diffTeam2.diff.ranking.trend).toBe('improved')
+    expect(diffTeam2.diff.ranking.delta).toBe(-1)
+    expect(typeof diffTeam1.diff.metrics.sum.delta).toBe('number')
   })
 
   it('adds and removes tournament users', async () => {

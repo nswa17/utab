@@ -20,20 +20,22 @@
         </div>
         <div class="compile-grid">
           <label class="stack compile-field">
-            <span class="muted">{{ $t('ソース') }}</span>
+            <span class="muted compile-label">
+              {{ $t('ソース') }}
+              <HelpTip :text="optionHelp('source')" />
+            </span>
             <select v-model="compileSource">
               <option value="submissions">{{ $t('提出データ') }}</option>
               <option value="raw">{{ $t('生結果データ') }}</option>
             </select>
           </label>
-          <div class="stack compile-field">
-            <span class="muted">{{ $t('ラウンド') }}</span>
+          <div class="stack compile-field compile-field-wide">
+            <span class="muted compile-label">
+              {{ $t('ラウンド') }}
+              <HelpTip :text="optionHelp('rounds')" />
+            </span>
             <div class="pill-group">
-              <label
-                v-for="round in sortedRounds"
-                :key="round.round"
-                class="pill"
-              >
+              <label v-for="round in sortedRounds" :key="round.round" class="pill">
                 <input type="checkbox" :value="round.round" v-model="compileRounds" />
                 <span>
                   {{ round.name ?? $t('ラウンド {round}', { round: round.round }) }}
@@ -41,6 +43,173 @@
               </label>
             </div>
           </div>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('順位比較') }}
+              <HelpTip :text="optionHelp('ranking')" />
+            </span>
+            <select v-model="rankingPriorityPreset">
+              <option value="current">{{ $t('現行') }}</option>
+              <option value="custom">{{ $t('カスタム') }}</option>
+            </select>
+          </label>
+          <div v-if="rankingPriorityPreset === 'custom'" class="stack compile-field compile-field-wide">
+            <span class="muted">{{ $t('順位比較順（上から優先）') }}</span>
+            <div class="stack ranking-priority-list">
+              <div
+                v-for="(metric, index) in rankingPriorityOrder"
+                :key="metric"
+                class="row ranking-priority-item"
+              >
+                <span>{{ rankingMetricLabel(metric) }}</span>
+                <div class="inline">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    @click="moveRankingPriority(index, -1)"
+                    :disabled="index === 0"
+                  >
+                    {{ $t('上に移動') }}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    @click="moveRankingPriority(index, 1)"
+                    :disabled="index === rankingPriorityOrder.length - 1"
+                  >
+                    {{ $t('下に移動') }}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('勝敗判定') }}
+              <HelpTip :text="optionHelp('winner')" />
+            </span>
+            <select v-model="compileWinnerPolicy">
+              <option value="winner_id_then_score">
+                {{ $t('winnerId優先（未指定時はスコア推定）') }}
+              </option>
+              <option value="score_only">{{ $t('スコア推定のみ') }}</option>
+              <option value="draw_on_missing">{{ $t('未指定は引き分け') }}</option>
+            </select>
+          </label>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('引き分け時ポイント') }}
+              <HelpTip :text="optionHelp('tie')" />
+            </span>
+            <input v-model.number="compileTiePoints" type="number" min="0" step="0.5" />
+          </label>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('重複マージ') }}
+              <HelpTip :text="optionHelp('merge')" />
+            </span>
+            <select v-model="compileDuplicateMergePolicy">
+              <option value="latest">{{ $t('最新を採用') }}</option>
+              <option value="average">{{ $t('平均で統合') }}</option>
+              <option value="error">{{ $t('重複時はエラー') }}</option>
+            </select>
+          </label>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('POI集計') }}
+              <HelpTip :text="optionHelp('poi')" />
+            </span>
+            <select v-model="compilePoiAggregation">
+              <option value="average">{{ $t('平均') }}</option>
+              <option value="max">{{ $t('最大') }}</option>
+            </select>
+          </label>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('Best集計') }}
+              <HelpTip :text="optionHelp('best')" />
+            </span>
+            <select v-model="compileBestAggregation">
+              <option value="average">{{ $t('平均') }}</option>
+              <option value="max">{{ $t('最大') }}</option>
+            </select>
+          </label>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('欠損データ') }}
+              <HelpTip :text="optionHelp('missing')" />
+            </span>
+            <select v-model="compileMissingDataPolicy">
+              <option value="warn">{{ $t('警告のみ') }}</option>
+              <option value="exclude">{{ $t('欠損を除外') }}</option>
+              <option value="error">{{ $t('エラー停止') }}</option>
+            </select>
+          </label>
+          <div class="stack compile-field compile-field-wide">
+            <span class="muted compile-label">
+              {{ $t('生成対象') }}
+              <HelpTip :text="optionHelp('include')" />
+            </span>
+            <div class="pill-group">
+              <label v-for="label in includeLabelOptions" :key="label" class="pill">
+                <input type="checkbox" :value="label" v-model="compileIncludeLabels" />
+                <span>{{ labelDisplay(label) }}</span>
+              </label>
+            </div>
+          </div>
+          <label class="stack compile-field">
+            <span class="muted compile-label">
+              {{ $t('差分比較') }}
+              <HelpTip :text="optionHelp('diff')" />
+            </span>
+            <select v-model="compileDiffBaselineMode">
+              <option value="latest">{{ $t('最新集計') }}</option>
+              <option value="compiled">{{ $t('指定compiled') }}</option>
+            </select>
+          </label>
+          <label
+            v-if="compileDiffBaselineMode === 'compiled'"
+            class="stack compile-field"
+          >
+            <span class="muted">{{ $t('比較対象 compiled ID') }}</span>
+            <input v-model.trim="compileDiffBaselineCompiledId" type="text" />
+          </label>
+        </div>
+        <div class="stack compile-summary">
+          <span class="muted">{{ $t('設定サマリー') }}</span>
+          <ul class="compile-summary-list">
+            <li v-for="line in compileSummaryLines" :key="line">{{ line }}</li>
+          </ul>
+        </div>
+        <p
+          v-if="compileDiffBaselineMode === 'compiled' && !compileDiffBaselineCompiledId.trim()"
+          class="muted warning"
+        >
+          {{ $t('指定compiledを選ぶ場合はIDを入力してください。') }}
+        </p>
+        <div v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary">
+          <div class="row">
+            <h5>{{ $t('提出状況サマリー') }}</h5>
+            <RouterLink :to="`/admin/${tournamentId}/submissions`" class="submission-link">
+              {{ $t('提出一覧を開く') }}
+            </RouterLink>
+          </div>
+          <Table hover striped>
+            <thead>
+              <tr>
+                <th>{{ $t('ラウンド') }}</th>
+                <th>Ballot</th>
+                <th>Feedback</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
+                <td>{{ roundName(summary.round) }}</td>
+                <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
+                <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
+              </tr>
+            </tbody>
+          </Table>
         </div>
         <div v-if="compileRounds.length > 0" class="stack compile-warning-list">
           <div v-for="r in compileRounds" :key="r">
@@ -86,9 +255,14 @@
           </div>
         </div>
         <div class="row compile-actions">
-          <Button @click="runCompile" :disabled="isLoading || compileRounds.length === 0">
+          <Button @click="runCompile" :disabled="isLoading || !canRunCompile">
             {{ $t('レポート生成') }}
           </Button>
+        </div>
+        <div v-if="compileWarnings.length > 0" class="stack compile-warning-list">
+          <p v-for="warning in compileWarnings" :key="warning" class="muted warning">
+            {{ warning }}
+          </p>
         </div>
       </section>
 
@@ -116,6 +290,21 @@
               {{ $t('CSVダウンロード') }}
             </Button>
           </div>
+          <div v-if="showDiffLegend" class="row diff-legend">
+            <span class="diff-legend-item">
+              <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
+            </span>
+            <span class="diff-legend-item">
+              <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
+            </span>
+            <span class="diff-legend-item">
+              <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
+            </span>
+            <span class="diff-legend-item">
+              <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
+            </span>
+            <span class="muted">{{ $t('差分基準: {baseline}', { baseline: diffBaselineLabel }) }}</span>
+          </div>
           <div v-if="activeResults.length === 0" class="muted">{{ $t('結果がありません。') }}</div>
           <Table v-else hover striped sticky-header>
             <thead>
@@ -127,10 +316,29 @@
               <tr v-for="row in activeResults" :key="row.id">
                 <td v-for="key in tableColumns" :key="key">
                   <span v-if="key === 'id'">{{ entityName(row.id) }}</span>
+                  <span v-else-if="key === 'ranking'" class="diff-value">
+                    <span>{{ formatValue(row[key]) }}</span>
+                    <span
+                      class="diff-marker"
+                      :class="rankingTrendClass(row)"
+                      :title="rankingTrendText(row)"
+                      :aria-label="rankingTrendText(row)"
+                    >
+                      {{ rankingTrendSymbol(rankingTrendForRow(row)) }}
+                    </span>
+                    <span v-if="rankingDeltaText(row)" class="muted diff-delta">
+                      {{ rankingDeltaText(row) }}
+                    </span>
+                  </span>
                   <span v-else-if="key === 'comments' || key === 'judged_teams'">
                     {{ formatList(row[key]) }}
                   </span>
-                  <span v-else>{{ formatValue(row[key]) }}</span>
+                  <span v-else class="diff-value">
+                    <span>{{ formatValue(row[key]) }}</span>
+                    <span v-if="metricDeltaText(row, key)" class="muted diff-delta">
+                      {{ metricDeltaText(row, key) }}
+                    </span>
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -258,6 +466,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import Table from '@/components/common/Table.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
+import HelpTip from '@/components/common/HelpTip.vue'
 import Slides from '@/components/slides/Slides.vue'
 import ScoreChange from '@/components/mstat/ScoreChange.vue'
 import ScoreRange from '@/components/mstat/ScoreRange.vue'
@@ -267,6 +476,18 @@ import SideHeatmap from '@/components/mstat/SideHeatmap.vue'
 import SideMarginHeatmap from '@/components/mstat/SideMarginHeatmap.vue'
 import SidePieChart from '@/components/mstat/SidePieChart.vue'
 import TeamPerformance from '@/components/mstat/TeamPerformance.vue'
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  type CompileIncludeLabel,
+  type CompileOptions,
+  type CompileRankingMetric,
+} from '@/types/compiled'
+import {
+  formatSignedDelta,
+  rankingTrendSymbol,
+  resolveRankingTrend,
+  toFiniteNumber,
+} from '@/utils/diff-indicator'
 
 const route = useRoute()
 const compiledStore = useCompiledStore()
@@ -302,6 +523,33 @@ const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>(
 const compileSource = ref<'submissions' | 'raw'>('submissions')
 const compileRounds = ref<number[]>([])
 const compileExecuted = ref(false)
+const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
+  DEFAULT_COMPILE_OPTIONS.ranking_priority.preset
+)
+const rankingPriorityOrder = ref<CompileRankingMetric[]>([
+  ...DEFAULT_COMPILE_OPTIONS.ranking_priority.order,
+])
+const compileWinnerPolicy = ref<CompileOptions['winner_policy']>(
+  DEFAULT_COMPILE_OPTIONS.winner_policy
+)
+const compileTiePoints = ref<number>(DEFAULT_COMPILE_OPTIONS.tie_points)
+const compileDuplicateMergePolicy = ref<CompileOptions['duplicate_normalization']['merge_policy']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.merge_policy
+)
+const compilePoiAggregation = ref<CompileOptions['duplicate_normalization']['poi_aggregation']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.poi_aggregation
+)
+const compileBestAggregation = ref<CompileOptions['duplicate_normalization']['best_aggregation']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.best_aggregation
+)
+const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
+  DEFAULT_COMPILE_OPTIONS.missing_data_policy
+)
+const compileIncludeLabels = ref<CompileIncludeLabel[]>([...DEFAULT_COMPILE_OPTIONS.include_labels])
+const compileDiffBaselineMode = ref<'latest' | 'compiled'>(
+  DEFAULT_COMPILE_OPTIONS.diff_baseline.mode
+)
+const compileDiffBaselineCompiledId = ref('')
 
 const compiled = computed<Record<string, any> | null>(() => compiledStore.compiled)
 const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
@@ -353,17 +601,125 @@ const entities = computed(() => {
   return map
 })
 
+const selectedCompileLabels = computed<Set<string>>(
+  () => new Set(compiled.value?.compile_options?.include_labels ?? DEFAULT_COMPILE_OPTIONS.include_labels)
+)
+function isCompileLabelEnabled(label: 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best') {
+  return selectedCompileLabels.value.has(label)
+}
+
 const availableLabels = computed(() => {
   if (!compiled.value) return ['teams']
   const labels: Array<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'> = []
-  if (compiled.value.compiled_team_results?.length) labels.push('teams')
-  if (compiled.value.compiled_speaker_results?.length) labels.push('speakers')
-  if (compiled.value.compiled_adjudicator_results?.length) labels.push('adjudicators')
-  if (poiResults.value.length > 0) labels.push('poi')
-  if (bestResults.value.length > 0) labels.push('best')
+  if (isCompileLabelEnabled('teams') && compiled.value.compiled_team_results?.length) labels.push('teams')
+  if (isCompileLabelEnabled('speakers') && compiled.value.compiled_speaker_results?.length) labels.push('speakers')
+  if (isCompileLabelEnabled('adjudicators') && compiled.value.compiled_adjudicator_results?.length) labels.push('adjudicators')
+  if (isCompileLabelEnabled('poi') && poiResults.value.length > 0) labels.push('poi')
+  if (isCompileLabelEnabled('best') && bestResults.value.length > 0) labels.push('best')
   return labels.length > 0 ? labels : ['teams']
 })
 const showCategoryTabs = computed(() => Boolean(compiled.value) && compileExecuted.value)
+const includeLabelOptions: CompileIncludeLabel[] = [
+  'teams',
+  'speakers',
+  'adjudicators',
+  'poi',
+  'best',
+]
+const canRunCompile = computed(() => {
+  if (compileRounds.value.length === 0) return false
+  if (compileDiffBaselineMode.value !== 'compiled') return true
+  return compileDiffBaselineCompiledId.value.trim().length > 0
+})
+const compileOptionsPayload = computed<CompileOptions>(() => {
+  const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
+  const includeLabels = Array.from(new Set(compileIncludeLabels.value))
+  return {
+    ranking_priority: {
+      preset: rankingPriorityPreset.value,
+      order:
+        rankingOrder.length > 0
+          ? rankingOrder
+          : [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+    },
+    winner_policy: compileWinnerPolicy.value,
+    tie_points:
+      Number.isFinite(compileTiePoints.value) && compileTiePoints.value >= 0
+        ? compileTiePoints.value
+        : DEFAULT_COMPILE_OPTIONS.tie_points,
+    duplicate_normalization: {
+      merge_policy: compileDuplicateMergePolicy.value,
+      poi_aggregation: compilePoiAggregation.value,
+      best_aggregation: compileBestAggregation.value,
+    },
+    missing_data_policy: compileMissingDataPolicy.value,
+    include_labels:
+      includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    diff_baseline:
+      compileDiffBaselineMode.value === 'compiled' && compileDiffBaselineCompiledId.value.trim()
+        ? { mode: 'compiled', compiled_id: compileDiffBaselineCompiledId.value.trim() }
+        : { mode: 'latest' },
+  }
+})
+const compileSummaryLines = computed(() => {
+  const rankingSummary =
+    rankingPriorityPreset.value === 'custom'
+      ? rankingPriorityOrder.value.map((metric) => rankingMetricLabel(metric)).join(' > ')
+      : t('現行')
+  const diffSummary =
+    compileDiffBaselineMode.value === 'compiled'
+      ? compileDiffBaselineCompiledId.value.trim() || t('未設定')
+      : t('最新集計')
+  return [
+    t('順位比較サマリー: {value}', { value: rankingSummary }),
+    t('勝敗判定サマリー: {policy} / {points}', {
+      policy:
+        compileWinnerPolicy.value === 'winner_id_then_score'
+          ? t('winnerId優先（未指定時はスコア推定）')
+          : compileWinnerPolicy.value === 'score_only'
+            ? t('スコア推定のみ')
+            : t('未指定は引き分け'),
+      points: `${t('引き分け時ポイント')}: ${compileTiePoints.value}`,
+    }),
+    t('重複サマリー: {merge} / POI {poi} / Best {best}', {
+      merge:
+        compileDuplicateMergePolicy.value === 'latest'
+          ? t('最新を採用')
+          : compileDuplicateMergePolicy.value === 'average'
+            ? t('平均で統合')
+            : t('重複時はエラー'),
+      poi: compilePoiAggregation.value === 'max' ? t('最大') : t('平均'),
+      best: compileBestAggregation.value === 'max' ? t('最大') : t('平均'),
+    }),
+    t('欠損サマリー: {policy} / {labels}', {
+      policy:
+        compileMissingDataPolicy.value === 'warn'
+          ? t('警告のみ')
+          : compileMissingDataPolicy.value === 'exclude'
+            ? t('欠損を除外')
+            : t('エラー停止'),
+      labels: compileIncludeLabels.value.map((label) => labelDisplay(label)).join(', '),
+    }),
+    t('差分サマリー: {value}', { value: diffSummary }),
+  ]
+})
+const compileWarnings = computed<string[]>(() =>
+  Array.isArray(compiled.value?.compile_warnings) ? compiled.value.compile_warnings : []
+)
+const compileDiffMeta = computed<any | null>(() =>
+  compiled.value?.compile_diff_meta && typeof compiled.value.compile_diff_meta === 'object'
+    ? compiled.value.compile_diff_meta
+    : null
+)
+const diffBaselineLabel = computed(() => {
+  const meta = compileDiffMeta.value
+  if (!meta || meta.baseline_found !== true) return t('基準なし')
+  const baselineId = String(meta.baseline_compiled_id ?? '')
+  if (meta.baseline_mode === 'compiled') {
+    return t('指定compiled（ID: {id}）', { id: baselineId })
+  }
+  return t('最新集計（ID: {id}）', { id: baselineId })
+})
 
 function mapInstitutions(values: any): string[] {
   if (!Array.isArray(values)) return []
@@ -414,6 +770,9 @@ const activeResults = computed<any[]>(() => {
     return base
   })
 })
+const showDiffLegend = computed(() =>
+  activeResults.value.some((row: any) => row?.diff?.ranking) || compileDiffMeta.value !== null
+)
 
 const awardCopyRows = computed(() => {
   if (activeResults.value.length === 0) return []
@@ -535,6 +894,15 @@ const roundConfigByRound = computed(() => {
   })
   return map
 })
+const summaryTargetRounds = computed(() => {
+  const baseRounds =
+    compileRounds.value.length > 0
+      ? compileRounds.value
+      : sortedRounds.value.map((round) => Number(round.round))
+  return Array.from(new Set(baseRounds.map((round) => Number(round))))
+    .filter((round) => Number.isFinite(round))
+    .sort((a, b) => a - b)
+})
 
 function expectedIdsForRound(r: number) {
   const draw = drawByRound.value.get(r)
@@ -646,6 +1014,94 @@ function feedbackTeamLabel(r: number) {
   return config?.userDefinedData?.evaluator_in_team === 'speaker' ? t('スピーカー') : t('チーム')
 }
 
+function duplicateSubmitterCountByRound(r: number, type: 'ballot' | 'feedback') {
+  const list = submissionsByRound.value.get(r) ?? []
+  const counter = new Map<string, number>()
+  list
+    .filter((item: any) => item.type === type)
+    .forEach((item: any) => {
+      const submittedEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
+      if (!submittedEntityId) return
+      counter.set(submittedEntityId, (counter.get(submittedEntityId) ?? 0) + 1)
+    })
+  return Array.from(counter.values()).reduce((acc, count) => acc + Math.max(0, count - 1), 0)
+}
+
+function expectedFeedbackIdsForRound(r: number) {
+  const config = roundConfigByRound.value.get(r)
+  const set = new Set<string>()
+  if (config?.userDefinedData?.evaluate_from_teams !== false) {
+    if (config?.userDefinedData?.evaluator_in_team === 'speaker') {
+      expectedSpeakerIdsForRound(r).forEach((id) => set.add(id))
+    } else {
+      expectedIdsForRound(r).expectedTeams.forEach((id) => set.add(id))
+    }
+  }
+  if (config?.userDefinedData?.evaluate_from_adjudicators !== false) {
+    expectedIdsForRound(r).expectedAdjudicators.forEach((id) => set.add(id))
+  }
+  return set
+}
+
+type RoundSubmissionSummary = {
+  round: number
+  ballot: {
+    expected: number
+    submitted: number
+    missing: number
+    duplicates: number
+    unknown: number
+  }
+  feedback: {
+    expected: number
+    submitted: number
+    missing: number
+    duplicates: number
+    unknown: number
+  }
+}
+
+const roundSubmissionSummaries = computed<RoundSubmissionSummary[]>(() =>
+  summaryTargetRounds.value.map((round) => {
+    const { expectedAdjudicators } = expectedIdsForRound(round)
+    const submittedBallot = ballotSubmittedIds(round)
+    const unknown = unknownCountsByRound(round)
+    const expectedFeedback = expectedFeedbackIdsForRound(round)
+    const submittedFeedback = feedbackSubmittedIds(round)
+    return {
+      round,
+      ballot: {
+        expected: expectedAdjudicators.size,
+        submitted: submittedBallot.size,
+        missing: Math.max(0, expectedAdjudicators.size - submittedBallot.size),
+        duplicates: duplicateSubmitterCountByRound(round, 'ballot'),
+        unknown: unknown.ballot,
+      },
+      feedback: {
+        expected: expectedFeedback.size,
+        submitted: submittedFeedback.size,
+        missing: Math.max(0, expectedFeedback.size - submittedFeedback.size),
+        duplicates: duplicateSubmitterCountByRound(round, 'feedback'),
+        unknown: unknown.feedback,
+      },
+    }
+  })
+)
+
+function summarizeSubmissionCell(
+  summary: RoundSubmissionSummary,
+  kind: 'ballot' | 'feedback'
+) {
+  const value = summary[kind]
+  return t('提出 {submitted}/{expected} | 未提出 {missing} | 重複 {duplicates} | 不明 {unknown}', {
+    submitted: value.submitted,
+    expected: value.expected,
+    missing: value.missing,
+    duplicates: value.duplicates,
+    unknown: value.unknown,
+  })
+}
+
 function formatValue(value: unknown) {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return '—'
@@ -666,6 +1122,54 @@ function formatList(value: unknown) {
   if (items.length === 0) return '—'
   if (items.length <= 5) return items.join(', ')
   return `${items.slice(0, 5).join(', ')} (+${items.length - 5})`
+}
+
+function optionHelp(key: string) {
+  const map: Record<string, string> = {
+    source: t('ヘルプ:ソース'),
+    rounds: t('ヘルプ:ラウンド'),
+    ranking: t('ヘルプ:順位比較'),
+    winner: t('ヘルプ:勝敗判定'),
+    tie: t('ヘルプ:引き分けポイント'),
+    merge: t('ヘルプ:重複マージ'),
+    poi: t('ヘルプ:POI集計'),
+    best: t('ヘルプ:Best集計'),
+    missing: t('ヘルプ:欠損データ'),
+    include: t('ヘルプ:生成対象'),
+    diff: t('ヘルプ:差分比較'),
+  }
+  return map[key] ?? ''
+}
+
+function rankingTrendForRow(row: any) {
+  return resolveRankingTrend(row?.diff?.ranking?.trend)
+}
+
+function rankingTrendClass(row: any) {
+  const trend = rankingTrendForRow(row)
+  if (trend === 'improved') return 'diff-improved'
+  if (trend === 'worsened') return 'diff-worsened'
+  if (trend === 'unchanged') return 'diff-unchanged'
+  if (trend === 'new') return 'diff-new'
+  return 'diff-na'
+}
+
+function rankingTrendText(row: any) {
+  const trend = rankingTrendForRow(row)
+  const deltaText = formatSignedDelta(row?.diff?.ranking?.delta)
+  if (trend === 'improved') return t('順位改善 {delta}', { delta: deltaText || '' }).trim()
+  if (trend === 'worsened') return t('順位悪化 {delta}', { delta: deltaText || '' }).trim()
+  if (trend === 'unchanged') return t('順位変化なし')
+  if (trend === 'new') return t('新規エントリー')
+  return t('差分なし')
+}
+
+function rankingDeltaText(row: any) {
+  return formatSignedDelta(row?.diff?.ranking?.delta)
+}
+
+function metricDeltaText(row: any, key: string) {
+  return formatSignedDelta(row?.diff?.metrics?.[key]?.delta)
 }
 
 function formatCsvValue(value: unknown) {
@@ -730,6 +1234,28 @@ function labelDisplay(label: string) {
     best: t('ベストスピーカー'),
   }
   return map[label] ?? label
+}
+
+function rankingMetricLabel(metric: CompileRankingMetric) {
+  const map: Record<CompileRankingMetric, string> = {
+    win: t('勝利数'),
+    sum: t('合計'),
+    margin: t('マージン'),
+    vote: t('票'),
+    average: t('平均'),
+    sd: t('標準偏差'),
+  }
+  return map[metric]
+}
+
+function moveRankingPriority(index: number, direction: -1 | 1) {
+  const nextIndex = index + direction
+  if (nextIndex < 0 || nextIndex >= rankingPriorityOrder.value.length) return
+  const list = [...rankingPriorityOrder.value]
+  const tmp = list[index]
+  list[index] = list[nextIndex]
+  list[nextIndex] = tmp
+  rankingPriorityOrder.value = list
 }
 
 function setActiveLabel(label: string) {
@@ -852,11 +1378,12 @@ async function refresh() {
 
 async function runCompile() {
   if (!tournamentId.value) return
-  if (compileRounds.value.length === 0) return
+  if (!canRunCompile.value) return
   const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
     source: compileSource.value,
     rounds: roundsPayload,
+    options: compileOptionsPayload.value,
   })
   if (compiledResult) {
     compileExecuted.value = true
@@ -894,7 +1421,12 @@ watch(tournamentId, () => {
 
 function buildSubPrizeResults(kind: 'poi' | 'best') {
   if (!compiled.value) return []
+  if (!isCompileLabelEnabled(kind)) return []
   const base = compiled.value.compiled_speaker_results ?? []
+  const aggregation =
+    kind === 'poi'
+      ? compiled.value.compile_options?.duplicate_normalization?.poi_aggregation
+      : compiled.value.compile_options?.duplicate_normalization?.best_aggregation
   const results = base.map((result: any) => {
     let total = 0
     const details = result.details ?? []
@@ -906,7 +1438,11 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
         return list.filter((item: any) => item?.value).length
       })
       if (counts.length > 0) {
-        total += counts.reduce((a: number, b: number) => a + b, 0) / counts.length
+        if (aggregation === 'max') {
+          total += Math.max(...counts)
+        } else {
+          total += counts.reduce((a: number, b: number) => a + b, 0) / counts.length
+        }
       }
     }
     return { ...result, [kind]: total }
@@ -965,6 +1501,49 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-2);
 }
 
+.compile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.compile-field-wide {
+  grid-column: 1 / -1;
+}
+
+.compile-summary {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface-muted);
+  gap: var(--space-2);
+}
+
+.compile-summary-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--color-text);
+}
+
+.submission-summary {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface);
+}
+
+.submission-link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.submission-link:hover {
+  text-decoration: underline;
+}
+
 .compile-warning-list {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -997,6 +1576,19 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   margin: 0;
 }
 
+.ranking-priority-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-surface-muted);
+}
+
+.ranking-priority-item {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .label-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1012,6 +1604,56 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.diff-legend {
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.diff-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-muted);
+}
+
+.diff-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.diff-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diff-improved {
+  color: var(--color-success);
+}
+
+.diff-worsened {
+  color: var(--color-danger);
+}
+
+.diff-unchanged,
+.diff-na {
+  color: var(--color-muted);
+}
+
+.diff-new {
+  color: var(--color-primary);
+}
+
+.diff-delta {
+  font-size: 12px;
 }
 
 .label-tab {

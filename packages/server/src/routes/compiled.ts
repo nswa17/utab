@@ -12,6 +12,15 @@ import {
 } from '../controllers/compiled.js'
 import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
+import {
+  compileAggregationPolicies,
+  compileDuplicateMergePolicies,
+  compileIncludeLabels,
+  compileMissingDataPolicies,
+  compileRankingMetrics,
+  compileRankingPresets,
+  compileWinnerPolicies,
+} from '../types/compiled-options.js'
 
 const router: Router = Router()
 
@@ -27,6 +36,33 @@ const createSchema = {
     tournamentId: z.string().min(1),
     source: z.enum(['submissions', 'raw']).optional(),
     rounds: z.array(z.number().int().min(1)).optional(),
+    options: z
+      .object({
+        ranking_priority: z
+          .object({
+            preset: z.enum(compileRankingPresets).optional(),
+            order: z.array(z.enum(compileRankingMetrics)).min(1).optional(),
+          })
+          .optional(),
+        winner_policy: z.enum(compileWinnerPolicies).optional(),
+        tie_points: z.number().min(0).optional(),
+        duplicate_normalization: z
+          .object({
+            merge_policy: z.enum(compileDuplicateMergePolicies).optional(),
+            poi_aggregation: z.enum(compileAggregationPolicies).optional(),
+            best_aggregation: z.enum(compileAggregationPolicies).optional(),
+          })
+          .optional(),
+        missing_data_policy: z.enum(compileMissingDataPolicies).optional(),
+        include_labels: z.array(z.enum(compileIncludeLabels)).min(1).optional(),
+        diff_baseline: z
+          .discriminatedUnion('mode', [
+            z.object({ mode: z.literal('latest') }),
+            z.object({ mode: z.literal('compiled'), compiled_id: z.string().min(1) }),
+          ])
+          .optional(),
+      })
+      .optional(),
   }),
 }
 

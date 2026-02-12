@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import type { CompileOptions } from '@/types/compiled'
 
 function extractPayload(value: any): Record<string, any> | null {
   if (!value) return null
@@ -37,7 +38,11 @@ export const useCompiledStore = defineStore('compiled', () => {
 
   async function runCompile(
     tournamentId: string,
-    options?: { source?: 'submissions' | 'raw'; rounds?: number[] }
+    options?: {
+      source?: 'submissions' | 'raw'
+      rounds?: number[]
+      options?: CompileOptions
+    }
   ) {
     loading.value = true
     error.value = null
