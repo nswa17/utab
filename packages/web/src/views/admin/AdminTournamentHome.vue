@@ -2184,13 +2184,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   min-width: 140px;
 }
 
-.qr-actions :deep(.btn--ghost) {
+.qr-actions :deep(.btn--secondary:last-child) {
   min-width: 160px;
-  border-color: var(--color-border);
-}
-
-.qr-actions :deep(.btn--ghost):hover {
-  border-color: var(--color-primary);
 }
 
 .grid .full {
@@ -2276,15 +2271,21 @@ textarea {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
-  color: var(--color-text);
+  color: var(--color-muted);
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
+.entity-tab:hover {
+  border-color: #bfdbfe;
+  color: var(--color-primary);
+}
+
 .entity-tab.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-secondary);
+  color: var(--color-primary);
   border-color: var(--color-primary);
 }
 
@@ -2342,9 +2343,14 @@ textarea {
   border-left: 1px solid var(--color-border);
 }
 
+.entry-mode-button:hover {
+  color: var(--color-primary);
+}
+
 .entry-mode-button.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-secondary);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .relation-group {

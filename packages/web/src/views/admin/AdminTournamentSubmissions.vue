@@ -610,13 +610,17 @@ watch(
   cursor: pointer;
 }
 
+.mode-button:hover {
+  color: var(--color-primary);
+}
+
 .mode-button + .mode-button {
   border-left: 1px solid var(--color-border);
 }
 
 .mode-button.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-secondary);
+  color: var(--color-primary);
 }
 
 .stats-grid {

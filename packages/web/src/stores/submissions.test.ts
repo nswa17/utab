@@ -39,7 +39,7 @@ describe('submissions store', () => {
     })
 
     expect(result).toBeNull()
-    expect(store.error).toContain('タイムアウト')
+    expect(store.error).toContain('timed out')
     expect(store.loading).toBe(false)
   })
 

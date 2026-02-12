@@ -1020,6 +1020,7 @@ watch(
 }
 
 .advanced-toggle-button.active {
+  background: var(--color-secondary);
   border-color: var(--color-primary);
   color: var(--color-primary);
 }

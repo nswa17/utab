@@ -1,10 +1,10 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { i18n } from '@/i18n'
 import type { Submission } from '@/types/submission'
 
 const SUBMISSION_TIMEOUT_MS = 6000
-const SUBMISSION_TIMEOUT_MESSAGE = '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
 
 export interface BallotSubmissionPayload {
   tournamentId: string
@@ -67,7 +67,9 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       return res.data?.data ?? null
     } catch (err: any) {
       if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
-        error.value = SUBMISSION_TIMEOUT_MESSAGE
+        error.value = i18n.global.t(
+          '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
+        )
         return null
       }
       throw err
