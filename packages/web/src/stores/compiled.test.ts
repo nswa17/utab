@@ -11,6 +11,7 @@ vi.mock('@/utils/api', () => ({
 import { api } from '@/utils/api'
 import { useCompiledStore } from './compiled'
 import { DEFAULT_COMPILE_OPTIONS } from '@/types/compiled'
+import type { CompileOptions } from '@/types/compiled'
 
 type MockedApi = {
   get: ReturnType<typeof vi.fn>
@@ -28,7 +29,7 @@ describe('compiled store', () => {
 
   it('submits compile options payload', async () => {
     const store = useCompiledStore()
-    const options = {
+    const options: CompileOptions = {
       ...DEFAULT_COMPILE_OPTIONS,
       ranking_priority: {
         preset: 'custom',
