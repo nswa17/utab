@@ -1,6 +1,6 @@
 # UTab Plan
 
-最終更新: 2026-02-12
+最終更新: 2026-02-13
 
 ## 今やること（全体）
 
@@ -25,6 +25,7 @@
 - 2026-02-12: `T18`（集計オプション拡張）と `T19`（集計ロジック統合）の MVP を実装し、Core/Server/Web の関連テストを追加・更新
 - 2026-02-12: `T20`（差分表示基盤）`T21`（説明付きUI）`T22`（提出データ機能統合）の MVP を実装し、差分算出・凡例・ヘルプ・提出サマリをレポート生成画面へ統合
 - 2026-02-12: `T23`（回帰観点の安定化）`T07`（レート制限の閾値調整）を実装し、公開compiledレスポンスの情報最小化・閾値の環境変数化・回帰テスト観点を反映
+- 2026-02-13: `T23` フォローとして、提出/集計の安全性修正を反映（勝者必須条件、同一チーム拒否、配列長整合、非数値拒否、重複票average正規化、提出者単位の重複判定）し、Server/Web 回帰テストを拡張
 
 ---
 
@@ -148,6 +149,23 @@
     - `packages/server/src/app.ts`
     - `packages/server/src/config/environment.ts`
     - `docs/security-roadmap.md`（運用Runbook追記）
+
+- [x] **T23-Followup. 提出/集計の安全性ハードニング（2026-02-13）**
+  - 目的: Phase 2〜3 実装後のレビュー指摘を解消し、運用時の誤集計リスクを下げる
+  - 実装内容:
+    - Ballot/Feedback の入力検証を強化（非数値、同一チーム、片側スコア、配列長不整合）
+    - 非同点スコアでの `winnerId` 必須化（UI/API）
+    - `no_speaker_score` ラウンドでの低勝ち警告誤判定を解消
+    - 重複票の判定キーを提出者(actor)単位へ修正
+    - `merge_policy=average` の同一actor重複票を平均化で正規化
+  - 変更ファイル:
+    - `packages/server/src/routes/submissions.ts`
+    - `packages/server/src/controllers/submissions.ts`
+    - `packages/server/src/controllers/compiled.ts`
+    - `packages/web/src/views/user/participant/round/ballot/UserRoundBallotEntry.vue`
+    - `packages/web/src/utils/ballot.ts`
+    - `packages/server/test/integration.test.ts`
+    - `packages/web/src/utils/ballot.test.ts`
 
 ---
 

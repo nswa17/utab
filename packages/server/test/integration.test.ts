@@ -1222,6 +1222,43 @@ describe('Server integration', () => {
     expect(flagMismatch.status).toBe(400)
   })
 
+  it('accepts ballots with blank speaker ids when score lengths match', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'blank-speaker-ids', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'blank-speaker-ids', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Blank Speaker Ids Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      speakerIdsA: [''],
+      speakerIdsB: ['   '],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+  })
+
   it('rejects feedback submissions with blank adjudicator id', async () => {
     const agent = request.agent(app)
 
@@ -1621,6 +1658,130 @@ describe('Server integration', () => {
     expect(compileRes.status).toBe(201)
     expect(compileRes.body.data.payload.compile_options.duplicate_normalization.merge_policy).toBe(
       'average'
+    )
+
+    const teamResults = compileRes.body.data.payload.compiled_team_results
+    expect(teamResults.length).toBe(2)
+    const team1 = teamResults.find((row: any) => row.id === teamId1)
+    const team2 = teamResults.find((row: any) => row.id === teamId2)
+    expect(team1.details[0]?.acc).toBe(2)
+    expect(team2.details[0]?.acc).toBe(2)
+    expect(team1.vote).toBe(0)
+    expect(team2.vote).toBe(0)
+    expect(team1.win).toBe(0)
+    expect(team2.win).toBe(0)
+  })
+
+  it('keeps adjudicator ballots distinct when merge policy is latest', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-latest', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-latest', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Compile Latest Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
+    expect(speakerRes1.status).toBe(201)
+    const speakerId1 = speakerRes1.body.data._id
+
+    const speakerRes2 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker B' })
+    expect(speakerRes2.status).toBe(201)
+    const speakerId2 = speakerRes2.body.data._id
+
+    const teamRes1 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      details: [{ r: 1, speakers: [speakerId1] }],
+    })
+    expect(teamRes1.status).toBe(201)
+    const teamId1 = teamRes1.body.data._id
+
+    const teamRes2 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+      details: [{ r: 1, speakers: [speakerId2] }],
+    })
+    expect(teamRes2.status).toBe(201)
+    const teamId2 = teamRes2.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamId1, opp: teamId2 },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes1 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [75],
+      scoresB: [72],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes1.status).toBe(201)
+
+    const ballotRes2 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId2,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [71],
+      scoresB: [74],
+      submittedEntityId: 'judge-b',
+    })
+    expect(ballotRes2.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: {
+          preset: 'custom',
+          order: ['win', 'sum', 'margin', 'vote', 'average', 'sd'],
+        },
+        winner_policy: 'winner_id_then_score',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'latest',
+          poi_aggregation: 'average',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+    expect(compileRes.body.data.payload.compile_options.duplicate_normalization.merge_policy).toBe(
+      'latest'
     )
 
     const teamResults = compileRes.body.data.payload.compiled_team_results
