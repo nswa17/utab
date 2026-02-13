@@ -9,7 +9,13 @@ const COMMON_BLOCKED_KEYS = new Set([
   'tournaments',
 ])
 
-const RESULT_BLOCKED_KEYS = new Set([...COMMON_BLOCKED_KEYS, 'comment'])
+const RESULT_BLOCKED_KEYS = new Set([
+  ...COMMON_BLOCKED_KEYS,
+  'comment',
+  'compile_options',
+  'compile_warnings',
+  'compile_diff_meta',
+])
 
 function asRecord(value: unknown): PlainRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

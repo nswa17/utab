@@ -241,6 +241,9 @@ describe('Server integration', () => {
     expect(publicCompiled.status).toBe(200)
     expect(publicCompiled.body.data).not.toBeNull()
     expect('createdBy' in publicCompiled.body.data).toBe(false)
+    expect('compile_options' in publicCompiled.body.data.payload).toBe(false)
+    expect('compile_warnings' in publicCompiled.body.data.payload).toBe(false)
+    expect('compile_diff_meta' in publicCompiled.body.data.payload).toBe(false)
 
     const openAccessSkipRes = await request(app).post(`/api/tournaments/${tournamentId}/access`).send({
       action: 'skip',
@@ -437,6 +440,7 @@ describe('Server integration', () => {
     expect(compiledTeamsRes.body.data.rounds[0]?.name).toBe('Round One')
     expect(compiledTeamsRes.body.data.rounds.length).toBeGreaterThan(0)
     expect(compiledTeamsRes.body.data.compile_options.winner_policy).toBe('winner_id_then_score')
+    expect(compiledTeamsRes.body.data.compile_options.tie_points).toBe(0.5)
 
     const compiledSpeakersRes = await agent
       .post('/api/compiled/speakers')
