@@ -34,6 +34,14 @@
 - Public `compiled` API response does not include internal compile fields (`compile_options`, `compile_warnings`, `compile_diff_meta`).
 - Diff indicators are understandable without color only (icon + text/tooltip meaning is present).
 - Submission summary in compiled screen matches submissions page counts (submitted/missing/duplicates/unknown).
+- Duplicate normalization smoke:
+  - Different adjudicators on the same matchup are not merged as duplicates.
+  - Same adjudicator duplicate ballots are merged according to `merge_policy` (`latest` / `average` / `error`).
+- Ranking tie smoke:
+  - Custom `ranking_priority` で全指標同値の場合、同順位が維持される。
+- Ballot validation smoke:
+  - `allow_low_tie_win=true` で非同点スコア時は勝者未選択の送信がブロックされる。
+  - `no_speaker_score=true` のラウンドで送信不能にならない。
 
 ## Smoke Scenarios (User)
 - Tournament list search/filter accessible; card/table layout remains readable in both languages.
