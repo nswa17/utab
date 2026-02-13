@@ -175,7 +175,7 @@ const en = {
     'Compile using submission data up to this round.',
   'このラウンドまでを生結果データで集計します。':
     'Compile using raw results up to this round.',
-  対戦生成と保存は対戦表設定で実行します。:
+  '対戦生成と保存は対戦表設定で実行します。':
     'Generate and save pairings from draw settings.',
   '集計対象ラウンド: {rounds}': 'Compile rounds: {rounds}',
   '次ラウンド: {round}': 'Next round: {round}',
