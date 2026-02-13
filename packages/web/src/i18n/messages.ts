@@ -741,6 +741,8 @@ const en = {
   'チーム情報が不足しています。': 'Team information is incomplete.',
   '入力内容を確認してください。': 'Please check your entries.',
   '勝者を選択してください。': 'Please select a winner.',
+  'スコア差がある場合は勝者を選択してください。':
+    'Please select a winner when the scores are not tied.',
   サイド別スコア: 'Scores by side',
   チームの成績: 'Team performance',
   '{value} 点': '{value} pts',

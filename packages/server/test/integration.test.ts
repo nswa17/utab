@@ -847,6 +847,441 @@ describe('Server integration', () => {
     expect(validWinner.status).toBe(201)
   })
 
+  it('requires explicit winner when scores are non-tied', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'winner-required', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'winner-required', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Winner Required Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        allow_low_tie_win: true,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const missingWinnerOnDecisive = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(missingWinnerOnDecisive.status).toBe(400)
+
+    const missingWinnerOnTie = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(missingWinnerOnTie.status).toBe(201)
+
+    const invalidWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'unknown-team',
+      scoresA: [75],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(invalidWinner.status).toBe(400)
+  })
+
+  it('rejects ballot submissions where team ids are identical', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'invalid-matchup-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'invalid-matchup-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Invalid Matchup Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-a',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(400)
+  })
+
+  it('keeps ballots for different matchups from the same actor', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'multi-matchup-actor', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'multi-matchup-actor', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Multi Matchup Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const firstBallot = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(firstBallot.status).toBe(201)
+
+    const secondBallot = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-c',
+      teamBId: 'team-d',
+      winnerId: 'team-c',
+      scoresA: [74],
+      scoresB: [73],
+      submittedEntityId: 'judge-a',
+    })
+    expect(secondBallot.status).toBe(201)
+
+    const submissionsRes = await agent.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
+    )
+    expect(submissionsRes.status).toBe(200)
+    expect(submissionsRes.body.data.length).toBe(2)
+  })
+
+  it('treats blank submittedEntityId as session actor for dedupe', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'blank-entity-dedupe', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'blank-entity-dedupe', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Blank Entity Dedupe Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const firstBallot = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      comment: 'first submission',
+    })
+    expect(firstBallot.status).toBe(201)
+
+    const secondBallot = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-b',
+      scoresA: [73],
+      scoresB: [74],
+      comment: 'second submission',
+      submittedEntityId: '   ',
+    })
+    expect(secondBallot.status).toBe(201)
+
+    const submissionsRes = await agent.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
+    )
+    expect(submissionsRes.status).toBe(200)
+    expect(submissionsRes.body.data.length).toBe(1)
+    expect(submissionsRes.body.data[0].payload.comment).toBe('second submission')
+  })
+
+  it('normalizes submitted entity ids on ballot submissions', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'normalize-ballot-entity', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'normalize-ballot-entity', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Normalize Ballot Entity Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: '  judge-a  ',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const listRes = await agent.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data.length).toBe(1)
+    expect(listRes.body.data[0].payload.submittedEntityId).toBe('judge-a')
+  })
+
+  it('rejects ballots when only one side has score entries', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'one-sided-scores', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'one-sided-scores', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'One-sided Scores Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(400)
+  })
+
+  it('rejects ballots with non-numeric score entries', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'non-numeric-scores', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'non-numeric-scores', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Non Numeric Scores Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: ['76'],
+      scoresB: [75],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(400)
+  })
+
+  it('rejects ballots when speaker/flag arrays do not match score lengths', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'array-length-check', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'array-length-check', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Array Length Check Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const speakerMismatch = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      speakerIdsA: [],
+      speakerIdsB: ['spk-b'],
+      submittedEntityId: 'judge-a',
+    })
+    expect(speakerMismatch.status).toBe(400)
+
+    const flagMismatch = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      bestA: [true, false],
+      bestB: [false],
+      submittedEntityId: 'judge-a',
+    })
+    expect(flagMismatch.status).toBe(400)
+  })
+
+  it('rejects feedback submissions with blank adjudicator id', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'blank-feedback-adj', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'blank-feedback-adj', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Blank Feedback Adj Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const feedbackRes = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: '   ',
+      score: 8,
+      submittedEntityId: 'team-a',
+    })
+    expect(feedbackRes.status).toBe(400)
+  })
+
+  it('rejects feedback submissions with non-numeric scores', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'non-numeric-feedback', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'non-numeric-feedback', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Non Numeric Feedback Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const feedbackRes = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: 'judge-a',
+      score: '8',
+      submittedEntityId: 'team-a',
+    })
+    expect(feedbackRes.status).toBe(400)
+  })
+
   it('applies compile options to submission-based aggregation', async () => {
     const agent = request.agent(app)
 
@@ -940,7 +1375,7 @@ describe('Server integration', () => {
       teamBId: teamId2,
       speakerIdsA: [speakerId1],
       speakerIdsB: [speakerId2],
-      scoresA: [76],
+      scoresA: [74],
       scoresB: [74],
       submittedEntityId: 'judge-a',
     })
@@ -986,7 +1421,7 @@ describe('Server integration', () => {
     expect(team1.win).toBe(0.5)
     expect(team2.win).toBe(0.5)
     expect(team1.ranking).toBe(1)
-    expect(team2.ranking).toBe(2)
+    expect(team2.ranking).toBe(1)
     expect(compileRes.body.data.payload.compile_warnings).toEqual([])
 
     const compileTieRankRes = await agent.post('/api/compiled').send({
@@ -1067,8 +1502,8 @@ describe('Server integration', () => {
     const diffTeam2 = diffTeamResults.find((row: any) => row.id === teamId2)
     expect(diffTeam1.diff.ranking.trend).toBe('worsened')
     expect(diffTeam1.diff.ranking.delta).toBe(1)
-    expect(diffTeam2.diff.ranking.trend).toBe('improved')
-    expect(diffTeam2.diff.ranking.delta).toBe(-1)
+    expect(diffTeam2.diff.ranking.trend).toBe('unchanged')
+    expect(diffTeam2.diff.ranking.delta).toBe(0)
     expect(typeof diffTeam1.diff.metrics.sum.delta).toBe('number')
   })
 
@@ -1194,6 +1629,137 @@ describe('Server integration', () => {
     expect(team2.vote).toBe(0)
     expect(team1.win).toBe(0)
     expect(team2.win).toBe(0)
+  })
+
+  it('averages conflicting duplicate ballots from the same actor', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'duplicate-average-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'duplicate-average-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Duplicate Average Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
+    expect(speakerRes1.status).toBe(201)
+    const speakerId1 = speakerRes1.body.data._id
+
+    const speakerRes2 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker B' })
+    expect(speakerRes2.status).toBe(201)
+    const speakerId2 = speakerRes2.body.data._id
+
+    const teamRes1 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      details: [{ r: 1, speakers: [speakerId1] }],
+    })
+    expect(teamRes1.status).toBe(201)
+    const teamId1 = teamRes1.body.data._id
+
+    const teamRes2 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+      details: [{ r: 1, speakers: [speakerId2] }],
+    })
+    expect(teamRes2.status).toBe(201)
+    const teamId2 = teamRes2.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamId1, opp: teamId2 },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create([
+      {
+        tournamentId,
+        round: 1,
+        type: 'ballot',
+        payload: {
+          teamAId: teamId1,
+          teamBId: teamId2,
+          winnerId: teamId1,
+          speakerIdsA: [speakerId1],
+          speakerIdsB: [speakerId2],
+          scoresA: [75],
+          scoresB: [72],
+          submittedEntityId: 'judge-a',
+        },
+        submittedBy: 'judge-a',
+      },
+      {
+        tournamentId,
+        round: 1,
+        type: 'ballot',
+        payload: {
+          teamAId: teamId1,
+          teamBId: teamId2,
+          winnerId: teamId2,
+          speakerIdsA: [speakerId1],
+          speakerIdsB: [speakerId2],
+          scoresA: [71],
+          scoresB: [74],
+          submittedEntityId: 'judge-a',
+        },
+        submittedBy: 'judge-a',
+      },
+    ])
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        ranking_priority: { preset: 'custom', order: ['win', 'sum', 'margin', 'vote', 'average', 'sd'] },
+        winner_policy: 'winner_id_then_score',
+        tie_points: 0.5,
+        duplicate_normalization: {
+          merge_policy: 'average',
+          poi_aggregation: 'average',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+
+    const teamResults = compileRes.body.data.payload.compiled_team_results
+    const team1 = teamResults.find((row: any) => row.id === teamId1)
+    const team2 = teamResults.find((row: any) => row.id === teamId2)
+    expect(team1.win).toBeCloseTo(0.5, 6)
+    expect(team2.win).toBeCloseTo(0.5, 6)
+    expect(team1.ranking).toBe(1)
+    expect(team2.ranking).toBe(1)
   })
 
   it('adds and removes tournament users', async () => {

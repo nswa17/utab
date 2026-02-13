@@ -5,8 +5,9 @@ import { getRoundModel } from '../models/round.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
-  const token = String(submittedEntityId ?? sessionUserId ?? '').trim()
-  return token
+  const submittedEntityToken = String(submittedEntityId ?? '').trim()
+  if (submittedEntityToken) return submittedEntityToken
+  return String(sessionUserId ?? '').trim()
 }
 
 function toNumberArray(value: unknown): number[] {
@@ -16,6 +17,11 @@ function toNumberArray(value: unknown): number[] {
 
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
+}
+
+function arrayLengthMatches(value: unknown, expectedLength: number): boolean {
+  if (!Array.isArray(value)) return true
+  return value.length === expectedLength
 }
 
 export const listSubmissions: RequestHandler = async (req, res, next) => {
@@ -157,21 +163,87 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     const SubmissionModel = getSubmissionModel(connection)
     const roundDoc = await RoundModel.findOne({ tournamentId, round }).lean().exec()
     const allowLowTieWin = (roundDoc as any)?.userDefinedData?.allow_low_tie_win !== false
-    if (!allowLowTieWin) {
-      const normalizedWinner = String(winnerId ?? '').trim()
-      const winnerIsTeamA = normalizedWinner === teamAId
-      const winnerIsTeamB = normalizedWinner === teamBId
-      const validWinner = winnerIsTeamA || winnerIsTeamB
-      const parsedScoresA = toNumberArray(scoresA)
-      const parsedScoresB = toNumberArray(scoresB)
-      const hasComparableScores =
-        parsedScoresA.some((score) => Number.isFinite(score)) &&
-        parsedScoresB.some((score) => Number.isFinite(score))
+    const normalizedTeamAId = String(teamAId ?? '').trim()
+    const normalizedTeamBId = String(teamBId ?? '').trim()
+    const normalizedSubmittedEntityId = String(submittedEntityId ?? '').trim()
+    if (!normalizedTeamAId || !normalizedTeamBId || normalizedTeamAId === normalizedTeamBId) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'teamAId and teamBId must be different' }],
+      })
+      return
+    }
+    const normalizedWinner = String(winnerId ?? '').trim()
+    const winnerIsTeamA = normalizedWinner === normalizedTeamAId
+    const winnerIsTeamB = normalizedWinner === normalizedTeamBId
+    const validWinner = winnerIsTeamA || winnerIsTeamB
+    if (normalizedWinner && !validWinner) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'winnerId must match teamAId or teamBId' }],
+      })
+      return
+    }
 
+    const parsedScoresA = toNumberArray(scoresA)
+    const parsedScoresB = toNumberArray(scoresB)
+    const hasNonFiniteScore =
+      parsedScoresA.some((score) => !Number.isFinite(score)) ||
+      parsedScoresB.some((score) => !Number.isFinite(score))
+    if (hasNonFiniteScore) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'scores must be finite numbers' }],
+      })
+      return
+    }
+
+    const hasScoresA = parsedScoresA.length > 0
+    const hasScoresB = parsedScoresB.length > 0
+    if (hasScoresA !== hasScoresB) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'scoresA and scoresB must both be provided or both empty' }],
+      })
+      return
+    }
+
+    const scoreLengthMismatch =
+      !arrayLengthMatches(speakerIdsA, parsedScoresA.length) ||
+      !arrayLengthMatches(speakerIdsB, parsedScoresB.length) ||
+      !arrayLengthMatches(matterA, parsedScoresA.length) ||
+      !arrayLengthMatches(mannerA, parsedScoresA.length) ||
+      !arrayLengthMatches(matterB, parsedScoresB.length) ||
+      !arrayLengthMatches(mannerB, parsedScoresB.length) ||
+      !arrayLengthMatches(bestA, parsedScoresA.length) ||
+      !arrayLengthMatches(bestB, parsedScoresB.length) ||
+      !arrayLengthMatches(poiA, parsedScoresA.length) ||
+      !arrayLengthMatches(poiB, parsedScoresB.length)
+    if (scoreLengthMismatch) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'speaker/flag arrays must match score lengths' }],
+      })
+      return
+    }
+
+    const hasComparableScores =
+      parsedScoresA.some((score) => Number.isFinite(score)) &&
+      parsedScoresB.some((score) => Number.isFinite(score))
+    const totalA = sumScores(parsedScoresA)
+    const totalB = sumScores(parsedScoresB)
+    const hasDecisiveScore = hasComparableScores && totalA !== totalB
+    if (allowLowTieWin && !validWinner && hasDecisiveScore) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'winnerId is required when scores are not tied' }],
+      })
+      return
+    }
+
+    if (!allowLowTieWin) {
       let invalid = !validWinner
       if (!invalid && hasComparableScores) {
-        const totalA = sumScores(parsedScoresA)
-        const totalB = sumScores(parsedScoresB)
         if (winnerIsTeamA) invalid = totalA <= totalB
         if (winnerIsTeamB) invalid = totalB <= totalA
       }
@@ -184,26 +256,34 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       }
     }
 
-    const actor = resolveSubmissionActor(submittedEntityId, req.session?.userId)
+    const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
     if (actor) {
       await SubmissionModel.deleteMany({
         tournamentId,
         round,
         type: 'ballot',
-        $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
+        $and: [
+          { $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }] },
+          {
+            $or: [
+              { 'payload.teamAId': normalizedTeamAId, 'payload.teamBId': normalizedTeamBId },
+              { 'payload.teamAId': normalizedTeamBId, 'payload.teamBId': normalizedTeamAId },
+            ],
+          },
+        ],
       }).exec()
     }
     const payload = {
-      teamAId,
-      teamBId,
-      winnerId,
+      teamAId: normalizedTeamAId,
+      teamBId: normalizedTeamBId,
+      winnerId: normalizedWinner || undefined,
       speakerIdsA,
       speakerIdsB,
       scoresA,
       scoresB,
       comment,
       role,
-      submittedEntityId,
+      submittedEntityId: normalizedSubmittedEntityId || undefined,
       bestA,
       bestB,
       poiA,
@@ -257,19 +337,44 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       return
     }
 
+    const normalizedAdjudicatorId = String(adjudicatorId ?? '').trim()
+    if (!normalizedAdjudicatorId) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'adjudicatorId is required' }],
+      })
+      return
+    }
+    if (!Number.isFinite(score) || score < 0) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'score must be a finite non-negative number' }],
+      })
+      return
+    }
+
+    const normalizedSubmittedEntityId = String(submittedEntityId ?? '').trim()
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
-    const actor = resolveSubmissionActor(submittedEntityId, req.session?.userId)
-    if (actor && adjudicatorId) {
+    const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
+    if (actor) {
       await SubmissionModel.deleteMany({
         tournamentId,
         round,
         type: 'feedback',
-        'payload.adjudicatorId': adjudicatorId,
+        'payload.adjudicatorId': normalizedAdjudicatorId,
         $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
       }).exec()
     }
-    const payload = { adjudicatorId, score, comment, role, submittedEntityId, matter, manner }
+    const payload = {
+      adjudicatorId: normalizedAdjudicatorId,
+      score,
+      comment,
+      role,
+      submittedEntityId: normalizedSubmittedEntityId || undefined,
+      matter,
+      manner,
+    }
     const created = await SubmissionModel.create({
       tournamentId,
       round,
