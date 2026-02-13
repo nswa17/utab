@@ -5,6 +5,7 @@ vi.mock('@/utils/api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
 }))
 
@@ -14,6 +15,7 @@ import { useSubmissionsStore } from './submissions'
 type MockedApi = {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
+  patch: ReturnType<typeof vi.fn>
 }
 
 const mockedApi = api as unknown as MockedApi
@@ -23,6 +25,7 @@ describe('submissions store', () => {
     setActivePinia(createPinia())
     mockedApi.get.mockReset()
     mockedApi.post.mockReset()
+    mockedApi.patch.mockReset()
   })
 
   it('handles timeout-like cancellation errors on ballot submission', async () => {
@@ -157,5 +160,35 @@ describe('submissions store', () => {
     expect(result).toEqual(created)
     expect(store.error).toBeNull()
     expect(store.loading).toBe(false)
+  })
+
+  it('updates submission payload by id', async () => {
+    const store = useSubmissionsStore()
+    store.submissions = [
+      { _id: 'submission-1', type: 'ballot', round: 1, payload: { comment: 'old' } } as any,
+    ]
+    const updated = {
+      _id: 'submission-1',
+      type: 'ballot',
+      round: 2,
+      payload: { comment: 'new' },
+    }
+    mockedApi.patch.mockResolvedValueOnce({ data: { data: updated } })
+
+    const result = await store.updateSubmission({
+      tournamentId: 'tournament-1',
+      submissionId: 'submission-1',
+      round: 2,
+      payload: { comment: 'new' },
+    })
+
+    expect(mockedApi.patch).toHaveBeenCalledWith('/submissions/submission-1', {
+      tournamentId: 'tournament-1',
+      round: 2,
+      payload: { comment: 'new' },
+    })
+    expect(result).toEqual(updated)
+    expect(store.submissions[0].payload.comment).toBe('new')
+    expect(store.error).toBeNull()
   })
 })

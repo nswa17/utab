@@ -1356,7 +1356,7 @@ async function buildCompiledPayloadFromSubmissions(
   return { payload: compiled, connection }
 }
 
-async function buildCompiledPayload(
+export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],

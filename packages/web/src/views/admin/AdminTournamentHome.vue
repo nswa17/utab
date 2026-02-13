@@ -705,6 +705,25 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
+              <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
+                <input
+                  v-model="institutionForm.category"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                  :placeholder="$t('例: institution / region / league')"
+                />
+              </Field>
+              <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
+                <input
+                  v-model.number="institutionForm.priority"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="institutions.loading">{{
                   $t('追加')
@@ -714,7 +733,7 @@
           </section>
           <section v-else class="stack block-panel">
             <label class="stack">
-              <span class="muted small">{{ $t('CSV例: Institution A') }}</span>
+              <span class="muted small">{{ $t('CSV例: Institution A,region,2') }}</span>
               <input
                 class="csv-file-input"
                 type="file"
@@ -743,6 +762,14 @@
             >
               <div>
                 <strong>{{ inst.name }}</strong>
+                <span class="muted small entity-inline-meta">
+                  {{
+                    $t('{category} / 優先度 {priority}', {
+                      category: institutionCategoryLabel(inst.category),
+                      priority: institutionPriorityValue(inst.priority),
+                    })
+                  }}
+                </span>
               </div>
               <div class="row">
                 <Button variant="ghost" size="sm" @click="startEditEntity('institution', inst)">
@@ -917,6 +944,30 @@
             </label>
           </div>
         </div>
+        <div class="grid" v-else-if="editingEntity.type === 'institution'">
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+          <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
+            <input
+              v-model="entityForm.category"
+              type="text"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('例: institution / region / league')"
+            />
+          </Field>
+          <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
+            <input
+              v-model.number="entityForm.priority"
+              type="number"
+              min="0"
+              step="0.1"
+              :id="id"
+              :aria-describedby="describedBy"
+            />
+          </Field>
+        </div>
         <div class="grid" v-else>
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
@@ -1045,7 +1096,11 @@ const adjudicatorConflictIds = ref<string[]>([])
 const adjudicatorConflictSearch = ref('')
 const venueForm = reactive({ name: '', available: true })
 const speakerForm = reactive({ name: '' })
-const institutionForm = reactive({ name: '' })
+const institutionForm = reactive({
+  name: '',
+  category: 'institution',
+  priority: 1,
+})
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
@@ -1083,6 +1138,8 @@ const entityForm = reactive<any>({
   strength: 5,
   preev: 0,
   active: true,
+  category: 'institution',
+  priority: 1,
 })
 const editTeamSpeakerSearch = ref('')
 const editTeamSelectedSpeakerIds = ref<string[]>([])
@@ -1445,6 +1502,17 @@ function resolveInstitutionId(value?: string) {
   return matched?._id ?? ''
 }
 
+function institutionCategoryLabel(value?: string) {
+  const normalized = String(value ?? '').trim()
+  return normalized || 'institution'
+}
+
+function institutionPriorityValue(value?: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 1
+  return Math.round(parsed * 1000) / 1000
+}
+
 function resolveTeamSpeakerIds(entity: any): string[] {
   const detailIds: string[] = Array.isArray(entity.details)
     ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
@@ -1573,11 +1641,17 @@ async function handleCreateSpeaker() {
 
 async function handleCreateInstitution() {
   if (!institutionForm.name) return
+  const category = institutionCategoryLabel(institutionForm.category)
+  const priority = institutionPriorityValue(institutionForm.priority)
   await institutions.createInstitution({
     tournamentId: tournamentId.value,
     name: institutionForm.name,
+    category,
+    priority,
   })
   institutionForm.name = ''
+  institutionForm.category = 'institution'
+  institutionForm.priority = 1
 }
 
 async function removeTeam(id: string) {
@@ -1620,6 +1694,8 @@ function startEditEntity(type: string, entity: any) {
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.active = entity.active ?? true
+  entityForm.category = institutionCategoryLabel(entity.category)
+  entityForm.priority = institutionPriorityValue(entity.priority)
   if (type === 'venue') {
     entityForm.active =
       typeof entity.userDefinedData?.availableDefault === 'boolean'
@@ -1718,10 +1794,14 @@ async function saveEntityEdit() {
       name: entityForm.name,
     })
   } else if (editingEntity.value.type === 'institution') {
+    const category = institutionCategoryLabel(entityForm.category)
+    const priority = institutionPriorityValue(entityForm.priority)
     await institutions.updateInstitution({
       tournamentId: tournamentId.value,
       institutionId: id,
       name: entityForm.name,
+      category,
+      priority,
     })
   }
   cancelEditEntity()
@@ -1770,6 +1850,10 @@ function parseCsv(text: string) {
   const headerKeys = [
     'name',
     'institution',
+    'category',
+    'kind',
+    'type',
+    'priority',
     'speakers',
     'strength',
     'preev',
@@ -1953,7 +2037,17 @@ async function handleCsvUpload(type: string, event: Event) {
       } else if (type === 'institutions') {
         const name = get(row, 'name', 0)
         if (!name) continue
-        payload.push({ tournamentId: tournamentId.value, name })
+        const category =
+          headers.length === 0
+            ? (row[1] ?? '')
+            : findHeaderValue(headers, row, ['category', 'kind', 'type'])
+        const priorityRaw = headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
+        payload.push({
+          tournamentId: tournamentId.value,
+          name,
+          category: institutionCategoryLabel(category || undefined),
+          priority: institutionPriorityValue(Number(priorityRaw || 1)),
+        })
       }
     }
 

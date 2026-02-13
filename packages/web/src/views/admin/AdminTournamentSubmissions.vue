@@ -79,9 +79,14 @@
               <td>{{ submissionSummary(item) }}</td>
               <td>{{ formatDate(item.createdAt) }}</td>
               <td>
-                <Button variant="ghost" size="sm" @click="toggleExpand(item._id)">
-                  {{ isExpanded(item._id) ? $t('詳細を隠す') : $t('詳細を表示') }}
-                </Button>
+                <div class="row row-actions">
+                  <Button variant="ghost" size="sm" @click="toggleExpand(item._id)">
+                    {{ isExpanded(item._id) ? $t('詳細を隠す') : $t('詳細を表示') }}
+                  </Button>
+                  <Button variant="secondary" size="sm" @click="startEdit(item)">
+                    {{ isEditing(item._id) ? $t('編集中') : $t('編集') }}
+                  </Button>
+                </div>
               </td>
             </tr>
             <tr v-if="isExpanded(item._id)">
@@ -123,6 +128,148 @@
                     <Button variant="ghost" size="sm" @click="togglePayload(item._id)">
                       {{ isPayloadExpanded(item._id) ? $t('JSONを隠す') : $t('JSONを表示') }}
                     </Button>
+                  </div>
+                  <div v-if="isEditing(item._id)" class="card soft stack submission-editor">
+                    <div class="grid">
+                      <Field :label="$t('ラウンド')" v-slot="{ id, describedBy }">
+                        <input
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          type="number"
+                          min="1"
+                          v-model.number="editingRound"
+                        />
+                      </Field>
+                    </div>
+                    <div v-if="item.type === 'ballot'" class="mode-card stack">
+                      <span class="muted small">{{ $t('編集モード') }}</span>
+                      <div class="mode-switch">
+                        <button
+                          type="button"
+                          class="mode-button"
+                          :class="{ active: editingBallotMode === 'form' }"
+                          @click="setBallotEditMode('form')"
+                        >
+                          {{ $t('フォーム') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="mode-button"
+                          :class="{ active: editingBallotMode === 'json' }"
+                          @click="setBallotEditMode('json')"
+                        >
+                          {{ $t('JSON') }}
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      v-if="item.type === 'ballot' && editingBallotMode === 'form'"
+                      class="grid ballot-edit-grid"
+                    >
+                      <Field :label="$t('チーム A')" v-slot="{ id, describedBy }">
+                        <input :id="id" :aria-describedby="describedBy" v-model="editingBallotTeamAId" />
+                      </Field>
+                      <Field :label="$t('チーム B')" v-slot="{ id, describedBy }">
+                        <input :id="id" :aria-describedby="describedBy" v-model="editingBallotTeamBId" />
+                      </Field>
+                      <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
+                        <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
+                          <option value="">{{ $t('未選択') }}</option>
+                          <option :value="editingBallotTeamAId">{{ teamName(editingBallotTeamAId) }}</option>
+                          <option :value="editingBallotTeamBId">{{ teamName(editingBallotTeamBId) }}</option>
+                        </select>
+                      </Field>
+                      <Field :label="$t('提出者ID')" v-slot="{ id, describedBy }">
+                        <input
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          v-model="editingBallotSubmittedEntityId"
+                        />
+                      </Field>
+                      <Field :label="$t('コメント')" class="full" v-slot="{ id, describedBy }">
+                        <textarea
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          rows="3"
+                          v-model="editingBallotComment"
+                        />
+                      </Field>
+                      <Field v-if="!editingBallotNoSpeakerScore" :label="$t('入力方式')" v-slot="{ id, describedBy }">
+                        <select
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          v-model="editingBallotScoreMode"
+                        >
+                          <option value="matter_manner">{{ $t('Matter/Manner') }}</option>
+                          <option value="total">{{ $t('合計スコア') }}</option>
+                        </select>
+                      </Field>
+                      <template v-if="editingBallotNoSpeakerScore">
+                        <p class="muted small full">
+                          {{ $t('このラウンドはスピーカースコアを入力しません。') }}
+                        </p>
+                      </template>
+                      <template v-else-if="editingBallotScoreMode === 'matter_manner'">
+                        <Field :label="$t('チーム A Matter')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotMatterAText" />
+                        </Field>
+                        <Field :label="$t('チーム A Manner')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotMannerAText" />
+                        </Field>
+                        <Field :label="$t('チーム B Matter')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotMatterBText" />
+                        </Field>
+                        <Field :label="$t('チーム B Manner')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotMannerBText" />
+                        </Field>
+                        <p class="muted tiny full">
+                          {{ $t('数値はカンマ区切りで入力してください。例: 75, 74, 73') }}
+                        </p>
+                      </template>
+                      <template v-else>
+                        <Field :label="$t('チーム A スコア')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotScoresAText" />
+                        </Field>
+                        <Field :label="$t('チーム B スコア')" v-slot="{ id, describedBy }">
+                          <input :id="id" :aria-describedby="describedBy" v-model="editingBallotScoresBText" />
+                        </Field>
+                        <p class="muted tiny full">
+                          {{ $t('数値はカンマ区切りで入力してください。例: 75, 74, 73') }}
+                        </p>
+                      </template>
+                    </div>
+                    <Field
+                      v-if="item.type !== 'ballot' || editingBallotMode === 'json'"
+                      :label="$t('JSON')"
+                      v-slot="{ id, describedBy }"
+                    >
+                      <textarea
+                        :id="id"
+                        :aria-describedby="describedBy"
+                        rows="8"
+                        v-model="editingPayloadText"
+                      />
+                    </Field>
+                    <p v-if="editError" class="error">{{ editError }}</p>
+                    <div class="row">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        :loading="editingSaving"
+                        :disabled="editingSaving"
+                        @click="saveEdit(item)"
+                      >
+                        {{ $t('更新を保存') }}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        :disabled="editingSaving"
+                        @click="cancelEdit"
+                      >
+                        {{ $t('編集をキャンセル') }}
+                      </Button>
+                    </div>
                   </div>
                   <pre v-if="isPayloadExpanded(item._id)" class="payload">{{
                     formatPayload(item.payload)
@@ -175,6 +322,26 @@ const searchQuery = ref('')
 const sectionLoading = ref(true)
 const expandedIds = ref<Set<string>>(new Set())
 const payloadExpandedIds = ref<Set<string>>(new Set())
+const editingSubmissionId = ref<string | null>(null)
+const editingRound = ref(1)
+const editingPayloadText = ref('')
+const editingSaving = ref(false)
+const editError = ref('')
+const editingBallotMode = ref<'form' | 'json'>('form')
+const editingBallotBasePayload = ref<Record<string, unknown>>({})
+const editingBallotTeamAId = ref('')
+const editingBallotTeamBId = ref('')
+const editingBallotWinnerId = ref('')
+const editingBallotSubmittedEntityId = ref('')
+const editingBallotComment = ref('')
+const editingBallotNoSpeakerScore = ref(false)
+const editingBallotScoreMode = ref<'matter_manner' | 'total'>('matter_manner')
+const editingBallotScoresAText = ref('')
+const editingBallotScoresBText = ref('')
+const editingBallotMatterAText = ref('')
+const editingBallotMannerAText = ref('')
+const editingBallotMatterBText = ref('')
+const editingBallotMannerBText = ref('')
 const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
@@ -290,6 +457,36 @@ function toNumberArray(value: unknown): Array<number | undefined> {
 function toBooleanArray(value: unknown): boolean[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => Boolean(item))
+}
+
+function toFiniteNumberList(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item))
+}
+
+function formatNumberListText(values: number[]) {
+  return values.join(', ')
+}
+
+type NumberListParseResult = { ok: true; value: number[] } | { ok: false; message: string }
+
+function parseNumberListText(value: string, label: string): NumberListParseResult {
+  const normalized = value
+    .replace(/\r?\n/g, ',')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const parsed: number[] = []
+  for (const token of normalized) {
+    const numeric = Number(token)
+    if (!Number.isFinite(numeric)) {
+      return { ok: false, message: t('{label} に数値以外が含まれています。', { label }) }
+    }
+    parsed.push(numeric)
+  }
+  return { ok: true, value: parsed }
 }
 
 function formatNumber(value: number | undefined): string {
@@ -541,6 +738,320 @@ function isPayloadExpanded(id: string) {
   return payloadExpandedIds.value.has(id)
 }
 
+function isEditing(id: string) {
+  return editingSubmissionId.value === id
+}
+
+function resetBallotEditor() {
+  editingBallotBasePayload.value = {}
+  editingBallotTeamAId.value = ''
+  editingBallotTeamBId.value = ''
+  editingBallotWinnerId.value = ''
+  editingBallotSubmittedEntityId.value = ''
+  editingBallotComment.value = ''
+  editingBallotNoSpeakerScore.value = false
+  editingBallotScoreMode.value = 'matter_manner'
+  editingBallotScoresAText.value = ''
+  editingBallotScoresBText.value = ''
+  editingBallotMatterAText.value = ''
+  editingBallotMannerAText.value = ''
+  editingBallotMatterBText.value = ''
+  editingBallotMannerBText.value = ''
+}
+
+function roundScoreSettings(roundNumber: number) {
+  const found = rounds.rounds.find((item) => Number(item.round) === Number(roundNumber))
+  return {
+    noSpeakerScore: found?.userDefinedData?.no_speaker_score === true,
+    scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
+  }
+}
+
+function hydrateBallotEditor(payload: Record<string, unknown>) {
+  editingBallotBasePayload.value = { ...payload }
+  editingBallotTeamAId.value = String(payload.teamAId ?? '')
+  editingBallotTeamBId.value = String(payload.teamBId ?? '')
+  editingBallotWinnerId.value = String(payload.winnerId ?? '')
+  editingBallotSubmittedEntityId.value = String(payload.submittedEntityId ?? '')
+  editingBallotComment.value = typeof payload.comment === 'string' ? payload.comment : ''
+
+  const settings = roundScoreSettings(editingRound.value)
+  editingBallotNoSpeakerScore.value = settings.noSpeakerScore
+  if (settings.noSpeakerScore) {
+    editingBallotScoreMode.value = 'total'
+    editingBallotScoresAText.value = ''
+    editingBallotScoresBText.value = ''
+    editingBallotMatterAText.value = ''
+    editingBallotMannerAText.value = ''
+    editingBallotMatterBText.value = ''
+    editingBallotMannerBText.value = ''
+    return
+  }
+
+  const scoresA = toFiniteNumberList(payload.scoresA)
+  const scoresB = toFiniteNumberList(payload.scoresB)
+  let matterA = toFiniteNumberList(payload.matterA)
+  let mannerA = toFiniteNumberList(payload.mannerA)
+  let matterB = toFiniteNumberList(payload.matterB)
+  let mannerB = toFiniteNumberList(payload.mannerB)
+  const hasMatterManner =
+    Array.isArray(payload.matterA) ||
+    Array.isArray(payload.mannerA) ||
+    Array.isArray(payload.matterB) ||
+    Array.isArray(payload.mannerB)
+
+  editingBallotScoreMode.value =
+    hasMatterManner || settings.scoreByMatterManner ? 'matter_manner' : 'total'
+  if (editingBallotScoreMode.value === 'matter_manner') {
+    if (matterA.length === 0 && scoresA.length > 0) {
+      matterA = scoresA.slice()
+      mannerA = Array.from({ length: scoresA.length }, () => 0)
+    }
+    if (matterB.length === 0 && scoresB.length > 0) {
+      matterB = scoresB.slice()
+      mannerB = Array.from({ length: scoresB.length }, () => 0)
+    }
+  }
+
+  editingBallotScoresAText.value = formatNumberListText(scoresA)
+  editingBallotScoresBText.value = formatNumberListText(scoresB)
+  editingBallotMatterAText.value = formatNumberListText(matterA)
+  editingBallotMannerAText.value = formatNumberListText(mannerA)
+  editingBallotMatterBText.value = formatNumberListText(matterB)
+  editingBallotMannerBText.value = formatNumberListText(mannerB)
+}
+
+function buildBallotPayloadFromForm(
+  options?: { suppressError?: boolean }
+): Record<string, unknown> | null {
+  const fail = (message: string) => {
+    if (!options?.suppressError) {
+      editError.value = message
+    }
+    return null
+  }
+
+  const teamAId = editingBallotTeamAId.value.trim()
+  const teamBId = editingBallotTeamBId.value.trim()
+  if (!teamAId || !teamBId || teamAId === teamBId) {
+    return fail(t('チームIDを確認してください。'))
+  }
+
+  const winner = editingBallotWinnerId.value.trim()
+  if (winner && winner !== teamAId && winner !== teamBId) {
+    return fail(t('勝者はチームA/チームBのいずれかを指定してください。'))
+  }
+
+  const payload: Record<string, unknown> = {
+    ...editingBallotBasePayload.value,
+    teamAId,
+    teamBId,
+    comment: editingBallotComment.value,
+  }
+  if (winner) payload.winnerId = winner
+  else delete payload.winnerId
+
+  const submittedEntityId = editingBallotSubmittedEntityId.value.trim()
+  if (submittedEntityId) payload.submittedEntityId = submittedEntityId
+  else delete payload.submittedEntityId
+
+  const normalizeSpeakerScopedFields = (scoresLengthA: number, scoresLengthB: number) => {
+    if (scoresLengthA <= 0) {
+      payload.speakerIdsA = []
+      payload.bestA = []
+      payload.poiA = []
+    } else {
+      const speakerIdsA = toStringArray(payload.speakerIdsA).map((value) => value.trim())
+      if (speakerIdsA.length === scoresLengthA && speakerIdsA.every((value) => value.length > 0)) {
+        payload.speakerIdsA = speakerIdsA
+      } else {
+        delete payload.speakerIdsA
+      }
+      const bestA = toBooleanArray(payload.bestA)
+      const poiA = toBooleanArray(payload.poiA)
+      payload.bestA = Array.from({ length: scoresLengthA }, (_, index) => Boolean(bestA[index]))
+      payload.poiA = Array.from({ length: scoresLengthA }, (_, index) => Boolean(poiA[index]))
+    }
+
+    if (scoresLengthB <= 0) {
+      payload.speakerIdsB = []
+      payload.bestB = []
+      payload.poiB = []
+    } else {
+      const speakerIdsB = toStringArray(payload.speakerIdsB).map((value) => value.trim())
+      if (speakerIdsB.length === scoresLengthB && speakerIdsB.every((value) => value.length > 0)) {
+        payload.speakerIdsB = speakerIdsB
+      } else {
+        delete payload.speakerIdsB
+      }
+      const bestB = toBooleanArray(payload.bestB)
+      const poiB = toBooleanArray(payload.poiB)
+      payload.bestB = Array.from({ length: scoresLengthB }, (_, index) => Boolean(bestB[index]))
+      payload.poiB = Array.from({ length: scoresLengthB }, (_, index) => Boolean(poiB[index]))
+    }
+  }
+
+  if (editingBallotNoSpeakerScore.value) {
+    payload.scoresA = []
+    payload.scoresB = []
+    payload.speakerIdsA = []
+    payload.speakerIdsB = []
+    payload.bestA = []
+    payload.bestB = []
+    payload.poiA = []
+    payload.poiB = []
+    delete payload.matterA
+    delete payload.mannerA
+    delete payload.matterB
+    delete payload.mannerB
+    return payload
+  }
+
+  if (editingBallotScoreMode.value === 'matter_manner') {
+    const matterA = parseNumberListText(editingBallotMatterAText.value, t('チーム A Matter'))
+    if (!matterA.ok) return fail(matterA.message)
+    const mannerA = parseNumberListText(editingBallotMannerAText.value, t('チーム A Manner'))
+    if (!mannerA.ok) return fail(mannerA.message)
+    const matterB = parseNumberListText(editingBallotMatterBText.value, t('チーム B Matter'))
+    if (!matterB.ok) return fail(matterB.message)
+    const mannerB = parseNumberListText(editingBallotMannerBText.value, t('チーム B Manner'))
+    if (!mannerB.ok) return fail(mannerB.message)
+
+    if (matterA.value.length !== mannerA.value.length) {
+      return fail(t('チーム A の Matter/Manner 件数を一致させてください。'))
+    }
+    if (matterB.value.length !== mannerB.value.length) {
+      return fail(t('チーム B の Matter/Manner 件数を一致させてください。'))
+    }
+
+    payload.matterA = matterA.value
+    payload.mannerA = mannerA.value
+    payload.matterB = matterB.value
+    payload.mannerB = mannerB.value
+    const nextScoresA = matterA.value.map((value, index) => value + mannerA.value[index])
+    const nextScoresB = matterB.value.map((value, index) => value + mannerB.value[index])
+    payload.scoresA = nextScoresA
+    payload.scoresB = nextScoresB
+    normalizeSpeakerScopedFields(nextScoresA.length, nextScoresB.length)
+    return payload
+  }
+
+  const scoresA = parseNumberListText(editingBallotScoresAText.value, t('チーム A スコア'))
+  if (!scoresA.ok) return fail(scoresA.message)
+  const scoresB = parseNumberListText(editingBallotScoresBText.value, t('チーム B スコア'))
+  if (!scoresB.ok) return fail(scoresB.message)
+
+  const nextScoresA = scoresA.value
+  const nextScoresB = scoresB.value
+  payload.scoresA = nextScoresA
+  payload.scoresB = nextScoresB
+  delete payload.matterA
+  delete payload.mannerA
+  delete payload.matterB
+  delete payload.mannerB
+  normalizeSpeakerScopedFields(nextScoresA.length, nextScoresB.length)
+  return payload
+}
+
+function setBallotEditMode(mode: 'form' | 'json') {
+  if (mode === editingBallotMode.value) return
+  if (mode === 'json') {
+    const payload = buildBallotPayloadFromForm({ suppressError: true })
+    if (payload) {
+      editingPayloadText.value = formatPayload(payload)
+    }
+    editingBallotMode.value = 'json'
+    editError.value = ''
+    return
+  }
+  try {
+    const parsed = JSON.parse(editingPayloadText.value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      editError.value = t('JSONはオブジェクト形式で入力してください。')
+      return
+    }
+    hydrateBallotEditor(parsed as Record<string, unknown>)
+    editingBallotMode.value = 'form'
+    editError.value = ''
+  } catch {
+    editError.value = t('JSONの形式が正しくありません。')
+  }
+}
+
+function startEdit(item: Submission) {
+  const id = String(item._id ?? '')
+  if (!id) return
+  editingSubmissionId.value = id
+  editingRound.value = Number(item.round) || 1
+  editingPayloadText.value = formatPayload(item.payload ?? {})
+  if (item.type === 'ballot') {
+    hydrateBallotEditor((item.payload ?? {}) as Record<string, unknown>)
+    editingBallotMode.value = 'form'
+  } else {
+    resetBallotEditor()
+    editingBallotMode.value = 'json'
+  }
+  editError.value = ''
+  const next = new Set(expandedIds.value)
+  next.add(id)
+  expandedIds.value = next
+}
+
+function cancelEdit() {
+  editingSubmissionId.value = null
+  editingPayloadText.value = ''
+  editingRound.value = 1
+  editingSaving.value = false
+  editingBallotMode.value = 'form'
+  resetBallotEditor()
+  editError.value = ''
+}
+
+async function saveEdit(item: Submission) {
+  if (!isEditing(item._id)) return
+  if (!Number.isFinite(editingRound.value) || editingRound.value < 1) {
+    editError.value = t('ラウンドは1以上で入力してください。')
+    return
+  }
+  let parsed: Record<string, unknown>
+  if (item.type === 'ballot' && editingBallotMode.value === 'form') {
+    const payload = buildBallotPayloadFromForm()
+    if (!payload) return
+    parsed = payload
+    editingPayloadText.value = formatPayload(parsed)
+  } else {
+    try {
+      const payload = JSON.parse(editingPayloadText.value)
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        editError.value = t('JSONはオブジェクト形式で入力してください。')
+        return
+      }
+      parsed = payload as Record<string, unknown>
+    } catch {
+      editError.value = t('JSONの形式が正しくありません。')
+      return
+    }
+  }
+
+  editError.value = ''
+  editingSaving.value = true
+  try {
+    const updated = await submissions.updateSubmission({
+      tournamentId: tournamentId.value,
+      submissionId: String(item._id ?? ''),
+      round: Math.floor(editingRound.value),
+      payload: parsed,
+    })
+    if (!updated) {
+      editError.value = submissions.error ?? t('提出データの更新に失敗しました。')
+      return
+    }
+    cancelEdit()
+  } finally {
+    editingSaving.value = false
+  }
+}
+
 async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
@@ -559,6 +1070,18 @@ async function refresh() {
     sectionLoading.value = false
   }
 }
+
+watch(editingRound, () => {
+  if (!editingSubmissionId.value) return
+  if (editingBallotMode.value !== 'form') return
+  const previousNoSpeaker = editingBallotNoSpeakerScore.value
+  const settings = roundScoreSettings(editingRound.value)
+  editingBallotNoSpeakerScore.value = settings.noSpeakerScore
+  if (settings.noSpeakerScore) return
+  if (previousNoSpeaker) {
+    editingBallotScoreMode.value = settings.scoreByMatterManner ? 'matter_manner' : 'total'
+  }
+})
 
 watch(
   () => route.query.round,
@@ -623,6 +1146,14 @@ watch(
   color: var(--color-primary);
 }
 
+.ballot-edit-grid {
+  align-items: start;
+}
+
+.ballot-edit-grid .full {
+  grid-column: 1 / -1;
+}
+
 .stats-grid {
   display: grid;
   gap: var(--space-2);
@@ -669,5 +1200,15 @@ watch(
 
 .header-reload {
   margin-left: auto;
+}
+
+.row-actions {
+  gap: var(--space-2);
+}
+
+.submission-editor textarea {
+  resize: vertical;
+  min-height: 160px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace);
 }
 </style>

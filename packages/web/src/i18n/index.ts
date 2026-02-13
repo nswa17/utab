@@ -10,9 +10,19 @@ function normalizeLocale(value: string | null | undefined): Locale | null {
   return null
 }
 
+function resolveBrowserStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  if (typeof process !== 'undefined' && Boolean(process.env?.VITEST)) return null
+  try {
+    const storage = window.localStorage as Storage | undefined
+    return storage ?? null
+  } catch {
+    return null
+  }
+}
+
 export function resolveLocale(): Locale {
-  if (typeof window === 'undefined') return 'en'
-  const storage = window.localStorage as Storage | undefined
+  const storage = resolveBrowserStorage()
   const stored = normalizeLocale(
     storage && typeof storage.getItem === 'function' ? storage.getItem(STORAGE_KEY) : null
   )
@@ -20,8 +30,7 @@ export function resolveLocale(): Locale {
 }
 
 export function persistLocale(locale: Locale) {
-  if (typeof window === 'undefined') return
-  const storage = window.localStorage as Storage | undefined
+  const storage = resolveBrowserStorage()
   if (storage && typeof storage.setItem === 'function') {
     storage.setItem(STORAGE_KEY, locale)
   }

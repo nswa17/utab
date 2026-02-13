@@ -74,6 +74,26 @@ describe('allocations/adjudicators/adjfilters', () => {
     ).toBe(1)
   })
 
+  it('filters by institution conflict priorities when provided', () => {
+    const adjudicatorC = {
+      id: 3,
+      preev: 60,
+      details: [{ r: 1, institutions: [1, 2], conflicts: [] }],
+    }
+    expect(
+      filterByInstitution(adjudicatorC, square1, square2, {
+        teams,
+        r: 1,
+        config: {
+          institution_priority_map: {
+            1: 1,
+            2: 3,
+          },
+        },
+      })
+    ).toBe(-1)
+  })
+
   it('filters by explicit conflicts', () => {
     expect(
       filterByConflict(adjudicatorA, square1, square2, {

@@ -13,6 +13,7 @@
       />
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
+    <p v-if="adjudicatorImportInfo" class="muted import-info">{{ adjudicatorImportInfo }}</p>
 
     <div class="card stack" v-if="formError || draws.error">
       <p v-if="formError" class="error">{{ formError }}</p>
@@ -391,6 +392,14 @@
             <Button
               variant="secondary"
               size="sm"
+              @click="openAdjudicatorImportModal"
+              :disabled="isLoading || locked"
+            >
+              {{ $t('ジャッジ組み合わせ取込') }}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               @click="clearAllocation"
               :disabled="locked || allocation.length === 0"
             >
@@ -420,6 +429,73 @@
         </div>
       </template>
     </section>
+
+    <div
+      v-if="showAdjudicatorImportModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeAdjudicatorImportModal"
+    >
+      <section class="modal card stack auto-modal import-modal" role="dialog" aria-modal="true">
+        <div class="row auto-generate-header">
+          <div class="row auto-label">
+            <strong>{{ $t('ジャッジ組み合わせ取込') }}</strong>
+            <span class="help-tip" :title="$t('CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。')"
+              >?</span
+            >
+          </div>
+          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
+        <div class="grid">
+          <label class="stack">
+            <span class="option-title">{{ $t('取り込み方式') }}</span>
+            <select v-model="adjudicatorImportMode">
+              <option value="replace">{{ $t('置換') }}</option>
+              <option value="append">{{ $t('追記') }}</option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">{{ $t('CSV/TSVファイル') }}</span>
+            <input
+              class="csv-file-input"
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
+              @change="handleAdjudicatorImportFile"
+            />
+          </label>
+        </div>
+        <label class="stack">
+          <span class="option-title">{{ $t('取り込みデータ') }}</span>
+          <textarea
+            v-model="adjudicatorImportText"
+            class="import-textarea"
+            rows="8"
+            :placeholder="$t('例: match,chairs,panels,trainees')"
+          ></textarea>
+        </label>
+        <p class="muted small">
+          {{
+            $t(
+              'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）'
+            )
+          }}
+        </p>
+        <pre class="import-example">match,chairs,panels,trainees
+1,Judge A,Judge B|Judge C,
+2,Judge D,,Judge E</pre>
+        <p v-if="adjudicatorImportError" class="error">{{ adjudicatorImportError }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">{{
+            $t('取消')
+          }}</Button>
+          <Button size="sm" @click="applyAdjudicatorImport" :disabled="locked">
+            {{ $t('取り込み') }}
+          </Button>
+        </div>
+      </section>
+    </div>
 
     <div
       v-if="showAutoGenerateModal"
@@ -492,6 +568,8 @@
             </span>
             <select v-model="autoOptions.teamAlgorithm">
               <option value="standard">{{ $t('標準') }}</option>
+              <option value="break">{{ $t('ブレイク') }}</option>
+              <option value="powerpair">{{ $t('Power Pair') }}</option>
               <option value="strict">{{ $t('厳密') }}</option>
             </select>
           </label>
@@ -539,6 +617,100 @@
               </label>
             </div>
           </div>
+        </div>
+        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'powerpair'">
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('奇数ブラケット処理') }}
+              <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
+            </span>
+            <select v-model="autoOptions.teamPowerpairOddBracket">
+              <option
+                v-for="option in teamPowerpairOddBracketOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('ペアリング方式') }}
+              <span class="help-tip" :title="$t('パワーペアのブラケット内ペアリング方式です。')"
+                >?</span
+              >
+            </span>
+            <select v-model="autoOptions.teamPowerpairPairingMethod">
+              <option
+                v-for="option in teamPowerpairPairingOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('衝突回避方式') }}
+              <span class="help-tip" :title="$t('パワーペアで使う衝突回避方式です。')">?</span>
+            </span>
+            <select v-model="autoOptions.teamPowerpairAvoidConflicts">
+              <option
+                v-for="option in teamPowerpairConflictOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('機関衝突重み') }}
+              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('過去対戦重み') }}
+              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairConflictPastOpponentWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('最大スワップ試行') }}
+              <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairMaxSwapIterations"
+              type="number"
+              min="0"
+              step="1"
+            />
+          </label>
+        </div>
+        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
+          <p class="muted">
+            {{
+              $t(
+                'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。'
+              )
+            }}
+          </p>
         </div>
         <div class="grid" v-else>
           <label class="stack">
@@ -592,6 +764,30 @@
               {{ $t('衝突回避') }}
               <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
             </span>
+          </label>
+          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+            <span class="option-title">
+              {{ $t('機関衝突重み') }}
+              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+            <span class="option-title">
+              {{ $t('過去対戦重み') }}
+              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamStrictConflictPastOpponentWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
           </label>
         </div>
         <div class="grid" v-if="autoOptions.adjudicatorAlgorithm === 'standard'">
@@ -718,6 +914,11 @@ import Button from '@/components/common/Button.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
+import {
+  applyAdjudicatorImportEntries,
+  parseAdjudicatorImportText,
+  type AdjudicatorImportMode,
+} from '@/utils/adjudicator-import'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -749,16 +950,30 @@ const considerAllRounds = ref(true)
 const considerRounds = ref<number[]>([])
 const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
+const generatedUserDefinedData = ref<Record<string, any> | null>(null)
 const showAutoGenerateModal = ref(false)
+const showAdjudicatorImportModal = ref(false)
+const adjudicatorImportText = ref('')
+const adjudicatorImportMode = ref<AdjudicatorImportMode>('replace')
+const adjudicatorImportError = ref<string | null>(null)
+const adjudicatorImportInfo = ref<string | null>(null)
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
   teamMethod: 'straight',
   teamFilters: ['by_strength', 'by_side', 'by_past_opponent', 'by_institution'],
+  teamPowerpairOddBracket: 'pullup_top',
+  teamPowerpairPairingMethod: 'fold',
+  teamPowerpairAvoidConflicts: 'one_up_one_down',
+  teamPowerpairConflictInstitutionWeight: 1,
+  teamPowerpairConflictPastOpponentWeight: 1,
+  teamPowerpairMaxSwapIterations: 24,
   teamStrictPairingMethod: 'random',
   teamStrictPullupMethod: 'fromtop',
   teamStrictPositionMethod: 'adjusted',
   teamStrictAvoidConflict: true,
+  teamStrictConflictInstitutionWeight: 1,
+  teamStrictConflictPastOpponentWeight: 1,
   adjudicatorAlgorithm: 'standard',
   adjudicatorFilters: [
     'by_bubble',
@@ -796,6 +1011,23 @@ const teamStrictPairingOptions = computed(() => [
   { value: 'slide', label: t('スライド') },
   { value: 'sort', label: t('ソート') },
   { value: 'adjusted', label: t('調整') },
+])
+
+const teamPowerpairOddBracketOptions = computed(() => [
+  { value: 'pullup_top', label: t('上位から') },
+  { value: 'pullup_bottom', label: t('下位から') },
+  { value: 'pullup_random', label: t('ランダム') },
+])
+
+const teamPowerpairPairingOptions = computed(() => [
+  { value: 'slide', label: t('スライド') },
+  { value: 'fold', label: t('フォールド') },
+  { value: 'random', label: t('ランダム') },
+])
+
+const teamPowerpairConflictOptions = computed(() => [
+  { value: 'one_up_one_down', label: t('one-up-one-down') },
+  { value: 'off', label: t('なし') },
 ])
 
 const teamStrictPullupOptions = computed(() => [
@@ -894,12 +1126,17 @@ function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
     allocationOpened.value = Boolean(draw.allocationOpened)
     locked.value = Boolean(draw.locked)
     savedDrawId.value = draw._id ?? null
+    generatedUserDefinedData.value =
+      draw.userDefinedData && typeof draw.userDefinedData === 'object'
+        ? (draw.userDefinedData as Record<string, any>)
+        : null
   } else {
     allocation.value = []
     drawOpened.value = false
     allocationOpened.value = false
     locked.value = false
     savedDrawId.value = null
+    generatedUserDefinedData.value = null
   }
   savedSnapshot.value = allocationSnapshot()
 }
@@ -969,6 +1206,7 @@ async function save() {
     tournamentId: tournamentId.value,
     round: round.value,
     allocation: validRows,
+    ...(generatedUserDefinedData.value ? { userDefinedData: generatedUserDefinedData.value } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
@@ -979,6 +1217,71 @@ async function save() {
   }
   savedSnapshot.value = allocationSnapshot()
   savedDrawId.value = saved?._id ?? savedDrawId.value
+}
+
+function openAdjudicatorImportModal() {
+  adjudicatorImportError.value = null
+  showAdjudicatorImportModal.value = true
+}
+
+function closeAdjudicatorImportModal() {
+  showAdjudicatorImportModal.value = false
+  adjudicatorImportError.value = null
+}
+
+async function handleAdjudicatorImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  adjudicatorImportError.value = null
+  adjudicatorImportText.value = await file.text()
+  input.value = ''
+}
+
+function applyAdjudicatorImport() {
+  adjudicatorImportError.value = null
+  adjudicatorImportInfo.value = null
+  if (locked.value) {
+    adjudicatorImportError.value = t('ドローがロックされているため取り込みできません。')
+    return
+  }
+
+  const parsed = parseAdjudicatorImportText(adjudicatorImportText.value)
+  if (parsed.errors.length > 0) {
+    adjudicatorImportError.value = parsed.errors.join(' / ')
+    return
+  }
+  if (parsed.entries.length === 0) {
+    adjudicatorImportError.value = t('取り込み可能な行がありません。')
+    return
+  }
+
+  const applied = applyAdjudicatorImportEntries({
+    allocation: allocation.value,
+    entries: parsed.entries,
+    teams: teams.teams.map((team) => ({ _id: String(team._id), name: String(team.name ?? '') })),
+    adjudicators: adjudicators.adjudicators.map((adj) => ({
+      _id: String(adj._id),
+      name: String(adj.name ?? ''),
+    })),
+    mode: adjudicatorImportMode.value,
+  })
+  if (applied.errors.length > 0) {
+    adjudicatorImportError.value = applied.errors.join(' / ')
+    return
+  }
+
+  allocation.value = applied.allocation.map((row) => ({
+    venue: row.venue ?? '',
+    teams: { gov: String(row.teams.gov ?? ''), opp: String(row.teams.opp ?? '') },
+    chairs: [...(row.chairs ?? [])],
+    panels: [...(row.panels ?? [])],
+    trainees: [...(row.trainees ?? [])],
+  }))
+  adjudicatorImportInfo.value = t('ジャッジ組み合わせを {count} 試合に取り込みました。', {
+    count: applied.appliedRows,
+  })
+  closeAdjudicatorImportModal()
 }
 
 async function requestAllocation() {
@@ -992,7 +1295,24 @@ async function requestAllocation() {
             pullup_method: autoOptions.value.teamStrictPullupMethod,
             position_method: autoOptions.value.teamStrictPositionMethod,
             avoid_conflict: autoOptions.value.teamStrictAvoidConflict,
+            conflict_weights: {
+              institution: autoOptions.value.teamStrictConflictInstitutionWeight,
+              past_opponent: autoOptions.value.teamStrictConflictPastOpponentWeight,
+            },
           }
+        : autoOptions.value.teamAlgorithm === 'powerpair'
+          ? {
+              odd_bracket: autoOptions.value.teamPowerpairOddBracket,
+              pairing_method: autoOptions.value.teamPowerpairPairingMethod,
+              avoid_conflicts: autoOptions.value.teamPowerpairAvoidConflicts,
+              conflict_weights: {
+                institution: autoOptions.value.teamPowerpairConflictInstitutionWeight,
+                past_opponent: autoOptions.value.teamPowerpairConflictPastOpponentWeight,
+              },
+              max_swap_iterations: autoOptions.value.teamPowerpairMaxSwapIterations,
+            }
+        : autoOptions.value.teamAlgorithm === 'break'
+          ? {}
         : {
             method: autoOptions.value.teamMethod,
             filters: autoOptions.value.teamFilters,
@@ -1014,6 +1334,10 @@ async function requestAllocation() {
       requestError.value = t(
         '既存のドローがないため、adjudicators/venues 生成には先にチーム割り当てが必要です。'
       )
+      return
+    }
+    if (autoOptions.value.teamAlgorithm === 'break' && requestScope.value !== 'teams') {
+      requestError.value = t('ブレイク生成は対象をチームに設定してください。')
       return
     }
     const options = {
@@ -1039,7 +1363,8 @@ async function requestAllocation() {
     let endpoint = '/allocations'
     let payload = basePayload
     if (requestScope.value === 'teams') {
-      endpoint = '/allocations/teams'
+      endpoint =
+        autoOptions.value.teamAlgorithm === 'break' ? '/allocations/break' : '/allocations/teams'
     } else if (requestScope.value === 'adjudicators') {
       endpoint = '/allocations/adjudicators'
       payload = { ...basePayload, allocation: allocation.value }
@@ -1052,6 +1377,14 @@ async function requestAllocation() {
     const data = res.data?.data
     if (data?.allocation) {
       allocation.value = cloneAllocation(data.allocation)
+      if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
+        generatedUserDefinedData.value =
+          data.userDefinedData && typeof data.userDefinedData === 'object'
+            ? (data.userDefinedData as Record<string, any>)
+            : null
+      } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
+        generatedUserDefinedData.value = null
+      }
       showAutoGenerateModal.value = false
     }
   } catch (err: any) {
@@ -1830,6 +2163,15 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => autoOptions.value.teamAlgorithm,
+  (next) => {
+    if (next === 'break') {
+      requestScope.value = 'teams'
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -2322,6 +2664,50 @@ watch(
 
 .auto-modal {
   gap: var(--space-3);
+}
+
+.import-modal {
+  width: min(860px, 100%);
+}
+
+.import-info {
+  margin-top: -4px;
+}
+
+.import-textarea {
+  min-height: 180px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace);
+}
+
+.import-example {
+  margin: 0;
+  white-space: pre-wrap;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.csv-file-input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: var(--color-surface);
+}
+
+.csv-file-input::file-selector-button {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 10px;
+  margin-right: 10px;
 }
 
 .modal-actions {

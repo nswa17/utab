@@ -2,6 +2,28 @@ import { count, countCommon } from '../../general/math.js'
 import { findOne } from '../sys.js'
 import { accessDetail } from '../../general/tools.js'
 
+function normalizeInstitutionPriorityMap(value: unknown): Record<number, number> {
+  if (!value || typeof value !== 'object') return {}
+  const out: Record<number, number> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
+    const parsedKey = Number(key)
+    const parsedValue = Number(raw)
+    if (!Number.isFinite(parsedKey)) return
+    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
+  })
+  return out
+}
+
+function weightedCommonScore(
+  left: number[],
+  right: number[],
+  priorityMap: Record<number, number>
+): number {
+  const rightSet = new Set(right)
+  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
+  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
+}
+
 export function filterByRandom(
   team: { id: number },
   a: { id: number },
@@ -54,12 +76,19 @@ export function filterByStrength(
   return 0
 }
 
-export function filterByInstitution(team: any, a: any, b: any, { r }: any): number {
+export function filterByInstitution(team: any, a: any, b: any, { r, config }: any): number {
   const aInstitutions = accessDetail(a, r).institutions as number[]
   const bInstitutions = accessDetail(b, r).institutions as number[]
   const teamInstitutions = accessDetail(team, r).institutions as number[]
-  const aInsti = countCommon(aInstitutions || [], teamInstitutions || [])
-  const bInsti = countCommon(bInstitutions || [], teamInstitutions || [])
+  const priorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
+  const aInsti =
+    Object.keys(priorityMap).length > 0
+      ? weightedCommonScore(aInstitutions || [], teamInstitutions || [], priorityMap)
+      : countCommon(aInstitutions || [], teamInstitutions || [])
+  const bInsti =
+    Object.keys(priorityMap).length > 0
+      ? weightedCommonScore(bInstitutions || [], teamInstitutions || [], priorityMap)
+      : countCommon(bInstitutions || [], teamInstitutions || [])
   if (aInsti < bInsti) return -1
   if (aInsti > bInsti) return 1
   return 0

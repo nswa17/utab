@@ -7,7 +7,7 @@ import { validateRequest } from '../middleware/validation.js'
 const router: Router = Router()
 
 const allocationRowSchema = z.object({
-  venue: z.string().optional(),
+  venue: z.string().nullable().optional(),
   teams: z.union([
     z.object({
       gov: z.string().min(1),
@@ -33,6 +33,7 @@ const upsertSchema = {
     tournamentId: z.string().min(1),
     round: z.number().int().min(1),
     allocation: z.array(allocationRowSchema),
+    userDefinedData: z.record(z.any()).optional(),
     drawOpened: z.boolean().optional(),
     allocationOpened: z.boolean().optional(),
     locked: z.boolean().optional(),

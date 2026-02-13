@@ -2,6 +2,7 @@ import { teamAllocationPrecheck } from './teams/checks.js'
 import { sortTeams, sortDecorator } from '../general/sortings.js'
 import { mGaleShapley } from './teams/matchings.js'
 import { strictMatching } from './teams/strict_matchings.js'
+import { getTeamDrawPowerpair } from './teams/powerpair.js'
 import { decidePositions } from './sys.js'
 import { filterAvailable } from '../general/tools.js'
 import { sillyLogger } from '../general/loggers.js'
@@ -32,14 +33,19 @@ function getTeamRanksOriginal(
   teams: any[],
   compiledTeamResults: any[],
   filterFunctions: RankFilter[],
-  __: any
+  __: any,
+  config: any
 ) {
   sillyLogger(getTeamRanksOriginal, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
   for (const team of teams) {
     const others = teams.filter((other) => team.id !== other.id)
     others.sort(
-      sortDecorator(team, filterFunctions, { r, compiled_team_results: compiledTeamResults })
+      sortDecorator(team, filterFunctions, {
+        r,
+        compiled_team_results: compiledTeamResults,
+        config,
+      })
     )
     ranks[team.id] = others.map((o) => o.id)
   }
@@ -51,7 +57,8 @@ function getTeamRanksStraight(
   teams: any[],
   compiledTeamResults: any[],
   filterFunctions: RankFilter[],
-  __: any
+  __: any,
+  config: any
 ) {
   sillyLogger(getTeamRanksStraight, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
@@ -62,6 +69,7 @@ function getTeamRanksStraight(
       integrateFilterFunctions(team, filterFunctions, weights, {
         r,
         compiled_team_results: compiledTeamResults,
+        config,
       })
     )
     ranks[team.id] = others.map((o) => o.id)
@@ -74,7 +82,8 @@ function getTeamRanksWeighted(
   teams: any[],
   compiledTeamResults: any[],
   filterFunctions: RankFilter[],
-  __: any
+  __: any,
+  config: any
 ) {
   sillyLogger(getTeamRanksWeighted, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
@@ -85,6 +94,7 @@ function getTeamRanksWeighted(
       integrateFilterFunctions(team, filterFunctions, weights, {
         r,
         compiled_team_results: compiledTeamResults,
+        config,
       })
     )
     ranks[team.id] = others.map((o) => o.id)
@@ -97,7 +107,8 @@ function getTeamRanksCustom(
   teams: any[],
   compiledTeamResults: any[],
   filterFunctions: RankFilter[],
-  weights: number[]
+  weights: number[],
+  config: any
 ) {
   sillyLogger(getTeamRanksCustom, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
@@ -107,6 +118,7 @@ function getTeamRanksCustom(
       integrateFilterFunctions(team, filterFunctions, weights, {
         r,
         compiled_team_results: compiledTeamResults,
+        config,
       })
     )
     ranks[team.id] = others.map((o) => o.id)
@@ -169,7 +181,8 @@ function getTeamDraw(
     sortedTeams,
     compiledTeamResults,
     filterFunctions,
-    weights
+    weights,
+    config
   )
   const teamNum = config.style.team_num
   const matching = mGaleShapley(ts, ranks, teamNum - 1)
@@ -195,7 +208,7 @@ function getTeamDrawStrict(
   config: any,
   options: any
 ) {
-  const matching = strictMatching(teams, compiledTeamResults, config, options)
+  const matching = strictMatching(teams, compiledTeamResults, config, { ...options, round: r })
   const teamAllocation = getTeamAllocationFromStrictMatching(matching as any)
   return { r, allocation: teamAllocation }
 }
@@ -210,7 +223,8 @@ const filterMethods: Record<string, Function> = {
 
 const standard = { get: getTeamDraw }
 const strict = { get: getTeamDrawStrict }
+const powerpair = { get: getTeamDrawPowerpair }
 const precheck = teamAllocationPrecheck
 
-export { standard, strict, precheck }
-export default { standard, strict, precheck }
+export { standard, strict, powerpair, precheck }
+export default { standard, strict, powerpair, precheck }

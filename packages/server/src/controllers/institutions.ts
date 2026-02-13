@@ -68,6 +68,8 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
       const payload = req.body as Array<{
         tournamentId: string
         name: string
+        category?: string
+        priority?: number
         userDefinedData?: unknown
       }>
       if (payload.length === 0) {
@@ -97,9 +99,11 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const { tournamentId, name, userDefinedData } = req.body as {
+    const { tournamentId, name, category, priority, userDefinedData } = req.body as {
       tournamentId: string
       name: string
+      category?: string
+      priority?: number
       userDefinedData?: unknown
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
@@ -110,7 +114,13 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
     }
     const connection = await getTournamentConnection(tournamentId)
     const InstitutionModel = getInstitutionModel(connection)
-    const created = await InstitutionModel.create({ tournamentId, name, userDefinedData })
+    const created = await InstitutionModel.create({
+      tournamentId,
+      name,
+      category,
+      priority,
+      userDefinedData,
+    })
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
@@ -135,6 +145,8 @@ export const bulkUpdateInstitutions: RequestHandler = async (req, res, next) => 
       id: string
       tournamentId: string
       name?: string
+      category?: string
+      priority?: number
       userDefinedData?: unknown
     }>
     const tournamentId = payload[0].tournamentId
@@ -156,6 +168,8 @@ export const bulkUpdateInstitutions: RequestHandler = async (req, res, next) => 
     const ops = payload.map((item) => {
       const update: Record<string, unknown> = {}
       if (item.name !== undefined) update.name = item.name
+      if (item.category !== undefined) update.category = item.category
+      if (item.priority !== undefined) update.priority = item.priority
       if (item.userDefinedData !== undefined) update.userDefinedData = item.userDefinedData
       return {
         updateOne: {
@@ -200,9 +214,11 @@ export const bulkDeleteInstitutions: RequestHandler = async (req, res, next) => 
 export const updateInstitution: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
-    const { tournamentId, name, userDefinedData } = req.body as {
+    const { tournamentId, name, category, priority, userDefinedData } = req.body as {
       tournamentId: string
       name?: string
+      category?: string
+      priority?: number
       userDefinedData?: unknown
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
@@ -219,6 +235,8 @@ export const updateInstitution: RequestHandler = async (req, res, next) => {
     }
     const update: Record<string, unknown> = {}
     if (name !== undefined) update.name = name
+    if (category !== undefined) update.category = category
+    if (priority !== undefined) update.priority = priority
     if (userDefinedData !== undefined) update.userDefinedData = userDefinedData
 
     const connection = await getTournamentConnection(tournamentId)

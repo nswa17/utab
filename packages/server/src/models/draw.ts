@@ -19,6 +19,7 @@ const drawSchema = new Schema(
     drawOpened: { type: Boolean, default: false },
     allocationOpened: { type: Boolean, default: false },
     locked: { type: Boolean, default: false },
+    userDefinedData: { type: Schema.Types.Mixed, default: {} },
     createdBy: { type: String },
   },
   { timestamps: true }

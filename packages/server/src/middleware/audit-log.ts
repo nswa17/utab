@@ -54,7 +54,7 @@ const RESOURCE_RULES: Array<{
   {
     prefix: '/api/submissions',
     targetType: 'submission',
-    actions: { POST: 'submission.create' },
+    actions: { POST: 'submission.create', PATCH: 'submission.update' },
   },
 ]
 

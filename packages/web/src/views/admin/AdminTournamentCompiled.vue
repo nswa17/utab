@@ -188,11 +188,29 @@
           {{ $t('指定compiledを選ぶ場合はIDを入力してください。') }}
         </p>
         <div v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary">
-          <div class="row">
+          <div class="row submission-summary-header">
             <h5>{{ $t('提出状況サマリー') }}</h5>
-            <RouterLink :to="`/admin/${tournamentId}/submissions`" class="submission-link">
-              {{ $t('提出一覧を開く') }}
-            </RouterLink>
+            <div class="row submission-summary-actions">
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="downloadCommentSheetCsv"
+                :disabled="commentSheetRows.length === 0"
+              >
+                {{ $t('コメントシートCSV') }}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="downloadParticipantCsv"
+                :disabled="participantExportRows.length === 0"
+              >
+                {{ $t('参加者CSV') }}
+              </Button>
+              <RouterLink :to="`/admin/${tournamentId}/submissions`" class="submission-link">
+                {{ $t('提出一覧を開く') }}
+              </RouterLink>
+            </div>
           </div>
           <Table hover striped>
             <thead>
@@ -440,6 +458,14 @@
               <Button variant="secondary" size="sm" @click="copyAwardText">
                 {{ $t('コピー') }}
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="downloadAwardCsv"
+                :disabled="awardExportRows.length === 0"
+              >
+                {{ $t('受賞者CSV') }}
+              </Button>
             </div>
           </div>
           <p v-if="awardCopyCopied" class="muted">{{ $t('コピーしました。') }}</p>
@@ -488,6 +514,17 @@ import {
   resolveRankingTrend,
   toFiniteNumber,
 } from '@/utils/diff-indicator'
+import {
+  buildCommentSheetCsv,
+  buildCommentSheetRows,
+  type CommentSheetCsvLabels,
+} from '@/utils/comment-sheet'
+import {
+  buildAwardExportCsv,
+  buildParticipantExportCsv,
+  type AwardExportRowInput,
+  type ParticipantExportRowInput,
+} from '@/utils/certificate-export'
 
 const route = useRoute()
 const compiledStore = useCompiledStore()
@@ -802,6 +839,135 @@ const awardCopyText = computed(() => {
     .join('\n')
 })
 
+const institutionNameMap = computed(() => {
+  const map = new Map<string, string>()
+  institutions.institutions.forEach((institution) => {
+    map.set(String(institution._id), institution.name)
+  })
+  return map
+})
+
+function resolveInstitutionName(token: string): string {
+  return institutionNameMap.value.get(token) ?? token
+}
+
+function collectTeamInstitutionNames(team: any): string[] {
+  const set = new Set<string>()
+  const direct = String(team?.institution ?? '').trim()
+  if (direct) set.add(resolveInstitutionName(direct))
+  ;(team?.details ?? []).forEach((detail: any) => {
+    ;(detail?.institutions ?? []).forEach((institutionId: any) => {
+      const token = String(institutionId ?? '').trim()
+      if (!token) return
+      set.add(resolveInstitutionName(token))
+    })
+  })
+  return Array.from(set)
+}
+
+function collectAdjudicatorInstitutionNames(adjudicator: any): string[] {
+  const set = new Set<string>()
+  ;(adjudicator?.details ?? []).forEach((detail: any) => {
+    ;(detail?.institutions ?? []).forEach((institutionId: any) => {
+      const token = String(institutionId ?? '').trim()
+      if (!token) return
+      set.add(resolveInstitutionName(token))
+    })
+  })
+  return Array.from(set)
+}
+
+const speakerTeamNameMap = computed(() => {
+  const byId = new Map<string, string>()
+  const byName = new Map<string, string>()
+  teams.teams.forEach((team) => {
+    const teamName = String(team.name ?? '')
+    ;(team.details ?? []).forEach((detail: any) => {
+      ;(detail?.speakers ?? []).forEach((speakerId: any) => {
+        const token = String(speakerId ?? '').trim()
+        if (!token || byId.has(token)) return
+        byId.set(token, teamName)
+      })
+    })
+    ;(team.speakers ?? []).forEach((speaker: any) => {
+      const name = String(speaker?.name ?? '').trim()
+      if (!name || byName.has(name)) return
+      byName.set(name, teamName)
+    })
+  })
+  return { byId, byName }
+})
+
+function awardMetricLabel(label: typeof activeLabel.value) {
+  if (label === 'teams') return teamHasScores.value ? t('合計') : t('勝利数')
+  if (label === 'speakers') return t('平均')
+  if (label === 'adjudicators') return t('平均')
+  if (label === 'poi') return t('POI合計')
+  if (label === 'best') return t('ベストスピーカー合計')
+  return ''
+}
+
+function awardMetricValue(row: any, label: typeof activeLabel.value): string | number {
+  if (label === 'teams') return teamHasScores.value ? Number(row?.sum ?? 0) : Number(row?.win ?? 0)
+  if (label === 'speakers') return Number(row?.average ?? 0)
+  if (label === 'adjudicators') return Number(row?.average ?? 0)
+  if (label === 'poi') return Number(row?.poi ?? 0)
+  if (label === 'best') return Number(row?.best ?? 0)
+  return ''
+}
+
+const awardExportRows = computed<AwardExportRowInput[]>(() =>
+  awardCopyRows.value.map((row) => ({
+    category: labelDisplay(activeLabel.value),
+    ranking: Number(row?.ranking ?? 0),
+    place: ordinal(Number(row?.ranking ?? 0)),
+    id: String(row?.id ?? ''),
+    name: entityName(String(row?.id ?? '')),
+    team: Array.isArray(row?.teams) ? row.teams.map((item: any) => String(item)).join('/') : '',
+    metric_name: awardMetricLabel(activeLabel.value),
+    metric_value: awardMetricValue(row, activeLabel.value),
+  }))
+)
+
+const participantExportRows = computed<ParticipantExportRowInput[]>(() => {
+  const rows: ParticipantExportRowInput[] = []
+
+  teams.teams.forEach((team) => {
+    rows.push({
+      participant_type: 'team',
+      id: String(team._id),
+      name: String(team.name ?? ''),
+      institutions: collectTeamInstitutionNames(team),
+    })
+  })
+
+  speakers.speakers.forEach((speaker) => {
+    const speakerId = String(speaker._id)
+    const speakerName = String(speaker.name ?? '')
+    rows.push({
+      participant_type: 'speaker',
+      id: speakerId,
+      name: speakerName,
+      team:
+        speakerTeamNameMap.value.byId.get(speakerId) ??
+        speakerTeamNameMap.value.byName.get(speakerName) ??
+        '',
+    })
+  })
+
+  adjudicators.adjudicators.forEach((adjudicator) => {
+    rows.push({
+      participant_type: 'adjudicator',
+      id: String(adjudicator._id),
+      name: String(adjudicator.name ?? ''),
+      institutions: collectAdjudicatorInstitutionNames(adjudicator),
+      active: adjudicator.active === true,
+    })
+  })
+
+  return rows
+})
+
 const tableColumns = computed(() => {
   if (activeLabel.value === 'poi' || activeLabel.value === 'best') {
     return ['ranking', 'id', 'teams', activeLabel.value]
@@ -1087,6 +1253,15 @@ const roundSubmissionSummaries = computed<RoundSubmissionSummary[]>(() =>
   })
 )
 
+const commentSheetRows = computed(() =>
+  buildCommentSheetRows(submissions.submissions, {
+    resolveRoundName: (round) => roundName(round),
+    resolveTeamName: (id) => teamName(id),
+    resolveAdjudicatorName: (id) => adjudicatorName(id),
+    resolveEntityName: (id) => entityName(id),
+  })
+)
+
 function summarizeSubmissionCell(
   summary: RoundSubmissionSummary,
   kind: 'ballot' | 'feedback'
@@ -1260,6 +1435,60 @@ function moveRankingPriority(index: number, direction: -1 | 1) {
 function setActiveLabel(label: string) {
   if (!['teams', 'speakers', 'adjudicators', 'poi', 'best'].includes(label)) return
   activeLabel.value = label as 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
+}
+
+function downloadCommentSheetCsv() {
+  if (commentSheetRows.value.length === 0) return
+  const labels: CommentSheetCsvLabels = {
+    round: t('ラウンド'),
+    round_name: t('ラウンド名'),
+    submission_type: t('提出種別'),
+    submitted_entity_id: t('提出者ID'),
+    submitted_entity_name: t('提出者'),
+    matchup: t('対戦'),
+    winner: t('勝者'),
+    adjudicator: t('対象ジャッジ'),
+    score: t('スコア'),
+    role: t('ロール'),
+    comment: t('コメント'),
+    created_at: t('作成日時'),
+    updated_at: t('更新日時'),
+  }
+  const csv = buildCommentSheetCsv(commentSheetRows.value, labels)
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'comment_sheet.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadAwardCsv() {
+  if (awardExportRows.value.length === 0) return
+  const csv = buildAwardExportCsv(awardExportRows.value)
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'awardees.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadParticipantCsv() {
+  if (participantExportRows.value.length === 0) return
+  const csv = buildParticipantExportCsv(participantExportRows.value)
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'participants.csv'
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function downloadCsv() {
@@ -1537,6 +1766,17 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   color: var(--color-primary);
   text-decoration: none;
   font-size: 0.85rem;
+}
+
+.submission-summary-header {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.submission-summary-actions {
+  margin-left: auto;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .submission-link:hover {

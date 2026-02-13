@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   createAllocation,
   createAdjudicatorAllocation,
+  createBreakAllocation,
   createTeamAllocation,
   createVenueAllocation,
 } from '../controllers/allocations.js'
@@ -44,6 +45,7 @@ router.post(
   validateRequest({ body: baseBodySchema }),
   createTeamAllocation
 )
+router.post('/break', requireTournamentAdmin(), validateRequest({ body: baseBodySchema }), createBreakAllocation)
 router.post(
   '/adjudicators',
   requireTournamentAdmin(),

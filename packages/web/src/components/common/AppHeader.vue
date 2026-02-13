@@ -122,8 +122,8 @@ function changeLocale(next: Locale) {
 
 .primary-nav a.active {
   border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-secondary);
+  color: var(--color-primary);
 }
 
 .primary-nav-placeholder {

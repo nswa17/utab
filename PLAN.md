@@ -4,9 +4,9 @@
 
 ## 今やること（全体）
 
-- [ ] `legacy/` の扱いを決める（アーカイブ/削除/別リポジトリ移管）
-- [ ] ステージング→本番のデプロイ手順を固める（`DEPLOYMENT.md`）
-- [ ] UI 改善を進める（詳細: `docs/ui/ui-modernization-plan.md`）
+- [x] `legacy/` は現状維持（本フェーズでは変更しない）
+- [x] ステージング→本番のデプロイ手順を確定（`DEPLOYMENT.md`）
+- [x] UI モダン化計画を `PLAN.md` に集約し、未完了だった `T24` の「手動 seed 確定」導線を実装
 
 ---
 
@@ -26,6 +26,19 @@
 - 2026-02-12: `T20`（差分表示基盤）`T21`（説明付きUI）`T22`（提出データ機能統合）の MVP を実装し、差分算出・凡例・ヘルプ・提出サマリをレポート生成画面へ統合
 - 2026-02-12: `T23`（回帰観点の安定化）`T07`（レート制限の閾値調整）を実装し、公開compiledレスポンスの情報最小化・閾値の環境変数化・回帰テスト観点を反映
 - 2026-02-13: `T23` フォローとして、提出/集計の安全性修正を反映（勝者必須条件、同一チーム拒否、配列長整合、非数値拒否、重複票average正規化、提出者単位の重複判定）し、Server/Web 回帰テストを拡張
+- 2026-02-13: `T08` の MVP を実装（`PATCH /api/submissions/:id`、管理画面で提出済みデータの round/payload 編集、`speakerIds` 空要素拒否を含む検証と回帰テスト追加）
+- 2026-02-13: `T09` の MVP を実装（ラウンド配席画面でジャッジ組み合わせ CSV/TSV 取込、match番号または gov/opp 指定で反映、replace/append 選択、取込パーサ/適用ロジックのユニットテスト追加）
+- 2026-02-13: `T12` の MVP を実装（参加者バロット入力で前回提出内容のプリフィル、提出管理画面のフォーム編集に Matter/Manner 分離入力を追加、`matter/manner` から `scores` を再構成する API 正規化と回帰テスト追加）
+- 2026-02-13: `T14` の MVP を実装（Institution に `category/priority` を追加して任意属性の衝突モデリングを一般化、配席時の機関衝突判定に priority 重みを反映、管理画面で category/priority を作成/編集可能化）
+- 2026-02-13: `T15` の MVP を実装（team strict 配席で衝突最小化 swap を有効化、チーム機関衝突判定へ priority 重みを反映、strict UI から機関/過去対戦の衝突重みを調整可能化）
+- 2026-02-13: `T26` の MVP を実装（`team_allocation_algorithm=powerpair` を追加、ブラケット+pull-up+pairing+one-up-one-down を実装し、生成メタを draw の `userDefinedData` へ保存）
+- 2026-02-13: `T26` フォローとして、審判割当前チェックを `(chairs+panels+trainees) × 試合数` 基準へ修正し、必要人数不足時は安全に審判割当をスキップする挙動へ統一（`/api/draws/generate` と `/api/allocations/*`）
+- 2026-02-13: `T24` の MVP を実装（Round 詳細にブレイク設定 UI を追加、参照ラウンド選択+候補プレビュー+手動選抜、`PATCH /api/rounds/:id/break` で `Round.userDefinedData.break` 保存と `Team.details[r].available` 同期を実装）
+- 2026-02-13: `T25` の MVP を実装（`POST /api/allocations/break` を追加し、シード順 + bye 付きのブレイク配席と前ラウンド勝ち上がり自動導出を実装。`AdminRoundAllocation` にブレイク自動生成導線を追加し、保存互換のため draw 受け口を `venue: null` 許容へ拡張）
+- 2026-02-13: `T16` の MVP を実装（`AdminTournamentCompiled` にコメントシート一括CSVダウンロードを追加。ballot/feedback の comment を1ファイルへ集約し、提出者・対戦・勝者・対象ジャッジ等を含めて出力）
+- 2026-02-13: `T17` をクローズ（証明書機能は非実装方針を維持し、代替として `AdminTournamentCompiled` から受賞者CSV/参加者CSVを一括出力できるようにして外部文書基盤連携を明確化）
+- 2026-02-13: `T24` フォローとして、ブレイク候補一覧に手動 seed 入力を追加。候補再取得時に manual の seed を保持し、重複/不正 seed は保存前に UI で検知するよう修正
+- 2026-02-13: UI モダン化計画の運用先を `docs/ui/ui-modernization-plan.md` から `PLAN.md` に統合（詳細は本ファイルを正とする）
 
 ---
 
@@ -139,7 +152,7 @@
     - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
     - `packages/server/test/integration.test.ts`
     - `packages/core/tests/results-compile-advanced.test.ts`
-    - `docs/ui/ui-modernization-plan.md`
+    - `PLAN.md`
     - `docs/ui/ui-qa-checklist.md`
 
 - [x] **T07. 負荷試験と閾値調整（R21）**
@@ -171,8 +184,12 @@
 
 ### Phase 5（中優先: 周辺機能）
 
-- [ ] **T08. 提出済みバロット編集（名前変更/追加）（R05）**
+- [x] **T08. 提出済みバロット編集（名前変更/追加）（R05）**
   - 目的: 入力ミスのリカバリを管理画面で完結
+  - 実装メモ（MVP）:
+    - 管理者 API `PATCH /api/submissions/:id` を追加（ballot/feedback を再検証して更新）
+    - 管理画面 `AdminTournamentSubmissions` に提出データのインライン編集 UI（round + JSON）を追加
+    - `speakerIds` の空要素を API で拒否し、更新経路でも同様にバリデーション
   - 変更候補:
     - `packages/server/src/controllers/submissions.ts`
     - `packages/server/src/routes/submissions.ts`
@@ -180,108 +197,168 @@
     - `packages/web/src/views/admin/AdminTournamentSubmissions.vue`
     - `packages/server/test/integration.test.ts`
 
-- [ ] **T09. ジャッジ組み合わせインポート（ラウンド別）（R13）**
+- [x] **T09. ジャッジ組み合わせインポート（ラウンド別）（R13）**
   - 目的: 当日手動作業を削減
+  - 実装メモ（MVP）:
+    - `AdminRoundAllocation` に「ジャッジ組み合わせ取込」モーダルを追加（CSV/TSV貼り付け + ファイル読込）
+    - 取込フォーマットは `match,chairs,panels,trainees`（1始まり）と `gov,opp,chairs,panels,trainees`（チーム名/ID）をサポート
+    - 反映モードは `replace` / `append` を選択可能
+    - ジャッジ/チーム解決・重複ロール検証・行解決を `utils` に切り出し、ユニットテストを追加
   - 変更候補:
     - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
-    - `packages/server/src/controllers/draws.ts`（複数ラウンド一括投入を行う場合）
-    - `packages/server/src/routes/draws.ts`
-    - `packages/server/test/integration.test.ts`
+    - `packages/web/src/utils/adjudicator-import.ts`（新規）
+    - `packages/web/src/utils/adjudicator-import.test.ts`（新規）
 
-- [ ] **T12. 内容/表現の分離入力・修正（R08）**
+- [x] **T12. 内容/表現の分離入力・修正（R08）**
   - 目的: 採点軸を明示して後編集可能にする
-  - 変更候補:
+  - 実装メモ（MVP）:
+    - 参加者バロット入力で同一提出者・同一対戦の前回提出を読み込み、Matter/Manner を含む再編集を可能化
+    - 管理画面 `AdminTournamentSubmissions` の提出編集に「フォーム編集」を追加（Matter/Manner 分離入力 + JSON 編集の切替）
+    - サーバー側で `matter/manner` ペア必須バリデーションを追加し、両方がある場合は `scores` を自動再計算して整合性を維持
+  - 変更ファイル:
     - `packages/web/src/views/user/participant/round/ballot/UserRoundBallotEntry.vue`
     - `packages/web/src/views/admin/AdminTournamentSubmissions.vue`
     - `packages/server/src/controllers/submissions.ts`
     - `packages/server/src/routes/submissions.ts`
+    - `packages/server/test/integration.test.ts`
 
-- [ ] **T14. conflict種別/優先度のモデル化（R11）**
+- [x] **T14. conflict種別/優先度のモデル化（R11）**
   - 目的: チーム/学校/任意属性（例: 地域）衝突を一元管理（「地域」ハードコードは避ける）
-  - 変更候補:
-    - `packages/server/src/models/adjudicator.ts`
+  - 実装メモ（MVP）:
+    - `Institution` に `category`（属性種別）と `priority`（衝突重み）を追加
+    - `AdminTournamentHome` の Institution 管理（手動追加/編集/CSV）で `category/priority` を操作可能化
+    - adjudicator 配席の `by_institution` フィルタで、重複 institution 数ではなく `priority` 重み付きスコアを比較可能化
+    - draw 生成時に `config.institution_priority_map` を構築して core フィルタへ連携
+  - 変更ファイル:
     - `packages/server/src/models/institution.ts`
-    - `packages/server/src/controllers/adjudicators.ts`
-    - `packages/web/src/types/adjudicator.ts`
     - `packages/web/src/types/institution.ts`
     - `packages/web/src/views/admin/AdminTournamentHome.vue`
     - `packages/core/src/allocations/adjudicators/adjfilters.ts`
-    - `packages/core/src/allocations/adjudicators.ts`
+    - `packages/server/src/routes/institutions.ts`
+    - `packages/server/src/controllers/institutions.ts`
+    - `packages/server/src/controllers/draws.ts`
+    - `packages/core/tests/allocations-adjudicators-filters.test.ts`
+    - `packages/web/src/stores/institutions.ts`
+    - `packages/web/src/stores/institutions.test.ts`
+    - `packages/server/test/integration.test.ts`
 
-- [ ] **T15. auto allocation新要素（R16）**
+- [x] **T15. auto allocation新要素（R16）**
   - 目的: 同校複数チームや「任意属性（例: 地域）」偏りの最適化（地域ハードコードは避ける）
-  - 変更候補:
+  - 実装メモ（MVP）:
+    - `by_institution`（team filter）で `config.institution_priority_map` による重み付き衝突比較を導入
+    - strict 配席の `avoid_conflict` を実装し、局所 swap で「機関衝突 + 過去対戦再マッチ」の合計スコアを削減
+    - strict 配席オプションに `conflict_weights`（`institution` / `past_opponent`）と `max_swap_iterations` を追加
+    - `AdminRoundAllocation` から strict 衝突重みを入力できる UI を追加
+    - allocations API 側でも institution priority map を config に注入して、手動再生成経路でも同じ評価軸を適用
+  - 変更ファイル:
     - `packages/core/src/allocations/teams/filters.ts`
+    - `packages/core/src/allocations/teams/strict_matchings.ts`
     - `packages/core/src/allocations/teams.ts`
+    - `packages/core/src/index.ts`
     - `packages/server/src/controllers/allocations.ts`
     - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
     - `packages/core/tests/allocations-teams.test.ts`
     - `packages/core/tests/allocations-teams-strict.test.ts`
 
-- [ ] **T26. チームドロー: Tabbycat-style power pairing アルゴリズム（R16拡張）**
+- [x] **T26. チームドロー: Tabbycat-style power pairing アルゴリズム（R16拡張）**
   - 目的: Gale–Shapley ベース以外の選択肢として、Tabbycat の power pairing に近いドロー生成（ブラケット/pull-up/衝突回避）を実装可能にする
-  - 実装内容（MVP）:
+  - 実装メモ（MVP）:
     - `team_allocation_algorithm=powerpair` を追加（既存 `standard/strict` と並列）
     - ブラケット: `compiled_team_results.win` を points としてグルーピング（同点内の並びは現行 `teamComparer`）
-    - odd bracket 解消: `pullup_top|pullup_bottom|pullup_random`（`intermediate` は後続）
+    - odd bracket 解消: `pullup_top|pullup_bottom|pullup_random`
     - ペアリング: `slide|fold|random`
-    - 衝突回避: `one_up_one_down` swap（同校/過去対戦/任意属性 を対象。graph は後続）
-    - サイド割当: 既存 `decidePositions` を使用（必要なら Tabbycat の side allocation を別途検討）
-    - 生成メタ情報（bracket/pullup 等）を `Draw.userDefinedData` に付与（デバッグ用）
-    - 制約（MVP）: `style.team_num=2` かつ配置対象チーム数が偶数（swing/bye は後続）
+    - 衝突回避: `one_up_one_down` swap（隣接ペア間スワップ）を実装し、機関衝突 + 過去対戦再マッチを低減
+    - サイド割当: 既存 `decidePositions` を利用
+    - 生成メタ（brackets/pullups/settings）を `userDefinedData.powerpair` として返却・保存
+    - 制約（MVP）: `style.team_num=2` かつ配置対象チーム数が偶数
     - 参考メモ: `docs/research/tabbycat-team-draw.md`
-  - 変更候補:
+  - 変更ファイル:
     - `packages/core/src/allocations/teams.ts`
     - `packages/core/src/allocations/teams/powerpair.ts`（新規）
+    - `packages/core/src/index.ts`
+    - `packages/core/src/allocations/teams/filters.ts`
     - `packages/server/src/controllers/allocations.ts`
+    - `packages/server/src/controllers/draws.ts`
+    - `packages/server/src/models/draw.ts`
+    - `packages/server/src/routes/draws.ts`
     - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
+    - `packages/web/src/types/draw.ts`
+    - `packages/web/src/stores/draws.ts`
+    - `packages/web/src/i18n/messages.ts`
     - `packages/core/tests/allocations-teams-powerpair.test.ts`（新規）
     - `packages/server/test/integration.test.ts`
 
-- [ ] **T24. ブレイクラウンド（アウトラウンド）基盤（参加者確定）**
+- [x] **T24. ブレイクラウンド（アウトラウンド）基盤（参加者確定）**
   - 目的: 予選結果からブレイク参加チームを確定し、ブレイクラウンド運用を UI/データで再現可能にする
-  - 実装内容（MVP）:
-    - ブレイク設定を `Round.userDefinedData` に定義（例: `break: { enabled, source_rounds, size, cutoff_tie_policy, seeding }`）
-    - 参照ラウンド（`source_rounds`）は round ごとに都度選択できる UI にする（= 予選のどこまでを参照するかを毎回決められる）
-    - 「候補チーム一覧」を提示して admin が選べるようにする（順位/同点グループを見せて include/exclude）
-    - 確定結果を `Round.userDefinedData.break.participants`（`[{ teamId, seed }]`）に保存し、互換のため `Team.details[r].available` も一括更新する
-  - 変更候補:
-    - `packages/web/src/views/admin/AdminTournamentHome.vue`（チームのラウンド別参加可否編集 UI）
-    - `packages/web/src/views/admin/AdminTournamentRounds.vue`（Round 側にブレイク設定 UI を置く場合）
+  - 実装メモ（MVP）:
+    - Round API を拡張
+      - `POST /api/rounds/:id/break/candidates`（参照ラウンド + source 指定で候補チームをプレビュー）
+      - `PATCH /api/rounds/:id/break`（`Round.userDefinedData.break` 保存 + 必要に応じて Team availability 同期）
+    - 候補抽出は compiled ロジック（保存なし）を再利用し、順位/勝敗点/同点境界フラグを返却
+    - 管理画面 `AdminTournamentRounds` のラウンド詳細にブレイク設定 UI を追加
+      - 参照 source（submissions/raw）、参照ラウンド、size、cutoff tie 方針、seeding
+      - 候補一覧（include/exclude）と手動 seed 確定
+    - 互換のため、保存時に `Team.details[r].available` をブレイク参加者に同期
+  - 変更ファイル:
+    - `packages/server/src/controllers/compiled.ts`
+    - `packages/server/src/controllers/rounds.ts`
+    - `packages/server/src/routes/rounds.ts`
+    - `packages/web/src/types/round.ts`
+    - `packages/web/src/stores/rounds.ts`
+    - `packages/web/src/views/admin/AdminTournamentRounds.vue`
+    - `packages/web/src/i18n/messages.ts`
     - `packages/server/test/integration.test.ts`
 
-- [ ] **T25. ブレイクラウンドのドロー自動生成（シードペアリング）**
+- [x] **T25. ブレイクラウンドのドロー自動生成（シードペアリング）**
   - 目的: ブレイク参加者（上位シード）から `1 vs N, 2 vs N-1 ...` の対戦表を生成し、既存の Allocation 画面で調整/公開できる状態にする
   - 実装内容（MVP）:
-    - API: `POST /api/allocations/break`（`tournamentId`, `round`）で allocation を返す（`Round.userDefinedData.break` を参照）
-    - 初手は Tabbycat を参考に「固定シード + 勝ち上がり」方式で実装する
-      - `size` が `2^k` でない場合も、上位シードに bye を付与して成立させる（Tabbycat の partial break の考え方）
-      - 以後ラウンドは「前ラウンドの勝者 + 事前の bye シード」から生成（ブランケット進行）
-    - 制約（MVP）: `style.team_num=2` のみ対応（複数チーム形式のアウトラウンドは後続）
+    - API `POST /api/allocations/break` を追加（`tournamentId`, `round`）
+      - `Round.userDefinedData.break.participants` を参照し、`1 vs N, 2 vs N-1 ...` で対戦カードを生成
+      - `size` が `2^k` でない場合は上位シードに bye を付与してラウンド成立
+      - 次ラウンドで participants 未設定時は、前ラウンド draw の break メタデータ（`matches`/`stage_byes`）+ compiled 勝敗から勝ち上がりを自動導出
+    - 生成結果の `userDefinedData.break` に `stage_participants` / `stage_byes` / `matches` / `derived_from_previous_round` を格納
+    - UI `AdminRoundAllocation` の自動生成に `ブレイク` を追加し、teams スコープ時のみ `POST /api/allocations/break` へ分岐
+    - 保存互換: `POST /api/draws` の入力スキーマで `allocation[].venue = null` を許容（break 生成結果の即保存を可能化）
+    - 制約（MVP）: `style.team_num=2` のみ対応
     - 参考メモ: `docs/research/tabbycat-team-draw.md`
-    - UI: `AdminRoundAllocation` の「自動生成」にブレイクを追加（teams 生成のみ break エンドポイントへ分岐）
-  - 変更候補:
-    - `packages/core/src/allocations/teams.ts`（break/seeded アルゴリズムを core に入れる場合）
+  - 変更ファイル:
     - `packages/server/src/controllers/allocations.ts`
     - `packages/server/src/routes/allocations.ts`
+    - `packages/server/src/routes/draws.ts`
     - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
-    - `packages/core/tests/*`
+    - `packages/web/src/i18n/messages.ts`
     - `packages/server/test/integration.test.ts`
 
 ---
 
 ### Phase 6（低優先: 外部連携領域）
 
-- [ ] **T16. コメントシート一括ダウンロード（R18）**
+- [x] **T16. コメントシート一括ダウンロード（R18）**
   - 目的: 収集済みのコメント（フィードバック/バロット）を一括で出力し、外部配布・アーカイブを容易にする
-  - 実装内容（案）:
-    - 出力形式: `CSV`（基本）+ 必要なら `ZIP(CSV群)`（ラウンド別/カテゴリ別）
-    - 設置場所: `AdminTournamentCompiled`（レポート生成）に「一括DL」導線を置く（提出一覧にもショートカット可）
+  - 実装内容（MVP）:
+    - 設置場所: `AdminTournamentCompiled`（レポート生成）に `コメントシートCSV` ボタンを追加
+    - 出力形式: 単一 `CSV`（UTF-8 with BOM）
+      - ballot/feedback の `payload.comment` を対象に、空コメントは除外
+      - 列: round/round_name/type/submitted_entity/matchup/winner/adjudicator/score/role/comment/timestamp
+    - CSV生成ロジックを `packages/web/src/utils/comment-sheet.ts` に分離し、ユニットテストを追加
     - 証明書は対象外（`T17` 参照）
+  - 変更ファイル:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/utils/comment-sheet.ts`（新規）
+    - `packages/web/src/utils/comment-sheet.test.ts`（新規）
+    - `packages/web/src/i18n/messages.ts`
 
-- [ ] **T17. 賞状/参加証明書（R19, R20）**
-  - 判定: **実装しない**（外部文書基盤で対応）
-  - 代替案: Tabから受賞者/参加者CSVを出力し、既存PowerPoint/GAS等へ連携
+- [x] **T17. 賞状/参加証明書（R19, R20）**
+  - 判定: **証明書機能本体は実装しない**（外部文書基盤で対応）
+  - 代替実装:
+    - `AdminTournamentCompiled` に `受賞者CSV` / `参加者CSV` を追加
+    - 受賞者CSV: 現在表示中カテゴリの表彰枠（順位/対象/指標）を外部文書向けに出力
+    - 参加者CSV: team/speaker/adjudicator の名簿（所属・稼働フラグ含む）を出力
+  - 変更ファイル:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/utils/certificate-export.ts`（新規）
+    - `packages/web/src/utils/certificate-export.test.ts`（新規）
+    - `packages/web/src/i18n/messages.ts`
 
 ---
 
@@ -452,15 +529,15 @@
 
 ## 継続開発ガードレール（UI統一）
 
-- [ ] 新規UI追加・既存UI変更時は、`docs/ui/button-guidelines.md` の運用ルールに沿ってボタン種別を選ぶ
-- [ ] タブ/表示切替は「実行ボタン」ではなくセグメントUIとして実装する
-- [ ] 1つのカード/モーダル内で `primary` を複数並べない（主操作は原則1つ）
-- [ ] 破壊的操作のみ `danger` を使い、戻る/閉じる/補助操作は `ghost` または `secondary` を使う
-- [ ] PR前に以下を必須実行する
+- 新規UI追加・既存UI変更時は、`docs/ui/button-guidelines.md` の運用ルールに沿ってボタン種別を選ぶ
+- タブ/表示切替は「実行ボタン」ではなくセグメントUIとして実装する
+- 1つのカード/モーダル内で `primary` を複数並べない（主操作は原則1つ）
+- 破壊的操作のみ `danger` を使い、戻る/閉じる/補助操作は `ghost` または `secondary` を使う
+- PR前に以下を必須実行する
   - `pnpm --filter @utab/web typecheck`
   - `pnpm --filter @utab/web test`
-- [ ] UI関連変更を入れたPRでは、影響画面を `docs/ui/ui-map.md` に追記・更新する
-- [ ] 文言追加・変更時は `docs/ui/ui-i18n-guidelines.md` の用語方針（Draw/Ballot/Adjudicator）と英語デフォルト方針を確認する
+- UI関連変更を入れたPRでは、影響画面を `docs/ui/ui-map.md` に追記・更新する
+- 文言追加・変更時は `docs/ui/ui-i18n-guidelines.md` の用語方針（Draw/Ballot/Adjudicator）と英語デフォルト方針を確認する
 
 ### UI Philosophy（詳細）
 
@@ -478,6 +555,7 @@
 - タブ、表示切替、モード切替は「実行ボタン」と分離してセグメントUIで扱う。
 - active状態は「薄い強調背景 + ブランド色文字」を基本とし、濃色塗りは多用しない。
 - `admin/:tournamentId` 配下と `user/:tournamentId` 配下で、同種UIは同じトーンに揃える。
+- セグメントUIには `aria-label` と `aria-pressed`（または `role="tablist"`/`role="tab"`）を付与し、キーボード操作時も状態が判別できるようにする。
 
 4. 視覚トークンの原則
 - 色・余白・角丸は既存トークン（`packages/web/src/styles.css`）を優先し、個別色の直書きを増やさない。
@@ -488,6 +566,7 @@
 - 新規/変更UIが `docs/ui/button-guidelines.md` と矛盾しない。
 - active/inactive/hover/disabled の状態差が視認可能で、意味づけが一貫している。
 - 同一画面内で `primary` が複数存在しない。
+- 同一カード/モーダル内では主操作を1つに絞り、サブセクションの保存は `secondary` で扱う。
 - 影響範囲を `docs/ui/ui-map.md` に追記済み。
 - `pnpm --filter @utab/web typecheck` と `pnpm --filter @utab/web test` が通過している。
 

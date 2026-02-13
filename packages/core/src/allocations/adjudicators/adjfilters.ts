@@ -3,6 +3,30 @@ import { findOne } from '../sys.js'
 import { accessDetail, findAndAccessDetail } from '../../general/tools.js'
 import { evaluateAdjudicator } from '../../general/sortings.js'
 
+function normalizeInstitutionPriorityMap(
+  value: unknown
+): Record<number, number> {
+  if (!value || typeof value !== 'object') return {}
+  const out: Record<number, number> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
+    const parsedKey = Number(key)
+    const parsedValue = Number(raw)
+    if (!Number.isFinite(parsedKey)) return
+    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
+  })
+  return out
+}
+
+function weightedCommonScore(
+  left: number[],
+  right: number[],
+  priorityMap: Record<number, number>
+): number {
+  const rightSet = new Set(right)
+  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
+  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
+}
+
 export function filterByRandom(square: any, a: any, b: any, { r }: any): number {
   const f = (adj: any) => adj.id % (r + 2760)
   return f(a) > f(b) ? 1 : -1
@@ -54,7 +78,12 @@ export function filterByPast(
   return 0
 }
 
-export function filterByInstitution(adjudicator: any, g1: any, g2: any, { teams, r }: any): number {
+export function filterByInstitution(
+  adjudicator: any,
+  g1: any,
+  g2: any,
+  { teams, r, config }: any
+): number {
   const g1Inst = ([] as number[]).concat(
     ...g1.teams.map((t: number) => findAndAccessDetail(teams, t, r).institutions || [])
   )
@@ -62,8 +91,15 @@ export function filterByInstitution(adjudicator: any, g1: any, g2: any, { teams,
     ...g2.teams.map((t: number) => findAndAccessDetail(teams, t, r).institutions || [])
   )
   const aInst = accessDetail(adjudicator, r).institutions as number[]
-  const g1Conflict = countCommon(g1Inst, aInst || [])
-  const g2Conflict = countCommon(g2Inst, aInst || [])
+  const priorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
+  const g1Conflict =
+    Object.keys(priorityMap).length > 0
+      ? weightedCommonScore(g1Inst, aInst || [], priorityMap)
+      : countCommon(g1Inst, aInst || [])
+  const g2Conflict =
+    Object.keys(priorityMap).length > 0
+      ? weightedCommonScore(g2Inst, aInst || [], priorityMap)
+      : countCommon(g2Inst, aInst || [])
   if (g1Conflict > g2Conflict) return 1
   if (g1Conflict < g2Conflict) return -1
   return 0
