@@ -13,21 +13,27 @@
 | --- | --- | --- |
 | 管理ダッシュボード | `/admin` | `packages/web/src/views/admin/AdminHome.vue` |
 | 大会レイアウト（シェル） | `/admin/:tournamentId` | `packages/web/src/views/admin/AdminTournament.vue` |
-| 大会設定 | `/admin/:tournamentId/home` | `packages/web/src/views/admin/AdminTournamentHome.vue` |
-| ラウンド一覧 | `/admin/:tournamentId/rounds` | `packages/web/src/views/admin/AdminTournamentRounds.vue` |
+| 大会セットアップ | `/admin/:tournamentId/setup` | `packages/web/src/views/admin/AdminTournamentHome.vue` |
+| ラウンド運営ハブ | `/admin/:tournamentId/operations` | `packages/web/src/views/admin/AdminRoundOperationsHub.vue` |
+| ラウンド詳細設定 | `/admin/:tournamentId/operations/rounds` | `packages/web/src/views/admin/AdminTournamentRounds.vue` |
 | ラウンド詳細（シェル） | `/admin/:tournamentId/rounds/:round` | `packages/web/src/views/admin/round/AdminRoundIndex.vue` |
 | ラウンド割当 | `/admin/:tournamentId/rounds/:round/allocation` | `packages/web/src/views/admin/round/AdminRoundAllocation.vue` |
 | ラウンド結果（生結果） | `/admin/:tournamentId/rounds/:round/result` | `packages/web/src/views/admin/round/AdminRoundResult.vue` |
 | 提出一覧 | `/admin/:tournamentId/submissions` | `packages/web/src/views/admin/AdminTournamentSubmissions.vue` |
-| 集計結果 | `/admin/:tournamentId/compiled` | `packages/web/src/views/admin/AdminTournamentCompiled.vue` |
+| 結果確定・レポート | `/admin/:tournamentId/reports` | `packages/web/src/views/admin/AdminTournamentCompiled.vue` |
 | 結果（JSON） | `/admin/:tournamentId/results` | `packages/web/src/views/admin/AdminTournamentResults.vue` |
 
 補足:
-- `大会設定`（`/admin/:tournamentId/home` の overview）では、参加者向け URL の QR コードを表示する（大会単位）。
+- `大会設定`（`/admin/:tournamentId/setup` の overview）では、参加者向け URL の QR コードを表示する（大会単位）。
 - `大会設定` は「大会名」「スタイル」「大会公開」「大会パスワード設定」をカード化し、公開/パスワード設定はスイッチUIで操作する。
+- `大会セットアップ` では `ラウンドデフォルト設定` を編集でき、以降に作成する新規ラウンドへ既定値として継承される。
+- `大会セットアップ` では `新規ラウンド作成`（番号・名称・種別）を行う。ラウンド詳細の上書き設定は `ラウンド詳細設定` で扱う。
 - `大会データ管理`の`入力方式`（手動入力/CSV取り込み）は、チーム/ジャッジ/会場/スピーカー/所属機関で共通の選択状態として扱う。
 - 管理画面の検索結果（登録済み大会・大会データ管理・提出データ）は、名前に数字を含む場合も自然順で表示する。
-- `大会レイアウト（シェル）`（`/admin/:tournamentId`）の上部タブ（大会設定/ラウンド管理/大会データ管理/レポート生成）は、セグメントUIで統一表示する。
+- `大会レイアウト（シェル）`（`/admin/:tournamentId`）の上部タブは、`大会セットアップ` / `ラウンド運営` / `結果確定・レポート` の3区分で表示する。
+- 互換URLとして `/admin/:tournamentId/home` は `/setup`、`/rounds` は `/operations`、`/compiled` は `/reports` へリダイレクトする。
+- `admin UI v2` 機能フラグが OFF の場合は旧URL（`/home` `/rounds` `/compiled`）を主導線とし、各画面に `新画面へ移動` 導線を表示する。
+- `VITE_ADMIN_UI_LEGACY_READONLY=true` の場合、旧主導線（`/home` `/rounds` `/compiled`）は読み取り専用表示となる。
 
 ### 参加者画面
 | 画面 | ルート | コンポーネント |
@@ -53,14 +59,17 @@
 - `大会レイアウト（シェル）` の参加者タブ（対戦表/スピーカー/ジャッジ）はセグメントUIで表示し、右側に同じトーンのカード/テーブル表示スイッチを表示する。
 
 ### ラウンド管理補足
-- `ラウンド一覧`（`/admin/:tournamentId/rounds`）の`対戦表設定`は、`/admin/:tournamentId/rounds/:round/allocation`へページ遷移する。
-- `ラウンド一覧`（`/admin/:tournamentId/rounds`）の`提出データ閲覧`は、`/admin/:tournamentId/submissions?round=:round`へページ遷移する。
+- `ラウンド運営ハブ`（`/admin/:tournamentId/operations`）は、提出確認→集計→次ラウンド対戦生成→公開の固定ステップを表示する。
+- `ラウンド運営ハブ` と `ラウンド割当` の対戦生成は、直近の集計 `snapshot` を参照する。未集計時は生成を実行できない。
+- `ラウンド詳細設定`（`/admin/:tournamentId/operations/rounds`）から、従来のラウンド詳細設定（評価・ブレイク設定など）を編集する。
+- `ラウンド詳細設定` は作成画面ではなく、既存ラウンドの上書き設定（公開状態、重み、評価設定、ブレイク詳細）の編集に集中する。
 - `ラウンド詳細設定`の展開エリアは、ショートカット行の`ラウンド詳細設定`ボタン直下に表示する。
+- `結果確定・レポート`（`/admin/:tournamentId/reports`）では、表示対象 `snapshot` を選択して比較・出力する。
 
 ## 主要フロー（簡易）
-1. 大会作成: `/login` → `/admin`（新規大会作成） → `/admin/:tournamentId/home`（大会設定/参加者ログイン設定） → `/admin/:tournamentId/rounds`（ラウンド作成）
-2. ラウンド編集: `/admin/:tournamentId/rounds` → `/admin/:tournamentId/rounds/:round` → `/admin/:tournamentId/rounds/:round/allocation` または `/result`
-3. 結果確認: `/admin/:tournamentId/submissions` → `/admin/:tournamentId/compiled` → `/admin/:tournamentId/results`（参加者は `/user/:tournamentId/results`）
+1. 大会作成: `/login` → `/admin`（新規大会作成） → `/admin/:tournamentId/setup`（大会設定/参加者ログイン設定） → `/admin/:tournamentId/operations`（ラウンド作成）
+2. ラウンド編集: `/admin/:tournamentId/operations` → `/admin/:tournamentId/rounds/:round` → `/admin/:tournamentId/rounds/:round/allocation` または `/result`
+3. 結果確認: `/admin/:tournamentId/submissions` → `/admin/:tournamentId/reports` → `/admin/:tournamentId/results`（参加者は `/user/:tournamentId/results`）
 4. 参加者ログイン/入力: `/user` → `/user/:tournamentId/home`（ログインキー） → `/user/:tournamentId/:role/home` → `/rounds/:round/(draw|ballot|feedback)`
 
 ## 共通レイアウト

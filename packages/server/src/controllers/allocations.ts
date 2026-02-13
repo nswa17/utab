@@ -16,6 +16,7 @@ import { getInstitutionModel } from '../models/institution.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getRoundModel } from '../models/round.js'
 import { getDrawModel } from '../models/draw.js'
+import { getCompiledModel } from '../models/compiled.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
@@ -65,6 +66,113 @@ function buildIdMaps(docs: Array<{ _id: unknown }>): IdMaps {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function toHttpError(status: number, message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number }
+  err.status = status
+  return err
+}
+
+function mapIdList(ids: unknown, map: Map<string, number>): number[] {
+  if (!Array.isArray(ids)) return []
+  return ids
+    .map((id) => map.get(String(id)))
+    .filter((id): id is number => typeof id === 'number')
+}
+
+function mapCompiledTeamResultsFromSnapshot(
+  value: unknown,
+  teamMaps: IdMaps,
+  teamInstances: Array<{ id: number }>
+): any[] {
+  const list = Array.isArray(value) ? value : []
+  const mapped = list
+    .map((row: any) => {
+      const mappedId = teamMaps.map.get(String(row?.id))
+      if (mappedId === undefined) return null
+      const details = Array.isArray(row?.details)
+        ? row.details.map((detail: any) => ({
+            ...detail,
+            opponents: mapIdList(detail?.opponents, teamMaps.map),
+          }))
+        : []
+      return {
+        ...row,
+        id: mappedId,
+        past_opponents: mapIdList(row?.past_opponents, teamMaps.map),
+        details,
+      }
+    })
+    .filter((row): row is Record<string, unknown> => Boolean(row))
+
+  const byId = new Map<number, any>()
+  mapped.forEach((row) => {
+    byId.set(Number(row.id), row)
+  })
+  teamInstances.forEach((team) => {
+    if (byId.has(team.id)) return
+    byId.set(team.id, {
+      id: team.id,
+      ranking: 0,
+      win: 0,
+      sum: 0,
+      vote: 0,
+      vote_rate: 0,
+      margin: 0,
+      average: 0,
+      sd: 0,
+      past_opponents: [],
+      past_sides: [],
+      details: [],
+    })
+  })
+  return Array.from(byId.values())
+}
+
+function mapCompiledAdjudicatorResultsFromSnapshot(
+  value: unknown,
+  adjudicatorMaps: IdMaps,
+  teamMaps: IdMaps,
+  adjudicatorInstances: Array<{ id: number }>
+): any[] {
+  const list = Array.isArray(value) ? value : []
+  const mapped = list
+    .map((row: any) => {
+      const mappedId = adjudicatorMaps.map.get(String(row?.id))
+      if (mappedId === undefined) return null
+      const details = Array.isArray(row?.details)
+        ? row.details.map((detail: any) => ({
+            ...detail,
+            judged_teams: mapIdList(detail?.judged_teams, teamMaps.map),
+          }))
+        : []
+      return {
+        ...row,
+        id: mappedId,
+        judged_teams: mapIdList(row?.judged_teams, teamMaps.map),
+        details,
+      }
+    })
+    .filter((row): row is Record<string, unknown> => Boolean(row))
+
+  const byId = new Map<number, any>()
+  mapped.forEach((row) => {
+    byId.set(Number(row.id), row)
+  })
+  adjudicatorInstances.forEach((adj) => {
+    if (byId.has(adj.id)) return
+    byId.set(adj.id, {
+      id: adj.id,
+      ranking: 0,
+      average: 0,
+      sd: 0,
+      active_num: 0,
+      judged_teams: [],
+      details: [],
+    })
+  })
+  return Array.from(byId.values())
 }
 
 function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
@@ -373,9 +481,29 @@ type AllocationContext = {
 async function buildAllocationContext(
   tournamentId: string,
   round: number,
-  roundsOverride?: number[]
+  roundsOverride?: number[],
+  snapshotId?: string
 ): Promise<AllocationContext> {
   const connection = await getTournamentConnection(tournamentId)
+  const includeRawResults = !snapshotId
+  const CompiledModel = getCompiledModel(connection)
+  const compiledSnapshotPromise = snapshotId
+    ? (async () => {
+        if (!Types.ObjectId.isValid(snapshotId)) {
+          throw toHttpError(400, 'Invalid snapshot id')
+        }
+        const compiledSnapshot = await CompiledModel.findOne({
+          _id: snapshotId,
+          tournamentId,
+        })
+          .lean()
+          .exec()
+        if (!compiledSnapshot) {
+          throw toHttpError(404, 'Compiled snapshot not found for tournament')
+        }
+        return compiledSnapshot
+      })()
+    : Promise.resolve(null)
   const [
     tournament,
     teams,
@@ -386,6 +514,7 @@ async function buildAllocationContext(
     rawTeamResults,
     rawSpeakerResults,
     rawAdjudicatorResults,
+    compiledSnapshot,
   ] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
     getTeamModel(connection).find({ tournamentId }).lean().exec(),
@@ -393,9 +522,16 @@ async function buildAllocationContext(
     getVenueModel(connection).find({ tournamentId }).lean().exec(),
     getInstitutionModel(connection).find({ tournamentId }).lean().exec(),
     getSpeakerModel(connection).find({ tournamentId }).lean().exec(),
-    getRawTeamResultModel(connection).find({ tournamentId }).lean().exec(),
-    getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
-    getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec(),
+    includeRawResults
+      ? getRawTeamResultModel(connection).find({ tournamentId }).lean().exec()
+      : Promise.resolve([]),
+    includeRawResults
+      ? getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec()
+      : Promise.resolve([]),
+    includeRawResults
+      ? getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec()
+      : Promise.resolve([]),
+    compiledSnapshotPromise,
   ])
 
   if (!tournament) {
@@ -506,7 +642,7 @@ async function buildAllocationContext(
     }))
     .filter((r: any) => r.id !== undefined)
 
-  const compiledTeamResults =
+  let compiledTeamResults =
     mappedRawSpeakerResults.length > 0 && speakerInstances.length > 0
       ? coreResults.compileTeamResults(
           teamInstances,
@@ -518,11 +654,26 @@ async function buildAllocationContext(
         )
       : coreResults.compileTeamResults(teamInstances, mappedRawTeamResults, roundsForCompile, style)
 
-  const compiledAdjudicatorResults = coreResults.compileAdjudicatorResults(
+  let compiledAdjudicatorResults = coreResults.compileAdjudicatorResults(
     adjudicatorInstances,
     mappedRawAdjudicatorResults,
     roundsForCompile
   )
+
+  if (compiledSnapshot) {
+    const compiledPayload = asRecord((compiledSnapshot as any).payload)
+    compiledTeamResults = mapCompiledTeamResultsFromSnapshot(
+      compiledPayload.compiled_team_results,
+      teamMaps,
+      teamInstances
+    )
+    compiledAdjudicatorResults = mapCompiledAdjudicatorResultsFromSnapshot(
+      compiledPayload.compiled_adjudicator_results,
+      adjudicatorMaps,
+      teamMaps,
+      adjudicatorInstances
+    )
+  }
 
   return {
     teamMaps,
@@ -618,11 +769,12 @@ function normalizeAllocationWithAdjudicators(
 
 export const createTeamAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, options, rounds } = req.body as {
+    const { tournamentId, round, options, rounds, snapshotId } = req.body as {
       tournamentId: string
       round: number
       options?: Record<string, any>
       rounds?: number[]
+      snapshotId: string
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
       res
@@ -631,7 +783,7 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const context = await buildAllocationContext(tournamentId, round, rounds)
+    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
 
     const teamAlgorithm = options?.team_allocation_algorithm ?? 'standard'
     const teamAlgorithmOptions = options?.team_allocation_algorithm_options ?? {}
@@ -677,11 +829,18 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       message.startsWith('Unknown team in break participants') ||
       message.startsWith('No compiled team stats found for break winner resolution') ||
       message.startsWith('Unable to resolve break winners for previous round matches') ||
-      message === 'break match pool must be even'
+      message === 'break match pool must be even' ||
+      message === 'Invalid snapshot id'
     ) {
       res
         .status(400)
         .json({ data: null, errors: [{ name: 'BadRequest', message }] })
+      return
+    }
+    if (message === 'Compiled snapshot not found for tournament') {
+      res
+        .status(404)
+        .json({ data: null, errors: [{ name: 'NotFound', message }] })
       return
     }
     if (err?.message === 'Tournament not found') {
@@ -851,12 +1010,13 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
 
 export const createAdjudicatorAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, allocation, options, rounds } = req.body as {
+    const { tournamentId, round, allocation, options, rounds, snapshotId } = req.body as {
       tournamentId: string
       round: number
       allocation: any[]
       options?: Record<string, any>
       rounds?: number[]
+      snapshotId: string
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
       res
@@ -871,7 +1031,7 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
       return
     }
 
-    const context = await buildAllocationContext(tournamentId, round, rounds)
+    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
     const normalized = normalizeIncomingAllocation(allocation, context.teamMaps)
 
     const baseDraw = { r: round, allocation: normalized }
@@ -937,6 +1097,18 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
 
     res.json({ data: { r: round, allocation: mappedAllocation }, errors: [] })
   } catch (err: any) {
+    if (err?.message === 'Invalid snapshot id') {
+      res
+        .status(400)
+        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      return
+    }
+    if (err?.message === 'Compiled snapshot not found for tournament') {
+      res
+        .status(404)
+        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      return
+    }
     if (err?.message === 'Tournament not found') {
       res
         .status(404)
@@ -949,12 +1121,13 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
 
 export const createVenueAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, allocation, options, rounds } = req.body as {
+    const { tournamentId, round, allocation, options, rounds, snapshotId } = req.body as {
       tournamentId: string
       round: number
       allocation: any[]
       options?: Record<string, any>
       rounds?: number[]
+      snapshotId: string
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
       res
@@ -969,7 +1142,7 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const context = await buildAllocationContext(tournamentId, round, rounds)
+    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
     const normalized = normalizeAllocationWithAdjudicators(allocation, context.teamMaps, context.adjudicatorMaps)
     const venueOptions = options?.venue_allocation_algorithm_options ?? {}
 
@@ -1002,6 +1175,18 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
     )
     res.json({ data: { r: round, allocation: mappedAllocation }, errors: [] })
   } catch (err: any) {
+    if (err?.message === 'Invalid snapshot id') {
+      res
+        .status(400)
+        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      return
+    }
+    if (err?.message === 'Compiled snapshot not found for tournament') {
+      res
+        .status(404)
+        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      return
+    }
     if (err?.message === 'Tournament not found') {
       res
         .status(404)
@@ -1014,11 +1199,12 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
 
 export const createAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, options, rounds } = req.body as {
+    const { tournamentId, round, options, rounds, snapshotId } = req.body as {
       tournamentId: string
       round: number
       options?: Record<string, any>
       rounds?: number[]
+      snapshotId: string
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
       res
@@ -1027,7 +1213,7 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const context = await buildAllocationContext(tournamentId, round, rounds)
+    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
 
     const teamAlgorithm = options?.team_allocation_algorithm ?? 'standard'
     const teamAlgorithmOptions = options?.team_allocation_algorithm_options ?? {}
@@ -1118,6 +1304,18 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       errors: [],
     })
   } catch (err: any) {
+    if (err?.message === 'Invalid snapshot id') {
+      res
+        .status(400)
+        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      return
+    }
+    if (err?.message === 'Compiled snapshot not found for tournament') {
+      res
+        .status(404)
+        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      return
+    }
     if (err?.message === 'Tournament not found') {
       res
         .status(404)

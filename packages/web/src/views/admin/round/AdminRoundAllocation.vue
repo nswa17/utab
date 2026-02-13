@@ -1,13 +1,22 @@
 <template>
   <section class="stack">
     <div class="row section-header">
-      <h4>{{ $t('対戦表設定') }}</h4>
-      <span v-if="drawUpdatedAt" class="muted">{{
-        $t('更新: {time}', { time: drawUpdatedAt })
-      }}</span>
+      <div class="stack tight">
+        <h4>{{ $t('対戦表設定') }}</h4>
+        <span class="muted small">{{ roundHeading }}</span>
+      </div>
+      <div class="stack tight section-meta">
+        <span v-if="drawUpdatedAt" class="muted small">{{
+          $t('対戦表更新: {time}', { time: drawUpdatedAt })
+        }}</span>
+        <span v-if="lastRefreshedLabel" class="muted small">{{
+          $t('最終更新: {time}', { time: lastRefreshedLabel })
+        }}</span>
+      </div>
       <ReloadButton
         class="header-reload"
         @click="refresh"
+        :target="roundHeading"
         :disabled="isLoading"
         :loading="isLoading"
       />
@@ -23,14 +32,6 @@
     <div class="card stack" v-if="unsubmittedEnabled && !isEmbeddedRoute">
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
-        <Button
-          variant="secondary"
-          size="sm"
-          @click="refreshSubmissions"
-          :disabled="submissionsStore.loading"
-        >
-          {{ $t('更新') }}
-        </Button>
       </div>
       <div v-if="missingBallotSubmitters.length === 0" class="muted">
         {{ $t('スコアシート未提出はありません。') }}
@@ -354,28 +355,62 @@
           </div>
           <div class="card stack soft table-wrap">
             <div v-if="previewRows.length === 0" class="muted">{{ $t('有効なマッチがありません。') }}</div>
-            <table v-else class="draw-preview-table">
-              <thead>
-                <tr>
-                  <th>{{ $t('会場') }}</th>
-                  <th>{{ govLabel }}</th>
-                  <th>{{ oppLabel }}</th>
-                  <th>{{ $t('チェア') }}</th>
-                  <th>{{ $t('パネル') }}</th>
-                  <th>{{ $t('トレーニー') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in previewRows" :key="`preview-${item.key}`">
-                  <td>{{ item.venueLabel }}</td>
-                  <td>{{ item.govName }}</td>
-                  <td>{{ item.oppName }}</td>
-                  <td>{{ item.chairsLabel }}</td>
-                  <td>{{ item.panelsLabel }}</td>
-                  <td>{{ item.traineesLabel }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-else class="preview-grid">
+              <section class="stack preview-lane-card">
+                <strong class="small">{{ $t('公開順') }}</strong>
+                <table class="draw-preview-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('会場') }}</th>
+                      <th>{{ govLabel }}</th>
+                      <th>{{ oppLabel }}</th>
+                      <th>{{ $t('Win') }}</th>
+                      <th>{{ $t('チェア') }}</th>
+                      <th>{{ $t('パネル') }}</th>
+                      <th>{{ $t('トレーニー') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in previewRowsByVenue" :key="`preview-venue-${item.key}`">
+                      <td>{{ item.venueLabel }}</td>
+                      <td>{{ item.govName }}</td>
+                      <td>{{ item.oppName }}</td>
+                      <td>{{ item.winLabel }}</td>
+                      <td>{{ item.chairsLabel }}</td>
+                      <td>{{ item.panelsLabel }}</td>
+                      <td>{{ item.traineesLabel }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+              <section class="stack preview-lane-card">
+                <strong class="small">{{ $t('Win順') }}</strong>
+                <table class="draw-preview-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('会場') }}</th>
+                      <th>{{ govLabel }}</th>
+                      <th>{{ oppLabel }}</th>
+                      <th>{{ $t('Win') }}</th>
+                      <th>{{ $t('チェア') }}</th>
+                      <th>{{ $t('パネル') }}</th>
+                      <th>{{ $t('トレーニー') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in previewRowsByWin" :key="`preview-win-${item.key}`">
+                      <td>{{ item.venueLabel }}</td>
+                      <td>{{ item.govName }}</td>
+                      <td>{{ item.oppName }}</td>
+                      <td>{{ item.winLabel }}</td>
+                      <td>{{ item.chairsLabel }}</td>
+                      <td>{{ item.panelsLabel }}</td>
+                      <td>{{ item.traineesLabel }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
           </div>
         </section>
 
@@ -942,6 +977,7 @@ const drawOpened = ref(false)
 const allocationOpened = ref(false)
 const locked = ref(false)
 const sectionLoading = ref(true)
+const lastRefreshedAt = ref<string>('')
 const formError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
@@ -1074,6 +1110,11 @@ const isLoading = computed(
 )
 const currentDraw = computed(() => draws.draws.find((item) => item.round === round.value))
 const roundConfig = computed(() => roundsStore.rounds.find((item) => item.round === round.value))
+const roundHeading = computed(() => {
+  const name = String(roundConfig.value?.name ?? '').trim()
+  if (name.length > 0) return t('ラウンド {round}: {name}', { round: round.value, name })
+  return t('ラウンド {round}', { round: round.value })
+})
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
@@ -1084,6 +1125,11 @@ const drawUpdatedAt = computed(() => {
   if (!currentDraw.value?.updatedAt) return ''
   const date = new Date(currentDraw.value.updatedAt)
   return Number.isNaN(date.getTime()) ? currentDraw.value.updatedAt : date.toLocaleString()
+})
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  const date = new Date(lastRefreshedAt.value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 })
 const priorRounds = computed(() =>
   roundsStore.rounds
@@ -1145,7 +1191,7 @@ async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
   try {
-    const [, , , , , latestCompiled] = await Promise.all([
+    await Promise.all([
       teams.fetchTeams(tournamentId.value),
       adjudicators.fetchAdjudicators(tournamentId.value),
       draws.fetchDraws(tournamentId.value, round.value),
@@ -1161,20 +1207,10 @@ async function refresh() {
         round: round.value,
       }),
     ])
-    if (!latestCompiled) {
-      await compiledStore.runCompile(tournamentId.value)
-    }
+    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }
-}
-
-async function refreshSubmissions() {
-  if (!tournamentId.value) return
-  await submissionsStore.fetchSubmissions({
-    tournamentId: tournamentId.value,
-    round: round.value,
-  })
 }
 
 function addRow() {
@@ -1340,6 +1376,11 @@ async function requestAllocation() {
       requestError.value = t('ブレイク生成は対象をチームに設定してください。')
       return
     }
+    const snapshotId = String(compiledStore.compiled?._id ?? '').trim()
+    if (!snapshotId) {
+      requestError.value = t('集計結果がありません。先に集計を実行してください。')
+      return
+    }
     const options = {
       team_allocation_algorithm: autoOptions.value.teamAlgorithm,
       team_allocation_algorithm_options: teamOptions,
@@ -1356,6 +1397,7 @@ async function requestAllocation() {
     const basePayload: Record<string, any> = {
       tournamentId: tournamentId.value,
       round: round.value,
+      snapshotId,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
     }
@@ -1466,9 +1508,15 @@ const compiledAdjMap = computed(() => {
 type AllocationPreviewRow = {
   key: string
   matchIndex: number
+  venuePriority: number
   venueLabel: string
   govName: string
   oppName: string
+  govWin: number
+  oppWin: number
+  winLabel: string
+  winTotal: number
+  winGap: number
   chairsLabel: string
   panelsLabel: string
   traineesLabel: string
@@ -1483,21 +1531,56 @@ const previewRows = computed<AllocationPreviewRow[]>(() => {
   return allocation.value.map((row, index) => {
     const govId = row.teams.gov
     const oppId = row.teams.opp
+    const govResult = compiledTeamMap.value.get(String(govId))
+    const oppResult = compiledTeamMap.value.get(String(oppId))
+    const govWin = Number(govResult?.win)
+    const oppWin = Number(oppResult?.win)
+    const normalizedGovWin = Number.isFinite(govWin) ? govWin : 0
+    const normalizedOppWin = Number.isFinite(oppWin) ? oppWin : 0
     const venueLabel = row.venue ? venueName(row.venue) : t('会場未定')
     const govName = govId ? teamName(govId) : t('未選択')
     const oppName = oppId ? teamName(oppId) : t('未選択')
     return {
       key: `${index}-${govId}-${oppId}-${row.venue ?? ''}`,
       matchIndex: index,
+      venuePriority: venuePriority(row.venue),
       venueLabel,
       govName,
       oppName,
+      govWin: normalizedGovWin,
+      oppWin: normalizedOppWin,
+      winLabel: `${normalizedGovWin}-${normalizedOppWin}`,
+      winTotal: normalizedGovWin + normalizedOppWin,
+      winGap: Math.abs(normalizedGovWin - normalizedOppWin),
       chairsLabel: adjudicatorListLabel(row.chairs ?? []),
       panelsLabel: adjudicatorListLabel(row.panels ?? []),
       traineesLabel: adjudicatorListLabel(row.trainees ?? []),
     }
   })
 })
+
+const previewRowsByVenue = computed<AllocationPreviewRow[]>(() =>
+  previewRows.value
+    .slice()
+    .sort((left, right) => {
+      if (left.venuePriority !== right.venuePriority) return left.venuePriority - right.venuePriority
+      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
+      if (venueCompare !== 0) return venueCompare
+      return left.matchIndex - right.matchIndex
+    })
+)
+
+const previewRowsByWin = computed<AllocationPreviewRow[]>(() =>
+  previewRows.value
+    .slice()
+    .sort((left, right) => {
+      if (left.winTotal !== right.winTotal) return right.winTotal - left.winTotal
+      if (left.winGap !== right.winGap) return left.winGap - right.winGap
+      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
+      if (venueCompare !== 0) return venueCompare
+      return left.matchIndex - right.matchIndex
+    })
+)
 
 function teamNameById(id: string) {
   return teams.teams.find((team) => team._id === id)?.name ?? id
@@ -2114,6 +2197,14 @@ function venueName(id: string) {
   return venues.venues.find((venue) => venue._id === id)?.name ?? id
 }
 
+function venuePriority(id?: string) {
+  if (!id) return Number.MAX_SAFE_INTEGER
+  const venue = venues.venues.find((item) => item._id === id)
+  const detail = venue ? detailForRound(venue.details, round.value) : null
+  const priority = Number((detail as any)?.priority)
+  return Number.isFinite(priority) ? priority : Number.MAX_SAFE_INTEGER
+}
+
 const unassignedAdjudicators = computed(() => {
   const assigned = new Set<string>()
   allocation.value.forEach((row) => {
@@ -2183,10 +2274,16 @@ watch(
 
 .section-header {
   align-items: center;
+  gap: var(--space-2);
 }
 
 .header-reload {
+  margin-left: 0;
+}
+
+.section-meta {
   margin-left: auto;
+  min-width: 160px;
 }
 
 .action-row {
@@ -2327,6 +2424,19 @@ watch(
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+}
+
+.preview-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.preview-lane-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-surface);
 }
 
 .draw-preview-table {

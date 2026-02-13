@@ -189,11 +189,31 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
   - `packages/web/src/utils/certificate-export.ts` にCSV整形を切り出し
   - `packages/web/src/utils/certificate-export.test.ts` で整形とエスケープを検証
 
+### 管理者UI刷新 完了（T27〜T34）
+
+- 管理導線を 3 区分に再編
+  - `大会セットアップ` / `ラウンド運営` / `結果確定・レポート`
+  - 旧URL（`/home` `/rounds` `/compiled`）は互換導線を維持
+- 大会セットアップにラウンド作成/編集を統合
+  - ラウンド作成/編集（番号・名称・種別）を setup 側に集約
+  - `/operations/rounds` は既存ラウンドの上書き編集に集中
+- ラウンド運営ハブを主導線化
+  - 固定ステップ（提出確認 → 集計 → 次ラウンド対戦生成 → 公開）
+  - `snapshotId` 必須参照 + 未提出/スナップショット不一致ガードで誤実行を抑止
+- レポート画面を snapshot 中心に再定義
+  - 表示 snapshot 選択・比較・出力を主軸化
+  - `生結果データ` は例外モードとして分離し、表示中 snapshot に応じたバッジ表示を追加
+- 再読み込み UI を統一
+  - 原則「ページ主 Reload は 1 つ」に統一
+  - 最終更新時刻表示と `aria-label` ルールを共通化
+
 ## ドキュメント
 
-- [PLAN.md](PLAN.md): 未完了のアップデート計画（次にやること）
+- [PLAN.md](PLAN.md): Tabアップデート計画（2026-02-13 時点で完了）
 - [DEPLOYMENT.md](DEPLOYMENT.md): デプロイ手順
 - [docs/README.md](docs/README.md): 設計資料・ロードマップへの入口
+- [docs/ui/ui-map.md](docs/ui/ui-map.md): 現在のUI導線と画面マップ
+- [docs/ui/ui-qa-checklist.md](docs/ui/ui-qa-checklist.md): UI回帰チェック観点
 
 ## 移行ガイド（v1 → v2）
 
@@ -289,6 +309,16 @@ pnpm -C packages/server dev
 # Web
 pnpm -C packages/web dev
 ```
+
+### 管理者UI移行フラグ（Web）
+
+`.env` で以下を切り替えられます。
+
+- `VITE_ADMIN_UI_V2=true|false`
+  - `true`: 新導線（`/setup` `/operations` `/reports`）を主導線化
+  - `false`: 旧導線（`/home` `/rounds` `/compiled`）を主導線化
+- `VITE_ADMIN_UI_LEGACY_READONLY=true|false`
+  - `true`: 旧主導線を読み取り専用表示にし、新導線への移行を促す
 
 ### デバッグログ
 

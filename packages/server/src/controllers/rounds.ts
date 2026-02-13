@@ -3,6 +3,7 @@ import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getRoundModel } from '../models/round.js'
 import { getTeamModel } from '../models/team.js'
+import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
@@ -20,9 +21,124 @@ type BreakConfig = {
   participants: BreakParticipant[]
 }
 
+type RoundDefaults = {
+  userDefinedData: {
+    evaluate_from_adjudicators: boolean
+    evaluate_from_teams: boolean
+    chairs_always_evaluated: boolean
+    evaluator_in_team: 'team' | 'speaker'
+    no_speaker_score: boolean
+    score_by_matter_manner: boolean
+    poi: boolean
+    best: boolean
+    allow_low_tie_win: boolean
+  }
+  break: {
+    source: 'submissions' | 'raw'
+    size: number
+    cutoff_tie_policy: BreakCutoffTiePolicy
+    seeding: BreakSeeding
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function defaultRoundDefaults(): RoundDefaults {
+  return {
+    userDefinedData: {
+      evaluate_from_adjudicators: true,
+      evaluate_from_teams: true,
+      chairs_always_evaluated: false,
+      evaluator_in_team: 'team',
+      no_speaker_score: false,
+      score_by_matter_manner: true,
+      poi: true,
+      best: true,
+      allow_low_tie_win: true,
+    },
+    break: {
+      source: 'submissions',
+      size: 8,
+      cutoff_tie_policy: 'manual',
+      seeding: 'high_low',
+    },
+  }
+}
+
+function normalizeRoundDefaults(input: unknown): RoundDefaults {
+  const fallback = defaultRoundDefaults()
+  const source = asRecord(input)
+  const userDefinedSource = asRecord(source.userDefinedData)
+  const breakSource = asRecord(source.break)
+  return {
+    userDefinedData: {
+      evaluate_from_adjudicators:
+        typeof userDefinedSource.evaluate_from_adjudicators === 'boolean'
+          ? userDefinedSource.evaluate_from_adjudicators
+          : fallback.userDefinedData.evaluate_from_adjudicators,
+      evaluate_from_teams:
+        typeof userDefinedSource.evaluate_from_teams === 'boolean'
+          ? userDefinedSource.evaluate_from_teams
+          : fallback.userDefinedData.evaluate_from_teams,
+      chairs_always_evaluated:
+        typeof userDefinedSource.chairs_always_evaluated === 'boolean'
+          ? userDefinedSource.chairs_always_evaluated
+          : fallback.userDefinedData.chairs_always_evaluated,
+      evaluator_in_team: userDefinedSource.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+      no_speaker_score:
+        typeof userDefinedSource.no_speaker_score === 'boolean'
+          ? userDefinedSource.no_speaker_score
+          : fallback.userDefinedData.no_speaker_score,
+      score_by_matter_manner:
+        typeof userDefinedSource.score_by_matter_manner === 'boolean'
+          ? userDefinedSource.score_by_matter_manner
+          : fallback.userDefinedData.score_by_matter_manner,
+      poi: typeof userDefinedSource.poi === 'boolean' ? userDefinedSource.poi : fallback.userDefinedData.poi,
+      best: typeof userDefinedSource.best === 'boolean' ? userDefinedSource.best : fallback.userDefinedData.best,
+      allow_low_tie_win:
+        typeof userDefinedSource.allow_low_tie_win === 'boolean'
+          ? userDefinedSource.allow_low_tie_win
+          : fallback.userDefinedData.allow_low_tie_win,
+    },
+    break: {
+      source: breakSource.source === 'raw' ? 'raw' : fallback.break.source,
+      size: (() => {
+        const sizeRaw = Number(breakSource.size)
+        return Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : fallback.break.size
+      })(),
+      cutoff_tie_policy:
+        breakSource.cutoff_tie_policy === 'include_all' || breakSource.cutoff_tie_policy === 'strict'
+          ? (breakSource.cutoff_tie_policy as BreakCutoffTiePolicy)
+          : fallback.break.cutoff_tie_policy,
+      seeding: breakSource.seeding === 'high_low' ? 'high_low' : fallback.break.seeding,
+    },
+  }
+}
+
+function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unknown): Record<string, unknown> {
+  const current = asRecord(input)
+  const merged: Record<string, unknown> = {
+    ...defaults.userDefinedData,
+    ...current,
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'hidden')) {
+    merged.hidden = false
+  }
+  if (!Object.prototype.hasOwnProperty.call(current, 'break')) {
+    merged.break = {
+      enabled: false,
+      source: defaults.break.source,
+      source_rounds: [],
+      size: defaults.break.size,
+      cutoff_tie_policy: defaults.break.cutoff_tie_policy,
+      seeding: defaults.break.seeding,
+      participants: [],
+    }
+  }
+  return merged
 }
 
 function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
@@ -180,9 +296,17 @@ export const createRound: RequestHandler = async (req, res, next) => {
         })
         return
       }
+      const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+      const roundDefaults = normalizeRoundDefaults(
+        asRecord((tournament as any)?.user_defined_data).round_defaults
+      )
       const connection = await getTournamentConnection(tournamentId)
       const RoundModel = getRoundModel(connection)
-      const created = await RoundModel.insertMany(payload, { ordered: false })
+      const preparedPayload = payload.map((item) => ({
+        ...item,
+        userDefinedData: buildRoundUserDefinedFromDefaults(roundDefaults, item.userDefinedData),
+      }))
+      const created = await RoundModel.insertMany(preparedPayload, { ordered: false })
       res.status(201).json({ data: created, errors: [] })
       return
     }
@@ -216,6 +340,9 @@ export const createRound: RequestHandler = async (req, res, next) => {
       return
     }
 
+    const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+    const roundDefaults = normalizeRoundDefaults(asRecord((tournament as any)?.user_defined_data).round_defaults)
+
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const created = await RoundModel.create({
@@ -227,7 +354,7 @@ export const createRound: RequestHandler = async (req, res, next) => {
       teamAllocationOpened,
       adjudicatorAllocationOpened,
       weightsOfAdjudicators,
-      userDefinedData,
+      userDefinedData: buildRoundUserDefinedFromDefaults(roundDefaults, userDefinedData),
     })
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err: any) {
@@ -589,32 +716,34 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     const teamIds = new Set(teams.map((team) => String(team._id)))
     const normalizedBreak = normalizeBreakConfig(roundNumber, breakInput)
 
-    const seenTeamIds = new Set<string>()
-    const seenSeeds = new Set<number>()
-    for (const participant of normalizedBreak.participants) {
-      if (!teamIds.has(participant.teamId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: `Unknown team in break participants: ${participant.teamId}` }],
-        })
-        return
+    if (normalizedBreak.enabled) {
+      const seenTeamIds = new Set<string>()
+      const seenSeeds = new Set<number>()
+      for (const participant of normalizedBreak.participants) {
+        if (!teamIds.has(participant.teamId)) {
+          res.status(400).json({
+            data: null,
+            errors: [{ name: 'BadRequest', message: `Unknown team in break participants: ${participant.teamId}` }],
+          })
+          return
+        }
+        if (seenTeamIds.has(participant.teamId)) {
+          res.status(400).json({
+            data: null,
+            errors: [{ name: 'BadRequest', message: `Duplicate team in break participants: ${participant.teamId}` }],
+          })
+          return
+        }
+        if (seenSeeds.has(participant.seed)) {
+          res.status(400).json({
+            data: null,
+            errors: [{ name: 'BadRequest', message: `Duplicate seed in break participants: ${participant.seed}` }],
+          })
+          return
+        }
+        seenTeamIds.add(participant.teamId)
+        seenSeeds.add(participant.seed)
       }
-      if (seenTeamIds.has(participant.teamId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: `Duplicate team in break participants: ${participant.teamId}` }],
-        })
-        return
-      }
-      if (seenSeeds.has(participant.seed)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: `Duplicate seed in break participants: ${participant.seed}` }],
-        })
-        return
-      }
-      seenTeamIds.add(participant.teamId)
-      seenSeeds.add(participant.seed)
     }
 
     const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
@@ -640,7 +769,10 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
 
     let updatedTeamCount = 0
     if (syncTeamAvailability) {
-      const selectedTeamIds = normalizedBreak.enabled
+      // participants が未確定（空）なブレイクは、後続ラウンドで前ラウンド結果から導出される。
+      // この状態で全チーム unavailable へ落とさないため、空の場合は全チームを available 扱いにする。
+      const selectedTeamIds =
+        normalizedBreak.enabled && normalizedBreak.participants.length > 0
         ? new Set(normalizedBreak.participants.map((participant) => participant.teamId))
         : new Set<string>(teams.map((team) => String(team._id)))
       const ops: any[] = teams.map((team) => {

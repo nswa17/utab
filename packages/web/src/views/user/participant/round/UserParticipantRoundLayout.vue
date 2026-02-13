@@ -71,8 +71,8 @@ function isTabActive(tab: 'draw' | 'ballot' | 'feedback') {
 
 const feedbackPath = computed(() => {
   const base = roundPath('feedback/home')
-  if (isAdjudicator.value) return `${base}?filter=adjudicator`
-  if (isSpeaker.value) return `${base}?filter=team`
+  if (isAdjudicator.value) return `${base}?filter=adjudicator&actor=adjudicator`
+  if (isSpeaker.value) return `${base}?filter=team&actor=team`
   return base
 })
 

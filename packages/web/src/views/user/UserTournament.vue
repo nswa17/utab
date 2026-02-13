@@ -169,12 +169,12 @@ const links = computed<ParticipantLink[]>(() => [
   { to: `/user/${tournamentId.value}/audience/home`, label: t('対戦表'), participant: 'audience' },
   {
     to: `/user/${tournamentId.value}/speaker/home`,
-    label: t('スピーカー'),
+    label: t('チーム評価'),
     participant: 'speaker',
   },
   {
     to: `/user/${tournamentId.value}/adjudicator/home`,
-    label: t('ジャッジ'),
+    label: t('ジャッジ評価'),
     participant: 'adjudicator',
   },
 ])

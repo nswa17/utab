@@ -10,7 +10,13 @@ function extractPayload(value: any): Record<string, any> | null {
     return extractPayload(value[0])
   }
   if (typeof value === 'object' && value.payload) {
-    return value.payload as Record<string, any>
+    const payload = extractPayload(value.payload) ?? {}
+    const enriched: Record<string, any> = { ...payload }
+    const id = String((value as Record<string, any>)._id ?? '').trim()
+    if (id) enriched._id = id
+    if (value.createdAt) enriched.createdAt = value.createdAt
+    if (value.updatedAt) enriched.updatedAt = value.updatedAt
+    return enriched
   }
   return value as Record<string, any>
 }

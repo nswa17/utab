@@ -2,9 +2,13 @@
   <section class="stack">
     <div class="row section-header">
       <h3>{{ $t('レポート生成') }}</h3>
+      <span v-if="lastRefreshedLabel" class="muted small header-meta">{{
+        $t('最終更新: {time}', { time: lastRefreshedLabel })
+      }}</span>
       <ReloadButton
         class="header-reload"
         @click="refresh"
+        :target="$t('レポート生成')"
         :disabled="isLoading"
         :loading="isLoading"
       />
@@ -18,17 +22,77 @@
         <div class="row">
           <h4>{{ $t('集計オプション') }}</h4>
         </div>
-        <div class="compile-grid">
-          <label class="stack compile-field">
+        <div v-if="baselineCompiledOptions.length > 0" class="row snapshot-selector-row">
+          <label class="stack compile-diff-field compile-diff-field-wide">
+            <span class="muted compile-label">{{ $t('表示スナップショット') }}</span>
+            <select v-model="selectedCompiledId">
+              <option
+                v-for="option in baselineCompiledOptions"
+                :key="option.compiledId"
+                :value="option.compiledId"
+              >
+                {{ baselineCompiledOptionLabel(option) }}
+              </option>
+            </select>
+          </label>
+          <span class="muted small">{{ $t('表示中: {label}', { label: selectedCompiledLabel }) }}</span>
+          <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
+        </div>
+        <p v-else class="muted small">{{ $t('集計スナップショットはまだありません。') }}</p>
+        <div class="row recompute-toggle-row">
+          <p class="muted small">{{ $t('必要な場合のみ詳細再計算を実行してください。') }}</p>
+          <Button variant="ghost" size="sm" @click="showRecomputeOptions = !showRecomputeOptions">
+            {{ showRecomputeOptions ? $t('詳細再計算を閉じる') : $t('詳細再計算を開く') }}
+          </Button>
+        </div>
+        <div v-if="showRecomputeOptions" class="stack recompute-panel">
+          <div class="compile-grid">
+          <div class="stack compile-field">
             <span class="muted compile-label">
               {{ $t('ソース') }}
               <HelpTip :text="optionHelp('source')" />
             </span>
-            <select v-model="compileSource">
-              <option value="submissions">{{ $t('提出データ') }}</option>
-              <option value="raw">{{ $t('生結果データ') }}</option>
-            </select>
-          </label>
+            <div class="row source-primary-row">
+              <strong>{{ isRawSourceSelected ? $t('生結果データ') : $t('提出データ') }}</strong>
+              <span class="muted small">{{
+                isRawSourceSelected ? $t('例外運用') : $t('通常運用')
+              }}</span>
+              <span v-if="isRawSourceSelected" class="raw-source-badge">{{ $t('例外モード') }}</span>
+            </div>
+            <p class="muted small source-help">
+              {{
+                $t(
+                  '通常運用は提出データを使用します。生結果データは、例外的な補正が必要な場合のみ利用してください。'
+                )
+              }}
+            </p>
+            <div class="row source-advanced-toggle">
+              <Button
+                variant="ghost"
+                size="sm"
+                @click="showAdvancedSourceOptions = !showAdvancedSourceOptions"
+              >
+                {{
+                  showAdvancedSourceOptions
+                    ? $t('高度な運用を閉じる')
+                    : $t('高度な運用を開く')
+                }}
+              </Button>
+            </div>
+            <template v-if="showAdvancedSourceOptions">
+              <select v-model="compileSource">
+                <option value="submissions">{{ $t('提出データ') }}</option>
+                <option value="raw">{{ $t('生結果データ') }}</option>
+              </select>
+              <p v-if="isRawSourceSelected" class="muted warning">
+                {{
+                  $t(
+                    '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
+                  )
+                }}
+              </p>
+            </template>
+          </div>
           <div class="stack compile-field compile-field-wide">
             <span class="muted compile-label">
               {{ $t('ラウンド') }}
@@ -157,23 +221,6 @@
               </label>
             </div>
           </div>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('差分比較') }}
-              <HelpTip :text="optionHelp('diff')" />
-            </span>
-            <select v-model="compileDiffBaselineMode">
-              <option value="latest">{{ $t('最新集計') }}</option>
-              <option value="compiled">{{ $t('指定compiled') }}</option>
-            </select>
-          </label>
-          <label
-            v-if="compileDiffBaselineMode === 'compiled'"
-            class="stack compile-field"
-          >
-            <span class="muted">{{ $t('比較対象 compiled ID') }}</span>
-            <input v-model.trim="compileDiffBaselineCompiledId" type="text" />
-          </label>
         </div>
         <div class="stack compile-summary">
           <span class="muted">{{ $t('設定サマリー') }}</span>
@@ -185,7 +232,7 @@
           v-if="compileDiffBaselineMode === 'compiled' && !compileDiffBaselineCompiledId.trim()"
           class="muted warning"
         >
-          {{ $t('指定compiledを選ぶ場合はIDを入力してください。') }}
+          {{ $t('過去の集計結果を選ぶ場合は比較対象を選択してください。') }}
         </p>
         <div v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary">
           <div class="row submission-summary-header">
@@ -282,11 +329,61 @@
             {{ warning }}
           </p>
         </div>
+        <div v-if="isRawModeActive" class="card stack migration-guide">
+          <h5>{{ $t('提出データ一本化ガイド') }}</h5>
+          <ol class="migration-guide-list">
+            <li>{{ $t('提出一覧で不足提出を解消し、重複提出を整理します。') }}</li>
+            <li>{{ $t('生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。') }}</li>
+            <li>{{ $t('提出データソースに戻して再計算し、確定snapshotを選択して出力します。') }}</li>
+          </ol>
+          <div class="row migration-guide-actions">
+            <RouterLink :to="`/admin/${tournamentId}/submissions`" class="migration-guide-link">
+              {{ $t('提出一覧を開く') }}
+            </RouterLink>
+            <RouterLink :to="`/admin/${tournamentId}/operations`" class="migration-guide-link">
+              {{ $t('ラウンド運営へ') }}
+            </RouterLink>
+          </div>
+        </div>
+        </div>
       </section>
 
       <template v-if="compiled">
+        <p v-if="isDisplayedRawSource" class="muted warning raw-source-notice">
+          {{ $t('表示中スナップショットは「生結果データ」です（例外モード）。') }}
+        </p>
         <div v-if="showCategoryTabs" class="stack compile-category-inline">
-          <h4>{{ $t('集計区分') }}</h4>
+          <div class="row compile-category-row">
+            <h4>{{ $t('集計区分') }}</h4>
+            <div class="row compile-diff-controls">
+              <label class="stack compile-diff-field">
+                <span class="muted compile-label">
+                  {{ $t('差分比較') }}
+                  <HelpTip :text="optionHelp('diff')" />
+                </span>
+                <select v-model="compileDiffBaselineMode">
+                  <option value="latest">{{ $t('最新集計') }}</option>
+                  <option value="compiled">{{ $t('過去の集計結果を選択') }}</option>
+                </select>
+              </label>
+              <label
+                v-if="compileDiffBaselineMode === 'compiled'"
+                class="stack compile-diff-field compile-diff-field-wide"
+              >
+                <span class="muted">{{ $t('比較対象') }}</span>
+                <select v-model="compileDiffBaselineCompiledId">
+                  <option value="">{{ $t('選択してください') }}</option>
+                  <option
+                    v-for="option in baselineCompiledOptions"
+                    :key="option.compiledId"
+                    :value="option.compiledId"
+                  >
+                    {{ baselineCompiledOptionLabel(option) }}
+                  </option>
+                </select>
+              </label>
+            </div>
+          </div>
           <div class="label-tabs">
             <button
               v-for="label in availableLabels"
@@ -304,6 +401,7 @@
         <section class="card stack">
           <div class="row">
             <h4>{{ $t('一覧') }}</h4>
+            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
             <Button variant="secondary" size="sm" @click="downloadCsv">
               {{ $t('CSVダウンロード') }}
             </Button>
@@ -322,6 +420,7 @@
               <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
             </span>
             <span class="muted">{{ $t('差分基準: {baseline}', { baseline: diffBaselineLabel }) }}</span>
+            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
           </div>
           <div v-if="activeResults.length === 0" class="muted">{{ $t('結果がありません。') }}</div>
           <Table v-else hover striped sticky-header>
@@ -502,6 +601,7 @@ import SideHeatmap from '@/components/mstat/SideHeatmap.vue'
 import SideMarginHeatmap from '@/components/mstat/SideMarginHeatmap.vue'
 import SidePieChart from '@/components/mstat/SidePieChart.vue'
 import TeamPerformance from '@/components/mstat/TeamPerformance.vue'
+import { api } from '@/utils/api'
 import {
   DEFAULT_COMPILE_OPTIONS,
   type CompileIncludeLabel,
@@ -556,8 +656,11 @@ const slideCredit = ref('UTab')
 const slideSettingsOpen = ref(false)
 const awardCopyLimit = ref(3)
 const awardCopyCopied = ref(false)
+const lastRefreshedAt = ref<string>('')
 const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>('teams')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
+const showAdvancedSourceOptions = ref(false)
+const showRecomputeOptions = ref(false)
 const compileRounds = ref<number[]>([])
 const compileExecuted = ref(false)
 const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
@@ -587,6 +690,8 @@ const compileDiffBaselineMode = ref<'latest' | 'compiled'>(
   DEFAULT_COMPILE_OPTIONS.diff_baseline.mode
 )
 const compileDiffBaselineCompiledId = ref('')
+const compiledHistory = ref<any[]>([])
+const selectedCompiledId = ref('')
 
 const compiled = computed<Record<string, any> | null>(() => compiledStore.compiled)
 const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
@@ -598,6 +703,12 @@ const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
   }
 })
 type RoundSummary = { round: number; name?: string }
+type BaselineCompiledOption = {
+  compiledId: string
+  rounds: number[]
+  roundNames: string[]
+  createdAt?: string
+}
 const sortedRounds = computed<RoundSummary[]>(() => {
   if (rounds.rounds.length > 0) {
     return rounds.rounds.slice().sort((a, b) => a.round - b.round)
@@ -663,9 +774,48 @@ const includeLabelOptions: CompileIncludeLabel[] = [
   'poi',
   'best',
 ]
+const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
+  compiledHistory.value
+    .map((item) => {
+      const payload = item?.payload && typeof item.payload === 'object' ? item.payload : item
+      const roundsValue = Array.isArray(payload?.rounds) ? payload.rounds : []
+      const normalizedRounds = roundsValue
+        .map((entry: any) => Number(entry?.r ?? entry?.round ?? entry))
+        .filter((value: number) => Number.isFinite(value))
+      return {
+        compiledId: String(item?._id ?? payload?._id ?? ''),
+        rounds: normalizedRounds,
+        roundNames: roundsValue
+          .map((entry: any) => String(entry?.name ?? '').trim())
+          .filter((value: string) => value.length > 0),
+        createdAt: item?.createdAt ? String(item.createdAt) : undefined,
+      }
+    })
+    .filter((item) => item.compiledId.length > 0)
+)
+const selectedCompiledLabel = computed(() => {
+  const selected = baselineCompiledOptions.value.find(
+    (item) => item.compiledId === selectedCompiledId.value
+  )
+  if (!selected) return t('未選択')
+  return baselineCompiledOptionLabel(selected)
+})
 const canRunCompile = computed(() => {
   if (compileDiffBaselineMode.value !== 'compiled') return true
   return compileDiffBaselineCompiledId.value.trim().length > 0
+})
+const isRawSourceSelected = computed(() => compileSource.value === 'raw')
+const displayedCompileSource = computed<'submissions' | 'raw'>(() =>
+  compiled.value?.compile_source === 'raw' ? 'raw' : 'submissions'
+)
+const isDisplayedRawSource = computed(() => displayedCompileSource.value === 'raw')
+const isRawModeActive = computed(
+  () => isDisplayedRawSource.value || isRawSourceSelected.value
+)
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  const date = new Date(lastRefreshedAt.value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 })
 const compileOptionsPayload = computed<CompileOptions>(() => {
   const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
@@ -702,11 +852,19 @@ const compileSummaryLines = computed(() => {
     rankingPriorityPreset.value === 'custom'
       ? rankingPriorityOrder.value.map((metric) => rankingMetricLabel(metric)).join(' > ')
       : t('現行')
+  const selectedBaseline = baselineCompiledOptions.value.find(
+    (item) => item.compiledId === compileDiffBaselineCompiledId.value.trim()
+  )
   const diffSummary =
     compileDiffBaselineMode.value === 'compiled'
-      ? compileDiffBaselineCompiledId.value.trim() || t('未設定')
+      ? selectedBaseline
+        ? baselineCompiledOptionLabel(selectedBaseline)
+        : t('未設定')
       : t('最新集計')
   return [
+    t('ソースサマリー: {value}', {
+      value: isRawSourceSelected.value ? t('生結果データ（例外モード）') : t('提出データ（通常運用）'),
+    }),
     t('順位比較サマリー: {value}', { value: rankingSummary }),
     t('勝敗判定サマリー: {policy} / {points}', {
       policy:
@@ -752,7 +910,11 @@ const diffBaselineLabel = computed(() => {
   if (!meta || meta.baseline_found !== true) return t('基準なし')
   const baselineId = String(meta.baseline_compiled_id ?? '')
   if (meta.baseline_mode === 'compiled') {
-    return t('指定compiled（ID: {id}）', { id: baselineId })
+    const selected = baselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
+    if (selected) {
+      return t('選択した過去集計: {label}', { label: baselineCompiledOptionLabel(selected) })
+    }
+    return t('選択した過去集計（ID: {id}）', { id: baselineId })
   }
   return t('最新集計（ID: {id}）', { id: baselineId })
 })
@@ -1033,6 +1195,56 @@ function roundName(r: number) {
   )
 }
 
+function formatCompiledTimestamp(value?: string) {
+  if (!value) return t('日時不明')
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t('日時不明')
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function baselineCompiledOptionLabel(option: BaselineCompiledOption) {
+  const roundLabel =
+    option.roundNames.length > 0
+      ? option.roundNames.join(', ')
+      : option.rounds.length > 0
+        ? option.rounds.map((roundNumber) => roundName(roundNumber)).join(', ')
+        : t('全ラウンド')
+  return `${formatCompiledTimestamp(option.createdAt)} / ${roundLabel} / ID: ${option.compiledId}`
+}
+
+function resolveCompiledDocId(doc: any): string {
+  const payload = doc?.payload && typeof doc.payload === 'object' ? doc.payload : doc
+  return String(doc?._id ?? payload?._id ?? '').trim()
+}
+
+function normalizeCompiledDoc(doc: any): Record<string, any> | null {
+  const payload = doc?.payload && typeof doc.payload === 'object' ? doc.payload : doc
+  if (!payload || typeof payload !== 'object') return null
+  const normalized = { ...(payload as Record<string, any>) }
+  const compiledId = resolveCompiledDocId(doc)
+  if (compiledId) normalized._id = compiledId
+  if (doc?.createdAt) normalized.createdAt = doc.createdAt
+  if (doc?.updatedAt) normalized.updatedAt = doc.updatedAt
+  return normalized
+}
+
+function applyCompiledSnapshot(compiledId: string) {
+  const targetId = String(compiledId).trim()
+  if (!targetId) return
+  const matched = compiledHistory.value.find((item) => resolveCompiledDocId(item) === targetId)
+  if (!matched) return
+  const normalized = normalizeCompiledDoc(matched)
+  if (!normalized) return
+  compiledStore.compiled = normalized
+  compileExecuted.value = true
+}
+
 const drawByRound = computed(() => {
   const map = new Map<number, any>()
   draws.draws.forEach((draw) => {
@@ -1300,17 +1512,17 @@ function formatList(value: unknown) {
 
 function optionHelp(key: string) {
   const map: Record<string, string> = {
-    source: t('ヘルプ:ソース'),
-    rounds: t('ヘルプ:ラウンド'),
-    ranking: t('ヘルプ:順位比較'),
-    winner: t('ヘルプ:勝敗判定'),
-    tie: t('ヘルプ:引き分けポイント'),
-    merge: t('ヘルプ:重複マージ'),
-    poi: t('ヘルプ:POI集計'),
-    best: t('ヘルプ:Best集計'),
-    missing: t('ヘルプ:欠損データ'),
-    include: t('ヘルプ:生成対象'),
-    diff: t('ヘルプ:差分比較'),
+    source: t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。'),
+    rounds: t('ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。'),
+    ranking: t('順位が同点のときにどの指標を先に比較するかを決めます。'),
+    winner: t('Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。'),
+    tie: t('引き分けを許可する設定のときに、各チームへ与える勝敗点です。'),
+    merge: t('同じ提出者から複数提出がある場合の扱いです。'),
+    poi: t('POIの重複値を平均か最大でまとめます。'),
+    best: t('Best Speakerの重複値を平均か最大でまとめます。'),
+    missing: t('必要データが欠けていた場合に、警告で続行するか、除外するか、エラー停止するかを選びます。'),
+    include: t('生成するランキングの種類を選びます。'),
+    diff: t('差分比較の基準です。最新集計か、過去集計を選んで比較できます。'),
   }
   return map[key] ?? ''
 }
@@ -1602,11 +1814,31 @@ async function refresh() {
     draws.fetchDraws(tournamentId.value),
     submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
   ])
+  await refreshCompiledHistory()
+  const currentCompiledId = String(compiledStore.compiled?._id ?? '').trim()
+  if (currentCompiledId) {
+    selectedCompiledId.value = currentCompiledId
+  } else if (baselineCompiledOptions.value.length > 0) {
+    selectedCompiledId.value = baselineCompiledOptions.value[0].compiledId
+    applyCompiledSnapshot(selectedCompiledId.value)
+  } else {
+    selectedCompiledId.value = ''
+  }
+  compileExecuted.value = Boolean(compiledStore.compiled)
+  lastRefreshedAt.value = new Date().toISOString()
 }
 
 async function runCompile() {
   if (!tournamentId.value) return
   if (!canRunCompile.value) return
+  if (isRawSourceSelected.value) {
+    const ok = window.confirm(
+      t(
+        '生結果データで再計算します。通常運用は提出データです。例外モードで続行しますか？'
+      )
+    )
+    if (!ok) return
+  }
   const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
     source: compileSource.value,
@@ -1625,6 +1857,21 @@ async function runCompile() {
     draws.fetchDraws(tournamentId.value),
     submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
   ])
+  await refreshCompiledHistory()
+  const latestCompiledId = String(compiledStore.compiled?._id ?? '').trim()
+  if (latestCompiledId) {
+    selectedCompiledId.value = latestCompiledId
+  }
+}
+
+async function refreshCompiledHistory() {
+  if (!tournamentId.value) return
+  try {
+    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
+  } catch {
+    compiledHistory.value = []
+  }
 }
 
 onMounted(() => {
@@ -1641,6 +1888,50 @@ watch(availableLabels, (labels) => {
       | 'best'
   }
 })
+
+watch(
+  selectedCompiledId,
+  (nextId) => {
+    if (!nextId) return
+    applyCompiledSnapshot(nextId)
+  }
+)
+
+watch(showAdvancedSourceOptions, (open) => {
+  if (open) return
+  compileSource.value = 'submissions'
+})
+
+watch(
+  baselineCompiledOptions,
+  (options) => {
+    if (options.length === 0) {
+      selectedCompiledId.value = ''
+      return
+    }
+    const exists = options.some((option) => option.compiledId === selectedCompiledId.value)
+    if (!exists) {
+      selectedCompiledId.value = options[0].compiledId
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [compileDiffBaselineMode, baselineCompiledOptions],
+  ([mode, options]) => {
+    if (mode !== 'compiled') return
+    if (options.length === 0) {
+      compileDiffBaselineCompiledId.value = ''
+      return
+    }
+    const exists = options.some((option) => option.compiledId === compileDiffBaselineCompiledId.value)
+    if (!exists) {
+      compileDiffBaselineCompiledId.value = options[0].compiledId
+    }
+  },
+  { immediate: true }
+)
 
 watch(tournamentId, () => {
   compileExecuted.value = false
@@ -1704,6 +1995,10 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 }
 
 .header-reload {
+  margin-left: var(--space-2);
+}
+
+.header-meta {
   margin-left: auto;
 }
 
@@ -1719,6 +2014,26 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-3);
 }
 
+.snapshot-selector-row {
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.recompute-toggle-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.recompute-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface);
+}
+
 .compile-grid {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
@@ -1727,6 +2042,33 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .compile-field {
   gap: var(--space-2);
+}
+
+.source-primary-row {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.source-help {
+  margin: 0;
+}
+
+.source-advanced-toggle {
+  justify-content: flex-start;
+}
+
+.raw-source-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .compile-label {
@@ -1790,6 +2132,38 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   background: var(--color-surface-muted);
 }
 
+.migration-guide {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  gap: var(--space-2);
+}
+
+.migration-guide-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+
+.migration-guide-actions {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.migration-guide-link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.migration-guide-link:hover {
+  text-decoration: underline;
+}
+
+.raw-source-notice {
+  margin: 0;
+}
+
 .compile-actions {
   justify-content: flex-end;
 }
@@ -1838,11 +2212,26 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-2);
 }
 
-.compile-category-inline .row {
+.compile-category-row {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.compile-diff-controls {
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.compile-diff-field {
+  min-width: 180px;
+  gap: 4px;
+}
+
+.compile-diff-field-wide {
+  min-width: min(460px, 100%);
 }
 
 .diff-legend {

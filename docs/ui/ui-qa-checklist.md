@@ -23,11 +23,19 @@
 ## Smoke Scenarios (Admin)
 - Admin Home: search + create tournament flow; focus order follows form top-to-bottom.
 - Tournament Home: entity search/paging usable via keyboard; sections collapse/expand without scrolling jumps.
+- Tournament Home: `新規ラウンド作成`（番号/名称/種別）から追加でき、追加後にラウンド一覧へ即時反映される。
 - Rounds: modal edit opens/closes with Esc and respects focus return.
+- Rounds: 作成UIは表示されず、`大会セットアップ` への導線と既存ラウンドの上書き編集に集中している。
 - Submissions: filter/search and JSON collapse expand/collapse via keyboard; chart toggle accessible.
 - Compiled results: CSV download button reachable; warning texts readable and contrast-compliant.
 
 ## Compile Regression (Phase 4)
+- Compiled results: 表示スナップショットを切り替えたとき、一覧/差分/CSVの対象が同じsnapshotに揃う。
+- Compiled results: `詳細再計算` は初期状態で閉じており、開閉後も表示中snapshotは保持される。
+- Compiled results: `source=raw` 選択時に `提出データ一本化ガイド` が表示され、`提出一覧` / `ラウンド運営` へ遷移できる。
+- Admin routing: `admin UI v2` フラグ ON/OFF で初期遷移先（`/setup` vs `/home`）が切り替わる。
+- Admin routing: `VITE_ADMIN_UI_LEGACY_READONLY=true` で `/home` `/rounds` `/compiled` が読み取り専用表示になり、`新画面へ移動` が表示される。
+- Admin routing: legacy read-only 時は移行導線が1箇所にまとまり、通常の `新画面へ移動` 行と重複表示しない。
 - Compile with options omitted (legacy request) and confirm ranking/output matches pre-Phase3 expectation.
 - Confirm compile options summary does not alter payload when untouched (default-compatible behavior).
 - CSV export smoke: header/row order remains stable for `teams/speakers/adjudicators/poi/best`.

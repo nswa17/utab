@@ -114,6 +114,107 @@ const en = {
     'Manage teams, adjudicators, venues, and institutions.',
   'チーム・ジャッジ・スピーカー・所属機関・会場を管理します。':
     'Manage teams, adjudicators, speakers, institutions, and venues.',
+  大会セットアップ: 'Tournament setup',
+  ラウンド運営: 'Round operations',
+  '結果確定・レポート': 'Finalize & reports',
+  ラウンドデフォルト設定: 'Round defaults',
+  '新規ラウンド作成時に適用される標準設定です。':
+    'Default settings applied when creating a new round.',
+  ブレイク基本方針: 'Break defaults',
+  ラウンドデフォルトを保存: 'Save round defaults',
+  '新規ラウンドは大会セットアップのラウンドデフォルトを継承します。':
+    'New rounds inherit round defaults from tournament setup.',
+  ラウンド運営ハブ: 'Round operations hub',
+  運営ステップ: 'Operation steps',
+  '運営は左から順に進みます。後続ステップは前段の完了後に実行してください。':
+    'Proceed from left to right. Run later steps after earlier steps are completed.',
+  実行可能: 'Ready',
+  前段階待ち: 'Waiting',
+  開始ステップ: 'Start',
+  '前段: {task}': 'Depends on: {task}',
+  前ラウンド集計: 'Previous-round compile',
+  '対戦生成に必要な前ラウンド集計が不足しています。未集計: {rounds}':
+    'Missing previous-round compile data required for draw generation. Missing: {rounds}',
+  'このラウンドには前提となる集計ラウンドがありません。':
+    'This round has no prerequisite rounds for compile.',
+  '公開後に提出を回収します。先に公開/ロックで公開してください。':
+    'Collect submissions after publication. Publish/lock first.',
+  '提出回収後に集計を実行します。': 'Run compile after collecting submissions.',
+  集計設定: 'Compile settings',
+  表示スナップショット: 'Displayed snapshot',
+  '表示中: {label}': 'Showing: {label}',
+  '集計スナップショットはまだありません。': 'No compiled snapshots yet.',
+  '必要な場合のみ詳細再計算を実行してください。':
+    'Run detailed recomputation only when needed.',
+  詳細再計算を開く: 'Open detailed recomputation',
+  詳細再計算を閉じる: 'Close detailed recomputation',
+  新画面へ移動: 'Open new flow',
+  読み取り専用: 'Read only',
+  '旧導線は読み取り専用です。新画面で操作してください。':
+    'Legacy flow is read-only. Use the new flow for operations.',
+  提出データ一本化ガイド: 'Submission-first migration guide',
+  '提出一覧で不足提出を解消し、重複提出を整理します。':
+    'Resolve missing submissions and clean duplicate submissions in the submissions page.',
+  '生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。':
+    'If raw-result corrections are needed, reflect them in submission edits and recompile.',
+  '提出データソースに戻して再計算し、確定snapshotを選択して出力します。':
+    'Switch back to submission source, recompile, then output from a finalized snapshot.',
+  '表示中スナップショットは「生結果データ」です（例外モード）。':
+    'The displayed snapshot was compiled from raw results (exception mode).',
+  ラウンド運営へ: 'Open round operations',
+  次ラウンド対戦生成: 'Next-round pairing',
+  '公開/ロック': 'Publish / Lock',
+  レポートを開く: 'Open reports',
+  対戦表設定を開く: 'Open draw settings',
+  生結果を開く: 'Open raw results',
+  ラウンド詳細設定へ: 'Open round settings',
+  'まず対戦表を生成してください。': 'Generate the draw first.',
+  'ラウンドを選択してください。': 'Select a round.',
+  'このラウンドまでを提出データで集計します。':
+    'Compile using submission data up to this round.',
+  'このラウンドまでを生結果データで集計します。':
+    'Compile using raw results up to this round.',
+  '集計対象ラウンド: {rounds}': 'Compile rounds: {rounds}',
+  '次ラウンド: {round}': 'Next round: {round}',
+  '対象ラウンド: {round}': 'Target round: {round}',
+  '次ラウンドの対戦を生成': 'Generate next-round draw',
+  'このラウンドの対戦を生成': 'Generate draw for this round',
+  '対戦表設定（この画面内）': 'Draw settings (inline)',
+  '生結果（この画面内）': 'Raw results (inline)',
+  '提出一覧（この画面内）': 'Submissions (inline)',
+  'レポート（この画面内）': 'Reports (inline)',
+  '強制実行（生結果）': 'Force run (raw results)',
+  '強制実行では生結果データを使用します。未提出・提出者不足・入力揺れがあると順位が不安定になる可能性があります。続行しますか？':
+    'Force run uses raw results. Missing submissions/submitter gaps/input inconsistencies may destabilize rankings. Continue?',
+  '次ラウンドが未作成です。先にラウンドを追加してください。':
+    'The next round does not exist yet. Create it first.',
+  公開設定を保存: 'Save publication settings',
+  準備中: 'Preparing',
+  回収中: 'Collecting',
+  集計済み: 'Compiled',
+  生成済み: 'Generated',
+  確定: 'Finalized',
+  '集計が完了しました。': 'Compilation completed.',
+  '対戦を生成しました。': 'Draw generated.',
+  '公開状態を更新しました。': 'Publication status updated.',
+  '集計に失敗しました。': 'Compilation failed.',
+  '集計結果がありません。先に集計を実行してください。':
+    'No compiled snapshot is available. Run compilation first.',
+  '対戦生成に失敗しました。': 'Failed to generate draw.',
+  '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
+  '読み込みに失敗しました。': 'Failed to load data.',
+  '未提出のチーム評価があります（提出 {submitted}/{expected}）。提出一覧を確認してください。':
+    'Some ballots are still missing (submitted {submitted}/{expected}). Check submissions.',
+  '提出者情報が不足したチーム評価が {count} 件あります。提出一覧で提出者を補完してください。':
+    '{count} ballots have missing submitter information. Fix submitter data in submissions.',
+  '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
+    'Cannot run compile because selected round ballots are incomplete.',
+  '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
+    'Cannot generate next-round draw because selected round ballots are incomplete.',
+  '最新スナップショットに選択ラウンドが含まれていません。先に集計を実行してください。':
+    'Selected round is not included in the latest snapshot. Run compile first.',
+  '次ラウンド生成では最新スナップショットを参照します。':
+    'Next-round generation will use the latest snapshot.',
   オリジナル: 'Original',
   キー: 'Key',
   キー生成: 'Generate keys',
@@ -313,6 +414,18 @@ const en = {
   '公開されているラウンドを選択してください。': 'Select a published round.',
   公開中の大会: 'Open tournaments',
   再読み込み: 'Reload',
+  '{target}を再読み込み': 'Reload {target}',
+  '最終更新: {time}': 'Last updated: {time}',
+  '対戦表更新: {time}': 'Draw updated: {time}',
+  通常運用: 'Standard operation',
+  例外運用: 'Exceptional operation',
+  例外モード: 'Exception mode',
+  高度な運用を開く: 'Open advanced mode',
+  高度な運用を閉じる: 'Close advanced mode',
+  '通常運用は提出データを使用します。生結果データは、例外的な補正が必要な場合のみ利用してください。':
+    'Standard operation uses submission data. Use raw results only for exceptional corrections.',
+  '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。':
+    'Exception mode is active. Recomputing with raw results. Return to submission data for standard operation.',
   凡例: 'Legend',
   出席: 'Attendance',
   '利用不可 (出欠/利用設定)': 'Unavailable (attendance/settings)',
@@ -458,6 +571,12 @@ const en = {
   政府: 'Government',
   '政府 (ドラッグ)': 'Government (drag)',
   新規ラウンド作成: 'Create new round',
+  'ラウンド作成は大会セットアップで行います。':
+    'Create rounds from tournament setup.',
+  'ラウンド番号を確認してください。': 'Check the round number.',
+  '同じラウンド番号が既に存在します。': 'That round number already exists.',
+  'ラウンド追加に失敗しました。': 'Failed to add the round.',
+  'ラウンド更新に失敗しました。': 'Failed to update the round.',
   新規追加: 'Add new',
   新規大会作成: 'Create new tournament',
   '新規生結果 (JSON)': 'New raw result (JSON)',
@@ -651,6 +770,10 @@ const en = {
   生成対象: 'Included labels',
   差分比較: 'Diff baseline',
   最新集計: 'Latest compiled',
+  過去の集計結果を選択: 'Select previous compile',
+  比較対象: 'Baseline target',
+  '過去の集計結果を選ぶ場合は比較対象を選択してください。':
+    'Select a baseline target when comparing with a previous compile.',
   指定compiled: 'Specific compiled',
   '比較対象 compiled ID': 'Baseline compiled ID',
   '指定compiledを選ぶ場合はIDを入力してください。':
@@ -663,8 +786,31 @@ const en = {
   '欠損サマリー: {policy} / {labels}': 'Missing data: {policy} / Labels: {labels}',
   '差分サマリー: {value}': 'Diff baseline: {value}',
   基準なし: 'No baseline',
+  '選択した過去集計: {label}': 'Selected previous compile: {label}',
+  '選択した過去集計（ID: {id}）': 'Selected previous compile (ID: {id})',
   '指定compiled（ID: {id}）': 'Specific compiled (ID: {id})',
   '最新集計（ID: {id}）': 'Latest compiled (ID: {id})',
+  '提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。':
+    'Submissions compiles submitted forms. Raw uses values edited directly in the raw results screen.',
+  'ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。':
+    'Only selected rounds are compiled. If none are selected, all rounds are included.',
+  '順位が同点のときにどの指標を先に比較するかを決めます。':
+    'Defines which metric breaks ties first when ranks are tied.',
+  'Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。':
+    'Chooses whether winnerId or scores are prioritized when determining winners from ballots.',
+  '引き分けを許可する設定のときに、各チームへ与える勝敗点です。':
+    'Points assigned to each team when a draw is allowed.',
+  '同じ提出者から複数提出がある場合の扱いです。':
+    'How duplicate submissions from the same submitter are handled.',
+  'POIの重複値を平均か最大でまとめます。':
+    'How duplicate POI values are merged (average or maximum).',
+  'Best Speakerの重複値を平均か最大でまとめます。':
+    'How duplicate Best Speaker values are merged (average or maximum).',
+  '必要データが欠けていた場合に、警告で続行するか、除外するか、エラー停止するかを選びます。':
+    'Choose whether missing required data should warn, be excluded, or stop with an error.',
+  '生成するランキングの種類を選びます。': 'Choose which ranking categories to generate.',
+  '差分比較の基準です。最新集計か、過去集計を選んで比較できます。':
+    'Sets the diff baseline. Compare with the latest compile or a selected previous compile.',
   'ヘルプ:ソース':
     'Choose submissions or raw results as the compile source. Submissions are normalized first.',
   'ヘルプ:ラウンド':

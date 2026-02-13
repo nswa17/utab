@@ -142,10 +142,32 @@ const round = computed(() => route.params.round as string)
 const adjudicatorId = computed(() => route.params.adjudicatorId as string)
 const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
 const { identityId: speakerIdentityId } = useParticipantIdentity(tournamentId, participant, 'speaker')
-
-const homePath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/feedback/home`
+const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-team'
 )
+const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-speaker'
+)
+const filter = computed(() => (typeof route.query.filter === 'string' ? route.query.filter : ''))
+const actorMode = computed<'team' | 'adjudicator'>(() => {
+  if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
+  if (participant.value === 'speaker') return 'team'
+  return 'adjudicator'
+})
+
+const homePath = computed(() => {
+  const query = new URLSearchParams()
+  if (filter.value) query.set('filter', filter.value)
+  query.set('actor', actorMode.value)
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/feedback/home${
+    suffix ? `?${suffix}` : ''
+  }`
+})
 const drawPath = computed(
   () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/draw`
 )
@@ -196,6 +218,11 @@ const submittedEntityId = computed(() => {
     return evaluatorMode.value === 'speaker' ? speakerIdentityId.value : teamIdentityId.value
   }
   if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? judgeFeedbackSpeakerIdentityId.value
+        : judgeFeedbackTeamIdentityId.value
+    }
     return teamIdentityId.value
   }
   return ''
@@ -206,7 +233,14 @@ const identityReady = computed(() => {
       ? Boolean(teamIdentityId.value) && Boolean(speakerIdentityId.value)
       : Boolean(teamIdentityId.value)
   }
-  if (participant.value === 'adjudicator') return Boolean(teamIdentityId.value)
+  if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? Boolean(judgeFeedbackTeamIdentityId.value) && Boolean(judgeFeedbackSpeakerIdentityId.value)
+        : Boolean(judgeFeedbackTeamIdentityId.value)
+    }
+    return Boolean(teamIdentityId.value)
+  }
   return true
 })
 const identityHint = computed(() => {
@@ -216,6 +250,11 @@ const identityHint = computed(() => {
       : t('参加者ホームでチームを選択してください。')
   }
   if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? t('参加者ホームでチームとスピーカーを選択してください。')
+        : t('参加者ホームでチームを選択してください。')
+    }
     return t('参加者ホームでジャッジを選択してください。')
   }
   return t('参加者ホームで対象を選択してください。')

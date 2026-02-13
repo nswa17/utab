@@ -1,9 +1,13 @@
 <template>
   <section class="stack">
-    <div class="row">
+    <div class="row header-row">
       <h2>{{ $t('管理ダッシュボード') }}</h2>
+      <span v-if="lastRefreshedLabel" class="muted small header-meta">{{
+        $t('最終更新: {time}', { time: lastRefreshedLabel })
+      }}</span>
       <ReloadButton
         @click="refresh"
+        :target="$t('大会一覧')"
         :disabled="tournament.loading || styles.loading"
         :loading="tournament.loading || styles.loading"
       />
@@ -57,7 +61,7 @@
         <tbody>
           <tr v-for="item in filteredTournaments" :key="item._id">
             <td>
-              <RouterLink class="name-link" :to="`/admin/${item._id}/home`">
+              <RouterLink class="name-link" :to="`/admin/${item._id}/setup`">
                 <strong>{{ item.name }}</strong>
                 <span v-if="item.user_defined_data?.hidden" class="visibility-badge">
                   {{ $t('非公開') }}
@@ -68,7 +72,7 @@
             <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
             <td>
               <div class="row">
-                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/home`">
+                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/setup`">
                   {{ $t('大会管理') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
@@ -109,9 +113,15 @@ const visibleTournaments = computed(() => {
 })
 
 const searchQuery = ref('')
+const lastRefreshedAt = ref<string>('')
 const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
+})
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  const date = new Date(lastRefreshedAt.value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 })
 const filteredTournaments = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -121,6 +131,13 @@ const filteredTournaments = computed(() => {
       })
     : visibleTournaments.value
   return filtered.slice().sort((a, b) => {
+    const timeA = Date.parse(String(a.updatedAt ?? a.createdAt ?? ''))
+    const timeB = Date.parse(String(b.updatedAt ?? b.createdAt ?? ''))
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+      return timeB - timeA
+    }
+    if (Number.isFinite(timeA) && !Number.isFinite(timeB)) return -1
+    if (!Number.isFinite(timeA) && Number.isFinite(timeB)) return 1
     const nameCompare = naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
     if (nameCompare !== 0) return nameCompare
     return naturalSortCollator.compare(String(a._id ?? ''), String(b._id ?? ''))
@@ -173,6 +190,7 @@ function formatDate(raw?: string) {
 
 async function refresh() {
   await Promise.all([tournament.fetchTournaments(), styles.fetchStyles()])
+  lastRefreshedAt.value = new Date().toISOString()
   if (!form.style && styles.styles.length > 0) {
     form.style = styles.styles[0].id
   }
@@ -188,6 +206,15 @@ async function remove(id: string) {
 <style scoped>
 .error {
   color: var(--color-danger);
+}
+
+.header-row {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.header-meta {
+  margin-left: auto;
 }
 
 .checkbox-field {

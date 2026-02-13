@@ -1,44 +1,36 @@
 <template>
   <section class="stack">
-    <div class="row section-row">
-      <h3>{{ $t('ラウンド管理') }}</h3>
+    <div v-if="!isEmbeddedRoute" class="row section-row">
+      <h3>{{ $t('ラウンド詳細設定') }}</h3>
+      <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
+        $t('最終更新: {time}', { time: lastRefreshedLabel })
+      }}</span>
       <ReloadButton
         class="section-reload"
         @click="refresh"
+        :target="$t('ラウンド詳細設定')"
         :disabled="isLoading"
         :loading="isLoading"
       />
     </div>
 
-    <div v-if="!sectionLoading" class="card stack">
-      <p class="muted">{{ $t('新規ラウンド作成') }}</p>
-      <form class="grid" @submit.prevent="createRound">
-        <Field :label="$t('ラウンド番号')" required v-slot="{ id, describedBy }">
-          <input
-            v-model.number="createForm.round"
-            :id="id"
-            :aria-describedby="describedBy"
-            type="number"
-            min="1"
-          />
-        </Field>
-        <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
-          <input v-model="createForm.name" :id="id" :aria-describedby="describedBy" type="text" />
-        </Field>
-        <div class="row create-actions">
-          <Button type="submit" :disabled="roundsStore.loading">{{ $t('追加') }}</Button>
-        </div>
-      </form>
+    <div v-if="!isEmbeddedRoute && !sectionLoading" class="card stack">
+      <p class="muted">{{ $t('ラウンド作成は大会セットアップで行います。') }}</p>
+      <div class="row">
+        <Button variant="ghost" size="sm" :to="`/admin/${tournamentId}/setup`">
+          {{ $t('大会セットアップ') }}
+        </Button>
+      </div>
     </div>
 
     <LoadingState v-if="sectionLoading" />
     <p v-else-if="roundsStore.error" class="error">{{ roundsStore.error }}</p>
-    <p v-else-if="sortedRounds.length === 0" class="muted">
+    <p v-else-if="displayRounds.length === 0" class="muted">
       {{ $t('ラウンドがまだありません。') }}
     </p>
 
     <div v-else class="stack round-cards">
-      <article v-for="round in sortedRounds" :key="round._id" class="card stack round-card">
+      <article v-for="round in displayRounds" :key="round._id" class="card stack round-card">
         <div class="stack round-head">
           <div class="row round-head-row">
             <button type="button" class="round-toggle" @click="toggleRound(round._id)">
@@ -62,7 +54,7 @@
                 </span>
               </div>
             </button>
-            <div class="row round-head-actions">
+            <div v-if="!isEmbeddedRoute" class="row round-head-actions">
               <Button variant="danger" size="sm" class="round-delete" @click="removeRound(round._id)">
                 {{ $t('削除') }}
               </Button>
@@ -171,7 +163,7 @@
           </div>
         </div>
 
-        <div class="row round-shortcuts">
+        <div v-if="!isEmbeddedRoute" class="row round-shortcuts">
           <Button variant="secondary" size="sm" @click="openRoundPage(round.round, 'allocation')">
             {{ $t('対戦表設定') }}
           </Button>
@@ -596,6 +588,7 @@ import { useSubmissionsStore } from '@/stores/submissions'
 import { useTeamsStore } from '@/stores/teams'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
+import { defaultRoundDefaults } from '@/utils/round-defaults'
 import type { RoundBreakConfig } from '@/types/round'
 
 const route = useRoute()
@@ -609,11 +602,24 @@ const adjudicatorsStore = useAdjudicatorsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
+const isEmbeddedRoute = computed(
+  () => route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+)
 const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.round - b.round))
+const selectedRoundFromQuery = computed(() => {
+  const queryRound = Number(route.query.round)
+  if (!Number.isInteger(queryRound) || queryRound < 1) return null
+  return queryRound
+})
+const displayRounds = computed(() => {
+  if (selectedRoundFromQuery.value === null) return sortedRounds.value
+  return sortedRounds.value.filter((round) => Number(round.round) === selectedRoundFromQuery.value)
+})
 const expandedRounds = ref<Record<string, boolean>>({})
 const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
 const sectionLoading = ref(true)
+const lastRefreshedAt = ref<string>('')
 const isLoading = computed(
   () =>
     roundsStore.loading ||
@@ -623,25 +629,14 @@ const isLoading = computed(
     speakersStore.loading ||
     adjudicatorsStore.loading
 )
-
-const createForm = reactive({
-  round: 1,
-  name: '',
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  const date = new Date(lastRefreshedAt.value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 })
 
 function defaultRoundUserDefined() {
-  return {
-    hidden: false,
-    evaluate_from_adjudicators: true,
-    evaluate_from_teams: true,
-    chairs_always_evaluated: false,
-    no_speaker_score: false,
-    allow_low_tie_win: true,
-    score_by_matter_manner: true,
-    poi: true,
-    best: true,
-    evaluator_in_team: 'team',
-  }
+  return { ...defaultRoundDefaults().userDefinedData, hidden: false }
 }
 
 type BreakCandidate = {
@@ -1205,33 +1200,10 @@ async function refresh() {
       speakersStore.fetchSpeakers(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
     ])
+    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }
-}
-
-async function createRound() {
-  if (!createForm.round) return
-  const created = await roundsStore.createRound({
-    tournamentId: tournamentId.value,
-    round: Number(createForm.round),
-    name: createForm.name || t('ラウンド {round}', { round: createForm.round }),
-    motionOpened: false,
-    teamAllocationOpened: false,
-    adjudicatorAllocationOpened: false,
-    userDefinedData: {
-      ...defaultRoundUserDefined(),
-      hidden: false,
-    },
-  })
-  if (created?._id) {
-    expandedRounds.value = {
-      ...expandedRounds.value,
-      [created._id]: true,
-    }
-  }
-  createForm.round += 1
-  createForm.name = ''
 }
 
 async function onMotionOpenedChange(round: any, event: Event) {
@@ -1279,7 +1251,7 @@ function openRoundPage(roundNumber: number, type: 'allocation' | 'submissions') 
   }
   router.push({
     path: `/admin/${tournamentId.value}/submissions`,
-    query: { round: String(roundNumber) },
+    query: { round: String(roundNumber), context: 'round' },
   })
 }
 
@@ -1333,23 +1305,30 @@ watch(
 
 watch(
   sortedRounds,
-  (rounds) => {
-    syncRoundDrafts(rounds)
+  (roundsList) => {
+    syncRoundDrafts(roundsList)
+    if (
+      missingModalRound.value !== null &&
+      !roundsList.some((round) => Number(round.round) === Number(missingModalRound.value))
+    ) {
+      missingModalRound.value = null
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  displayRounds,
+  (roundsList) => {
     const next: Record<string, boolean> = {}
     const nextAdvanced: Record<string, boolean> = {}
-    rounds.forEach((round, index) => {
+    roundsList.forEach((round, index) => {
       const existing = expandedRounds.value[round._id]
       next[round._id] = existing ?? index === 0
       nextAdvanced[round._id] = advancedSettingsExpanded.value[round._id] ?? false
     })
     expandedRounds.value = next
     advancedSettingsExpanded.value = nextAdvanced
-    if (
-      missingModalRound.value !== null &&
-      !rounds.some((round) => Number(round.round) === Number(missingModalRound.value))
-    ) {
-      missingModalRound.value = null
-    }
   },
   { immediate: true }
 )
@@ -1364,9 +1343,14 @@ watch(
 
 .section-row {
   align-items: center;
+  gap: var(--space-2);
 }
 
 .section-reload {
+  margin-left: 0;
+}
+
+.section-meta {
   margin-left: auto;
 }
 

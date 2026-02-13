@@ -10,13 +10,20 @@
 
 ---
 
-## Tab アップデート計画（未完了）
+## Tab アップデート計画（完了）
+
+### ステータス（2026-02-13）
+
+- Phase 1〜6 と管理者UI刷新（`T27〜T34`）まで実装完了。
+- `PLAN.md` 内のチェック項目はすべて完了済み（未完了チェックなし）。
+- 次フェーズは新要件受付後に起票する（本計画はクローズ）。
 
 ### 方針（2026-02-12更新）
 
 - レポート生成画面を中心に、集計オプション・差分確認・提出状況確認を一体化する
 - 必要なコアロジック変更（ランキング比較・引き分け・正規化）は許容し、後方互換を維持して段階導入する
 - ラウンド管理の提出関連機能は当面併設し、利用実績を見て主導線をレポート生成側へ寄せる
+- 集計ソースは通常運用を `提出データ` に統一し、`生結果データ` は「例外補正レーン（高度な運用）」として扱う
 - メール/証明書など運用コストが高いものは外部連携を基本とし、Tab側はデータ出力を強化する
 
 ### 進捗
@@ -39,6 +46,16 @@
 - 2026-02-13: `T17` をクローズ（証明書機能は非実装方針を維持し、代替として `AdminTournamentCompiled` から受賞者CSV/参加者CSVを一括出力できるようにして外部文書基盤連携を明確化）
 - 2026-02-13: `T24` フォローとして、ブレイク候補一覧に手動 seed 入力を追加。候補再取得時に manual の seed を保持し、重複/不正 seed は保存前に UI で検知するよう修正
 - 2026-02-13: UI モダン化計画の運用先を `docs/ui/ui-modernization-plan.md` から `PLAN.md` に統合（詳細は本ファイルを正とする）
+- 2026-02-13: 集計運用方針を更新し、通常運用を `提出データ` に一本化。`生結果データ` は例外補正レーンとして `T32/T34` で分離する方針を追加
+- 2026-02-13: `T30` フォローとして、`/api/allocations/*`（break除く）に `snapshotId` 参照を必須化。ラウンド運営ハブ/配席画面で最新compiledのsnapshotを送る導線へ更新
+- 2026-02-13: `T32` フォローとして、`AdminTournamentCompiled` に表示snapshot選択を追加し、`詳細再計算` 折りたたみパネルで再計算オプションを隔離
+- 2026-02-13: `T33` 着手として、`admin UI v2` 機能フラグ（`VITE_ADMIN_UI_V2`）を追加。OFF時は旧URL（`/home` `/rounds` `/compiled`）を主導線にしつつ `新画面へ移動` 導線を実装
+- 2026-02-13: `T33`/`T34` フォローとして、`source=raw` 運用時に `提出データ一本化ガイド` を表示し、`提出一覧`/`ラウンド運営` へ直接遷移できる移行導線を追加
+- 2026-02-13: `T33` フォローとして、`VITE_ADMIN_UI_LEGACY_READONLY` を追加。旧主導線（`/home` `/rounds` `/compiled`）を読み取り専用表示に切り替え可能化
+- 2026-02-13: `T28` フォローとして、`大会セットアップ` にラウンド作成（番号/名称/種別）を統合し、`/operations/rounds` は上書き編集中心の詳細設定画面へ整理
+- 2026-02-13: `T34` フォローとして、compiled payload に `compile_source` を保存。結果画面は表示中 snapshot の source に基づいて `例外モード` バッジをヘッダー/差分凡例へ表示
+- 2026-02-13: `T29` フォローとして、`/admin/:tournamentId/rounds/:round/result` ルートを復帰し、運営ハブから生結果画面へ遷移可能化
+- 2026-02-13: `T33/T34` フォローとして、legacy read-only 表示の重複導線を整理し、運営ハブに「未提出/スナップショット不一致」ガードを追加（compile/generate の誤実行を抑止）
 
 ---
 
@@ -51,6 +68,160 @@
 5. 段階リリースと負荷確認（`T23` / `T07`）
 6. 周辺機能（`T08` / `T09` / `T12` / `T14` / `T15` / `T24` / `T25` / `T26`）
 7. 外部連携領域の再評価（`T16` / `T17`）
+8. 管理者UI刷新（`T27` / `T28` / `T29` / `T30` / `T31` / `T32` / `T33`）
+
+---
+
+### 管理者UI刷新 実行計画（期間なし）
+
+- [x] **T27. 管理画面 IA 再編（大会セットアップ / ラウンド運営 / 結果確定）**
+  - 目的: 画面責務を「準備」「運営」「確定」に分離し、運営導線の迷いを減らす
+  - 実装内容:
+    - 管理トップナビを `大会セットアップ` / `ラウンド運営` / `結果確定・レポート` に再編
+    - 既存URLは互換リダイレクトを維持（ブックマーク破壊を防止）
+    - `docs/ui/ui-map.md` の管理画面マップを新構成に更新
+  - 変更候補:
+    - `packages/web/src/router/index.ts`
+    - `packages/web/src/views/admin/AdminTournament.vue`
+    - `packages/web/src/views/admin/AdminTournamentHome.vue`
+    - `docs/ui/ui-map.md`
+  - 追加テスト:
+    - `packages/web/src/router/admin-navigation.test.ts`（新規）
+      - 新旧ルート遷移、権限制御、URL互換リダイレクト
+
+- [x] **T28. 大会セットアップ統合（ラウンド作成 + デフォルト設定）**
+  - 目的: 大会前に決める設定を1画面へ集約し、運営時の設定散在を解消する
+  - 実装内容:
+    - ラウンド作成/編集（番号・名称・種別）をセットアップ画面に集約
+    - 提出/採点のデフォルト設定（`evaluate_from_*`, `evaluator_in_team`, `no_speaker_score`, `score_by_matter_manner`, `poi`, `best`）を大会単位で保存
+    - ブレイク基本方針（size, tie policy, seeding, source）をテンプレートとして保持
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentRounds.vue`
+    - `packages/web/src/views/admin/AdminTournamentHome.vue`
+    - `packages/web/src/stores/rounds.ts`
+    - `packages/server/src/controllers/rounds.ts`
+    - `packages/server/src/routes/rounds.ts`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentSetup.test.ts`（新規）
+      - デフォルト保存、ラウンド新規作成時の継承、上書き編集
+    - `packages/server/test/integration.test.ts`
+      - デフォルト設定の保存・取得・ラウンド反映
+
+- [x] **T29. ラウンド運営ハブ実装（提出確認→集計→対戦生成→公開）**
+  - 目的: 次ラウンド作成を1フローで完結させ、画面横断の往復を減らす
+  - 実装内容:
+    - 左カラムにラウンド一覧（状態: 準備中/回収中/集計済み/生成済み/確定）
+    - 中央に運営ステップを固定順で表示
+      - 提出状況
+      - 集計設定（プリセット + 詳細）
+      - 標準プリセットは `提出データ` 固定（運営ハブ主導線）
+      - 集計実行（明示）
+      - 次ラウンド対戦生成
+      - 公開/ロック
+    - `生結果データ` は通常フローに置かず、必要時のみ開ける「高度な運用」導線へ隔離
+    - ラウンドごとの上書き設定を同画面で管理
+    - 既存詳細画面（Allocation/Submissions/Compiled）は「詳細を開く」として残す
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminRoundOperationsHub.vue`（新規）
+    - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
+    - `packages/web/src/views/admin/AdminTournamentSubmissions.vue`
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/stores/submissions.ts`
+    - `packages/web/src/stores/compiled.ts`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminRoundOperationsHub.test.ts`（新規）
+      - ステップ遷移条件、未提出警告、実行ガード
+    - `packages/web/src/stores/round-operations.test.ts`（新規）
+      - 集計実行と対戦生成の状態遷移
+
+- [x] **T30. 集計スナップショット単一参照化（運営とレポートの整合）**
+  - 目的: 「どの設定で作った集計か」を単一ソースにし、運営・最終結果の不整合を防止
+  - 実装内容:
+    - 集計実行結果に `snapshotId` を付与し、対戦生成時に参照必須化
+    - 既存の暗黙集計（画面読み込み時 compile）を廃止し、明示実行へ統一
+    - レポート画面は `snapshot` の選択/比較/出力を主軸化
+  - 変更候補:
+    - `packages/server/src/controllers/compiled.ts`
+    - `packages/server/src/controllers/allocations.ts`
+    - `packages/server/src/routes/allocations.ts`
+    - `packages/web/src/stores/compiled.ts`
+    - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+  - 追加テスト:
+    - `packages/server/test/integration.test.ts`
+      - snapshot指定生成、他大会snapshot拒否、snapshot不変性
+      - 暗黙集計廃止後の互換性、エラー時の復旧導線
+
+- [x] **T31. 再読み込みUI統一（ReloadButton再設計）**
+  - 目的: 散在する再読み込みボタンを整理し、更新責務を明確化する
+  - 実装内容:
+    - 「ページ主Reloadは1つ」を原則化（ページヘッダー右上）
+    - セクションReloadは例外運用（独立データソース、重い再計算、権限差異がある場合のみ）
+    - 同一データ範囲を更新する重複Reloadを削除
+    - 最終更新時刻と `loading/disabled` を全画面で統一表示
+    - 更新系操作（保存・作成・削除）成功時は対象セクションを自動再取得し、手動Reload依存を減らす
+  - 変更候補:
+    - `packages/web/src/components/common/ReloadButton.vue`
+    - `packages/web/src/views/admin/AdminTournament.vue`
+    - `packages/web/src/views/admin/AdminTournamentRounds.vue`
+    - `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `docs/ui/button-guidelines.md`
+  - 追加テスト:
+    - `packages/web/src/components/common/ReloadButton.test.ts`（新規）
+      - loading/disabled/aria-label の挙動
+    - `packages/web/src/views/admin/__tests__/admin-reload-behavior.test.ts`（新規）
+      - ページ主ReloadとセクションReloadの表示条件
+
+- [x] **T32. 結果確定・レポート画面の責務再定義**
+  - 目的: 運営ロジック設定と最終出力設定を分離し、終了後運用を短時間化する
+  - 実装内容:
+    - 画面主役を「確定済みsnapshotの選択・比較・CSV/Slides/表彰出力」に変更
+    - 再計算オプションは折りたたみの「詳細再計算」に隔離
+    - 詳細再計算の既定ソースは `提出データ` とし、`生結果データ` は明示的な例外モードでのみ選択可能にする
+    - 提出状況サマリは運営ハブへ主導線を移し、レポート側は参照中心
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/utils/comment-sheet.ts`
+    - `packages/web/src/utils/certificate-export.ts`
+    - `docs/ui/ui-qa-checklist.md`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`（新規）
+      - snapshot比較、出力導線、再計算UIの折りたたみ制御
+
+- [x] **T33. 移行・回帰・段階切替**
+  - 目的: 既存大会運用を止めずに新導線へ移行する
+  - 実装内容:
+    - 機能フラグで `admin UI v2` を段階有効化
+    - 旧導線に「新画面へ移動」導線を追加し、利用率を観測
+    - 旧運用で `生結果データ` を主導線利用している大会向けに、移行時ガイド（提出データ一本化手順）を追加
+    - 一定条件で旧導線を read-only 化し、最終的に置換
+  - 変更候補:
+    - `packages/web/src/views/admin/*`
+    - `packages/server/src/config/environment.ts`
+    - `docs/ui/ui-map.md`
+    - `docs/ui/ui-qa-checklist.md`
+  - 追加テスト:
+    - `packages/web/src/router/admin-navigation.test.ts`
+      - 機能フラグ ON/OFF の遷移確認
+    - `packages/server/test/integration.test.ts`
+      - 旧導線API互換と新導線APIの並行運用
+
+- [x] **T34. 集計ソース導線整理（提出データ既定 + 生結果は例外）**
+  - 目的: 「どちらで集計するか」の迷いを減らし、運営ミスを予防する
+  - 実装内容:
+    - `AdminTournamentCompiled` の主導線は `提出データ` 固定とする
+    - `生結果データ` は「高度な運用」折りたたみ内でのみ選択可能にする
+    - 例外モード実行時は、結果一覧ヘッダーと差分凡例に「例外モード」表示を出す
+    - `source=raw` 実行時は確認ダイアログを挟み、意図しない誤操作を防止する
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/stores/compiled.ts`
+    - `packages/web/src/i18n/messages.ts`
+    - `docs/ui/ui-qa-checklist.md`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`（新規）
+      - 既定ソース固定、例外モードの表示、確認ダイアログ経由実行
 
 ---
 
@@ -387,8 +558,8 @@
 
 - 追加/拡張ファイル候補:
   - `packages/core/tests/results-compile-advanced.test.ts`（拡張）
-  - `packages/core/tests/results-compile-options.test.ts`（新規）
-  - `packages/core/tests/allocations-break-seeding.test.ts`（新規）
+  - `packages/core/tests/results-checks.test.ts`（拡張）
+  - `packages/core/tests/allocations-teams.test.ts`（拡張）
   - `packages/core/tests/allocations-teams-powerpair.test.ts`（新規）
 - テスト観点:
   - `ranking_priority` の順序変更で順位が期待通りに変化する
@@ -434,9 +605,9 @@
 
 - 追加ファイル候補:
   - `packages/web/src/stores/compiled.test.ts`（新規）
-  - `packages/web/src/views/admin/AdminTournamentCompiled.test.ts`（新規）
+  - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`（新規）
   - `packages/web/src/utils/diff-indicator.test.ts`（新規、必要なら）
-  - `packages/web/src/views/admin/round/AdminRoundAllocation.test.ts`（新規、必要なら）
+  - `packages/web/src/views/admin/__tests__/AdminRoundOperationsHub.test.ts`（新規）
 - テスト観点:
   - ストアが新オプションを正しい payload で `/compiled` に送る
   - オプション未指定時のデフォルト値が期待通り
@@ -531,6 +702,7 @@
 
 - 新規UI追加・既存UI変更時は、`docs/ui/button-guidelines.md` の運用ルールに沿ってボタン種別を選ぶ
 - タブ/表示切替は「実行ボタン」ではなくセグメントUIとして実装する
+- 再読み込み操作は「ページ主Reloadを1つ + 例外的なセクションReloadのみ」を原則にする
 - 1つのカード/モーダル内で `primary` を複数並べない（主操作は原則1つ）
 - 破壊的操作のみ `danger` を使い、戻る/閉じる/補助操作は `ghost` または `secondary` を使う
 - PR前に以下を必須実行する
@@ -557,20 +729,38 @@
 - `admin/:tournamentId` 配下と `user/:tournamentId` 配下で、同種UIは同じトーンに揃える。
 - セグメントUIには `aria-label` と `aria-pressed`（または `role="tablist"`/`role="tab"`）を付与し、キーボード操作時も状態が判別できるようにする。
 
-4. 視覚トークンの原則
+4. 再読み込み（Reload）の原則
+- 同一ページで同じデータ境界を再取得する Reload は1つに統一する（原則: ページヘッダー右上）。
+- セクション単位の Reload は例外であり、以下を満たす場合のみ置く:
+  - データソースが独立している
+  - 再取得コストが高く、部分更新の価値が明確
+  - セクションごとに権限差異または失敗復旧が必要
+- 更新系操作（保存/作成/削除）後は対象セクションを自動再取得し、手動Reloadを主導線にしない。
+- Reload は常に `secondary` 扱いとし、`primary` にしない。
+- Reload ボタンの近傍には最終更新時刻を表示し、「何が最新化されるか」を明示する。
+- `loading` 中は再クリック不可にし、`aria-label` で更新対象を明示する。
+
+5. 視覚トークンの原則
 - 色・余白・角丸は既存トークン（`packages/web/src/styles.css`）を優先し、個別色の直書きを増やさない。
 - 新しいUIパーツは既存コンポーネント（`Button`, `Field`, `Table`, `ReloadButton`）を再利用する。
 - 単発の例外スタイルを追加した場合は、後続で共通化できるかを必ず検討する。
 
-5. 実装時チェック（Definition of Done）
+6. 実装時チェック（Definition of Done）
 - 新規/変更UIが `docs/ui/button-guidelines.md` と矛盾しない。
 - active/inactive/hover/disabled の状態差が視認可能で、意味づけが一貫している。
 - 同一画面内で `primary` が複数存在しない。
 - 同一カード/モーダル内では主操作を1つに絞り、サブセクションの保存は `secondary` で扱う。
+- 同一データ境界に対する Reload が重複していない。
 - 影響範囲を `docs/ui/ui-map.md` に追記済み。
 - `pnpm --filter @utab/web typecheck` と `pnpm --filter @utab/web test` が通過している。
 
-6. レビュー観点（UI崩れ防止）
+7. レビュー観点（UI崩れ防止）
 - 「この操作は本当に `ghost` か？」を必ずレビューで確認する。
 - 「これはタブか、実行ボタンか？」を分離して命名・見た目を決める。
+- 「このReloadはどのデータ境界を更新するのか？」をレビューで明文化する。
 - 既存画面との比較スクリーンショットで、色調と操作階層の不整合を確認する。
+
+8. データソース導線の原則
+- 同じ目的（公式順位の確定）に対して、日常運用の主導線は1本にする（既定: `提出データ`）。
+- 例外レーン（`生結果データ`）は常設主導線に置かず、明示ラベル付きの高度運用導線として分離する。
+- 例外レーンを使った場合は、画面上で「例外モードで再計算した」ことが判別できる表示を必須にする。

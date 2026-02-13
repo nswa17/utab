@@ -12,6 +12,7 @@ const COMMON_BLOCKED_KEYS = new Set([
 const RESULT_BLOCKED_KEYS = new Set([
   ...COMMON_BLOCKED_KEYS,
   'comment',
+  'compile_source',
   'compile_options',
   'compile_warnings',
   'compile_diff_meta',
