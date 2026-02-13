@@ -6,6 +6,19 @@
     <div v-else-if="judge" class="card stack">
       <h4>{{ judge.name }}</h4>
       <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
+      <section v-if="participant === 'adjudicator' && actorOptions.length > 1" class="card soft stack actor-card">
+        <h5>{{ $t('あなたの情報') }}</h5>
+        <div class="row actor-switch" role="radiogroup" :aria-label="$t('ロール')">
+          <label v-for="option in actorOptions" :key="option.value" class="actor-option">
+            <input
+              type="radio"
+              :checked="actorMode === option.value"
+              @change="setActorMode(option.value)"
+            />
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
+      </section>
 
       <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
         <input
@@ -191,6 +204,26 @@ const judge = computed(() =>
 const roundConfig = computed(() =>
   rounds.rounds.find((item) => item.round === Number(round.value))
 )
+const teamFeedbackEnabled = computed(
+  () => roundConfig.value?.userDefinedData?.evaluate_from_teams !== false
+)
+const adjudicatorFeedbackEnabled = computed(
+  () => roundConfig.value?.userDefinedData?.evaluate_from_adjudicators !== false
+)
+const actorOptions = computed<Array<{ value: 'adjudicator' | 'team'; label: string }>>(() => {
+  if (participant.value !== 'adjudicator') return []
+  const options: Array<{ value: 'adjudicator' | 'team'; label: string }> = []
+  if (adjudicatorFeedbackEnabled.value) {
+    options.push({ value: 'adjudicator', label: t('ジャッジとして提出') })
+  }
+  if (teamFeedbackEnabled.value) {
+    options.push({
+      value: 'team',
+      label: evaluatorMode.value === 'speaker' ? t('スピーカーとして提出') : t('チームとして提出'),
+    })
+  }
+  return options
+})
 const evaluatorMode = computed(() => roundConfig.value?.userDefinedData?.evaluator_in_team ?? 'team')
 const useMatterManner = computed(
   () => roundConfig.value?.userDefinedData?.score_by_matter_manner !== false
@@ -270,6 +303,11 @@ const confirmButtonLabel = computed(() =>
     ? t('{seconds}秒後に送信できます', { seconds: confirmCountdown.value })
     : t('確認して送信')
 )
+
+function setActorMode(mode: 'adjudicator' | 'team') {
+  const nextQuery = { ...route.query, actor: mode }
+  router.replace({ query: nextQuery })
+}
 
 function startCountdown(seconds = 3) {
   clearCountdown(false)
@@ -382,6 +420,18 @@ watch(range, (next) => {
   score.value = next.default
 }, { immediate: true })
 
+watch(
+  [participant, actorOptions],
+  () => {
+    if (participant.value !== 'adjudicator') return
+    if (actorOptions.value.length === 0) return
+    const current = actorMode.value
+    if (actorOptions.value.some((option) => option.value === current)) return
+    setActorMode(actorOptions.value[0].value)
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   clearCountdown()
@@ -426,5 +476,30 @@ onUnmounted(() => {
 
 .confirm-grid .full {
   grid-column: 1 / -1;
+}
+
+.actor-card {
+  border: 1px solid var(--color-border);
+}
+
+.actor-card h5 {
+  margin: 0;
+}
+
+.actor-switch {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.actor-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12px;
 }
 </style>

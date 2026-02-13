@@ -7,13 +7,6 @@
           $t('最終更新: {time}', { time: lastRefreshedLabel })
         }}</span>
       </div>
-      <ReloadButton
-        class="header-reload"
-        @click="refresh"
-        :target="$t('ラウンド {round} 生結果', { round })"
-        :disabled="raw.loading"
-        :loading="raw.loading"
-      />
     </div>
 
     <div class="card stack">
@@ -44,7 +37,7 @@
     <div v-else class="card stack">
       <div class="row">
         <strong>{{ $t('{label} 結果', { label: labelDisplay(activeLabel) }) }}</strong>
-        <Button variant="danger" size="sm" @click="deleteAll">{{ $t('全削除') }}</Button>
+        <Button variant="danger" size="sm" @click="openDeleteAllModal">{{ $t('全削除') }}</Button>
       </div>
       <p class="muted">
         {{ $t('{count} 件', { count: activeResults.length }) }}
@@ -102,6 +95,24 @@
       </Field>
       <Button @click="saveEdit">{{ $t('保存') }}</Button>
     </div>
+
+    <div
+      v-if="deleteAllModalOpen"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteAllModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('全削除') }}</h4>
+        <p class="muted">{{ $t('このラウンドの結果をすべて削除しますか？') }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteAllModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="raw.loading" @click="confirmDeleteAll">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -111,7 +122,6 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import { useRawResultsStore } from '@/stores/raw-results'
 import { useTeamsStore } from '@/stores/teams'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
@@ -221,6 +231,7 @@ const roomOrderSummaries = computed(() => {
 const editing = ref(false)
 const editingId = ref<string | null>(null)
 const editPayload = ref('')
+const deleteAllModalOpen = ref(false)
 
 function format(value: any) {
   return JSON.stringify(value, null, 2)
@@ -327,9 +338,17 @@ async function remove(id?: string) {
   await refresh()
 }
 
-async function deleteAll() {
-  const ok = window.confirm(t('このラウンドの結果をすべて削除しますか？'))
-  if (!ok) return
+function openDeleteAllModal() {
+  if (raw.loading) return
+  deleteAllModalOpen.value = true
+}
+
+function closeDeleteAllModal() {
+  deleteAllModalOpen.value = false
+}
+
+async function confirmDeleteAll() {
+  closeDeleteAllModal()
   await raw.deleteRawResults(activeLabel.value, {
     tournamentId: tournamentId.value,
     round: round.value,
@@ -452,6 +471,29 @@ select {
 
 .header-reload {
   margin-left: auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .error {

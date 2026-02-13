@@ -12,13 +12,6 @@
         <RouterLink v-if="contextRound !== null" class="context-link" :to="contextRoundPath">
           {{ $t('対戦表設定に戻る') }}
         </RouterLink>
-        <ReloadButton
-          class="header-reload"
-          @click="refresh"
-          :target="$t('提出データ')"
-          :disabled="isLoading"
-          :loading="isLoading"
-        />
       </div>
     </div>
 
@@ -439,7 +432,6 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import Table from '@/components/common/Table.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import { getSideShortLabel } from '@/utils/side-labels'
 
 const route = useRoute()

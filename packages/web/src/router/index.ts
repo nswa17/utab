@@ -106,8 +106,18 @@ export function createAppRouter(options: RouterOptions = {}): Router {
         meta: { requiresAuth: true },
       },
       {
+        path: '/admin-embed/:tournamentId/reports',
+        component: AdminTournamentCompiled,
+        meta: { requiresAuth: true },
+      },
+      {
         path: '/admin-embed/:tournamentId/rounds/settings',
         component: AdminTournamentRounds,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/admin-embed/:tournamentId/rounds/:round/result',
+        component: AdminRoundResult,
         meta: { requiresAuth: true },
       },
       {

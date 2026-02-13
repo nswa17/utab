@@ -5,13 +5,6 @@
       <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
         $t('最終更新: {time}', { time: lastRefreshedLabel })
       }}</span>
-      <ReloadButton
-        class="section-reload"
-        @click="refresh"
-        :target="$t('ラウンド運営ハブ')"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
     </div>
 
     <LoadingState v-if="sectionLoading" />
@@ -40,7 +33,7 @@
               </span>
             </div>
             <div class="muted small">
-              {{ $t('提出') }}: {{ ballotSubmittedCount(round.round) }} / {{ ballotExpectedCount(round.round) }}
+              {{ $t('運営ステップ') }}: {{ roundCurrentStepLabel(round.round) }}
             </div>
           </button>
         </div>
@@ -73,7 +66,6 @@
                   </div>
                   <span class="task-state-chip">{{ task.stateLabel }}</span>
                 </div>
-                <span class="muted small">{{ task.dependency }}</span>
               </button>
               <span v-if="index < operationTasks.length - 1" class="task-flow-arrow" aria-hidden="true">›</span>
             </template>
@@ -90,27 +82,14 @@
             <p v-if="drawDependencyWarning" class="muted warning">
               {{ drawDependencyWarning }}
             </p>
+            <p class="muted small">
+              {{ $t('対戦生成と保存は対戦表設定で実行します。') }}
+            </p>
             <div class="row step-actions">
-              <Button
-                size="sm"
-                :disabled="isLoading || shouldBlockDrawGeneration"
-                @click="generateRoundDraw"
-              >
-                {{ $t('このラウンドの対戦を生成') }}
+              <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openAllocationPage">
+                {{ $t('対戦表設定を開く') }}
               </Button>
-              <span v-if="generateMessage" class="muted small">{{ generateMessage }}</span>
             </div>
-            <section class="stack inline-embed">
-              <div class="row inline-embed-head">
-                <strong>{{ $t('対戦表設定（この画面内）') }}</strong>
-              </div>
-              <iframe
-                class="inline-embed-frame"
-                :src="allocationEmbedUrl"
-                :title="$t('対戦表設定を開く')"
-                loading="lazy"
-              />
-            </section>
           </section>
 
           <section v-else-if="activeTask === 'publish'" class="card soft stack step-card">
@@ -121,7 +100,7 @@
             <template v-else>
               <div class="publish-switch-grid">
                 <label class="publish-switch-card">
-                  <span class="muted small">{{ $t('ドロー公開') }}</span>
+                  <span class="publish-switch-label">{{ $t('ドロー公開') }}</span>
                   <span class="toggle-switch">
                     <input
                       type="checkbox"
@@ -133,7 +112,7 @@
                   </span>
                 </label>
                 <label class="publish-switch-card">
-                  <span class="muted small">{{ $t('割り当て公開') }}</span>
+                  <span class="publish-switch-label">{{ $t('割り当て公開') }}</span>
                   <span class="toggle-switch">
                     <input
                       type="checkbox"
@@ -145,7 +124,7 @@
                   </span>
                 </label>
                 <label class="publish-switch-card">
-                  <span class="muted small">{{ $t('ドローをロック') }}</span>
+                  <span class="publish-switch-label">{{ $t('ドローをロック') }}</span>
                   <span class="toggle-switch">
                     <input
                       type="checkbox"
@@ -158,17 +137,11 @@
                 </label>
               </div>
               <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
-              <section class="stack inline-embed">
-                <div class="row inline-embed-head">
-                  <strong>{{ $t('生結果（この画面内）') }}</strong>
-                </div>
-                <iframe
-                  class="inline-embed-frame"
-                  :src="rawResultEmbedUrl"
-                  :title="$t('生結果を開く')"
-                  loading="lazy"
-                />
-              </section>
+              <div class="row step-actions">
+                <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openRawResultPage">
+                  {{ $t('生結果を開く') }}
+                </Button>
+              </div>
             </template>
           </section>
 
@@ -192,17 +165,11 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <section class="stack inline-embed">
-              <div class="row inline-embed-head">
-                <strong>{{ $t('提出一覧（この画面内）') }}</strong>
-              </div>
-              <iframe
-                class="inline-embed-frame"
-                :src="submissionsEmbedUrl"
-                :title="$t('提出一覧を開く')"
-                loading="lazy"
-              />
-            </section>
+            <div class="row step-actions">
+              <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openSubmissionsPage">
+                {{ $t('提出一覧を開く') }}
+              </Button>
+            </div>
           </section>
 
           <section v-else class="card soft stack step-card">
@@ -210,7 +177,7 @@
               <strong>4. {{ $t('集計設定') }}</strong>
             </div>
             <p class="muted small">
-              {{ $t('このラウンドまでを提出データで集計します。') }}
+              {{ $t('選択したラウンドを提出データで集計します。') }}
             </p>
             <p class="muted small">
               {{
@@ -219,6 +186,21 @@
                 })
               }}
             </p>
+            <div v-if="compileTargetRounds.length > 0" class="compile-round-picker">
+              <label
+                v-for="roundNumber in compileTargetRounds"
+                :key="`compile-round-${roundNumber}`"
+                class="compile-round-option"
+              >
+                <input
+                  type="checkbox"
+                  :checked="selectedCompileRounds.includes(roundNumber)"
+                  :disabled="isLoading || !selectedRoundPublished"
+                  @change="onCompileRoundToggle(roundNumber, $event)"
+                />
+                <span>{{ roundLabel(roundNumber) }}</span>
+              </label>
+            </div>
             <p v-if="selectedRoundBallotGapWarning" class="muted warning">
               {{ selectedRoundBallotGapWarning }}
             </p>
@@ -228,7 +210,7 @@
             <div class="row step-actions">
               <Button
                 size="sm"
-                :disabled="isLoading || compileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
                 @click="runCompileWithSource('submissions')"
               >
                 {{ $t('集計を実行') }}
@@ -236,27 +218,52 @@
               <Button
                 variant="secondary"
                 size="sm"
-                :disabled="isLoading || compileTargetRounds.length === 0 || !selectedRoundPublished"
-                @click="runForcedCompile"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished"
+                @click="openForceCompileModal"
               >
-                {{ $t('強制実行（生結果）') }}
+                {{ $t('強制実行') }}
               </Button>
               <span v-if="compileMessage" class="muted small">{{ compileMessage }}</span>
             </div>
-            <section class="stack inline-embed">
-              <div class="row inline-embed-head">
-                <strong>{{ $t('レポート（この画面内）') }}</strong>
-              </div>
-              <iframe
-                class="inline-embed-frame"
-                :src="reportsEmbedUrl"
-                :title="$t('レポートを開く')"
-                loading="lazy"
-              />
-            </section>
+            <div class="row step-actions">
+              <Button variant="secondary" size="sm" @click="openReportsPage">
+                {{ $t('レポートを開く') }}
+              </Button>
+            </div>
           </section>
         </template>
       </section>
+    </div>
+
+    <div
+      v-if="forceCompileModalOpen"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeForceCompileModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('強制実行の確認') }}</h4>
+        <p class="muted">
+          {{
+            $t(
+              '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
+            )
+          }}
+        </p>
+        <ul class="list compact">
+          <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
+          <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
+          <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
+        </ul>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeForceCompileModal">
+            {{ $t('キャンセル') }}
+          </Button>
+          <Button size="sm" :disabled="isLoading" @click="confirmForcedCompile">
+            {{ $t('強制実行する') }}
+          </Button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -266,9 +273,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
-import { api } from '@/utils/api'
 import { useRoundsStore } from '@/stores/rounds'
 import { useDrawsStore } from '@/stores/draws'
 import { useSubmissionsStore } from '@/stores/submissions'
@@ -297,9 +302,10 @@ const sectionLoading = ref(true)
 const lastRefreshedAt = ref<string>('')
 const actionError = ref('')
 const compileMessage = ref('')
-const generateMessage = ref('')
 const publishMessage = ref('')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
+const selectedCompileRounds = ref<number[]>([])
+const forceCompileModalOpen = ref(false)
 const publicationSaving = ref(false)
 const drawPublishDraft = reactive({
   drawOpened: false,
@@ -355,8 +361,11 @@ const compileTargetRounds = computed(() => {
     .filter((round) => round.round <= selectedRound.value!)
     .map((round) => Number(round.round))
 })
+const effectiveCompileTargetRounds = computed(() =>
+  compileTargetRounds.value.filter((roundNumber) => selectedCompileRounds.value.includes(roundNumber))
+)
 const compileTargetRoundsLabel = computed(() =>
-  compileTargetRounds.value.length > 0 ? compileTargetRounds.value.join(', ') : ''
+  effectiveCompileTargetRounds.value.length > 0 ? effectiveCompileTargetRounds.value.join(', ') : ''
 )
 const compiledSnapshotRoundSet = computed(() => {
   const rounds = Array.isArray(compiledStore.compiled?.rounds) ? compiledStore.compiled.rounds : []
@@ -369,36 +378,6 @@ const compiledSnapshotRoundSet = computed(() => {
 const snapshotIncludesSelectedRound = computed(() => {
   if (selectedRound.value === null) return false
   return compiledSnapshotRoundSet.value.has(selectedRound.value)
-})
-
-function buildEmbedUrl(path: string, query: Record<string, string | undefined>) {
-  const params = new URLSearchParams()
-  Object.entries(query).forEach(([key, value]) => {
-    if (!value) return
-    params.set(key, value)
-  })
-  params.set('embed', '1')
-  const queryString = params.toString()
-  return queryString.length > 0 ? `${path}?${queryString}` : path
-}
-
-const submissionsEmbedUrl = computed(() =>
-  buildEmbedUrl(`/admin/${tournamentId.value}/submissions`, {
-    round: selectedRound.value === null ? undefined : String(selectedRound.value),
-  })
-)
-const reportsEmbedUrl = computed(() =>
-  buildEmbedUrl(`/admin/${tournamentId.value}/reports`, {
-    round: selectedRound.value === null ? undefined : String(selectedRound.value),
-  })
-)
-const allocationEmbedUrl = computed(() => {
-  if (selectedRound.value === null) return `/admin/${tournamentId.value}/setup`
-  return buildEmbedUrl(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/allocation`, {})
-})
-const rawResultEmbedUrl = computed(() => {
-  if (selectedRound.value === null) return `/admin/${tournamentId.value}/setup`
-  return buildEmbedUrl(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/result`, {})
 })
 
 const compiledRoundSet = computed(() => {
@@ -548,9 +527,7 @@ function taskStateLabel(state: HubTaskState) {
   return t('実行可能')
 }
 
-const operationTasks = computed<
-  Array<{ key: HubTask; order: number; label: string; state: HubTaskState; stateLabel: string; dependency: string }>
->(() => {
+const operationTasks = computed<Array<{ key: HubTask; order: number; label: string; state: HubTaskState; stateLabel: string }>>(() => {
   const drawState: HubTaskState = selectedRoundHasDraw.value
     ? 'done'
     : shouldBlockDrawGeneration.value
@@ -579,10 +556,6 @@ const operationTasks = computed<
       label: t('対戦生成'),
       state: drawState,
       stateLabel: taskStateLabel(drawState),
-      dependency:
-        previousRoundNumbersForDraw.value.length === 0
-          ? t('開始ステップ')
-          : t('前段: {task}', { task: t('前ラウンド集計') }),
     },
     {
       key: 'publish',
@@ -590,7 +563,6 @@ const operationTasks = computed<
       label: t('公開/ロック'),
       state: publishState,
       stateLabel: taskStateLabel(publishState),
-      dependency: t('前段: {task}', { task: t('対戦生成') }),
     },
     {
       key: 'submissions',
@@ -598,7 +570,6 @@ const operationTasks = computed<
       label: t('提出状況'),
       state: submissionsState,
       stateLabel: taskStateLabel(submissionsState),
-      dependency: t('前段: {task}', { task: t('公開/ロック') }),
     },
     {
       key: 'compile',
@@ -606,7 +577,6 @@ const operationTasks = computed<
       label: t('集計設定'),
       state: compileState,
       stateLabel: taskStateLabel(compileState),
-      dependency: t('前段: {task}', { task: t('提出状況') }),
     },
   ]
 })
@@ -650,6 +620,26 @@ function roundStatus(roundNumber: number): RoundOperationStatus {
     hasDraw: Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0),
     isPublished: Boolean(draw?.drawOpened && draw?.allocationOpened),
   })
+}
+
+function roundCurrentStepLabel(roundNumber: number) {
+  const draw = drawsStore.draws.find((item) => Number(item.round) === roundNumber)
+  const hasDraw = Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
+  if (!hasDraw) return `1. ${t('対戦生成')}`
+  const published = Boolean(draw?.drawOpened && draw?.allocationOpened)
+  if (!published) return `2. ${t('公開/ロック')}`
+  const expected = ballotExpectedCount(roundNumber)
+  const submitted = ballotSubmittedCount(roundNumber)
+  const unknown = unknownSubmissionCount(roundNumber, 'ballot')
+  const hasGap = (expected > 0 && submitted < expected) || unknown > 0
+  if (hasGap) return `3. ${t('提出状況')}`
+  if (compiledRoundSet.value.has(roundNumber)) return `4. ${t('集計設定')} (${t('完了')})`
+  return `4. ${t('集計設定')}`
+}
+
+function roundLabel(roundNumber: number) {
+  const found = sortedRounds.value.find((round) => Number(round.round) === Number(roundNumber))
+  return found?.name || t('ラウンド {round}', { round: roundNumber })
 }
 
 function roundStatusLabel(status: RoundOperationStatus) {
@@ -730,9 +720,10 @@ function selectTask(task: HubTask) {
 }
 
 async function runCompileWithSource(source: 'submissions' | 'raw') {
-  if (selectedRound.value === null || compileTargetRounds.value.length === 0) return
+  if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
   compileMessage.value = ''
   actionError.value = ''
+  closeForceCompileModal()
   compileSource.value = source
   if (!selectedRoundPublished.value) {
     actionError.value = t('公開後に提出を回収します。先に公開/ロックで公開してください。')
@@ -744,17 +735,9 @@ async function runCompileWithSource(source: 'submissions' | 'raw') {
       t('選択ラウンドのチーム評価が揃っていないため、集計を実行できません。')
     return
   }
-  if (source === 'raw') {
-    const ok = window.confirm(
-      t(
-        '強制実行では生結果データを使用します。未提出・提出者不足・入力揺れがあると順位が不安定になる可能性があります。続行しますか？'
-      )
-    )
-    if (!ok) return
-  }
   const result = await compiledStore.runCompile(tournamentId.value, {
     source,
-    rounds: compileTargetRounds.value,
+    rounds: effectiveCompileTargetRounds.value,
   })
   if (!result) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
@@ -764,55 +747,62 @@ async function runCompileWithSource(source: 'submissions' | 'raw') {
   await compiledStore.fetchLatest(tournamentId.value)
 }
 
-async function runForcedCompile() {
+function onCompileRoundToggle(roundNumber: number, event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const checked = Boolean(input?.checked)
+  const current = new Set(selectedCompileRounds.value)
+  if (checked) current.add(roundNumber)
+  else current.delete(roundNumber)
+  selectedCompileRounds.value = compileTargetRounds.value.filter((round) => current.has(round))
+}
+
+function openForceCompileModal() {
+  if (
+    selectedRound.value === null ||
+    !selectedRoundPublished.value ||
+    effectiveCompileTargetRounds.value.length === 0 ||
+    isLoading.value
+  ) {
+    return
+  }
+  forceCompileModalOpen.value = true
+}
+
+function closeForceCompileModal() {
+  forceCompileModalOpen.value = false
+}
+
+async function confirmForcedCompile() {
   await runCompileWithSource('raw')
 }
 
-async function generateRoundDraw() {
+function openAllocationPage() {
   if (selectedRound.value === null) return
-  if (shouldBlockDrawGeneration.value) {
-    actionError.value =
-      drawDependencyWarning.value ||
-      t('対戦生成に必要な前ラウンド集計が不足しています。未集計: {rounds}', { rounds: '-' })
+  router.push(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/allocation`)
+}
+
+function openRawResultPage() {
+  if (selectedRound.value === null) return
+  router.push(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/result`)
+}
+
+function openSubmissionsPage() {
+  if (selectedRound.value === null) return
+  router.push({
+    path: `/admin/${tournamentId.value}/submissions`,
+    query: { round: String(selectedRound.value), context: 'round' },
+  })
+}
+
+function openReportsPage() {
+  if (selectedRound.value === null) {
+    router.push(`/admin/${tournamentId.value}/reports`)
     return
   }
-  const snapshotId = String(compiledStore.compiled?._id ?? '').trim()
-  const requiresSnapshot = previousRoundNumbersForDraw.value.length > 0
-  if (requiresSnapshot && !snapshotId) {
-    actionError.value = t('集計結果がありません。先に集計を実行してください。')
-    return
-  }
-  generateMessage.value = ''
-  actionError.value = ''
-  try {
-    const payload: Record<string, any> = {
-      tournamentId: tournamentId.value,
-      round: selectedRound.value,
-      rounds: previousRoundNumbersForDraw.value,
-    }
-    if (requiresSnapshot) payload.snapshotId = snapshotId
-    const res = await api.post('/allocations/teams', payload)
-    const allocation = Array.isArray(res.data?.data?.allocation) ? res.data.data.allocation : []
-    if (allocation.length === 0) {
-      actionError.value = t('対戦生成に失敗しました。')
-      return
-    }
-    const existing = drawsStore.draws.find((draw) => Number(draw.round) === selectedRound.value)
-    await drawsStore.upsertDraw({
-      tournamentId: tournamentId.value,
-      round: selectedRound.value,
-      allocation,
-      userDefinedData:
-        (res.data?.data?.userDefinedData as Record<string, any> | undefined) ?? existing?.userDefinedData,
-      drawOpened: Boolean(existing?.drawOpened),
-      allocationOpened: Boolean(existing?.allocationOpened),
-      locked: Boolean(existing?.locked),
-    })
-    generateMessage.value = t('対戦を生成しました。')
-    await drawsStore.fetchDraws(tournamentId.value)
-  } catch (err: any) {
-    actionError.value = err?.response?.data?.errors?.[0]?.message ?? t('対戦生成に失敗しました。')
-  }
+  router.push({
+    path: `/admin/${tournamentId.value}/reports`,
+    query: { round: String(selectedRound.value) },
+  })
 }
 
 async function saveDrawPublication(): Promise<boolean> {
@@ -883,6 +873,19 @@ watch(
 watch(selectedDraw, () => {
   syncPublishDraft()
 })
+
+watch(
+  compileTargetRounds,
+  (rounds) => {
+    const filtered = selectedCompileRounds.value.filter((round) => rounds.includes(round))
+    if (filtered.length > 0) {
+      selectedCompileRounds.value = filtered
+      return
+    }
+    selectedCompileRounds.value = rounds.slice()
+  },
+  { immediate: true }
+)
 
 watch(
   tournamentId,
@@ -1126,6 +1129,24 @@ watch(
   gap: var(--space-2);
 }
 
+.compile-round-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.compile-round-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  font-size: 12px;
+  color: var(--color-text);
+}
+
 .publish-switch-grid {
   display: grid;
   gap: var(--space-2);
@@ -1136,12 +1157,20 @@ watch(
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  min-height: 76px;
+  min-height: 88px;
   padding: var(--space-2);
   display: grid;
+  grid-template-rows: auto 1fr;
+  align-items: center;
   gap: var(--space-2);
-  align-content: center;
-  justify-items: center;
+}
+
+.publish-switch-label {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+  width: 100%;
+  text-align: left;
 }
 
 .toggle-switch {
@@ -1150,6 +1179,7 @@ watch(
   height: 30px;
   display: inline-flex;
   align-items: center;
+  justify-self: center;
 }
 
 .toggle-switch input {
@@ -1192,6 +1222,29 @@ watch(
 .toggle-switch input:focus-visible + .toggle-slider {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .setting-option {

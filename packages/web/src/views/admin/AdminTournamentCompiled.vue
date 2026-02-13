@@ -572,6 +572,37 @@
         </section>
       </template>
     </div>
+
+    <div
+      v-if="rawCompileConfirmOpen"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeRawCompileConfirm"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('強制実行の確認') }}</h4>
+        <p class="muted">
+          {{
+            $t(
+              '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
+            )
+          }}
+        </p>
+        <ul class="list compact">
+          <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
+          <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
+          <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
+        </ul>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeRawCompileConfirm">
+            {{ $t('キャンセル') }}
+          </Button>
+          <Button size="sm" :disabled="isLoading" @click="confirmRawCompile">
+            {{ $t('強制実行する') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -661,6 +692,7 @@ const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>(
 const compileSource = ref<'submissions' | 'raw'>('submissions')
 const showAdvancedSourceOptions = ref(false)
 const showRecomputeOptions = ref(false)
+const rawCompileConfirmOpen = ref(false)
 const compileRounds = ref<number[]>([])
 const compileExecuted = ref(false)
 const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
@@ -1828,17 +1860,13 @@ async function refresh() {
   lastRefreshedAt.value = new Date().toISOString()
 }
 
-async function runCompile() {
+function closeRawCompileConfirm() {
+  rawCompileConfirmOpen.value = false
+}
+
+async function executeCompile() {
   if (!tournamentId.value) return
   if (!canRunCompile.value) return
-  if (isRawSourceSelected.value) {
-    const ok = window.confirm(
-      t(
-        '生結果データで再計算します。通常運用は提出データです。例外モードで続行しますか？'
-      )
-    )
-    if (!ok) return
-  }
   const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
     source: compileSource.value,
@@ -1862,6 +1890,20 @@ async function runCompile() {
   if (latestCompiledId) {
     selectedCompiledId.value = latestCompiledId
   }
+}
+
+async function runCompile() {
+  if (!tournamentId.value || !canRunCompile.value) return
+  if (isRawSourceSelected.value) {
+    rawCompileConfirmOpen.value = true
+    return
+  }
+  await executeCompile()
+}
+
+async function confirmRawCompile() {
+  closeRawCompileConfirm()
+  await executeCompile()
 }
 
 async function refreshCompiledHistory() {
@@ -1988,6 +2030,29 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 <style scoped>
 .error {
   color: var(--color-danger);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .section-header {

@@ -37,8 +37,29 @@
           {{ $t('このチームに選択可能なスピーカーがいません。') }}
         </p>
         <template v-if="isAdjudicator">
-          <label class="field">
-            <span>{{ $t('ジャッジ名（ジャッジ評価）') }}</span>
+          <div class="stack">
+            <span>{{ $t('ロール') }}</span>
+            <div class="row role-switch" role="radiogroup" :aria-label="$t('ロール')">
+              <label class="role-option">
+                <input
+                  type="radio"
+                  :checked="adjudicatorRoleMode === 'adjudicator'"
+                  @change="setAdjudicatorRoleMode('adjudicator')"
+                />
+                <span>{{ $t('ジャッジとして提出') }}</span>
+              </label>
+              <label class="role-option">
+                <input
+                  type="radio"
+                  :checked="adjudicatorRoleMode === 'team'"
+                  @change="setAdjudicatorRoleMode('team')"
+                />
+                <span>{{ adjudicatorTeamRoleLabel }}</span>
+              </label>
+            </div>
+          </div>
+          <label v-if="adjudicatorRoleMode === 'adjudicator'" class="field">
+            <span>{{ $t('ジャッジ名') }}</span>
             <select v-model="teamIdentityId">
               <option value="">{{ $t('未選択') }}</option>
               <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
@@ -46,8 +67,8 @@
               </option>
             </select>
           </label>
-          <label class="field">
-            <span>{{ $t('チーム名（ジャッジ評価）') }}</span>
+          <label v-if="adjudicatorRoleMode === 'team'" class="field">
+            <span>{{ $t('チーム名') }}</span>
             <select v-model="judgeFeedbackTeamIdentityId">
               <option value="">{{ $t('未選択') }}</option>
               <option v-for="team in teamsStore.teams" :key="team._id" :value="team._id">
@@ -55,8 +76,8 @@
               </option>
             </select>
           </label>
-          <label v-if="judgeFeedbackSpeakerSelectionRequired" class="field">
-            <span>{{ $t('スピーカー名（ジャッジ評価）') }}</span>
+          <label v-if="adjudicatorRoleMode === 'team' && judgeFeedbackSpeakerSelectionRequired" class="field">
+            <span>{{ $t('スピーカー名') }}</span>
             <select
               v-model="judgeFeedbackSpeakerIdentityId"
               :disabled="!judgeFeedbackTeamIdentityId || judgeFeedbackSelectableSpeakers.length === 0"
@@ -71,11 +92,19 @@
               </option>
             </select>
           </label>
-          <p v-if="judgeFeedbackSpeakerSelectionRequired && !judgeFeedbackTeamIdentityId" class="muted">
+          <p
+            v-if="
+              adjudicatorRoleMode === 'team' &&
+              judgeFeedbackSpeakerSelectionRequired &&
+              !judgeFeedbackTeamIdentityId
+            "
+            class="muted"
+          >
             {{ $t('先にチームを選択してください。') }}
           </p>
           <p
             v-if="
+              adjudicatorRoleMode === 'team' &&
               judgeFeedbackSpeakerSelectionRequired &&
               judgeFeedbackTeamIdentityId &&
               judgeFeedbackSelectableSpeakers.length === 0
@@ -146,8 +175,9 @@
                     <strong>{{ teamName(row.teams.opp) }}</strong>
                   </div>
                 </div>
-                <div v-if="adjudicatorAllocationVisible(round.round)" class="muted tiny">
-                  {{ $t('チェア:') }} {{ adjudicatorNames(row.chairs) }}
+                <div v-if="adjudicatorAllocationVisible(round.round)" class="draw-chair-line">
+                  <span class="draw-chair-label">{{ $t('チェア:') }}</span>
+                  <span class="draw-chair-names">{{ adjudicatorNames(row.chairs) }}</span>
                 </div>
               </div>
             </div>
@@ -384,11 +414,19 @@ const judgeFeedbackSpeakerSelectionRequired = computed(() =>
     )
   })
 )
+const adjudicatorRoleMode = ref<'adjudicator' | 'team'>('adjudicator')
+const adjudicatorTeamRoleLabel = computed(() =>
+  judgeFeedbackSpeakerSelectionRequired.value ? t('スピーカーとして提出') : t('チームとして提出')
+)
 
 const judgeFeedbackSelectableSpeakers = computed(() => {
   if (!judgeFeedbackTeamIdentityId.value) return []
   return speakersForTeam(judgeFeedbackTeamIdentityId.value)
 })
+
+function setAdjudicatorRoleMode(mode: 'adjudicator' | 'team') {
+  adjudicatorRoleMode.value = mode
+}
 
 const isLoading = computed(
   () =>
@@ -921,6 +959,17 @@ watch(
 watch([activeSubmittedEntityId, speakerIdentityId, speakerSelectionRequired], () => {
   refreshTaskSubmissions()
 })
+
+watch(adjudicatorRoleMode, (mode) => {
+  if (!isAdjudicator.value) return
+  if (mode === 'adjudicator') {
+    judgeFeedbackTeamIdentityId.value = ''
+    judgeFeedbackSpeakerIdentityId.value = ''
+    return
+  }
+  teamIdentityId.value = ''
+})
+
 watch(
   [judgeFeedbackTeamIdentityId, judgeFeedbackSpeakerIdentityId, judgeFeedbackSpeakerSelectionRequired],
   () => {
@@ -931,6 +980,9 @@ watch(
 watch(
   [participant, tournamentId, () => teamsStore.teams.length, () => route.query.viewMode],
   () => {
+    if (!isAdjudicator.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+    }
     if (!isAudience.value) return
     if (route.query.viewMode === 'card' || route.query.viewMode === 'table') return
     router.replace({
@@ -939,6 +991,24 @@ watch(
         viewMode: 'table',
       },
     })
+  },
+  { immediate: true }
+)
+
+watch(
+  [isAdjudicator, teamIdentityId, judgeFeedbackTeamIdentityId],
+  () => {
+    if (!isAdjudicator.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+      return
+    }
+    if (teamIdentityId.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+      return
+    }
+    if (judgeFeedbackTeamIdentityId.value) {
+      adjudicatorRoleMode.value = 'team'
+    }
   },
   { immediate: true }
 )
@@ -997,6 +1067,23 @@ select {
 
 .tight {
   gap: 4px;
+}
+
+.role-switch {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.role-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  font-size: 12px;
+  color: var(--color-text);
 }
 
 .compact-round {
@@ -1083,6 +1170,24 @@ select {
   padding: 8px 10px;
   display: grid;
   gap: 6px;
+}
+
+.draw-chair-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.draw-chair-label {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.draw-chair-names {
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .compact-draw-list {

@@ -13,13 +13,6 @@
           $t('最終更新: {time}', { time: lastRefreshedLabel })
         }}</span>
       </div>
-      <ReloadButton
-        class="header-reload"
-        @click="refresh"
-        :target="roundHeading"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="adjudicatorImportInfo" class="muted import-info">{{ adjudicatorImportInfo }}</p>
@@ -457,7 +450,7 @@
               </span>
             </label>
             <span class="action-spacer"></span>
-            <Button variant="danger" size="sm" @click="deleteCurrentDraw" :disabled="!currentDraw">
+            <Button variant="danger" size="sm" @click="openDeleteDrawModal" :disabled="!currentDraw">
               {{ $t('削除') }}
             </Button>
           </div>
@@ -909,6 +902,24 @@
       </section>
     </div>
 
+    <div
+      v-if="showDeleteDrawModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteDrawModal"
+    >
+      <section class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('ドロー削除') }}</h4>
+        <p class="muted">{{ $t('このドローを削除しますか？') }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteCurrentDraw">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </section>
+    </div>
+
     <aside v-if="displayDetail" class="floating-detail card stack">
       <div class="row">
         <strong>{{ detailPanelLabel }}</strong>
@@ -946,7 +957,6 @@ import { useStylesStore } from '@/stores/styles'
 import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import {
@@ -989,6 +999,7 @@ const savedDrawId = ref<string | null>(null)
 const generatedUserDefinedData = ref<Record<string, any> | null>(null)
 const showAutoGenerateModal = ref(false)
 const showAdjudicatorImportModal = ref(false)
+const showDeleteDrawModal = ref(false)
 const adjudicatorImportText = ref('')
 const adjudicatorImportMode = ref<AdjudicatorImportMode>('replace')
 const adjudicatorImportError = ref<string | null>(null)
@@ -2215,10 +2226,18 @@ const unassignedAdjudicators = computed(() => {
   return availableAdjudicators.value.filter((adj) => !assigned.has(adj._id))
 })
 
-async function deleteCurrentDraw() {
+function openDeleteDrawModal() {
+  if (!currentDraw.value?._id || isLoading.value) return
+  showDeleteDrawModal.value = true
+}
+
+function closeDeleteDrawModal() {
+  showDeleteDrawModal.value = false
+}
+
+async function confirmDeleteCurrentDraw() {
   if (!currentDraw.value?._id) return
-  const ok = window.confirm(t('このドローを削除しますか？'))
-  if (!ok) return
+  closeDeleteDrawModal()
   const deleted = await draws.deleteDraw(currentDraw.value._id, tournamentId.value)
   if (deleted) {
     syncFromDraw(null)

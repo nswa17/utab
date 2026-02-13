@@ -119,6 +119,24 @@
       </div>
       <textarea v-else v-model="editPayload" rows="6" />
     </div>
+
+    <div
+      v-if="deleteTarget"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('削除') }}</h4>
+        <p class="muted">{{ $t('この結果を削除しますか？') }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="results.loading" @click="confirmDeleteResult">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -164,6 +182,7 @@ const editObject = ref<any>(null)
 const editStandings = ref<
   Array<{ name: string; rank: number | null; points: number | null; raw: Record<string, unknown> }>
 >([])
+const deleteTarget = ref<Result | null>(null)
 const useStructured = ref(false)
 const structuredAvailable = computed(() => isStandingsPayload(editObject.value))
 
@@ -280,10 +299,19 @@ async function saveEdit() {
   }
 }
 
-async function remove(result: Result) {
-  const ok = window.confirm(t('この結果を削除しますか？'))
-  if (!ok) return
-  await results.deleteResult(props.tournamentId, result._id)
+function closeDeleteModal() {
+  deleteTarget.value = null
+}
+
+async function confirmDeleteResult() {
+  const target = deleteTarget.value
+  if (!target) return
+  closeDeleteModal()
+  await results.deleteResult(props.tournamentId, target._id)
+}
+
+function remove(result: Result) {
+  deleteTarget.value = result
 }
 
 watch(
@@ -319,6 +347,29 @@ onMounted(() => {
 .result-item {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .standings-preview {

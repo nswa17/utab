@@ -13,13 +13,6 @@
       <span v-if="lastRefreshedLabel" class="muted small header-meta">{{
         $t('最終更新: {time}', { time: lastRefreshedLabel })
       }}</span>
-      <ReloadButton
-        class="header-reload"
-        @click="refreshSection"
-        :target="$t('大会情報')"
-        :disabled="sectionLoading"
-        :loading="sectionLoading"
-      />
     </div>
     <LoadingState v-if="sectionLoading" />
     <template v-else>
@@ -99,7 +92,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/common/Button.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useTournamentStore } from '@/stores/tournament'

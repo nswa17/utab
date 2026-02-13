@@ -88,6 +88,7 @@ const en = {
   '{name} は利用不可': '{name} is unavailable',
   あなたの情報: 'Your details',
   いいえ: 'No',
+  キャンセル: 'Cancel',
   ここにチームをドロップ: 'Drop team here',
   ここに会場をドロップ: 'Drop venue here',
   'このドローを削除しますか？': 'Delete this draw?',
@@ -174,6 +175,8 @@ const en = {
     'Compile using submission data up to this round.',
   'このラウンドまでを生結果データで集計します。':
     'Compile using raw results up to this round.',
+  対戦生成と保存は対戦表設定で実行します。:
+    'Generate and save pairings from draw settings.',
   '集計対象ラウンド: {rounds}': 'Compile rounds: {rounds}',
   '次ラウンド: {round}': 'Next round: {round}',
   '対象ラウンド: {round}': 'Target round: {round}',
@@ -183,7 +186,18 @@ const en = {
   '生結果（この画面内）': 'Raw results (inline)',
   '提出一覧（この画面内）': 'Submissions (inline)',
   'レポート（この画面内）': 'Reports (inline)',
+  強制実行: 'Force run',
+  強制実行の確認: 'Confirm force run',
+  強制実行する: 'Force run now',
   '強制実行（生結果）': 'Force run (raw results)',
+  '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
+    'Force run uses raw-result source. Ranking may become unstable when it differs from submissions or submitter data is incomplete.',
+  '未提出・重複提出があると結果が偏る可能性があります。':
+    'Missing or duplicate submissions may bias the results.',
+  '提出者ID不足のデータは集計漏れ・誤集計の原因になります。':
+    'Rows missing submitter IDs may cause omitted or incorrect aggregation.',
+  '提出ソースが混在している場合、直近の入力で上書きされることがあります。':
+    'Mixed submission sources can overwrite each other with latest inputs.',
   '強制実行では生結果データを使用します。未提出・提出者不足・入力揺れがあると順位が不安定になる可能性があります。続行しますか？':
     'Force run uses raw results. Missing submissions/submitter gaps/input inconsistencies may destabilize rankings. Continue?',
   '次ラウンドが未作成です。先にラウンドを追加してください。':
@@ -297,6 +311,7 @@ const en = {
   チーム方式: 'Team method',
   'チーム/スピーカーからのフィードバック入力を有効にします。':
     'Enable feedback submissions from teams/speakers.',
+  ドロー削除: 'Delete draw',
   'データが不足しています。': 'Not enough data.',
   トレーニー: 'Trainee',
   'トレーニー (ドラッグ)': 'Trainee (drag)',
@@ -417,6 +432,7 @@ const en = {
   '{target}を再読み込み': 'Reload {target}',
   '最終更新: {time}': 'Last updated: {time}',
   '対戦表更新: {time}': 'Draw updated: {time}',
+  通常ラウンド: 'Standard round',
   通常運用: 'Standard operation',
   例外運用: 'Exceptional operation',
   例外モード: 'Exception mode',
@@ -440,6 +456,8 @@ const en = {
   勝利数の差が大きい: 'Large win count difference',
   勝者: 'Winner',
   勝者を選択: 'Select winner',
+  ラウンド削除: 'Delete round',
+  'ラウンド {round} を削除しますか？': 'Delete round {round}?',
   引き分け: 'Draw',
   '未選択で引き分けとして送信できます。': 'Leave unselected to submit as a draw.',
   '勝者（{round}）': 'Winner in {round}',

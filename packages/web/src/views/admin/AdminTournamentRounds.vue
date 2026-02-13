@@ -5,13 +5,6 @@
       <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
         $t('最終更新: {time}', { time: lastRefreshedLabel })
       }}</span>
-      <ReloadButton
-        class="section-reload"
-        @click="refresh"
-        :target="$t('ラウンド詳細設定')"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
     </div>
 
     <div v-if="!isEmbeddedRoute && !sectionLoading" class="card stack">
@@ -29,9 +22,9 @@
       {{ $t('ラウンドがまだありません。') }}
     </p>
 
-    <div v-else class="stack round-cards">
+    <div v-else class="stack round-cards" :class="{ embed: isEmbeddedRoute }">
       <article v-for="round in displayRounds" :key="round._id" class="card stack round-card">
-        <div class="stack round-head">
+        <div v-if="!isEmbeddedRoute" class="stack round-head">
           <div class="row round-head-row">
             <button type="button" class="round-toggle" @click="toggleRound(round._id)">
               <span class="toggle-icon" :class="{ open: isExpanded(round._id) }" aria-hidden="true">
@@ -55,14 +48,14 @@
               </div>
             </button>
             <div v-if="!isEmbeddedRoute" class="row round-head-actions">
-              <Button variant="danger" size="sm" class="round-delete" @click="removeRound(round._id)">
+              <Button variant="danger" size="sm" class="round-delete" @click="requestRemoveRound(round._id)">
                 {{ $t('削除') }}
               </Button>
             </div>
           </div>
         </div>
 
-        <div v-show="isExpanded(round._id)" class="stack round-body">
+        <div v-show="isEmbeddedRoute || isExpanded(round._id)" class="stack round-body">
           <div class="card soft stack round-settings-frame">
             <div class="grid status-grid">
               <div class="card soft stack status-card">
@@ -571,6 +564,30 @@
         <p v-else class="muted small">{{ $t('ラウンドがまだありません。') }}</p>
       </div>
     </div>
+
+    <div
+      v-if="roundDeleteModalRound"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeRoundDeleteModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('ラウンド削除') }}</h4>
+        <p class="muted">
+          {{
+            $t('ラウンド {round} を削除しますか？', {
+              round: roundDeleteModalRound.name || $t('ラウンド {round}', { round: roundDeleteModalRound.round }),
+            })
+          }}
+        </p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeRoundDeleteModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRound">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -580,7 +597,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useRoundsStore } from '@/stores/rounds'
 import { useDrawsStore } from '@/stores/draws'
@@ -618,6 +634,7 @@ const displayRounds = computed(() => {
 const expandedRounds = ref<Record<string, boolean>>({})
 const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
+const roundDeleteModalId = ref<string | null>(null)
 const sectionLoading = ref(true)
 const lastRefreshedAt = ref<string>('')
 const isLoading = computed(
@@ -633,6 +650,10 @@ const lastRefreshedLabel = computed(() => {
   if (!lastRefreshedAt.value) return ''
   const date = new Date(lastRefreshedAt.value)
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
+})
+const roundDeleteModalRound = computed(() => {
+  if (!roundDeleteModalId.value) return null
+  return sortedRounds.value.find((round) => round._id === roundDeleteModalId.value) ?? null
 })
 
 function defaultRoundUserDefined() {
@@ -1281,9 +1302,18 @@ async function onAdjudicatorAllocationChange(round: any, event: Event) {
   })
 }
 
-async function removeRound(id: string) {
-  const ok = window.confirm(t('ラウンドを削除しますか？'))
-  if (!ok) return
+function requestRemoveRound(id: string) {
+  roundDeleteModalId.value = id
+}
+
+function closeRoundDeleteModal() {
+  roundDeleteModalId.value = null
+}
+
+async function confirmRemoveRound() {
+  const id = roundDeleteModalId.value
+  if (!id) return
+  closeRoundDeleteModal()
   const deleted = await roundsStore.deleteRound(tournamentId.value, id)
   if (deleted) {
     const next = { ...expandedRounds.value }
@@ -1364,6 +1394,17 @@ watch(
 
 .round-card {
   padding: var(--space-4);
+}
+
+.round-cards.embed .round-card {
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.round-cards.embed .round-body {
+  padding-top: 0;
 }
 
 .round-head {
@@ -1682,6 +1723,12 @@ watch(
   width: 100%;
   max-height: 90vh;
   overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .missing-modal {

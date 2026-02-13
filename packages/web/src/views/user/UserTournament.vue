@@ -2,6 +2,9 @@
   <section class="stack">
     <div class="stack header-stack">
       <div class="row tournament-header">
+        <Button variant="secondary" size="sm" class="tournament-list-back" to="/user">
+          ← {{ $t('大会一覧') }}
+        </Button>
         <div v-if="participantUrl" class="header-qr-slot">
           <button
             type="button"
@@ -113,6 +116,7 @@ import QRCode from 'qrcode'
 import { useTournamentStore } from '@/stores/tournament'
 import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import Button from '@/components/common/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -277,6 +281,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-3);
+}
+
+.tournament-list-back {
+  flex-shrink: 0;
 }
 
 .tournament-title {

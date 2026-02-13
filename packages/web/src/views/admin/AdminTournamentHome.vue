@@ -5,13 +5,6 @@
       <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
         $t('最終更新: {time}', { time: lastRefreshedLabel })
       }}</span>
-      <ReloadButton
-        class="section-reload"
-        @click="refresh"
-        :target="activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理')"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
     </div>
     <div class="row setup-section-switch">
       <button
@@ -235,7 +228,7 @@
               :id="id"
               :aria-describedby="describedBy"
             >
-              <option value="standard">{{ $t('通常運用') }}</option>
+              <option value="standard">{{ $t('通常ラウンド') }}</option>
               <option value="break">{{ $t('ブレイク') }}</option>
             </select>
           </Field>
@@ -254,77 +247,83 @@
             :key="round._id"
             class="row setup-round-item"
           >
-            <div v-if="setupRoundEditingId !== round._id" class="stack tight">
+            <div class="stack tight">
               <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
               <span class="muted small">
                 {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
               </span>
             </div>
-            <div v-else class="grid setup-round-edit-grid">
-              <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="setupRoundEditForm.round"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  type="number"
-                  min="1"
-                />
-              </Field>
-              <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
-                <input
-                  v-model="setupRoundEditForm.name"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  type="text"
-                />
-              </Field>
-              <Field :label="$t('種類')" v-slot="{ id, describedBy }">
-                <select
-                  v-model="setupRoundEditForm.type"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                >
-                  <option value="standard">{{ $t('通常運用') }}</option>
-                  <option value="break">{{ $t('ブレイク') }}</option>
-                </select>
-              </Field>
-            </div>
-            <div class="row setup-round-item-actions">
-              <template v-if="setupRoundEditingId !== round._id">
-                <Button variant="ghost" size="sm" @click="startEditRoundFromSetup(round)">
-                  {{ $t('編集') }}
-                </Button>
-              </template>
-              <template v-else>
-                <Button size="sm" :disabled="isLoading" @click="saveEditRoundFromSetup(round)">
-                  {{ $t('保存') }}
-                </Button>
-                <Button variant="ghost" size="sm" :disabled="isLoading" @click="cancelEditRoundFromSetup">
-                  {{ $t('キャンセル') }}
-                </Button>
-              </template>
-            </div>
-            <p v-if="setupRoundEditingId === round._id && setupRoundEditError" class="error small">
-              {{ setupRoundEditError }}
-            </p>
-            <details
-              v-if="setupRoundEditingId !== round._id"
-              class="setup-round-details"
-              @toggle="onSetupRoundDetailsToggle(round._id, $event)"
-            >
+            <details class="setup-round-details" @toggle="onSetupRoundDetailsToggle(round._id, $event)">
               <summary class="row setup-round-details-summary">
                 <strong>{{ $t('ラウンド詳細設定') }}</strong>
                 <span class="muted small">
                   {{ $t('このラウンドの公開・採点・ブレイク設定を編集します。') }}
                 </span>
               </summary>
-              <iframe
-                v-if="isSetupRoundDetailsOpen(round._id)"
-                class="setup-round-details-frame"
-                :src="roundSettingsEmbedUrl(round.round)"
-                :title="$t('ラウンド詳細設定')"
-                loading="lazy"
-              />
+              <div v-if="isSetupRoundDetailsOpen(round._id)" class="stack setup-round-details-body">
+                <section class="card soft stack setup-round-basic-panel">
+                  <div class="row setup-round-basic-head">
+                    <strong>{{ $t('基本情報') }}</strong>
+                    <template v-if="setupRoundEditingId !== round._id">
+                      <Button variant="ghost" size="sm" @click.stop="startEditRoundFromSetup(round)">
+                        {{ $t('編集') }}
+                      </Button>
+                    </template>
+                  </div>
+                  <div v-if="setupRoundEditingId === round._id" class="stack">
+                    <div class="grid setup-round-edit-grid">
+                      <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
+                        <input
+                          v-model.number="setupRoundEditForm.round"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          type="number"
+                          min="1"
+                        />
+                      </Field>
+                      <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+                        <input
+                          v-model="setupRoundEditForm.name"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          type="text"
+                        />
+                      </Field>
+                      <Field :label="$t('種類')" v-slot="{ id, describedBy }">
+                        <select
+                          v-model="setupRoundEditForm.type"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                        >
+                          <option value="standard">{{ $t('通常ラウンド') }}</option>
+                          <option value="break">{{ $t('ブレイク') }}</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <div class="row setup-round-item-actions">
+                      <Button size="sm" :disabled="isLoading" @click="saveEditRoundFromSetup(round)">
+                        {{ $t('保存') }}
+                      </Button>
+                      <Button variant="ghost" size="sm" :disabled="isLoading" @click="cancelEditRoundFromSetup">
+                        {{ $t('キャンセル') }}
+                      </Button>
+                    </div>
+                    <p v-if="setupRoundEditError" class="error small">
+                      {{ setupRoundEditError }}
+                    </p>
+                  </div>
+                  <p v-else class="muted small">
+                    {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
+                  </p>
+                </section>
+
+                <iframe
+                  class="setup-round-details-frame"
+                  :src="roundSettingsEmbedUrl(round.round)"
+                  :title="$t('ラウンド詳細設定')"
+                  loading="lazy"
+                />
+              </div>
               <p v-else class="muted small setup-round-details-placeholder">
                 {{ $t('展開すると詳細設定を読み込みます。') }}
               </p>
@@ -1243,6 +1242,24 @@
         </div>
       </div>
     </div>
+
+    <div
+      v-if="activeSection === 'data' && deleteEntityModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteEntityModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('削除') }}</h4>
+        <p class="muted">{{ deleteEntityPrompt }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -1269,7 +1286,6 @@ import {
 } from '@/utils/round-defaults'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 
 const route = useRoute()
@@ -1416,6 +1432,8 @@ const speakerLimit = ref(20)
 const institutionLimit = ref(20)
 
 const editingEntity = ref<{ type: string; id: string } | null>(null)
+type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institution'
+const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
 const entityForm = reactive<any>({
   name: '',
   institutionId: '',
@@ -1435,6 +1453,15 @@ const editAdjudicatorConflictSearch = ref('')
 const entityError = ref<string | null>(null)
 const detailRows = ref<any[]>([])
 const csvError = ref<string | null>(null)
+const deleteEntityPrompt = computed(() => {
+  if (!deleteEntityModal.value) return ''
+  const { type } = deleteEntityModal.value
+  if (type === 'team') return t('チームを削除しますか？')
+  if (type === 'adjudicator') return t('ジャッジを削除しますか？')
+  if (type === 'venue') return t('会場を削除しますか？')
+  if (type === 'speaker') return t('スピーカーを削除しますか？')
+  return t('機関を削除しますか？')
+})
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
 const setupSuggestedRoundNumber = computed(() => {
@@ -1778,7 +1805,7 @@ async function saveRoundDefaults() {
 
 function roundTypeLabel(round: any) {
   const isBreak = Boolean(round?.userDefinedData?.break?.enabled)
-  return isBreak ? t('ブレイク') : t('通常運用')
+  return isBreak ? t('ブレイク') : t('通常ラウンド')
 }
 
 function roundSettingsEmbedUrl(roundNumber: number) {
@@ -1795,9 +1822,13 @@ function isSetupRoundDetailsOpen(roundId: string) {
 
 function onSetupRoundDetailsToggle(roundId: string, event: Event) {
   const details = event.target as HTMLDetailsElement | null
+  const isOpen = Boolean(details?.open)
   setupRoundDetailsOpen.value = {
     ...setupRoundDetailsOpen.value,
-    [roundId]: Boolean(details?.open),
+    [roundId]: isOpen,
+  }
+  if (!isOpen && setupRoundEditingId.value === roundId) {
+    cancelEditRoundFromSetup()
   }
 }
 
@@ -2117,34 +2148,56 @@ async function handleCreateInstitution() {
   institutionForm.priority = 1
 }
 
-async function removeTeam(id: string) {
-  const ok = window.confirm(t('チームを削除しますか？'))
-  if (!ok) return
-  await teams.deleteTeam(tournamentId.value, id)
+function openDeleteEntityModal(type: DeleteEntityType, id: string) {
+  if (!id) return
+  deleteEntityModal.value = { type, id }
 }
 
-async function removeAdjudicator(id: string) {
-  const ok = window.confirm(t('ジャッジを削除しますか？'))
-  if (!ok) return
-  await adjudicators.deleteAdjudicator(tournamentId.value, id)
+function closeDeleteEntityModal() {
+  deleteEntityModal.value = null
 }
 
-async function removeVenue(id: string) {
-  const ok = window.confirm(t('会場を削除しますか？'))
-  if (!ok) return
-  await venues.deleteVenue(tournamentId.value, id)
+async function confirmDeleteEntity() {
+  const modal = deleteEntityModal.value
+  if (!modal) return
+  closeDeleteEntityModal()
+  if (modal.type === 'team') {
+    await teams.deleteTeam(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'adjudicator') {
+    await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'venue') {
+    await venues.deleteVenue(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'speaker') {
+    await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    return
+  }
+  await institutions.deleteInstitution(tournamentId.value, modal.id)
 }
 
-async function removeSpeaker(id: string) {
-  const ok = window.confirm(t('スピーカーを削除しますか？'))
-  if (!ok) return
-  await speakers.deleteSpeaker(tournamentId.value, id)
+function removeTeam(id: string) {
+  openDeleteEntityModal('team', id)
 }
 
-async function removeInstitution(id: string) {
-  const ok = window.confirm(t('機関を削除しますか？'))
-  if (!ok) return
-  await institutions.deleteInstitution(tournamentId.value, id)
+function removeAdjudicator(id: string) {
+  openDeleteEntityModal('adjudicator', id)
+}
+
+function removeVenue(id: string) {
+  openDeleteEntityModal('venue', id)
+}
+
+function removeSpeaker(id: string) {
+  openDeleteEntityModal('speaker', id)
+}
+
+function removeInstitution(id: string) {
+  openDeleteEntityModal('institution', id)
 }
 
 function startEditEntity(type: string, entity: any) {
@@ -2707,15 +2760,51 @@ function onGlobalKeydown(event: KeyboardEvent) {
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
+  position: relative;
+  padding-right: 34px;
 }
 
 .setup-round-details-summary::-webkit-details-marker {
   display: none;
 }
 
+.setup-round-details-summary::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-muted);
+  border-bottom: 2px solid var(--color-muted);
+  transform: translateY(-60%) rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.setup-round-details[open] .setup-round-details-summary::after {
+  transform: translateY(-40%) rotate(225deg);
+}
+
+.setup-round-details-body {
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.setup-round-basic-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.setup-round-basic-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .setup-round-details-frame {
   width: 100%;
-  min-height: 720px;
+  min-height: 420px;
+  height: clamp(420px, 56vh, 620px);
   border: none;
   display: block;
   background: var(--color-surface);
@@ -3154,6 +3243,12 @@ textarea {
   width: min(980px, 100%);
   max-height: calc(100vh - 80px);
   overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .entity-edit-modal {

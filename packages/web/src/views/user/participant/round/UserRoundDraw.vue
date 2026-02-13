@@ -57,18 +57,18 @@
               <strong>{{ teamName(row.teams.opp) }}</strong>
             </div>
           </div>
-          <div v-if="adjudicatorAllocationVisible" class="stack">
-            <div class="row">
-              <span class="muted">{{ $t('チェア:') }}</span>
-              <span>{{ adjudicatorNames(row.chairs) }}</span>
+          <div v-if="adjudicatorAllocationVisible" class="stack draw-adjudicators">
+            <div class="draw-adj-row">
+              <span class="draw-adj-label">{{ $t('チェア:') }}</span>
+              <span class="draw-adj-names">{{ adjudicatorNames(row.chairs) }}</span>
             </div>
-            <div class="row">
-              <span class="muted">{{ $t('パネル:') }}</span>
-              <span>{{ adjudicatorNames(row.panels) }}</span>
+            <div class="draw-adj-row">
+              <span class="draw-adj-label">{{ $t('パネル:') }}</span>
+              <span class="draw-adj-names">{{ adjudicatorNames(row.panels) }}</span>
             </div>
-            <div class="row">
-              <span class="muted">{{ $t('トレーニー:') }}</span>
-              <span>{{ adjudicatorNames(row.trainees) }}</span>
+            <div class="draw-adj-row">
+              <span class="draw-adj-label">{{ $t('トレーニー:') }}</span>
+              <span class="draw-adj-names">{{ adjudicatorNames(row.trainees) }}</span>
             </div>
           </div>
         </div>
@@ -389,6 +389,28 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 2px 8px;
+}
+
+.draw-adjudicators {
+  gap: 6px;
+}
+
+.draw-adj-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.draw-adj-label {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.draw-adj-names {
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .error {
