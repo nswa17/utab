@@ -437,7 +437,7 @@ function canonicalBallotDuplicateKey(submission: any): string {
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.map((item) => String(item)).map((item) => item.trim()).filter(Boolean)
+  return value.map((item) => String(item)).map((item) => item.trim())
 }
 
 function toBooleanArray(value: unknown): boolean[] {
@@ -570,11 +570,11 @@ function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: Co
   const speakerIdsA =
     orientedPayloads
       .map((payload) => toStringArray(payload.speakerIdsA))
-      .find((value) => value.length > 0) ?? []
+      .find((value) => value.some((item) => item.length > 0)) ?? []
   const speakerIdsB =
     orientedPayloads
       .map((payload) => toStringArray(payload.speakerIdsB))
-      .find((value) => value.length > 0) ?? []
+      .find((value) => value.some((item) => item.length > 0)) ?? []
 
   const winsA = orientedPayloads.map((payload) => {
     const totalA = sumScores(toNumberArray(payload.scoresA))
@@ -1096,15 +1096,21 @@ async function buildCompiledPayloadFromSubmissions(
     teamIdsWithResults.add(teamBId)
 
     const selectedSpeakerIdsA = Array.isArray((submission.payload as any)?.speakerIdsA)
-      ? ((submission.payload as any).speakerIdsA as any[]).map((id) => String(id)).filter(Boolean)
+      ? ((submission.payload as any).speakerIdsA as any[]).map((id) => String(id).trim())
       : []
     const selectedSpeakerIdsB = Array.isArray((submission.payload as any)?.speakerIdsB)
-      ? ((submission.payload as any).speakerIdsB as any[]).map((id) => String(id)).filter(Boolean)
+      ? ((submission.payload as any).speakerIdsB as any[]).map((id) => String(id).trim())
       : []
+    const fallbackSpeakersA = getSpeakersForTeamRound(teamAId, round)
+    const fallbackSpeakersB = getSpeakersForTeamRound(teamBId, round)
     const speakersA =
-      selectedSpeakerIdsA.length > 0 ? selectedSpeakerIdsA : getSpeakersForTeamRound(teamAId, round)
+      selectedSpeakerIdsA.length > 0
+        ? scoresA.map((_score, index) => selectedSpeakerIdsA[index] || fallbackSpeakersA[index] || '')
+        : fallbackSpeakersA
     const speakersB =
-      selectedSpeakerIdsB.length > 0 ? selectedSpeakerIdsB : getSpeakersForTeamRound(teamBId, round)
+      selectedSpeakerIdsB.length > 0
+        ? scoresB.map((_score, index) => selectedSpeakerIdsB[index] || fallbackSpeakersB[index] || '')
+        : fallbackSpeakersB
     const bestA = Array.isArray((submission.payload as any)?.bestA)
       ? ((submission.payload as any).bestA as boolean[])
       : []
@@ -1130,9 +1136,18 @@ async function buildCompiledPayloadFromSubmissions(
       ? ((submission.payload as any).mannerB as number[])
       : []
 
-    speakersA.forEach((speakerId, index) => {
-      const score = scoresA[index]
+    scoresA.forEach((score, index) => {
+      const speakerId = speakersA[index]
       if (!Number.isFinite(score)) return
+      if (!speakerId) {
+        registerMissingIssue({
+          code: 'missing_speaker',
+          message: 'speakerId is missing for a scored speaker on teamA',
+          round,
+          submissionId,
+        })
+        return
+      }
       const matterValue = matterA[index]
       const mannerValue = mannerA[index]
       rawSpeakerResults.push({
@@ -1155,9 +1170,18 @@ async function buildCompiledPayloadFromSubmissions(
       })
       speakerIdsWithScores.add(speakerId)
     })
-    speakersB.forEach((speakerId, index) => {
-      const score = scoresB[index]
+    scoresB.forEach((score, index) => {
+      const speakerId = speakersB[index]
       if (!Number.isFinite(score)) return
+      if (!speakerId) {
+        registerMissingIssue({
+          code: 'missing_speaker',
+          message: 'speakerId is missing for a scored speaker on teamB',
+          round,
+          submissionId,
+        })
+        return
+      }
       const matterValue = matterB[index]
       const mannerValue = mannerB[index]
       rawSpeakerResults.push({

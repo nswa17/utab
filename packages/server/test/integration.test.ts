@@ -1259,6 +1259,218 @@ describe('Server integration', () => {
     expect(ballotRes.status).toBe(201)
   })
 
+  it('keeps speaker score alignment when speakerIds include blank entries', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'speaker-alignment', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'speaker-alignment', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Speaker Alignment Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerResA1 = await agent.post('/api/speakers').send({ tournamentId, name: 'A1' })
+    expect(speakerResA1.status).toBe(201)
+    const speakerIdA1 = speakerResA1.body.data._id
+
+    const speakerResA2 = await agent.post('/api/speakers').send({ tournamentId, name: 'A2' })
+    expect(speakerResA2.status).toBe(201)
+    const speakerIdA2 = speakerResA2.body.data._id
+
+    const speakerResB1 = await agent.post('/api/speakers').send({ tournamentId, name: 'B1' })
+    expect(speakerResB1.status).toBe(201)
+    const speakerIdB1 = speakerResB1.body.data._id
+
+    const speakerResB2 = await agent.post('/api/speakers').send({ tournamentId, name: 'B2' })
+    expect(speakerResB2.status).toBe(201)
+    const speakerIdB2 = speakerResB2.body.data._id
+
+    const teamResA = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      details: [{ r: 1, speakers: [speakerIdA1, speakerIdA2] }],
+    })
+    expect(teamResA.status).toBe(201)
+    const teamIdA = teamResA.body.data._id
+
+    const teamResB = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+      details: [{ r: 1, speakers: [speakerIdB1, speakerIdB2] }],
+    })
+    expect(teamResB.status).toBe(201)
+    const teamIdB = teamResB.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamIdA,
+      teamBId: teamIdB,
+      winnerId: teamIdA,
+      scoresA: [70, 80],
+      scoresB: [60, 65],
+      speakerIdsA: [' ', speakerIdA2],
+      speakerIdsB: [speakerIdB1, speakerIdB2],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        include_labels: ['speakers'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+    expect(compileRes.body.data.payload.compile_warnings).toEqual([])
+
+    const speakerResults = compileRes.body.data.payload.compiled_speaker_results
+    expect(speakerResults.length).toBe(4)
+    const speakerA1 = speakerResults.find((row: any) => row.id === speakerIdA1)
+    const speakerA2 = speakerResults.find((row: any) => row.id === speakerIdA2)
+    expect(speakerA1).toBeTruthy()
+    expect(speakerA2).toBeTruthy()
+    expect(speakerA1.sum).toBeCloseTo(70, 6)
+    expect(speakerA2.sum).toBeCloseTo(80, 6)
+  })
+
+  it('warns when scored speaker ids cannot be resolved during compile', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'missing-speaker-warn', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'missing-speaker-warn', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Missing Speaker Warning Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      speakerIdsA: [''],
+      speakerIdsB: ['   '],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        missing_data_policy: 'warn',
+        include_labels: ['teams', 'speakers'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+    expect(compileRes.body.data.payload.compile_warnings.length).toBeGreaterThan(0)
+    expect(
+      compileRes.body.data.payload.compile_warnings.some((message: string) =>
+        message.includes('speakerId is missing for a scored speaker')
+      )
+    ).toBe(true)
+    expect(compileRes.body.data.payload.compiled_speaker_results).toEqual([])
+  })
+
+  it('errors when missing speaker ids exist and missing_data_policy is error', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'missing-speaker-error', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'missing-speaker-error', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Missing Speaker Error Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      speakerIdsA: [''],
+      speakerIdsB: [''],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        missing_data_policy: 'error',
+        include_labels: ['teams', 'speakers'],
+      },
+    })
+    expect(compileRes.status).toBe(400)
+    expect(compileRes.body.errors[0].message).toContain('Missing data detected')
+    expect(compileRes.body.errors[0].message).toContain('speakerId is missing for a scored speaker')
+  })
+
   it('rejects feedback submissions with blank adjudicator id', async () => {
     const agent = request.agent(app)
 
