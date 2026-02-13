@@ -18,11 +18,19 @@ import {
   sanitizeCompiledSubsetForPublic,
 } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  normalizeCompileOptions,
+  type CompileIncludeLabel,
+  type CompileOptions,
+  type CompileOptionsInput,
+} from '../types/compiled-options.js'
 
 type BallotPayload = {
   teamAId?: string
   teamBId?: string
   winnerId?: string
+  submittedEntityId?: string
   speakerIdsA?: unknown
   speakerIdsB?: unknown
   scoresA?: unknown
@@ -39,6 +47,9 @@ type FeedbackPayload = {
 type CompiledPayload = {
   tournamentId: string
   rounds: Array<{ r: number; name: string }>
+  compile_options: CompileOptions
+  compile_warnings: string[]
+  compile_diff_meta: CompileDiffMeta
   compiled_team_results: any[]
   compiled_speaker_results: any[]
   compiled_adjudicator_results: any[]
@@ -53,7 +64,37 @@ type CompiledSubset = {
   compiledId: string
   tournamentId: string
   rounds: Array<{ r: number; name: string }>
+  compile_options: CompileOptions
+  compile_warnings: string[]
+  compile_diff_meta: CompileDiffMeta
   results: any[]
+}
+
+type MissingDataIssue = {
+  code: string
+  message: string
+  round?: number
+  submissionId?: string
+}
+
+type DiffRankingTrend = 'improved' | 'worsened' | 'unchanged' | 'new' | 'na'
+
+type DiffMetric = {
+  baseline: number | null
+  delta: number | null
+}
+
+type DiffRanking = {
+  baseline: number | null
+  delta: number | null
+  trend: DiffRankingTrend
+}
+
+type CompileDiffMeta = {
+  baseline_mode: CompileOptions['diff_baseline']['mode']
+  requested_compiled_id?: string
+  baseline_compiled_id: string | null
+  baseline_found: boolean
 }
 
 function toNumberArray(value: unknown): number[] {
@@ -131,9 +172,491 @@ function resolveRoundsFromSubmissions(
   return Array.from(roundsSet).sort((a, b) => a - b)
 }
 
+function toNumericValue(value: unknown, mode: 'desc' | 'asc'): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return mode === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY
+}
+
+function compareByNumericValue(
+  left: unknown,
+  right: unknown,
+  mode: 'desc' | 'asc'
+): number {
+  const a = toNumericValue(left, mode)
+  const b = toNumericValue(right, mode)
+  if (a === b) return 0
+  if (mode === 'desc') return a > b ? -1 : 1
+  return a < b ? -1 : 1
+}
+
+function compareTeamsByRankingMetrics(
+  left: any,
+  right: any,
+  order: CompileOptions['ranking_priority']['order']
+): number {
+  for (const metric of order) {
+    const mode = metric === 'sd' ? 'asc' : 'desc'
+    const compared = compareByNumericValue(left?.[metric], right?.[metric], mode)
+    if (compared !== 0) return compared
+  }
+  return 0
+}
+
+function compareTeamsByRankingPriority(
+  left: any,
+  right: any,
+  order: CompileOptions['ranking_priority']['order']
+): number {
+  const metricsCompared = compareTeamsByRankingMetrics(left, right, order)
+  if (metricsCompared !== 0) return metricsCompared
+  const leftId = String(left?.id ?? '')
+  const rightId = String(right?.id ?? '')
+  if (leftId === rightId) return 0
+  return leftId < rightId ? -1 : 1
+}
+
+function applyTeamRankingPriority(
+  teamResults: any[],
+  compileOptions: CompileOptions
+): any[] {
+  if (compileOptions.ranking_priority.preset !== 'custom') return teamResults
+  const sorted = [...teamResults]
+  sorted.sort((left, right) =>
+    compareTeamsByRankingPriority(left, right, compileOptions.ranking_priority.order)
+  )
+  let currentRank = 1
+  for (let index = 0; index < sorted.length; index += 1) {
+    if (index > 0) {
+      const compared = compareTeamsByRankingMetrics(
+        sorted[index],
+        sorted[index - 1],
+        compileOptions.ranking_priority.order
+      )
+      if (compared !== 0) currentRank = index + 1
+    }
+    sorted[index] = { ...sorted[index], ranking: currentRank }
+  }
+  return sorted
+}
+
+function applyIncludeLabels(
+  compileOptions: CompileOptions,
+  compiled: Pick<
+    CompiledPayload,
+    'compiled_team_results' | 'compiled_speaker_results' | 'compiled_adjudicator_results'
+  >
+) {
+  const labels = new Set<CompileIncludeLabel>(compileOptions.include_labels)
+  if (!labels.has('teams')) {
+    compiled.compiled_team_results = []
+  }
+  if (!labels.has('adjudicators')) {
+    compiled.compiled_adjudicator_results = []
+  }
+  const needsSpeakerBase = labels.has('speakers') || labels.has('poi') || labels.has('best')
+  if (!needsSpeakerBase) {
+    compiled.compiled_speaker_results = []
+  }
+}
+
+const TEAM_DIFF_KEYS = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
+const SPEAKER_DIFF_KEYS = ['average', 'sum', 'sd']
+const ADJUDICATOR_DIFF_KEYS = ['average', 'sd', 'num_experienced', 'num_experienced_chair']
+
+function buildDefaultDiffMeta(compileOptions: CompileOptions): CompileDiffMeta {
+  return {
+    baseline_mode: compileOptions.diff_baseline.mode,
+    requested_compiled_id:
+      compileOptions.diff_baseline.mode === 'compiled'
+        ? compileOptions.diff_baseline.compiled_id
+        : undefined,
+    baseline_compiled_id: null,
+    baseline_found: false,
+  }
+}
+
+function toFiniteNumberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function buildMetricDiff(currentValue: unknown, baselineValue: unknown): DiffMetric {
+  const current = toFiniteNumberOrNull(currentValue)
+  const baseline = toFiniteNumberOrNull(baselineValue)
+  if (current === null || baseline === null) {
+    return { baseline, delta: null }
+  }
+  return { baseline, delta: current - baseline }
+}
+
+function buildRankingDiff(currentValue: unknown, baselineValue: unknown): DiffRanking {
+  const current = toFiniteNumberOrNull(currentValue)
+  const baseline = toFiniteNumberOrNull(baselineValue)
+  if (current === null || baseline === null) {
+    if (current !== null && baseline === null) {
+      return { baseline: null, delta: null, trend: 'new' }
+    }
+    return { baseline, delta: null, trend: 'na' }
+  }
+  const delta = current - baseline
+  if (delta < 0) return { baseline, delta, trend: 'improved' }
+  if (delta > 0) return { baseline, delta, trend: 'worsened' }
+  return { baseline, delta: 0, trend: 'unchanged' }
+}
+
+function applyResultDiffs(
+  currentResults: any[],
+  baselineResults: any[],
+  metricKeys: string[]
+): any[] {
+  const baselineById = new Map<string, any>()
+  baselineResults.forEach((item) => {
+    const id = String(item?.id ?? '')
+    if (!id) return
+    baselineById.set(id, item)
+  })
+  return currentResults.map((row) => {
+    const rowId = String(row?.id ?? '')
+    const baseline = baselineById.get(rowId)
+    const metrics = Object.fromEntries(
+      metricKeys.map((key) => [key, buildMetricDiff(row?.[key], baseline?.[key])])
+    )
+    return {
+      ...row,
+      diff: {
+        ranking: buildRankingDiff(row?.ranking, baseline?.ranking),
+        metrics,
+      },
+    }
+  })
+}
+
+async function resolveDiffBaselineDoc(
+  connection: Connection,
+  tournamentId: string,
+  compileOptions: CompileOptions
+) {
+  const CompiledModel = getCompiledModel(connection)
+  if (compileOptions.diff_baseline.mode === 'compiled') {
+    if (!Types.ObjectId.isValid(compileOptions.diff_baseline.compiled_id)) {
+      return null
+    }
+    return CompiledModel.findOne({
+      _id: compileOptions.diff_baseline.compiled_id,
+      tournamentId,
+    })
+      .lean()
+      .exec()
+  }
+  return CompiledModel.findOne({ tournamentId }).sort({ createdAt: -1 }).lean().exec()
+}
+
+async function attachDiffAgainstBaseline(
+  payload: CompiledPayload,
+  connection: Connection
+): Promise<void> {
+  const compileOptions = payload.compile_options
+  payload.compile_diff_meta = buildDefaultDiffMeta(compileOptions)
+  const baselineDoc = await resolveDiffBaselineDoc(connection, payload.tournamentId, compileOptions)
+  if (!baselineDoc) {
+    return
+  }
+  const baselinePayload = (baselineDoc as any)?.payload ?? {}
+  payload.compile_diff_meta = {
+    ...payload.compile_diff_meta,
+    baseline_compiled_id: String((baselineDoc as any)?._id ?? ''),
+    baseline_found: true,
+  }
+  payload.compiled_team_results = applyResultDiffs(
+    payload.compiled_team_results,
+    Array.isArray(baselinePayload.compiled_team_results)
+      ? baselinePayload.compiled_team_results
+      : [],
+    TEAM_DIFF_KEYS
+  )
+  payload.compiled_speaker_results = applyResultDiffs(
+    payload.compiled_speaker_results,
+    Array.isArray(baselinePayload.compiled_speaker_results)
+      ? baselinePayload.compiled_speaker_results
+      : [],
+    SPEAKER_DIFF_KEYS
+  )
+  payload.compiled_adjudicator_results = applyResultDiffs(
+    payload.compiled_adjudicator_results,
+    Array.isArray(baselinePayload.compiled_adjudicator_results)
+      ? baselinePayload.compiled_adjudicator_results
+      : [],
+    ADJUDICATOR_DIFF_KEYS
+  )
+}
+
+function buildMissingIssueMessage(issue: MissingDataIssue): string {
+  const prefix = issue.round ? `Round ${issue.round}` : 'Round ?'
+  const submissionToken = issue.submissionId ? ` / submission ${issue.submissionId}` : ''
+  return `${prefix}${submissionToken}: ${issue.message}`
+}
+
+function finalizeMissingDataIssues(
+  issues: MissingDataIssue[],
+  compileOptions: CompileOptions
+): string[] {
+  if (issues.length === 0) return []
+  const messages = issues.map(buildMissingIssueMessage)
+  if (compileOptions.missing_data_policy === 'error') {
+    const err = new Error(`Missing data detected: ${messages[0]}`)
+    ;(err as any).status = 400
+    throw err
+  }
+  return compileOptions.missing_data_policy === 'warn' ? messages : []
+}
+
+function canonicalBallotMatchKey(round: number, payload: BallotPayload): string {
+  const teamA = String(payload.teamAId ?? '').trim()
+  const teamB = String(payload.teamBId ?? '').trim()
+  if (!teamA || !teamB) return `${round}:invalid`
+  const ordered = [teamA, teamB].sort()
+  return `${round}:${ordered[0]}:${ordered[1]}`
+}
+
+function resolveBallotSubmissionActor(submission: any): string {
+  const payloadActor = String((submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? '').trim()
+  if (payloadActor) return payloadActor
+  const submittedBy = String(submission?.submittedBy ?? '').trim()
+  if (submittedBy) return submittedBy
+  const submissionId = String(submission?._id ?? '').trim()
+  return submissionId ? `submission:${submissionId}` : ''
+}
+
+function canonicalBallotDuplicateKey(submission: any): string {
+  const round = Number(submission?.round)
+  const matchKey = canonicalBallotMatchKey(round, (submission?.payload ?? {}) as BallotPayload)
+  const actor = resolveBallotSubmissionActor(submission)
+  return actor ? `${matchKey}:${actor}` : matchKey
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item)).map((item) => item.trim()).filter(Boolean)
+}
+
+function toBooleanArray(value: unknown): boolean[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => Boolean(item))
+}
+
+function averageFiniteNumbers(values: number[]): number | null {
+  const finite = values.filter((value) => Number.isFinite(value))
+  if (finite.length === 0) return null
+  return sumScores(finite) / finite.length
+}
+
+function averageNumberArrays(values: number[][]): number[] {
+  const maxLength = values.reduce((current, list) => Math.max(current, list.length), 0)
+  const averaged: number[] = []
+  for (let index = 0; index < maxLength; index += 1) {
+    const atIndex = values
+      .map((list) => list[index])
+      .filter((value): value is number => Number.isFinite(value))
+    averaged.push(atIndex.length > 0 ? sumScores(atIndex) / atIndex.length : Number.NaN)
+  }
+  return averaged
+}
+
+function aggregateBooleanArrays(
+  values: boolean[][],
+  policy: CompileOptions['duplicate_normalization']['best_aggregation']
+): boolean[] {
+  const maxLength = values.reduce((current, list) => Math.max(current, list.length), 0)
+  const aggregated: boolean[] = []
+  for (let index = 0; index < maxLength; index += 1) {
+    const atIndex = values
+      .map((list) => list[index])
+      .filter((value): value is boolean => typeof value === 'boolean')
+    if (atIndex.length === 0) {
+      aggregated.push(false)
+      continue
+    }
+    if (policy === 'max') {
+      aggregated.push(atIndex.some(Boolean))
+      continue
+    }
+    const trueRate = atIndex.filter(Boolean).length / atIndex.length
+    aggregated.push(trueRate >= 0.5)
+  }
+  return aggregated
+}
+
+function orientBallotPayload(
+  payload: Record<string, unknown>,
+  teamAId: string,
+  teamBId: string
+): Record<string, unknown> | null {
+  const payloadTeamAId = String(payload.teamAId ?? '').trim()
+  const payloadTeamBId = String(payload.teamBId ?? '').trim()
+  if (!payloadTeamAId || !payloadTeamBId) return null
+  if (payloadTeamAId === teamAId && payloadTeamBId === teamBId) return { ...payload, teamAId, teamBId }
+  if (payloadTeamAId === teamBId && payloadTeamBId === teamAId) {
+    return {
+      ...payload,
+      teamAId,
+      teamBId,
+      speakerIdsA: payload.speakerIdsB,
+      speakerIdsB: payload.speakerIdsA,
+      scoresA: payload.scoresB,
+      scoresB: payload.scoresA,
+      bestA: payload.bestB,
+      bestB: payload.bestA,
+      poiA: payload.poiB,
+      poiB: payload.poiA,
+      matterA: payload.matterB,
+      matterB: payload.matterA,
+      mannerA: payload.mannerB,
+      mannerB: payload.mannerA,
+    }
+  }
+  return null
+}
+
+function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: CompileOptions): any {
+  const firstPayload = (grouped[0]?.payload ?? {}) as Record<string, unknown>
+  const teamAId = String(firstPayload.teamAId ?? '').trim()
+  const teamBId = String(firstPayload.teamBId ?? '').trim()
+  if (!teamAId || !teamBId || teamAId === teamBId) return grouped[0]
+
+  const orientedPayloads = grouped
+    .map((submission) =>
+      orientBallotPayload((submission?.payload ?? {}) as Record<string, unknown>, teamAId, teamBId)
+    )
+    .filter((payload): payload is Record<string, unknown> => Boolean(payload))
+  if (orientedPayloads.length === 0) return grouped[0]
+
+  const averagedScoresA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.scoresA))
+  )
+  const averagedScoresB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.scoresB))
+  )
+  const averagedMatterA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.matterA))
+  )
+  const averagedMannerA = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.mannerA))
+  )
+  const averagedMatterB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.matterB))
+  )
+  const averagedMannerB = averageNumberArrays(
+    orientedPayloads.map((payload) => toNumberArray(payload.mannerB))
+  )
+
+  const aggregatedBestA = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.bestA)),
+    compileOptions.duplicate_normalization.best_aggregation
+  )
+  const aggregatedBestB = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.bestB)),
+    compileOptions.duplicate_normalization.best_aggregation
+  )
+  const aggregatedPoiA = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.poiA)),
+    compileOptions.duplicate_normalization.poi_aggregation
+  )
+  const aggregatedPoiB = aggregateBooleanArrays(
+    orientedPayloads.map((payload) => toBooleanArray(payload.poiB)),
+    compileOptions.duplicate_normalization.poi_aggregation
+  )
+
+  const speakerIdsA =
+    orientedPayloads
+      .map((payload) => toStringArray(payload.speakerIdsA))
+      .find((value) => value.length > 0) ?? []
+  const speakerIdsB =
+    orientedPayloads
+      .map((payload) => toStringArray(payload.speakerIdsB))
+      .find((value) => value.length > 0) ?? []
+
+  const winsA = orientedPayloads.map((payload) => {
+    const totalA = sumScores(toNumberArray(payload.scoresA))
+    const totalB = sumScores(toNumberArray(payload.scoresB))
+    const winnerId = resolveWinnerForBallot(
+      payload as BallotPayload,
+      compileOptions.winner_policy,
+      totalA,
+      totalB
+    )
+    return winnerId === teamAId ? 1 : winnerId ? 0 : compileOptions.tie_points
+  })
+  const winsB = orientedPayloads.map((payload) => {
+    const totalA = sumScores(toNumberArray(payload.scoresA))
+    const totalB = sumScores(toNumberArray(payload.scoresB))
+    const winnerId = resolveWinnerForBallot(
+      payload as BallotPayload,
+      compileOptions.winner_policy,
+      totalA,
+      totalB
+    )
+    return winnerId === teamBId ? 1 : winnerId ? 0 : compileOptions.tie_points
+  })
+  const averagedWinA = averageFiniteNumbers(winsA)
+  const averagedWinB = averageFiniteNumbers(winsB)
+
+  return {
+    ...grouped[0],
+    _id: `avg:${key}`,
+    payload: {
+      ...orientedPayloads[0],
+      teamAId,
+      teamBId,
+      winnerId: '',
+      speakerIdsA,
+      speakerIdsB,
+      scoresA: averagedScoresA,
+      scoresB: averagedScoresB,
+      bestA: aggregatedBestA,
+      bestB: aggregatedBestB,
+      poiA: aggregatedPoiA,
+      poiB: aggregatedPoiB,
+      matterA: averagedMatterA,
+      mannerA: averagedMannerA,
+      matterB: averagedMatterB,
+      mannerB: averagedMannerB,
+    },
+    __normalizedWinA: averagedWinA ?? 0,
+    __normalizedWinB: averagedWinB ?? 0,
+  }
+}
+
+function resolveWinnerForBallot(
+  payload: BallotPayload,
+  policy: CompileOptions['winner_policy'],
+  totalA: number,
+  totalB: number
+): string | undefined {
+  const teamAId = String(payload.teamAId ?? '').trim()
+  const teamBId = String(payload.teamBId ?? '').trim()
+  const explicitWinner = String(payload.winnerId ?? '').trim()
+  const normalizedWinner =
+    explicitWinner === teamAId || explicitWinner === teamBId ? explicitWinner : undefined
+
+  if (policy === 'score_only') {
+    if (totalA > totalB) return teamAId
+    if (totalB > totalA) return teamBId
+    return undefined
+  }
+  if (policy === 'draw_on_missing') {
+    return normalizedWinner
+  }
+  if (normalizedWinner) return normalizedWinner
+  if (totalA > totalB) return teamAId
+  if (totalB > totalA) return teamBId
+  return undefined
+}
+
 async function buildCompiledPayloadFromRaw(
   tournamentId: string,
-  requestedRounds?: number[]
+  requestedRounds?: number[],
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -288,10 +811,16 @@ async function buildCompiledPayloadFromRaw(
   const compiled: CompiledPayload = {
     tournamentId,
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
-    compiled_team_results: compiledTeamResults.map((result: any) => ({
-      ...result,
-      institutions: teamMeta.get(result.id)?.institutions ?? [],
-    })),
+    compile_options: compileOptions,
+    compile_warnings: [],
+    compile_diff_meta: buildDefaultDiffMeta(compileOptions),
+    compiled_team_results: applyTeamRankingPriority(
+      compiledTeamResults.map((result: any) => ({
+        ...result,
+        institutions: teamMeta.get(result.id)?.institutions ?? [],
+      })),
+      compileOptions
+    ),
     compiled_speaker_results: compiledSpeakerResults.map((result: any) => ({
       ...result,
       teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
@@ -303,13 +832,15 @@ async function buildCompiledPayloadFromRaw(
       num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
     })),
   }
+  applyIncludeLabels(compileOptions, compiled)
 
   return { payload: compiled, connection }
 }
 
 async function buildCompiledPayloadFromSubmissions(
   tournamentId: string,
-  requestedRounds?: number[]
+  requestedRounds?: number[],
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -437,156 +968,260 @@ async function buildCompiledPayloadFromSubmissions(
   const speakerIdsWithScores = new Set<string>()
   const teamIdsWithResults = new Set<string>()
   const adjudicatorIdsWithScores = new Set<string>()
+  const missingDataIssues: MissingDataIssue[] = []
+  const registerMissingIssue = (
+    issue: Omit<MissingDataIssue, 'round' | 'submissionId'> & {
+      round?: number
+      submissionId?: string
+    }
+  ) => {
+    missingDataIssues.push(issue)
+  }
 
-  filteredSubmissions.forEach((submission: any) => {
+  const ballotSubmissions = filteredSubmissions.filter((submission) => submission.type === 'ballot')
+  const feedbackSubmissions = filteredSubmissions.filter((submission) => submission.type === 'feedback')
+
+  const ballotGroups = new Map<string, any[]>()
+  ballotSubmissions.forEach((submission) => {
+    const key = canonicalBallotDuplicateKey(submission)
+    const grouped = ballotGroups.get(key) ?? []
+    grouped.push(submission)
+    ballotGroups.set(key, grouped)
+  })
+
+  const normalizedBallots: any[] = []
+  ballotGroups.forEach((grouped, key) => {
+    if (grouped.length <= 1) {
+      normalizedBallots.push(grouped[0])
+      return
+    }
+    if (compileOptions.duplicate_normalization.merge_policy === 'error') {
+      const err = new Error(`Duplicate ballots detected: ${key}`)
+      ;(err as any).status = 400
+      throw err
+    }
+    if (compileOptions.duplicate_normalization.merge_policy === 'latest') {
+      const latest = grouped
+        .slice()
+        .sort((left, right) => {
+          const leftTime = new Date(left?.updatedAt ?? left?.createdAt ?? 0).getTime()
+          const rightTime = new Date(right?.updatedAt ?? right?.createdAt ?? 0).getTime()
+          return leftTime - rightTime
+        })
+        .at(-1)
+      if (latest) normalizedBallots.push(latest)
+      return
+    }
+    normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
+  })
+
+  normalizedBallots.forEach((submission: any) => {
     const round = Number(submission.round)
-    if (!Number.isFinite(round)) return
-    if (submission.type === 'ballot') {
-      const payload = (submission.payload ?? {}) as BallotPayload
-      const teamAId = payload.teamAId
-      const teamBId = payload.teamBId
-      if (!teamAId || !teamBId || teamAId === teamBId) return
-
-      const scoresA = toNumberArray(payload.scoresA)
-      const scoresB = toNumberArray(payload.scoresB)
-      let winnerId = payload.winnerId
-      if (!winnerId) {
-        const totalA = sumScores(scoresA)
-        const totalB = sumScores(scoresB)
-        if (totalA > totalB) winnerId = teamAId
-        if (totalB > totalA) winnerId = teamBId
-      }
-      const winA = winnerId === teamAId ? 1 : 0
-      const winB = winnerId === teamBId ? 1 : 0
-      const sideMap = sideByRoundTeam.get(round)
-      rawTeamResults.push({
-        id: teamAId,
-        r: round,
-        win: winA,
-        opponents: [teamBId],
-        side: sideMap?.get(teamAId) ?? 'gov',
-        from_id: submission._id?.toString(),
+    const payload = (submission.payload ?? {}) as BallotPayload
+    const submissionId = submission._id?.toString()
+    if (!Number.isFinite(round)) {
+      registerMissingIssue({
+        code: 'invalid_round',
+        message: 'round is not a finite number in ballot submission',
+        submissionId,
       })
-      rawTeamResults.push({
-        id: teamBId,
-        r: round,
-        win: winB,
-        opponents: [teamAId],
-        side: sideMap?.get(teamBId) ?? 'opp',
-        from_id: submission._id?.toString(),
-      })
-      teamIdsWithResults.add(teamAId)
-      teamIdsWithResults.add(teamBId)
-
-      const selectedSpeakerIdsA = Array.isArray((submission.payload as any)?.speakerIdsA)
-        ? ((submission.payload as any).speakerIdsA as any[]).map((id) => String(id)).filter(Boolean)
-        : []
-      const selectedSpeakerIdsB = Array.isArray((submission.payload as any)?.speakerIdsB)
-        ? ((submission.payload as any).speakerIdsB as any[]).map((id) => String(id)).filter(Boolean)
-        : []
-      const speakersA =
-        selectedSpeakerIdsA.length > 0 ? selectedSpeakerIdsA : getSpeakersForTeamRound(teamAId, round)
-      const speakersB =
-        selectedSpeakerIdsB.length > 0 ? selectedSpeakerIdsB : getSpeakersForTeamRound(teamBId, round)
-      const bestA = Array.isArray((submission.payload as any)?.bestA)
-        ? ((submission.payload as any).bestA as boolean[])
-        : []
-      const bestB = Array.isArray((submission.payload as any)?.bestB)
-        ? ((submission.payload as any).bestB as boolean[])
-        : []
-      const poiA = Array.isArray((submission.payload as any)?.poiA)
-        ? ((submission.payload as any).poiA as boolean[])
-        : []
-      const poiB = Array.isArray((submission.payload as any)?.poiB)
-        ? ((submission.payload as any).poiB as boolean[])
-        : []
-      const matterA = Array.isArray((submission.payload as any)?.matterA)
-        ? ((submission.payload as any).matterA as number[])
-        : []
-      const mannerA = Array.isArray((submission.payload as any)?.mannerA)
-        ? ((submission.payload as any).mannerA as number[])
-        : []
-      const matterB = Array.isArray((submission.payload as any)?.matterB)
-        ? ((submission.payload as any).matterB as number[])
-        : []
-      const mannerB = Array.isArray((submission.payload as any)?.mannerB)
-        ? ((submission.payload as any).mannerB as number[])
-        : []
-      speakersA.forEach((speakerId, index) => {
-        const score = scoresA[index]
-        if (Number.isFinite(score)) {
-          const matterValue = matterA[index]
-          const mannerValue = mannerA[index]
-          rawSpeakerResults.push({
-            id: speakerId,
-            r: round,
-            scores: [score],
-            from_id: submission._id?.toString(),
-            user_defined_data: {
-              best: [{ order: index + 1, value: Boolean(bestA[index]) }],
-              poi: [{ order: index + 1, value: Boolean(poiA[index]) }],
-              matter:
-                typeof matterValue === 'number' && Number.isFinite(matterValue)
-                  ? [{ order: index + 1, value: matterValue }]
-                  : undefined,
-              manner:
-                typeof mannerValue === 'number' && Number.isFinite(mannerValue)
-                  ? [{ order: index + 1, value: mannerValue }]
-                  : undefined,
-            },
-          })
-          speakerIdsWithScores.add(speakerId)
-        }
-      })
-      speakersB.forEach((speakerId, index) => {
-        const score = scoresB[index]
-        if (Number.isFinite(score)) {
-          const matterValue = matterB[index]
-          const mannerValue = mannerB[index]
-          rawSpeakerResults.push({
-            id: speakerId,
-            r: round,
-            scores: [score],
-            from_id: submission._id?.toString(),
-            user_defined_data: {
-              best: [{ order: index + 1, value: Boolean(bestB[index]) }],
-              poi: [{ order: index + 1, value: Boolean(poiB[index]) }],
-              matter:
-                typeof matterValue === 'number' && Number.isFinite(matterValue)
-                  ? [{ order: index + 1, value: matterValue }]
-                  : undefined,
-              manner:
-                typeof mannerValue === 'number' && Number.isFinite(mannerValue)
-                  ? [{ order: index + 1, value: mannerValue }]
-                  : undefined,
-            },
-          })
-          speakerIdsWithScores.add(speakerId)
-        }
-      })
+      return
     }
 
-    if (submission.type === 'feedback') {
-      const payload = (submission.payload ?? {}) as FeedbackPayload
-      const adjudicatorId = payload.adjudicatorId
-      const score = typeof payload.score === 'number' ? payload.score : Number(payload.score)
-      if (!adjudicatorId || !Number.isFinite(score)) return
-      const judgedTeams = Array.from(judgedTeamsByRoundAdj.get(`${round}:${adjudicatorId}`) ?? [])
-      rawAdjudicatorResults.push({
-        id: adjudicatorId,
+    const teamAId = String(payload.teamAId ?? '').trim()
+    const teamBId = String(payload.teamBId ?? '').trim()
+    if (!teamAId || !teamBId || teamAId === teamBId) {
+      registerMissingIssue({
+        code: 'invalid_matchup',
+        message: 'teamAId/teamBId is missing or invalid in ballot submission',
+        round,
+        submissionId,
+      })
+      return
+    }
+
+    const scoresA = toNumberArray(payload.scoresA)
+    const scoresB = toNumberArray(payload.scoresB)
+    const hasInvalidScore = scoresA.some((value) => !Number.isFinite(value)) ||
+      scoresB.some((value) => !Number.isFinite(value))
+    if (hasInvalidScore) {
+      registerMissingIssue({
+        code: 'invalid_score',
+        message: 'score contains non-finite values in ballot submission',
+        round,
+        submissionId,
+      })
+      if (compileOptions.missing_data_policy !== 'warn') return
+    }
+
+    const totalA = sumScores(scoresA)
+    const totalB = sumScores(scoresB)
+    const winnerId = resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
+    const normalizedWinA = Number((submission as any).__normalizedWinA)
+    const normalizedWinB = Number((submission as any).__normalizedWinB)
+    const hasNormalizedWins = Number.isFinite(normalizedWinA) && Number.isFinite(normalizedWinB)
+    const winA = hasNormalizedWins
+      ? normalizedWinA
+      : winnerId === teamAId
+        ? 1
+        : winnerId
+          ? 0
+          : compileOptions.tie_points
+    const winB = hasNormalizedWins
+      ? normalizedWinB
+      : winnerId === teamBId
+        ? 1
+        : winnerId
+          ? 0
+          : compileOptions.tie_points
+    const sideMap = sideByRoundTeam.get(round)
+
+    rawTeamResults.push({
+      id: teamAId,
+      r: round,
+      win: winA,
+      opponents: [teamBId],
+      side: sideMap?.get(teamAId) ?? 'gov',
+      from_id: submissionId,
+    })
+    rawTeamResults.push({
+      id: teamBId,
+      r: round,
+      win: winB,
+      opponents: [teamAId],
+      side: sideMap?.get(teamBId) ?? 'opp',
+      from_id: submissionId,
+    })
+    teamIdsWithResults.add(teamAId)
+    teamIdsWithResults.add(teamBId)
+
+    const selectedSpeakerIdsA = Array.isArray((submission.payload as any)?.speakerIdsA)
+      ? ((submission.payload as any).speakerIdsA as any[]).map((id) => String(id)).filter(Boolean)
+      : []
+    const selectedSpeakerIdsB = Array.isArray((submission.payload as any)?.speakerIdsB)
+      ? ((submission.payload as any).speakerIdsB as any[]).map((id) => String(id)).filter(Boolean)
+      : []
+    const speakersA =
+      selectedSpeakerIdsA.length > 0 ? selectedSpeakerIdsA : getSpeakersForTeamRound(teamAId, round)
+    const speakersB =
+      selectedSpeakerIdsB.length > 0 ? selectedSpeakerIdsB : getSpeakersForTeamRound(teamBId, round)
+    const bestA = Array.isArray((submission.payload as any)?.bestA)
+      ? ((submission.payload as any).bestA as boolean[])
+      : []
+    const bestB = Array.isArray((submission.payload as any)?.bestB)
+      ? ((submission.payload as any).bestB as boolean[])
+      : []
+    const poiA = Array.isArray((submission.payload as any)?.poiA)
+      ? ((submission.payload as any).poiA as boolean[])
+      : []
+    const poiB = Array.isArray((submission.payload as any)?.poiB)
+      ? ((submission.payload as any).poiB as boolean[])
+      : []
+    const matterA = Array.isArray((submission.payload as any)?.matterA)
+      ? ((submission.payload as any).matterA as number[])
+      : []
+    const mannerA = Array.isArray((submission.payload as any)?.mannerA)
+      ? ((submission.payload as any).mannerA as number[])
+      : []
+    const matterB = Array.isArray((submission.payload as any)?.matterB)
+      ? ((submission.payload as any).matterB as number[])
+      : []
+    const mannerB = Array.isArray((submission.payload as any)?.mannerB)
+      ? ((submission.payload as any).mannerB as number[])
+      : []
+
+    speakersA.forEach((speakerId, index) => {
+      const score = scoresA[index]
+      if (!Number.isFinite(score)) return
+      const matterValue = matterA[index]
+      const mannerValue = mannerA[index]
+      rawSpeakerResults.push({
+        id: speakerId,
         r: round,
-        score,
-        comment: payload.comment,
-        judged_teams: judgedTeams,
-        from_id: submission._id?.toString(),
+        scores: [score],
+        from_id: submissionId,
         user_defined_data: {
-          matter: (submission.payload as any)?.matter,
-          manner: (submission.payload as any)?.manner,
+          best: [{ order: index + 1, value: Boolean(bestA[index]) }],
+          poi: [{ order: index + 1, value: Boolean(poiA[index]) }],
+          matter:
+            typeof matterValue === 'number' && Number.isFinite(matterValue)
+              ? [{ order: index + 1, value: matterValue }]
+              : undefined,
+          manner:
+            typeof mannerValue === 'number' && Number.isFinite(mannerValue)
+              ? [{ order: index + 1, value: mannerValue }]
+              : undefined,
         },
       })
-      adjudicatorIdsWithScores.add(adjudicatorId)
-    }
+      speakerIdsWithScores.add(speakerId)
+    })
+    speakersB.forEach((speakerId, index) => {
+      const score = scoresB[index]
+      if (!Number.isFinite(score)) return
+      const matterValue = matterB[index]
+      const mannerValue = mannerB[index]
+      rawSpeakerResults.push({
+        id: speakerId,
+        r: round,
+        scores: [score],
+        from_id: submissionId,
+        user_defined_data: {
+          best: [{ order: index + 1, value: Boolean(bestB[index]) }],
+          poi: [{ order: index + 1, value: Boolean(poiB[index]) }],
+          matter:
+            typeof matterValue === 'number' && Number.isFinite(matterValue)
+              ? [{ order: index + 1, value: matterValue }]
+              : undefined,
+          manner:
+            typeof mannerValue === 'number' && Number.isFinite(mannerValue)
+              ? [{ order: index + 1, value: mannerValue }]
+              : undefined,
+        },
+      })
+      speakerIdsWithScores.add(speakerId)
+    })
   })
+
+  feedbackSubmissions.forEach((submission: any) => {
+    const round = Number(submission.round)
+    const payload = (submission.payload ?? {}) as FeedbackPayload
+    const submissionId = submission._id?.toString()
+    if (!Number.isFinite(round)) {
+      registerMissingIssue({
+        code: 'invalid_round',
+        message: 'round is not a finite number in feedback submission',
+        submissionId,
+      })
+      return
+    }
+    const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+    const score = typeof payload.score === 'number' ? payload.score : Number(payload.score)
+    if (!adjudicatorId || !Number.isFinite(score)) {
+      registerMissingIssue({
+        code: 'invalid_feedback',
+        message: 'adjudicatorId or score is missing in feedback submission',
+        round,
+        submissionId,
+      })
+      return
+    }
+    const judgedTeams = Array.from(judgedTeamsByRoundAdj.get(`${round}:${adjudicatorId}`) ?? [])
+    rawAdjudicatorResults.push({
+      id: adjudicatorId,
+      r: round,
+      score,
+      comment: payload.comment,
+      judged_teams: judgedTeams,
+      from_id: submissionId,
+      user_defined_data: {
+        matter: (submission.payload as any)?.matter,
+        manner: (submission.payload as any)?.manner,
+      },
+    })
+    adjudicatorIdsWithScores.add(adjudicatorId)
+  })
+
+  const compileWarnings = finalizeMissingDataIssues(missingDataIssues, compileOptions)
 
   const styleOptions = (tournament?.options as any)?.style ?? {}
   const styleDoc =
@@ -671,10 +1306,16 @@ async function buildCompiledPayloadFromSubmissions(
   const compiled: CompiledPayload = {
     tournamentId,
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
-    compiled_team_results: compiledTeamResults.map((result: any) => ({
-      ...result,
-      institutions: teamMeta.get(result.id)?.institutions ?? [],
-    })),
+    compile_options: compileOptions,
+    compile_warnings: compileWarnings,
+    compile_diff_meta: buildDefaultDiffMeta(compileOptions),
+    compiled_team_results: applyTeamRankingPriority(
+      compiledTeamResults.map((result: any) => ({
+        ...result,
+        institutions: teamMeta.get(result.id)?.institutions ?? [],
+      })),
+      compileOptions
+    ),
     compiled_speaker_results: compiledSpeakerResults.map((result: any) => ({
       ...result,
       teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
@@ -686,6 +1327,7 @@ async function buildCompiledPayloadFromSubmissions(
       num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
     })),
   }
+  applyIncludeLabels(compileOptions, compiled)
 
   return { payload: compiled, connection }
 }
@@ -693,11 +1335,12 @@ async function buildCompiledPayloadFromSubmissions(
 async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
-  requestedRounds?: number[]
+  requestedRounds?: number[],
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   return source === 'raw'
-    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds)
-    : buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds)
+    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
+    : buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
 }
 
 function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
@@ -707,6 +1350,14 @@ function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
     compiledId: String(doc?._id ?? payload._id ?? ''),
     tournamentId: String(tournamentId),
     rounds: Array.isArray(payload.rounds) ? payload.rounds : [],
+    compile_options: normalizeCompileOptions(payload.compile_options as CompileOptionsInput | undefined),
+    compile_warnings: Array.isArray(payload.compile_warnings) ? payload.compile_warnings : [],
+    compile_diff_meta:
+      payload.compile_diff_meta && typeof payload.compile_diff_meta === 'object'
+        ? (payload.compile_diff_meta as CompileDiffMeta)
+        : buildDefaultDiffMeta(
+            normalizeCompileOptions(payload.compile_options as CompileOptionsInput | undefined)
+          ),
     results: Array.isArray(payload[key]) ? payload[key] : [],
   }
 }
@@ -766,6 +1417,7 @@ const makeCreateCompiled =
         tournamentId: string
         source?: 'submissions' | 'raw'
         rounds?: number[]
+        options?: CompileOptionsInput
       }
       if (!Types.ObjectId.isValid(tournamentId)) {
         res
@@ -774,11 +1426,14 @@ const makeCreateCompiled =
         return
       }
 
+      const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
       const { payload, connection } = await buildCompiledPayload(
         tournamentId,
         source,
-        requestedRounds
+        requestedRounds,
+        compileOptions
       )
+      await attachDiffAgainstBaseline(payload, connection)
       const CompiledModel = getCompiledModel(connection)
       const created = await CompiledModel.create({
         tournamentId,
@@ -852,6 +1507,7 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       tournamentId: string
       source?: 'submissions' | 'raw'
       rounds?: number[]
+      options?: CompileOptionsInput
     }
     if (!Types.ObjectId.isValid(tournamentId)) {
       res
@@ -860,11 +1516,14 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       return
     }
 
+    const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
     const { payload, connection } = await buildCompiledPayload(
       tournamentId,
       source,
-      requestedRounds
+      requestedRounds,
+      compileOptions
     )
+    await attachDiffAgainstBaseline(payload, connection)
     const CompiledModel = getCompiledModel(connection)
     const created = await CompiledModel.create({
       tournamentId,

@@ -25,6 +25,9 @@
             <option :value="selectedTeamA?._id">{{ teamAName }}</option>
             <option :value="selectedTeamB?._id">{{ teamBName }}</option>
           </select>
+          <span v-if="canSubmitDrawWithoutWinner" class="muted tiny">{{
+            $t('未選択で引き分けとして送信できます。')
+          }}</span>
         </label>
       </div>
 
@@ -183,6 +186,7 @@
       </Button>
       <p v-if="submitError" class="error">{{ submitError }}</p>
       <p v-if="!identityReady" class="muted">{{ $t('参加者ホームでジャッジを選択してください。') }}</p>
+      <p v-if="winnerRequiredWarning" class="error">{{ $t('スコア差がある場合は勝者を選択してください。') }}</p>
       <p v-if="lowTieWarning" class="error">{{ $t('低勝ち/同点勝ちは許可されていません。') }}</p>
       <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
       <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
@@ -257,6 +261,7 @@ import {
   getRangeForIndex,
   normalizeScoreRanges,
 } from '@/utils/score'
+import { hasDecisiveBallotScores } from '@/utils/ballot'
 
 const route = useRoute()
 const router = useRouter()
@@ -331,16 +336,26 @@ const totalScoreB = computed(() =>
 const lowTieWarning = computed(() => {
   if (allowLowTieWin.value) return false
   if (noSpeakerScore.value) return false
-  if (!winnerId.value) return false
+  if (!winnerId.value) return true
   if (winnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
   if (winnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
-  return false
+  return true
 })
+const decisiveScore = computed(() => {
+  if (noSpeakerScore.value) return false
+  return hasDecisiveBallotScores(effectiveScoresA.value, effectiveScoresB.value)
+})
+const canSubmitDrawWithoutWinner = computed(
+  () => allowLowTieWin.value && !decisiveScore.value
+)
+const winnerRequiredWarning = computed(
+  () => allowLowTieWin.value && decisiveScore.value && !winnerId.value
+)
 const identityReady = computed(() => Boolean(identityId.value))
 
 const canSubmit = computed(() => {
   if (!selectedTeamA.value || !selectedTeamB.value) return false
-  if (!winnerId.value) return false
+  if (!winnerId.value && !canSubmitDrawWithoutWinner.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
   if (!allowLowTieWin.value && lowTieWarning.value) return false
   if (!identityReady.value) return false
@@ -349,6 +364,7 @@ const canSubmit = computed(() => {
 const winnerName = computed(() => {
   if (winnerId.value === teamAId.value) return teamAName.value
   if (winnerId.value === teamBId.value) return teamBName.value
+  if (allowLowTieWin.value) return t('引き分け')
   return t('未選択')
 })
 const confirmButtonLabel = computed(() =>
@@ -574,8 +590,12 @@ function validateBeforeSubmit() {
     submitError.value = t('参加者ホームでジャッジを選択してください。')
     return false
   }
-  if (!winnerId.value) {
+  if (!winnerId.value && !allowLowTieWin.value) {
     submitError.value = t('勝者を選択してください。')
+    return false
+  }
+  if (winnerRequiredWarning.value) {
+    submitError.value = t('スコア差がある場合は勝者を選択してください。')
     return false
   }
   if (!scoresValid.value) {
