@@ -4,12 +4,59 @@ import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
 import { verifyPassword } from '../services/hash.service.js'
-import { getTournamentAccessConfig } from '../services/tournament-access.service.js'
+import {
+  getTournamentAccessConfig,
+  mergeTournamentAuth,
+} from '../services/tournament-access.service.js'
+import { sanitizeTournamentForPublic } from '../services/response-sanitizer.js'
 
-export const listTournaments: RequestHandler = async (_req, res, next) => {
+function hasTournamentMembership(req: any, tournamentId: string): boolean {
+  const tournaments = (req.session?.tournaments ?? []).map((id: unknown) => String(id))
+  return tournaments.includes(String(tournamentId))
+}
+
+function hasSessionTournamentAccess(req: any, tournamentId: string, auth: unknown): boolean {
+  const sessionAccess = req.session?.tournamentAccess?.[String(tournamentId)]
+  if (!sessionAccess) return false
+
+  const now = Date.now()
+  if (sessionAccess.expiresAt <= now) {
+    delete req.session?.tournamentAccess?.[String(tournamentId)]
+    return false
+  }
+
+  const config = getTournamentAccessConfig(auth)
+  return sessionAccess.version === config.version
+}
+
+function hasTournamentAdminAccess(req: any, tournament: any): boolean {
+  const role = req.session?.usertype
+  if (role === 'superuser') return true
+  if (!req.session?.userId) return false
+
+  const tournamentId = String(tournament?._id)
+  return role === 'organizer' && hasTournamentMembership(req, tournamentId)
+}
+
+function canViewTournament(req: any, tournament: any): boolean {
+  if (hasTournamentAdminAccess(req, tournament)) return true
+
+  const tournamentId = String(tournament?._id)
+  if (hasTournamentMembership(req, tournamentId)) return true
+  if (hasSessionTournamentAccess(req, tournamentId, tournament?.auth)) return true
+
+  const access = getTournamentAccessConfig(tournament?.auth)
+  return access.required !== true
+}
+
+export const listTournaments: RequestHandler = async (req, res, next) => {
   try {
     const tournaments = await TournamentModel.find().lean().exec()
-    res.json({ data: tournaments, errors: [] })
+    const visibleTournaments = tournaments.filter((tournament) => canViewTournament(req, tournament))
+    const data = visibleTournaments.map((tournament) =>
+      hasTournamentAdminAccess(req, tournament) ? tournament : sanitizeTournamentForPublic(tournament)
+    )
+    res.json({ data, errors: [] })
   } catch (err) {
     next(err)
   }
@@ -31,7 +78,10 @@ export const getTournament: RequestHandler = async (req, res, next) => {
         .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
       return
     }
-    res.json({ data: tournament, errors: [] })
+    const data = hasTournamentAdminAccess(req, tournament)
+      ? tournament
+      : sanitizeTournamentForPublic(tournament)
+    res.json({ data, errors: [] })
   } catch (err) {
     next(err)
   }
@@ -58,6 +108,12 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       auth?: unknown
       user_defined_data?: unknown
     }
+    const mergedAuth = await mergeTournamentAuth(undefined, auth, { isCreate: true })
+    if (mergedAuth.error) {
+      res.status(400).json({ data: null, errors: [{ name: 'ValidationError', message: mergedAuth.error }] })
+      return
+    }
+
     const created = await TournamentModel.create({
       name,
       style,
@@ -65,7 +121,7 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       total_round_num,
       current_round_num,
       preev_weights,
-      auth,
+      auth: mergedAuth.auth,
       user_defined_data,
       createdBy: req.session?.userId,
     })
@@ -92,7 +148,24 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
         .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
       return
     }
-    const update = req.body as Record<string, unknown>
+    const update = { ...(req.body as Record<string, unknown>) }
+    const existing = await TournamentModel.findById(id).lean().exec()
+    if (!existing) {
+      res
+        .status(404)
+        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      return
+    }
+
+    if (Object.prototype.hasOwnProperty.call(update, 'auth')) {
+      const mergedAuth = await mergeTournamentAuth((existing as any).auth, update.auth)
+      if (mergedAuth.error) {
+        res.status(400).json({ data: null, errors: [{ name: 'ValidationError', message: mergedAuth.error }] })
+        return
+      }
+      update.auth = mergedAuth.auth
+    }
+
     const updated = await TournamentModel.findOneAndUpdate({ _id: id }, { $set: update }, { new: true })
       .lean()
       .exec()

@@ -43,6 +43,26 @@ function hasTournamentMembership(req: Request, tournamentId: string): boolean {
   return tournaments.includes(String(tournamentId))
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+  return value as Record<string, unknown>
+}
+
+function isTournamentPublic(auth: unknown, publicRoles: Role[]): boolean {
+  const authObject = asRecord(auth)
+  const accessObject = asRecord(authObject.access)
+  const hasAccessShape = Object.keys(accessObject).length > 0
+
+  if (hasAccessShape) {
+    const access = getTournamentAccessConfig(authObject)
+    return access.required !== true
+  }
+
+  return publicRoles.some((publicRole) => asRecord(authObject[publicRole]).required !== true)
+}
+
 function hasSessionTournamentAccess(req: Request, tournamentId: string, auth: unknown): boolean {
   const sessionAccess = req.session?.tournamentAccess?.[String(tournamentId)]
   if (!sessionAccess) return false
@@ -67,9 +87,7 @@ export async function hasTournamentAdminAccess(req: Request, tournamentId: strin
   const role = req.session.usertype
   if (role === 'superuser') return true
 
-  const isCreator =
-    role === 'organizer' && String(tournament.createdBy) === String(req.session.userId)
-  if (role === 'organizer' && (hasTournamentMembership(req, tournamentId) || isCreator)) {
+  if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
     return true
   }
   return false
@@ -122,9 +140,7 @@ export function requireTournamentAdmin(paramName = 'tournamentId'): RequestHandl
         return
       }
 
-      const isCreator = role === 'organizer' && String(tournament.createdBy) === String(req.session.userId)
-
-      if (role === 'organizer' && (hasTournamentMembership(req, tournamentId) || isCreator)) {
+      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
         next()
         return
       }
@@ -177,9 +193,7 @@ export function requireTournamentRole(
         return
       }
 
-      const isCreator = role === 'organizer' && String(tournament.createdBy) === String(req.session.userId)
-
-      if (role === 'organizer' && (hasTournamentMembership(req, tournamentId) || isCreator)) {
+      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
         next()
         return
       }
@@ -194,8 +208,7 @@ export function requireTournamentRole(
         return
       }
 
-      const authConfig = (tournament as any).auth ?? {}
-      const isPublic = publicRoles.some((publicRole) => authConfig?.[publicRole]?.required !== true)
+      const isPublic = isTournamentPublic((tournament as any).auth, publicRoles)
       if (isPublic) {
         next()
         return

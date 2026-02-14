@@ -107,6 +107,13 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       tournamentId,
       userId: String(user._id),
     }).exec()
+
+    if (req.session?.userId && String(req.session.userId) === String(user._id)) {
+      req.session.tournaments = (req.session.tournaments ?? []).filter(
+        (id) => String(id) !== tournamentId
+      )
+    }
+
     res.json({ data: sanitizeTournamentUserResponse(saved.toJSON()), errors: [] })
   } catch (err) {
     next(err)
