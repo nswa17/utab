@@ -186,6 +186,8 @@ export function requireTournamentRole(
         respondNotFound(res)
         return
       }
+      const authConfig = (tournament as any).auth
+      const isPublic = isTournamentPublic(authConfig, publicRoles)
 
       const role = req.session?.usertype
       if (role === 'superuser') {
@@ -198,17 +200,21 @@ export function requireTournamentRole(
         return
       }
 
-      if (role && sessionRoles.includes(role) && hasTournamentMembership(req, tournamentId)) {
+      if (
+        role &&
+        sessionRoles.includes(role) &&
+        hasTournamentMembership(req, tournamentId) &&
+        isPublic
+      ) {
         next()
         return
       }
 
-      if (hasSessionTournamentAccess(req, tournamentId, (tournament as any).auth)) {
+      if (hasSessionTournamentAccess(req, tournamentId, authConfig)) {
         next()
         return
       }
 
-      const isPublic = isTournamentPublic((tournament as any).auth, publicRoles)
       if (isPublic) {
         next()
         return

@@ -15,6 +15,26 @@ function hasTournamentMembership(req: any, tournamentId: string): boolean {
   return tournaments.includes(String(tournamentId))
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+  return value as Record<string, unknown>
+}
+
+function isTournamentPublic(auth: unknown): boolean {
+  const authObject = asRecord(auth)
+  const accessObject = asRecord(authObject.access)
+  const hasAccessShape = Object.keys(accessObject).length > 0
+
+  if (hasAccessShape) {
+    const access = getTournamentAccessConfig(authObject)
+    return access.required !== true
+  }
+
+  return asRecord(authObject.audience).required !== true
+}
+
 function hasSessionTournamentAccess(req: any, tournamentId: string, auth: unknown): boolean {
   const sessionAccess = req.session?.tournamentAccess?.[String(tournamentId)]
   if (!sessionAccess) return false
@@ -42,11 +62,12 @@ function canViewTournament(req: any, tournament: any): boolean {
   if (hasTournamentAdminAccess(req, tournament)) return true
 
   const tournamentId = String(tournament?._id)
-  if (hasTournamentMembership(req, tournamentId)) return true
+  const isPublic = isTournamentPublic(tournament?.auth)
+
+  if (hasTournamentMembership(req, tournamentId) && isPublic) return true
   if (hasSessionTournamentAccess(req, tournamentId, tournament?.auth)) return true
 
-  const access = getTournamentAccessConfig(tournament?.auth)
-  return access.required !== true
+  return isPublic
 }
 
 export const listTournaments: RequestHandler = async (req, res, next) => {
