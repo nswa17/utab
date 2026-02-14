@@ -162,7 +162,8 @@
                 class="draw-row"
               >
                 <div class="row draw-main">
-                  <span class="muted small">{{ venueName(row.venue) }}</span>
+                  <span class="venue-pill">{{ venueName(row.venue) }}</span>
+                  <span class="muted tiny">#{{ index + 1 }}</span>
                 </div>
                 <div class="match-sides">
                   <div class="side-card gov-card">
@@ -1221,15 +1222,18 @@ select {
 .draw-row {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  background: var(--color-surface);
+  padding: 10px 12px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .draw-chair-line {
   display: flex;
   gap: 6px;
   align-items: baseline;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
   color: var(--color-text);
   font-size: 13px;
 }
@@ -1245,12 +1249,24 @@ select {
 }
 
 .compact-draw-list {
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .draw-main {
   justify-content: space-between;
   align-items: center;
+}
+
+.venue-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .match-sides {
@@ -1266,7 +1282,8 @@ select {
   gap: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 6px 8px;
+  background: var(--color-surface);
+  padding: 8px 10px;
   min-width: 0;
 }
 
@@ -1279,11 +1296,11 @@ select {
 }
 
 .gov-card {
-  background: #eff6ff;
+  border-color: var(--color-primary);
 }
 
 .opp-card {
-  background: #fffbeb;
+  border-style: dashed;
 }
 
 .side-chip {
@@ -1305,8 +1322,10 @@ select {
   font-size: 10px;
   color: var(--color-muted);
   border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 2px 8px;
+  font-weight: 700;
 }
 
 .tiny {
