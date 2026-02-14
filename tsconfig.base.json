@@ -14,5 +14,6 @@
     "isolatedModules": true,
     "types": ["node"],
     "allowJs": false
-  }
+  },
+  "exclude": ["node_modules", "legacy", "tabbycat"]
 }

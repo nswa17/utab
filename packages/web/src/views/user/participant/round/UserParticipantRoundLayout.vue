@@ -23,11 +23,13 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useRoundsStore } from '@/stores/rounds'
 import Button from '@/components/common/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n({ useScope: 'global' })
 const roundsStore = useRoundsStore()
 
 const tournamentId = computed(() => route.params.tournamentId as string)
