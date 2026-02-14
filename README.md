@@ -17,6 +17,16 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
 - まず **コアロジック（配席/集計順位アルゴリズム）を変えない改善** を優先する
 - メール送信や証明書生成など **運用コストが高い周辺業務は外部連携を基本** とし、UTab 側は CSV/JSON 出力を強化する
 
+## ローカルHTTPS（mkcert）
+
+ブラウザ警告なしで build 構成を HTTPS 検証できます。
+
+1. `pnpm https:setup`
+2. `pnpm docker:build:https:up`
+3. `https://localhost:8443` にアクセス
+
+停止は `pnpm docker:build:https:down`。
+
 ## Legacy(v1)からの主な変更点（v2）
 
 - 3リポジトリ構成をモノレポ化（`packages/core|server|web`）。旧実装は `legacy/` に保管

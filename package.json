@@ -21,6 +21,9 @@
     "format": "prettier --write \"packages/**/*.{ts,tsx,vue,js,cjs,mjs,json,md,yml,yaml}\" \"docs/**/*.md\" \"*.md\"",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
+    "https:setup": "bash scripts/setup-local-https-mkcert.sh",
+    "docker:build:https:up": "docker-compose -f docker-compose.yml -f docker-compose.build-https-mkcert.yml up -d --build",
+    "docker:build:https:down": "docker-compose -f docker-compose.yml -f docker-compose.build-https-mkcert.yml down",
     "seed:demo:docker": "CORS_ORIGIN=http://localhost:8080 MONGODB_URI=mongodb://admin:password@localhost:27017/utab?authSource=admin pnpm -C packages/server run seed-organizer-demo",
     "clean": "turbo run clean && rm -rf node_modules"
   },

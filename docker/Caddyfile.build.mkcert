@@ -1,0 +1,13 @@
+localhost {
+  tls /certs/localhost.pem /certs/localhost-key.pem
+  encode zstd gzip
+
+  @api path /api/*
+  handle @api {
+    reverse_proxy server:3000
+  }
+
+  handle {
+    reverse_proxy web:80
+  }
+}
