@@ -494,9 +494,10 @@ const identityReadyForTasks = computed(() => {
     return Boolean(teamIdentityId.value)
   }
   if (isAdjudicator.value) {
-    return Boolean(
-      teamIdentityId.value || judgeFeedbackTeamIdentityId.value || judgeFeedbackSpeakerIdentityId.value
-    )
+    if (adjudicatorRoleMode.value === 'adjudicator') {
+      return Boolean(teamIdentityId.value)
+    }
+    return Boolean(judgeFeedbackTeamIdentityId.value || judgeFeedbackSpeakerIdentityId.value)
   }
   return false
 })
@@ -566,62 +567,64 @@ const tasks = computed<TaskItem[]>(() => {
 
     if (isAdjudicator.value) {
       if (!adjudicatorOpen) return
-      const adjudicatorId = teamIdentityId.value
-      const adjudicatorRows = adjudicatorId
-        ? allocation.filter((row: any) =>
-            [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
-              adjudicatorId
+      if (adjudicatorRoleMode.value === 'adjudicator') {
+        const adjudicatorId = teamIdentityId.value
+        const adjudicatorRows = adjudicatorId
+          ? allocation.filter((row: any) =>
+              [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
+                adjudicatorId
+              )
             )
-          )
-        : []
-      const hasJudgeAssignedMatch = adjudicatorRows.length > 0
-      if (hasJudgeAssignedMatch) {
-        const ballotTargetPath =
-          adjudicatorRows.length === 1
-            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
-            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`
-        const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
-        list.push({
-          id: `adjudicator-ballot-${roundNumber}`,
-          round: roundNumber,
-          title: t('スコアシート'),
-          description: t('ドローから試合を選択'),
-          completed: ballotCompleted,
-          statusLabel: ballotCompleted ? t('完了') : t('未完了'),
-          actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
-          to: ballotTargetPath,
-        })
-      }
+          : []
+        const hasJudgeAssignedMatch = adjudicatorRows.length > 0
+        if (hasJudgeAssignedMatch) {
+          const ballotTargetPath =
+            adjudicatorRows.length === 1
+              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
+              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`
+          const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
+          list.push({
+            id: `adjudicator-ballot-${roundNumber}`,
+            round: roundNumber,
+            title: t('スコアシート'),
+            description: t('ドローから試合を選択'),
+            completed: ballotCompleted,
+            statusLabel: ballotCompleted ? t('完了') : t('未完了'),
+            actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
+            to: ballotTargetPath,
+          })
+        }
 
-      if (
-        hasJudgeAssignedMatch &&
-        roundItem.userDefinedData?.evaluate_from_adjudicators !== false
-      ) {
-        const feedbackPeers = Array.from(
-          new Set(
-            adjudicatorRows.flatMap((row: any) =>
-              [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].filter(
-                (id: string) => id !== adjudicatorId
+        if (
+          hasJudgeAssignedMatch &&
+          roundItem.userDefinedData?.evaluate_from_adjudicators !== false
+        ) {
+          const feedbackPeers = Array.from(
+            new Set(
+              adjudicatorRows.flatMap((row: any) =>
+                [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].filter(
+                  (id: string) => id !== adjudicatorId
+                )
               )
             )
           )
-        )
-        const feedbackTargetPath =
-          feedbackPeers.length === 1
-            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${feedbackPeers[0]}?filter=adjudicator&actor=adjudicator`
-            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`
-        const feedbackCompleted = feedbackSubmittedKeySet.value.has(
-          `${roundNumber}:${adjudicatorId}`
-        )
-        list.push({
-          id: `adjudicator-feedback-${roundNumber}`,
-          round: roundNumber,
-          title: t('ジャッジ評価（ジャッジ）'),
-          completed: feedbackCompleted,
-          statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
-          actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-          to: feedbackTargetPath,
-        })
+          const feedbackTargetPath =
+            feedbackPeers.length === 1
+              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${feedbackPeers[0]}?filter=adjudicator&actor=adjudicator`
+              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`
+          const feedbackCompleted = feedbackSubmittedKeySet.value.has(
+            `${roundNumber}:${adjudicatorId}`
+          )
+          list.push({
+            id: `adjudicator-feedback-${roundNumber}`,
+            round: roundNumber,
+            title: t('ジャッジ評価（ジャッジ）'),
+            completed: feedbackCompleted,
+            statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
+            actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
+            to: feedbackTargetPath,
+          })
+        }
       }
 
       if (adjudicatorRoleMode.value === 'team' && roundItem.userDefinedData?.evaluate_from_teams !== false) {
@@ -873,8 +876,15 @@ async function refreshTaskSubmissions() {
     return
   }
   if (isAdjudicator.value) {
-    const ids = [teamIdentityId.value, judgeFeedbackTeamIdentityId.value]
-    if (judgeFeedbackSpeakerSelectionRequired.value && judgeFeedbackSpeakerIdentityId.value) {
+    const ids =
+      adjudicatorRoleMode.value === 'adjudicator'
+        ? [teamIdentityId.value]
+        : [judgeFeedbackTeamIdentityId.value]
+    if (
+      adjudicatorRoleMode.value === 'team' &&
+      judgeFeedbackSpeakerSelectionRequired.value &&
+      judgeFeedbackSpeakerIdentityId.value
+    ) {
       ids.push(judgeFeedbackSpeakerIdentityId.value)
     }
     const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))

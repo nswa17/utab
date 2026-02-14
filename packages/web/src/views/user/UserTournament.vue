@@ -137,6 +137,7 @@ const showTournamentNotice = computed(() => !isTournamentHomeRoute.value)
 const showSubnav = computed(() => {
   const homePath = `/user/${tournamentId.value}/home`
   const rootPath = `/user/${tournamentId.value}`
+  if (route.path.includes('/rounds/')) return false
   return route.path !== homePath && route.path !== rootPath
 })
 const showAudienceViewSwitch = computed(

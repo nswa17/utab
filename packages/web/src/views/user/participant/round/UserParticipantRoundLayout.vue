@@ -1,32 +1,21 @@
 <template>
   <section class="stack">
-    <div class="row">
+    <div v-if="isAudience" class="row">
       <Button variant="ghost" size="sm" @click="goBack">← {{ $t('ラウンド一覧') }}</Button>
       <h3>{{ $t('ラウンド {round}', { round }) }}</h3>
     </div>
-    <nav class="subnav">
+    <nav v-if="isAudience" class="subnav">
       <RouterLink
-        v-if="isAudience"
         :to="roundPath('draw')"
         :class="{ active: isTabActive('draw') }"
       >
         {{ $t('対戦表') }}
       </RouterLink>
-      <RouterLink
-        v-if="isAdjudicator"
-        :to="roundPath('ballot/home')"
-        :class="{ active: isTabActive('ballot') }"
-      >
-        {{ $t('スコアシート') }}
-      </RouterLink>
-      <RouterLink
-        v-if="feedbackEnabled"
-        :to="feedbackPath"
-        :class="{ active: isTabActive('feedback') }"
-      >
-        {{ $t('フィードバック') }}
-      </RouterLink>
     </nav>
+    <div v-else class="row task-header">
+      <Button variant="ghost" size="sm" @click="goTaskList">← {{ $t('タスク一覧') }}</Button>
+      <h3>{{ currentTaskLabel }}</h3>
+    </div>
     <RouterView />
   </section>
 </template>
@@ -46,20 +35,9 @@ const participant = computed(() => route.params.participant as string)
 const round = computed(() => route.params.round as string)
 
 const isAudience = computed(() => participant.value === 'audience')
-const isAdjudicator = computed(() => participant.value === 'adjudicator')
-const isSpeaker = computed(() => participant.value === 'speaker')
 const roundConfig = computed(() =>
   roundsStore.rounds.find((item) => item.round === Number(round.value))
 )
-const feedbackEnabled = computed(() => {
-  if (isSpeaker.value) {
-    return roundConfig.value?.userDefinedData?.evaluate_from_teams !== false
-  }
-  if (isAdjudicator.value) {
-    return roundConfig.value?.userDefinedData?.evaluate_from_adjudicators !== false
-  }
-  return false
-})
 
 function roundPath(tab: string) {
   return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/${tab}`
@@ -69,14 +47,27 @@ function isTabActive(tab: 'draw' | 'ballot' | 'feedback') {
   return route.path.includes(`/rounds/${round.value}/${tab}`)
 }
 
-const feedbackPath = computed(() => {
-  const base = roundPath('feedback/home')
-  if (isAdjudicator.value) return `${base}?filter=adjudicator&actor=adjudicator`
-  if (isSpeaker.value) return `${base}?filter=team&actor=team`
-  return base
+const actorMode = computed<'team' | 'adjudicator'>(() => {
+  if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
+  if (participant.value === 'speaker') return 'team'
+  return 'adjudicator'
+})
+
+const currentTaskLabel = computed(() => {
+  if (route.path.includes('/ballot/')) return t('スコアシート')
+  if (route.path.includes('/feedback/')) {
+    if (participant.value === 'speaker') return t('ジャッジ評価')
+    return actorMode.value === 'team' ? t('チーム評価') : t('ジャッジフィードバック')
+  }
+  if (route.path.includes('/draw')) return t('対戦表')
+  return t('ラウンド {round}', { round: round.value })
 })
 
 function goBack() {
+  router.push(`/user/${tournamentId.value}/${participant.value}/home`)
+}
+
+function goTaskList() {
   router.push(`/user/${tournamentId.value}/${participant.value}/home`)
 }
 
@@ -109,5 +100,10 @@ watch(tournamentId, () => {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
   border-color: var(--color-primary);
+}
+
+.task-header {
+  align-items: center;
+  gap: var(--space-2);
 }
 </style>
