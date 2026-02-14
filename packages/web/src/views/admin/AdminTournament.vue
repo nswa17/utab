@@ -297,9 +297,14 @@ watch(
 }
 
 .subnav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   margin-bottom: var(--space-4);
 }
 
@@ -307,10 +312,13 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   min-height: 36px;
-  padding: 0 14px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
+  padding: 0 18px;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  white-space: nowrap;
   color: var(--color-muted);
   background: var(--color-surface);
   font-size: 0.9rem;
@@ -320,7 +328,7 @@ watch(
 }
 
 .subnav-link:hover {
-  border-color: #bfdbfe;
+  background: #f8fafc;
   color: var(--color-primary);
 }
 
@@ -328,7 +336,10 @@ watch(
 .subnav-link.active {
   background: var(--color-secondary);
   color: var(--color-primary);
-  border-color: var(--color-primary);
+}
+
+.subnav-link:last-child {
+  border-right: none;
 }
 
 .migration-link-row {

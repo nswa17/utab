@@ -5,14 +5,6 @@
         <h4>{{ $t('対戦表設定') }}</h4>
         <span class="muted small">{{ roundHeading }}</span>
       </div>
-      <div class="stack tight section-meta">
-        <span v-if="drawUpdatedAt" class="muted small">{{
-          $t('対戦表更新: {time}', { time: drawUpdatedAt })
-        }}</span>
-        <span v-if="lastRefreshedLabel" class="muted small">{{
-          $t('最終更新: {time}', { time: lastRefreshedLabel })
-        }}</span>
-      </div>
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="adjudicatorImportInfo" class="muted import-info">{{ adjudicatorImportInfo }}</p>
@@ -987,7 +979,6 @@ const drawOpened = ref(false)
 const allocationOpened = ref(false)
 const locked = ref(false)
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
 const formError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
@@ -1132,16 +1123,6 @@ const tournament = computed(() =>
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
-const drawUpdatedAt = computed(() => {
-  if (!currentDraw.value?.updatedAt) return ''
-  const date = new Date(currentDraw.value.updatedAt)
-  return Number.isNaN(date.getTime()) ? currentDraw.value.updatedAt : date.toLocaleString()
-})
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
 const priorRounds = computed(() =>
   roundsStore.rounds
     .filter((item) => item.round < round.value)
@@ -1218,7 +1199,6 @@ async function refresh() {
         round: round.value,
       }),
     ])
-    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }
@@ -2298,11 +2278,6 @@ watch(
 
 .header-reload {
   margin-left: 0;
-}
-
-.section-meta {
-  margin-left: auto;
-  min-width: 160px;
 }
 
 .action-row {

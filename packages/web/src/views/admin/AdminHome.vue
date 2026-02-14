@@ -2,9 +2,6 @@
   <section class="stack">
     <div class="row header-row">
       <h2>{{ $t('管理ダッシュボード') }}</h2>
-      <span v-if="lastRefreshedLabel" class="muted small header-meta">{{
-        $t('最終更新: {time}', { time: lastRefreshedLabel })
-      }}</span>
     </div>
     <div class="card stack">
       <h3 class="section-title">{{ $t('新規大会作成') }}</h3>
@@ -125,16 +122,10 @@ const visibleTournaments = computed(() => {
 })
 
 const searchQuery = ref('')
-const lastRefreshedAt = ref<string>('')
 const deleteModalTournamentId = ref('')
 const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
-})
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 })
 const filteredTournaments = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -206,7 +197,6 @@ function formatDate(raw?: string) {
 
 async function refresh() {
   await Promise.all([tournament.fetchTournaments(), styles.fetchStyles()])
-  lastRefreshedAt.value = new Date().toISOString()
   if (!form.style && styles.styles.length > 0) {
     form.style = styles.styles[0].id
   }
@@ -259,10 +249,6 @@ async function confirmDeleteTournament() {
 .header-row {
   align-items: center;
   gap: var(--space-2);
-}
-
-.header-meta {
-  margin-left: auto;
 }
 
 .checkbox-field {

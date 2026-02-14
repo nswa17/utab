@@ -355,6 +355,8 @@ onMounted(() => {
 }
 
 .side-card strong {
+  font-size: 1.05rem;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

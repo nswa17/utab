@@ -2,9 +2,6 @@
   <section class="stack">
     <div class="row section-header">
       <h3>{{ $t('レポート生成') }}</h3>
-      <span v-if="lastRefreshedLabel" class="muted small header-meta">{{
-        $t('最終更新: {time}', { time: lastRefreshedLabel })
-      }}</span>
       <ReloadButton
         class="header-reload"
         @click="refresh"
@@ -687,7 +684,6 @@ const slideCredit = ref('UTab')
 const slideSettingsOpen = ref(false)
 const awardCopyLimit = ref(3)
 const awardCopyCopied = ref(false)
-const lastRefreshedAt = ref<string>('')
 const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>('teams')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
 const showAdvancedSourceOptions = ref(false)
@@ -844,11 +840,6 @@ const isDisplayedRawSource = computed(() => displayedCompileSource.value === 'ra
 const isRawModeActive = computed(
   () => isDisplayedRawSource.value || isRawSourceSelected.value
 )
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
 const compileOptionsPayload = computed<CompileOptions>(() => {
   const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
   const includeLabels = Array.from(new Set(compileIncludeLabels.value))
@@ -1857,7 +1848,6 @@ async function refresh() {
     selectedCompiledId.value = ''
   }
   compileExecuted.value = Boolean(compiledStore.compiled)
-  lastRefreshedAt.value = new Date().toISOString()
 }
 
 function closeRawCompileConfirm() {
@@ -2061,10 +2051,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .header-reload {
   margin-left: var(--space-2);
-}
-
-.header-meta {
-  margin-left: auto;
 }
 
 .warning {

@@ -6,20 +6,6 @@
     <div v-else-if="judge" class="card stack">
       <h4>{{ judge.name }}</h4>
       <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
-      <section v-if="participant === 'adjudicator' && actorOptions.length > 1" class="card soft stack actor-card">
-        <h5>{{ $t('あなたの情報') }}</h5>
-        <div class="row actor-switch" role="radiogroup" :aria-label="$t('ロール')">
-          <label v-for="option in actorOptions" :key="option.value" class="actor-option">
-            <input
-              type="radio"
-              :checked="actorMode === option.value"
-              @change="setActorMode(option.value)"
-            />
-            <span>{{ option.label }}</span>
-          </label>
-        </div>
-      </section>
-
       <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
         <input
           v-model.number="matter"
@@ -478,28 +464,4 @@ onUnmounted(() => {
   grid-column: 1 / -1;
 }
 
-.actor-card {
-  border: 1px solid var(--color-border);
-}
-
-.actor-card h5 {
-  margin: 0;
-}
-
-.actor-switch {
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.actor-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 12px;
-}
 </style>

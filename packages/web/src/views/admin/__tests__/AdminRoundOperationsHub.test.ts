@@ -23,10 +23,18 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('対戦生成と保存は対戦表設定で実行します。')
     expect(source).toContain('強制実行')
     expect(source).toContain('compileSource')
-    expect(source).toContain('openAllocationPage')
-    expect(source).toContain('openRawResultPage')
-    expect(source).toContain('openSubmissionsPage')
-    expect(source).toContain('openReportsPage')
+    expect(source).toContain('compileDiffBaselineMode')
+    expect(source).toContain('compileRows')
+    expect(source).toContain('buildCompileOptions')
+  })
+
+  it('stores selected task per round and defaults to first incomplete step', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('roundTaskSelection')
+    expect(source).toContain('recommendedTaskForRound')
+    expect(source).toContain('resolveTaskForRound')
+    expect(source).toContain('[roundNumber]: task')
+    expect(source).toContain('task: nextTask')
   })
 
   it('adds strict submission guards before compile and draw generation', () => {
@@ -43,10 +51,17 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('item?.r ?? item?.round')
   })
 
-  it('uses explicit page navigation and no inline embeds', () => {
+  it('embeds destination panels inline instead of using page navigation buttons', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
-    expect(source).toContain('router.push(`/admin/${tournamentId.value}/reports`)')
-    expect(source).not.toContain('<iframe')
-    expect(source).not.toContain('buildEmbedUrl(')
+    expect(source).toContain('<iframe')
+    expect(source).toContain('buildEmbedUrl(')
+    expect(source).toContain(":title=\"$t('対戦表設定')\"")
+    expect(source).toContain(":title=\"$t('生結果')\"")
+    expect(source).toContain(":title=\"$t('提出一覧')\"")
+    expect(source).not.toContain('inline-step-panel')
+    expect(source).not.toContain('openAllocationPage')
+    expect(source).not.toContain('openRawResultPage')
+    expect(source).not.toContain('openSubmissionsPage')
+    expect(source).not.toContain('openReportsPage')
   })
 })

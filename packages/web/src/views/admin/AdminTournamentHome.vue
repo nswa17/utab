@@ -2,9 +2,6 @@
   <section class="stack">
     <div class="row section-row">
       <h3>{{ activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理') }}</h3>
-      <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
-        $t('最終更新: {time}', { time: lastRefreshedLabel })
-      }}</span>
     </div>
     <div class="row setup-section-switch">
       <button
@@ -253,23 +250,18 @@
                 {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
               </span>
             </div>
-            <details class="setup-round-details" @toggle="onSetupRoundDetailsToggle(round._id, $event)">
+            <details class="setup-round-details" @toggle="onSetupRoundDetailsToggle(round, $event)">
               <summary class="row setup-round-details-summary">
-                <strong>{{ $t('ラウンド詳細設定') }}</strong>
-                <span class="muted small">
-                  {{ $t('このラウンドの公開・採点・ブレイク設定を編集します。') }}
-                </span>
+                <span class="setup-round-toggle-icon" aria-hidden="true"></span>
+                <div class="stack tight setup-round-summary-text">
+                  <strong>{{ $t('ラウンド詳細設定') }}</strong>
+                  <span class="muted small">
+                    {{ $t('このラウンドの公開・採点・ブレイク設定を編集します。') }}
+                  </span>
+                </div>
               </summary>
               <div v-if="isSetupRoundDetailsOpen(round._id)" class="stack setup-round-details-body">
-                <section class="card soft stack setup-round-basic-panel">
-                  <div class="row setup-round-basic-head">
-                    <strong>{{ $t('基本情報') }}</strong>
-                    <template v-if="setupRoundEditingId !== round._id">
-                      <Button variant="ghost" size="sm" @click.stop="startEditRoundFromSetup(round)">
-                        {{ $t('編集') }}
-                      </Button>
-                    </template>
-                  </div>
+                <section class="stack setup-round-basic-panel">
                   <div v-if="setupRoundEditingId === round._id" class="stack">
                     <div class="grid setup-round-edit-grid">
                       <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
@@ -1308,7 +1300,6 @@ const activeSection = computed(() =>
   String(route.query.section ?? 'overview') === 'data' ? 'data' : 'overview'
 )
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
 const isSectionLoading = computed(() => sectionLoading.value)
 
 const isLoading = computed(
@@ -1322,11 +1313,6 @@ const isLoading = computed(
     speakers.loading ||
     institutions.loading
 )
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
 
 function setActiveSection(section: 'overview' | 'data') {
   const query = { ...route.query } as Record<string, any>
@@ -1738,7 +1724,6 @@ async function refresh() {
       institutions.fetchInstitutions(tournamentId.value),
     ])
     applyTournamentForm()
-    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }
@@ -1820,12 +1805,17 @@ function isSetupRoundDetailsOpen(roundId: string) {
   return setupRoundDetailsOpen.value[roundId] === true
 }
 
-function onSetupRoundDetailsToggle(roundId: string, event: Event) {
+function onSetupRoundDetailsToggle(round: any, event: Event) {
+  const roundId = String(round?._id ?? '')
+  if (!roundId) return
   const details = event.target as HTMLDetailsElement | null
   const isOpen = Boolean(details?.open)
   setupRoundDetailsOpen.value = {
     ...setupRoundDetailsOpen.value,
     [roundId]: isOpen,
+  }
+  if (isOpen) {
+    startEditRoundFromSetup(round)
   }
   if (!isOpen && setupRoundEditingId.value === roundId) {
     cancelEditRoundFromSetup()
@@ -2717,8 +2707,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 .setup-round-list {
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-2);
+  padding-top: var(--space-1);
 }
 
 .setup-round-item {
@@ -2757,32 +2746,44 @@ function onGlobalKeydown(event: KeyboardEvent) {
   cursor: pointer;
   padding: 10px 12px;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  flex-wrap: wrap;
-  position: relative;
-  padding-right: 34px;
+  justify-content: flex-start;
 }
 
 .setup-round-details-summary::-webkit-details-marker {
   display: none;
 }
 
-.setup-round-details-summary::after {
+.setup-round-toggle-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+}
+
+.setup-round-toggle-icon::before {
   content: '';
-  position: absolute;
-  right: 12px;
-  top: 50%;
   width: 8px;
   height: 8px;
   border-right: 2px solid var(--color-muted);
   border-bottom: 2px solid var(--color-muted);
-  transform: translateY(-60%) rotate(45deg);
+  transform: rotate(45deg);
   transition: transform 0.16s ease;
+  margin-top: -2px;
 }
 
-.setup-round-details[open] .setup-round-details-summary::after {
-  transform: translateY(-40%) rotate(225deg);
+.setup-round-summary-text {
+  min-width: 0;
+}
+
+.setup-round-details[open] .setup-round-toggle-icon::before {
+  transform: rotate(225deg);
+  margin-top: 1px;
 }
 
 .setup-round-details-body {
@@ -2791,13 +2792,6 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 .setup-round-basic-panel {
-  border: 1px solid var(--color-border);
-  gap: var(--space-2);
-}
-
-.setup-round-basic-head {
-  align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
 }
 
@@ -3021,35 +3015,42 @@ textarea {
   margin-left: 0;
 }
 
-.section-meta {
-  margin-left: auto;
-}
-
 .setup-section-switch {
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .setup-section-tab {
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
   background: var(--color-surface);
   color: var(--color-muted);
-  padding: 6px 12px;
+  padding: 6px 14px;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .setup-section-tab:hover {
-  border-color: #bfdbfe;
+  background: #f8fafc;
   color: var(--color-primary);
 }
 
 .setup-section-tab.active {
   background: var(--color-secondary);
   color: var(--color-primary);
-  border-color: var(--color-primary);
+}
+
+.setup-section-tab:last-child {
+  border-right: none;
 }
 
 .entity-switch {

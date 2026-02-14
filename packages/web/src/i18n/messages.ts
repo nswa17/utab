@@ -214,6 +214,7 @@ const en = {
   '集計に失敗しました。': 'Compilation failed.',
   '集計結果がありません。先に集計を実行してください。':
     'No compiled snapshot is available. Run compilation first.',
+  '集計結果を表示するデータがありません。': 'No rows are available for this compiled result.',
   '対戦生成に失敗しました。': 'Failed to generate draw.',
   '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
   '読み込みに失敗しました。': 'Failed to load data.',

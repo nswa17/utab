@@ -2,9 +2,6 @@
   <section class="stack">
     <div v-if="!isEmbeddedRoute" class="row section-row">
       <h3>{{ $t('ラウンド詳細設定') }}</h3>
-      <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
-        $t('最終更新: {time}', { time: lastRefreshedLabel })
-      }}</span>
     </div>
 
     <div v-if="!isEmbeddedRoute && !sectionLoading" class="card stack">
@@ -636,7 +633,6 @@ const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
 const roundDeleteModalId = ref<string | null>(null)
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
 const isLoading = computed(
   () =>
     roundsStore.loading ||
@@ -646,11 +642,6 @@ const isLoading = computed(
     speakersStore.loading ||
     adjudicatorsStore.loading
 )
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
 const roundDeleteModalRound = computed(() => {
   if (!roundDeleteModalId.value) return null
   return sortedRounds.value.find((round) => round._id === roundDeleteModalId.value) ?? null
@@ -1221,7 +1212,6 @@ async function refresh() {
       speakersStore.fetchSpeakers(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
     ])
-    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }
@@ -1378,10 +1368,6 @@ watch(
 
 .section-reload {
   margin-left: 0;
-}
-
-.section-meta {
-  margin-left: auto;
 }
 
 .create-actions {

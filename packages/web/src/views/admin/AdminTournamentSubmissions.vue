@@ -6,10 +6,7 @@
         <span v-if="contextRoundLabel" class="muted small">{{ contextRoundLabel }}</span>
       </div>
       <div class="row section-header-actions">
-        <span v-if="lastRefreshedLabel" class="muted small">{{
-          $t('最終更新: {time}', { time: lastRefreshedLabel })
-        }}</span>
-        <RouterLink v-if="contextRound !== null" class="context-link" :to="contextRoundPath">
+        <RouterLink v-if="!isEmbeddedRoute && contextRound !== null" class="context-link" :to="contextRoundPath">
           {{ $t('対戦表設定に戻る') }}
         </RouterLink>
       </div>
@@ -446,6 +443,9 @@ const rounds = useRoundsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
+const isEmbeddedRoute = computed(
+  () => route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+)
 const contextRound = computed<number | null>(() => {
   if (String(route.query.context ?? '') !== 'round') return null
   const parsed = Number(route.query.round)
@@ -456,7 +456,6 @@ const typeFilter = ref<'all' | 'ballot' | 'feedback'>('all')
 const roundFilter = ref('')
 const searchQuery = ref('')
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
 const expandedIds = ref<Set<string>>(new Set())
 const payloadExpandedIds = ref<Set<string>>(new Set())
 const editingSubmissionId = ref<string | null>(null)
@@ -502,11 +501,6 @@ const loadError = computed(
     stylesStore.error ||
     null
 )
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
 
 const tournament = computed(() =>
@@ -1423,7 +1417,6 @@ async function refresh() {
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
     ])
-    lastRefreshedAt.value = new Date().toISOString()
   } finally {
     sectionLoading.value = false
   }

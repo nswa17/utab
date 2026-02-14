@@ -34,10 +34,16 @@ describe('admin reload behavior', () => {
     expect(source).toMatch(/:target=/)
   })
 
-  it('shows a last refreshed label near headers', () => {
+  it('shows last updated only on tournament shell header', () => {
+    const shellSource = loadSource('src/views/admin/AdminTournament.vue')
+    expect(shellSource).toContain('最終更新: {time}')
+
     for (const path of [...nonReloadAdminPages, compileReloadPage]) {
+      if (path === 'src/views/admin/AdminTournament.vue') continue
       const source = loadSource(path)
-      expect(source, `${path} is missing lastRefreshedLabel usage`).toContain('lastRefreshedLabel')
+      expect(source, `${path} should not show duplicate last-updated labels`).not.toContain(
+        '最終更新: {time}'
+      )
     }
   })
 })

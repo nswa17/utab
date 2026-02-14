@@ -526,15 +526,28 @@ const tasks = computed<TaskItem[]>(() => {
 
     if (isSpeaker.value) {
       const teamId = teamIdentityId.value
-      const hasAssignedMatch = allocation.some(
+      const teamRows = allocation.filter(
         (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
       )
+      const hasAssignedMatch = teamRows.length > 0
       if (!hasAssignedMatch) return
       if (!adjudicatorOpen) return
       if (roundItem.userDefinedData?.evaluate_from_teams === false) return
       const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
       const submittedEntityId = evaluatorInTeam === 'speaker' ? speakerIdentityId.value : teamId
       if (!submittedEntityId) return
+      const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
+      const teamJudgeIds = Array.from(
+        new Set(
+          teamRows.flatMap((row: any) =>
+            chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
+          )
+        )
+      )
+      const targetPath =
+        teamJudgeIds.length === 1
+          ? `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
+          : `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
       const completed = feedbackSubmittedKeySet.value.has(
         `${roundNumber}:${submittedEntityId}`
       )
@@ -546,7 +559,7 @@ const tasks = computed<TaskItem[]>(() => {
         completed,
         statusLabel: completed ? t('完了') : t('未完了'),
         actionLabel: completed ? t('修正して送信') : t('入力'),
-        to: `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/home?filter=team&actor=team`,
+        to: targetPath,
       })
       return
     }
@@ -554,14 +567,19 @@ const tasks = computed<TaskItem[]>(() => {
     if (isAdjudicator.value) {
       if (!adjudicatorOpen) return
       const adjudicatorId = teamIdentityId.value
-      const hasJudgeAssignedMatch = adjudicatorId
-        ? allocation.some((row: any) =>
+      const adjudicatorRows = adjudicatorId
+        ? allocation.filter((row: any) =>
             [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
               adjudicatorId
             )
           )
-        : false
+        : []
+      const hasJudgeAssignedMatch = adjudicatorRows.length > 0
       if (hasJudgeAssignedMatch) {
+        const ballotTargetPath =
+          adjudicatorRows.length === 1
+            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
+            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`
         const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
         list.push({
           id: `adjudicator-ballot-${roundNumber}`,
@@ -571,7 +589,7 @@ const tasks = computed<TaskItem[]>(() => {
           completed: ballotCompleted,
           statusLabel: ballotCompleted ? t('完了') : t('未完了'),
           actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
-          to: `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`,
+          to: ballotTargetPath,
         })
       }
 
@@ -579,6 +597,19 @@ const tasks = computed<TaskItem[]>(() => {
         hasJudgeAssignedMatch &&
         roundItem.userDefinedData?.evaluate_from_adjudicators !== false
       ) {
+        const feedbackPeers = Array.from(
+          new Set(
+            adjudicatorRows.flatMap((row: any) =>
+              [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].filter(
+                (id: string) => id !== adjudicatorId
+              )
+            )
+          )
+        )
+        const feedbackTargetPath =
+          feedbackPeers.length === 1
+            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${feedbackPeers[0]}?filter=adjudicator&actor=adjudicator`
+            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`
         const feedbackCompleted = feedbackSubmittedKeySet.value.has(
           `${roundNumber}:${adjudicatorId}`
         )
@@ -589,17 +620,18 @@ const tasks = computed<TaskItem[]>(() => {
           completed: feedbackCompleted,
           statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
           actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-          to: `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`,
+          to: feedbackTargetPath,
         })
       }
 
-      if (roundItem.userDefinedData?.evaluate_from_teams !== false) {
+      if (adjudicatorRoleMode.value === 'team' && roundItem.userDefinedData?.evaluate_from_teams !== false) {
         const teamId = judgeFeedbackTeamIdentityId.value
-        const hasTeamAssignedMatch = teamId
-          ? allocation.some(
+        const teamRows = teamId
+          ? allocation.filter(
               (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
             )
-          : false
+          : []
+        const hasTeamAssignedMatch = teamRows.length > 0
         if (!hasTeamAssignedMatch) return
         const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
         const submittedEntityId =
@@ -607,6 +639,18 @@ const tasks = computed<TaskItem[]>(() => {
             ? judgeFeedbackSpeakerIdentityId.value
             : judgeFeedbackTeamIdentityId.value
         if (!submittedEntityId) return
+        const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
+        const teamJudgeIds = Array.from(
+          new Set(
+            teamRows.flatMap((row: any) =>
+              chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
+            )
+          )
+        )
+        const targetPath =
+          teamJudgeIds.length === 1
+            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
+            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
         const feedbackCompleted = feedbackSubmittedKeySet.value.has(
           `${roundNumber}:${submittedEntityId}`
         )
@@ -617,7 +661,7 @@ const tasks = computed<TaskItem[]>(() => {
           completed: feedbackCompleted,
           statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
           actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-          to: `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=team&actor=team`,
+          to: targetPath,
         })
       }
     }
@@ -1217,7 +1261,8 @@ select {
 }
 
 .side-card strong {
-  font-size: 12px;
+  font-size: 1rem;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -3,9 +3,6 @@
     <div class="row section-header">
       <div class="stack tight">
         <h4>{{ $t('ラウンド {round} 生結果', { round }) }}</h4>
-        <span v-if="lastRefreshedLabel" class="muted small">{{
-          $t('最終更新: {time}', { time: lastRefreshedLabel })
-        }}</span>
       </div>
     </div>
 
@@ -143,14 +140,6 @@ const round = computed(() => Number(route.params.round))
 const activeLabel = ref<'teams' | 'speakers' | 'adjudicators'>('teams')
 const newPayload = ref('')
 const sortBySender = ref(true)
-const lastRefreshedAt = ref<string>('')
-
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  if (Number.isNaN(date.getTime())) return lastRefreshedAt.value
-  return date.toLocaleString()
-})
 
 const activeResults = computed(() => {
   if (activeLabel.value === 'teams') return raw.teamResults
@@ -295,7 +284,6 @@ async function refresh() {
     adjudicators.fetchAdjudicators(tournamentId.value),
     speakers.fetchSpeakers(tournamentId.value),
   ])
-  lastRefreshedAt.value = new Date().toISOString()
 }
 
 async function createRaw() {

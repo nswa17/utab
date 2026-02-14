@@ -2,9 +2,6 @@
   <section class="stack">
     <div class="row section-header">
       <h3>{{ $t('ラウンド運営ハブ') }}</h3>
-      <span v-if="lastRefreshedLabel" class="muted small section-meta">{{
-        $t('最終更新: {time}', { time: lastRefreshedLabel })
-      }}</span>
     </div>
 
     <LoadingState v-if="sectionLoading" />
@@ -32,8 +29,13 @@
                 {{ roundStatusLabel(roundStatus(round.round)) }}
               </span>
             </div>
-            <div class="muted small">
-              {{ $t('運営ステップ') }}: {{ roundCurrentStepLabel(round.round) }}
+            <div class="muted small round-pill-step">
+              <template v-if="isRoundStepCompleted(round.round)">
+                <span class="step-complete-badge">{{ $t('完了') }}</span>
+              </template>
+              <template v-else>
+                {{ $t('運営ステップ') }}: {{ roundCurrentStepLabel(round.round) }}
+              </template>
             </div>
           </button>
         </div>
@@ -85,11 +87,13 @@
             <p class="muted small">
               {{ $t('対戦生成と保存は対戦表設定で実行します。') }}
             </p>
-            <div class="row step-actions">
-              <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openAllocationPage">
-                {{ $t('対戦表設定を開く') }}
-              </Button>
-            </div>
+            <iframe
+              v-if="allocationEmbedUrl"
+              class="step-inline-frame"
+              :src="allocationEmbedUrl"
+              :title="$t('対戦表設定')"
+              loading="lazy"
+            />
           </section>
 
           <section v-else-if="activeTask === 'publish'" class="card soft stack step-card">
@@ -137,11 +141,13 @@
                 </label>
               </div>
               <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
-              <div class="row step-actions">
-                <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openRawResultPage">
-                  {{ $t('生結果を開く') }}
-                </Button>
-              </div>
+              <iframe
+                v-if="rawResultEmbedUrl"
+                class="step-inline-frame"
+                :src="rawResultEmbedUrl"
+                :title="$t('生結果')"
+                loading="lazy"
+              />
             </template>
           </section>
 
@@ -165,11 +171,13 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <div class="row step-actions">
-              <Button variant="secondary" size="sm" :disabled="selectedRound === null" @click="openSubmissionsPage">
-                {{ $t('提出一覧を開く') }}
-              </Button>
-            </div>
+            <iframe
+              v-if="submissionsEmbedUrl"
+              class="step-inline-frame step-inline-frame-submissions"
+              :src="submissionsEmbedUrl"
+              :title="$t('提出一覧')"
+              loading="lazy"
+            />
           </section>
 
           <section v-else class="card soft stack step-card">
@@ -207,10 +215,35 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
+            <div class="row compile-diff-controls">
+              <label class="stack compile-diff-field">
+                <span class="muted small">{{ $t('差分比較') }}</span>
+                <select v-model="compileDiffBaselineMode">
+                  <option value="latest">{{ $t('最新集計') }}</option>
+                  <option value="compiled">{{ $t('過去の集計結果を選択') }}</option>
+                </select>
+              </label>
+              <label v-if="compileDiffBaselineMode === 'compiled'" class="stack compile-diff-field wide">
+                <span class="muted small">{{ $t('比較対象') }}</span>
+                <select v-model="compileDiffBaselineCompiledId">
+                  <option value="">{{ $t('選択してください') }}</option>
+                  <option
+                    v-for="option in baselineCompiledOptions"
+                    :key="option.compiledId"
+                    :value="option.compiledId"
+                  >
+                    {{ baselineCompiledOptionLabel(option) }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <p v-if="compileDiffBaselineMode === 'compiled' && !compileDiffBaselineCompiledId.trim()" class="muted warning">
+              {{ $t('過去の集計結果を選ぶ場合は比較対象を選択してください。') }}
+            </p>
             <div class="row step-actions">
               <Button
                 size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile || !canRunCompile"
                 @click="runCompileWithSource('submissions')"
               >
                 {{ $t('集計を実行') }}
@@ -218,18 +251,72 @@
               <Button
                 variant="secondary"
                 size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || !canRunCompile"
                 @click="openForceCompileModal"
               >
                 {{ $t('強制実行') }}
               </Button>
               <span v-if="compileMessage" class="muted small">{{ compileMessage }}</span>
             </div>
-            <div class="row step-actions">
-              <Button variant="secondary" size="sm" @click="openReportsPage">
-                {{ $t('レポートを開く') }}
-              </Button>
-            </div>
+            <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
+              <div class="row compile-result-head">
+                <strong>{{ $t('集計レポート') }}</strong>
+                <span class="muted small">{{ $t('差分基準: {baseline}', { baseline: compileDiffBaselineLabel }) }}</span>
+              </div>
+              <div class="row diff-legend">
+                <span class="diff-legend-item">
+                  <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
+                </span>
+                <span class="diff-legend-item">
+                  <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
+                </span>
+                <span class="diff-legend-item">
+                  <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
+                </span>
+                <span class="diff-legend-item">
+                  <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
+                </span>
+              </div>
+              <Table hover striped sticky-header>
+                <thead>
+                  <tr>
+                    <th v-for="key in compileColumns" :key="`compile-col-${key}`">
+                      {{ compileColumnLabel(key) }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in compileRows" :key="String(row?.id ?? '')">
+                    <td v-for="key in compileColumns" :key="`compile-${String(row?.id ?? '')}-${key}`">
+                      <span v-if="key === 'team'">{{ teamName(String(row?.id ?? '')) }}</span>
+                      <span v-else-if="key === 'ranking'" class="diff-value">
+                        <span>{{ formatCompileValue(row?.ranking) }}</span>
+                        <span
+                          class="diff-marker"
+                          :class="rankingTrendClass(row)"
+                          :title="rankingTrendText(row)"
+                          :aria-label="rankingTrendText(row)"
+                        >
+                          {{ rankingTrendSymbol(rankingTrendForRow(row)) }}
+                        </span>
+                        <span v-if="rankingDeltaText(row)" class="muted diff-delta">
+                          {{ rankingDeltaText(row) }}
+                        </span>
+                      </span>
+                      <span v-else class="diff-value">
+                        <span>{{ formatCompileValue(row?.[key]) }}</span>
+                        <span v-if="metricDeltaText(row, key)" class="muted diff-delta">
+                          {{ metricDeltaText(row, key) }}
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </Table>
+            </section>
+            <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
+              {{ $t('集計結果を表示するデータがありません。') }}
+            </p>
           </section>
         </template>
       </section>
@@ -274,11 +361,20 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import Table from '@/components/common/Table.vue'
 import { useRoundsStore } from '@/stores/rounds'
 import { useDrawsStore } from '@/stores/draws'
 import { useSubmissionsStore } from '@/stores/submissions'
 import { useTeamsStore } from '@/stores/teams'
 import { useCompiledStore } from '@/stores/compiled'
+import { api } from '@/utils/api'
+import { DEFAULT_COMPILE_OPTIONS, type CompileOptions } from '@/types/compiled'
+import {
+  formatSignedDelta,
+  rankingTrendSymbol,
+  resolveRankingTrend,
+  toFiniteNumber,
+} from '@/utils/diff-indicator'
 import { countSubmissionActors, resolveRoundOperationStatus, type RoundOperationStatus } from '@/stores/round-operations'
 
 const route = useRoute()
@@ -298,12 +394,15 @@ type HubTask = 'submissions' | 'compile' | 'draw' | 'publish'
 type HubTaskState = 'done' | 'ready' | 'blocked'
 const hubTaskOrder: HubTask[] = ['draw', 'publish', 'submissions', 'compile']
 const activeTask = ref<HubTask>('draw')
+const roundTaskSelection = ref<Record<number, HubTask>>({})
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
 const actionError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
+const compileDiffBaselineMode = ref<'latest' | 'compiled'>('latest')
+const compileDiffBaselineCompiledId = ref('')
+const compiledHistory = ref<any[]>([])
 const selectedCompileRounds = ref<number[]>([])
 const forceCompileModalOpen = ref(false)
 const publicationSaving = ref(false)
@@ -333,12 +432,6 @@ const loadError = computed(
     ''
 )
 
-const lastRefreshedLabel = computed(() => {
-  if (!lastRefreshedAt.value) return ''
-  const date = new Date(lastRefreshedAt.value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-})
-
 const selectedRoundData = computed(() =>
   sortedRounds.value.find((round) => round.round === selectedRound.value) ?? null
 )
@@ -367,6 +460,12 @@ const effectiveCompileTargetRounds = computed(() =>
 const compileTargetRoundsLabel = computed(() =>
   effectiveCompileTargetRounds.value.length > 0 ? effectiveCompileTargetRounds.value.join(', ') : ''
 )
+type BaselineCompiledOption = {
+  compiledId: string
+  rounds: number[]
+  roundNames: string[]
+  createdAt?: string
+}
 const compiledSnapshotRoundSet = computed(() => {
   const rounds = Array.isArray(compiledStore.compiled?.rounds) ? compiledStore.compiled.rounds : []
   return new Set(
@@ -374,6 +473,79 @@ const compiledSnapshotRoundSet = computed(() => {
       .map((item: any) => Number(item?.r ?? item?.round))
       .filter((value: number) => Number.isInteger(value) && value >= 1)
   )
+})
+const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
+  compiledHistory.value
+    .map((item) => {
+      const payload = item?.payload && typeof item.payload === 'object' ? item.payload : item
+      const roundsValue = Array.isArray(payload?.rounds) ? payload.rounds : []
+      const normalizedRounds = roundsValue
+        .map((entry: any) => Number(entry?.r ?? entry?.round ?? entry))
+        .filter((value: number) => Number.isFinite(value))
+      return {
+        compiledId: String(item?._id ?? payload?._id ?? ''),
+        rounds: normalizedRounds,
+        roundNames: roundsValue
+          .map((entry: any) => String(entry?.name ?? '').trim())
+          .filter((value: string) => value.length > 0),
+        createdAt: item?.createdAt ? String(item.createdAt) : undefined,
+      }
+    })
+    .filter((item) => item.compiledId.length > 0)
+)
+const canRunCompile = computed(() => {
+  if (compileDiffBaselineMode.value !== 'compiled') return true
+  return compileDiffBaselineCompiledId.value.trim().length > 0
+})
+const compileRows = computed<any[]>(() => {
+  return Array.isArray(compiledStore.compiled?.compiled_team_results)
+    ? compiledStore.compiled!.compiled_team_results
+    : []
+})
+const compileColumns = computed(() => {
+  const metricKeys = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
+  const visibleMetrics = metricKeys.filter((key) =>
+    compileRows.value.some((row) => toFiniteNumber(row?.[key]) !== null)
+  )
+  return ['ranking', 'team', ...visibleMetrics]
+})
+const compileDiffMeta = computed<any | null>(() =>
+  compiledStore.compiled?.compile_diff_meta && typeof compiledStore.compiled.compile_diff_meta === 'object'
+    ? compiledStore.compiled.compile_diff_meta
+    : null
+)
+const compileDiffBaselineLabel = computed(() => {
+  const meta = compileDiffMeta.value
+  if (!meta || meta.baseline_found !== true) return t('基準なし')
+  const baselineId = String(meta.baseline_compiled_id ?? '')
+  if (meta.baseline_mode === 'compiled') {
+    const selected = baselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
+    if (selected) {
+      return t('選択した過去集計: {label}', { label: baselineCompiledOptionLabel(selected) })
+    }
+    return t('選択した過去集計（ID: {id}）', { id: baselineId })
+  }
+  return t('最新集計（ID: {id}）', { id: baselineId })
+})
+const allocationEmbedUrl = computed(() => {
+  if (selectedRound.value === null) return ''
+  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/rounds/${selectedRound.value}/allocation`, {
+    embed: '1',
+  })
+})
+const rawResultEmbedUrl = computed(() => {
+  if (selectedRound.value === null) return ''
+  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/rounds/${selectedRound.value}/result`, {
+    embed: '1',
+  })
+})
+const submissionsEmbedUrl = computed(() => {
+  if (selectedRound.value === null) return ''
+  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/submissions`, {
+    context: 'round',
+    round: selectedRound.value,
+    embed: '1',
+  })
 })
 const snapshotIncludesSelectedRound = computed(() => {
   if (selectedRound.value === null) return false
@@ -521,6 +693,48 @@ const drawDependencyWarning = computed(() => {
 const shouldBlockSubmissionCompile = computed(() => selectedRoundBallotGap.value.hasGap)
 const shouldBlockDrawGeneration = computed(() => missingCompiledRoundsForDraw.value.length > 0)
 
+function roundTaskStates(roundNumber: number): Record<HubTask, HubTaskState> {
+  const draw = drawsStore.draws.find((item) => Number(item.round) === roundNumber)
+  const hasDraw = Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
+  const published = Boolean(draw?.drawOpened && draw?.allocationOpened)
+  const previousRounds = sortedRounds.value
+    .filter((round) => Number(round.round) < roundNumber)
+    .map((round) => Number(round.round))
+  const shouldBlockDraw = previousRounds.some((round) => !compiledSnapshotRoundSet.value.has(round))
+  const expected = ballotExpectedCount(roundNumber)
+  const submitted = ballotSubmittedCount(roundNumber)
+  const unknown = unknownSubmissionCount(roundNumber, 'ballot')
+  const hasGap = (expected > 0 && submitted < expected) || unknown > 0
+
+  const drawState: HubTaskState = hasDraw ? 'done' : shouldBlockDraw ? 'blocked' : 'ready'
+  const publishState: HubTaskState = published ? 'done' : !hasDraw ? 'blocked' : 'ready'
+  const submissionsState: HubTaskState = !published ? 'blocked' : hasGap ? 'ready' : 'done'
+  const compileState: HubTaskState = compiledRoundSet.value.has(roundNumber)
+    ? 'done'
+    : !published || hasGap
+      ? 'blocked'
+      : 'ready'
+
+  return {
+    draw: drawState,
+    publish: publishState,
+    submissions: submissionsState,
+    compile: compileState,
+  }
+}
+
+function recommendedTaskForRound(roundNumber: number): HubTask {
+  const states = roundTaskStates(roundNumber)
+  const nextTask = hubTaskOrder.find((task) => states[task] !== 'done')
+  return nextTask ?? 'compile'
+}
+
+function resolveTaskForRound(roundNumber: number): HubTask {
+  const selected = roundTaskSelection.value[roundNumber]
+  if (selected && hubTaskOrder.includes(selected)) return selected
+  return recommendedTaskForRound(roundNumber)
+}
+
 function taskStateLabel(state: HubTaskState) {
   if (state === 'done') return t('完了')
   if (state === 'blocked') return t('前段階待ち')
@@ -528,64 +742,47 @@ function taskStateLabel(state: HubTaskState) {
 }
 
 const operationTasks = computed<Array<{ key: HubTask; order: number; label: string; state: HubTaskState; stateLabel: string }>>(() => {
-  const drawState: HubTaskState = selectedRoundHasDraw.value
-    ? 'done'
-    : shouldBlockDrawGeneration.value
-      ? 'blocked'
-      : 'ready'
-  const publishState: HubTaskState = selectedRoundPublished.value
-    ? 'done'
-    : !selectedRoundHasDraw.value
-      ? 'blocked'
-      : 'ready'
-  const submissionsState: HubTaskState = !selectedRoundPublished.value
-    ? 'blocked'
-    : selectedRoundBallotGap.value.hasGap
-      ? 'ready'
-      : 'done'
-  const compileState: HubTaskState = snapshotIncludesSelectedRound.value
-    ? 'done'
-    : !selectedRoundPublished.value || shouldBlockSubmissionCompile.value
-      ? 'blocked'
-      : 'ready'
+  const states =
+    selectedRound.value === null
+      ? {
+          draw: 'ready' as HubTaskState,
+          publish: 'blocked' as HubTaskState,
+          submissions: 'blocked' as HubTaskState,
+          compile: 'blocked' as HubTaskState,
+        }
+      : roundTaskStates(selectedRound.value)
 
   return [
     {
       key: 'draw',
       order: 1,
       label: t('対戦生成'),
-      state: drawState,
-      stateLabel: taskStateLabel(drawState),
+      state: states.draw,
+      stateLabel: taskStateLabel(states.draw),
     },
     {
       key: 'publish',
       order: 2,
       label: t('公開/ロック'),
-      state: publishState,
-      stateLabel: taskStateLabel(publishState),
+      state: states.publish,
+      stateLabel: taskStateLabel(states.publish),
     },
     {
       key: 'submissions',
       order: 3,
       label: t('提出状況'),
-      state: submissionsState,
-      stateLabel: taskStateLabel(submissionsState),
+      state: states.submissions,
+      stateLabel: taskStateLabel(states.submissions),
     },
     {
       key: 'compile',
       order: 4,
       label: t('集計設定'),
-      state: compileState,
-      stateLabel: taskStateLabel(compileState),
+      state: states.compile,
+      stateLabel: taskStateLabel(states.compile),
     },
   ]
 })
-
-function recommendedTask(): HubTask {
-  if (selectedRound.value === null) return 'draw'
-  const nextTask = operationTasks.value.find((task) => task.state !== 'done')
-  return nextTask?.key ?? 'compile'
-}
 
 const activeTaskHint = computed(() => {
   if (selectedRound.value === null) return ''
@@ -623,18 +820,15 @@ function roundStatus(roundNumber: number): RoundOperationStatus {
 }
 
 function roundCurrentStepLabel(roundNumber: number) {
-  const draw = drawsStore.draws.find((item) => Number(item.round) === roundNumber)
-  const hasDraw = Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
-  if (!hasDraw) return `1. ${t('対戦生成')}`
-  const published = Boolean(draw?.drawOpened && draw?.allocationOpened)
-  if (!published) return `2. ${t('公開/ロック')}`
-  const expected = ballotExpectedCount(roundNumber)
-  const submitted = ballotSubmittedCount(roundNumber)
-  const unknown = unknownSubmissionCount(roundNumber, 'ballot')
-  const hasGap = (expected > 0 && submitted < expected) || unknown > 0
-  if (hasGap) return `3. ${t('提出状況')}`
-  if (compiledRoundSet.value.has(roundNumber)) return `4. ${t('集計設定')} (${t('完了')})`
+  const nextTask = recommendedTaskForRound(roundNumber)
+  if (nextTask === 'draw') return `1. ${t('対戦生成')}`
+  if (nextTask === 'publish') return `2. ${t('公開/ロック')}`
+  if (nextTask === 'submissions') return `3. ${t('提出状況')}`
   return `4. ${t('集計設定')}`
+}
+
+function isRoundStepCompleted(roundNumber: number) {
+  return compiledRoundSet.value.has(roundNumber)
 }
 
 function roundLabel(roundNumber: number) {
@@ -648,6 +842,126 @@ function roundStatusLabel(status: RoundOperationStatus) {
   if (status === 'compiled') return t('集計済み')
   if (status === 'collecting') return t('回収中')
   return t('準備中')
+}
+
+function formatCompiledTimestamp(value?: string) {
+  if (!value) return t('日時不明')
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t('日時不明')
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function baselineCompiledOptionLabel(option: BaselineCompiledOption) {
+  const roundNames =
+    option.roundNames.length > 0
+      ? option.roundNames
+      : option.rounds.length > 0
+        ? option.rounds.map((roundNumber) => roundLabel(roundNumber))
+        : [t('全ラウンド')]
+  return `${formatCompiledTimestamp(option.createdAt)} / ${roundNames.join(', ')} / ID: ${option.compiledId}`
+}
+
+function buildEmbedUrl(path: string, query: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams()
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    params.set(key, String(value))
+  })
+  const queryString = params.toString()
+  if (!queryString) return path
+  return `${path}?${queryString}`
+}
+
+function buildCompileOptions(): CompileOptions {
+  const diffBaseline =
+    compileDiffBaselineMode.value === 'compiled' && compileDiffBaselineCompiledId.value.trim()
+      ? { mode: 'compiled' as const, compiled_id: compileDiffBaselineCompiledId.value.trim() }
+      : { mode: 'latest' as const }
+  return {
+    ranking_priority: {
+      preset: DEFAULT_COMPILE_OPTIONS.ranking_priority.preset,
+      order: [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+    },
+    winner_policy: DEFAULT_COMPILE_OPTIONS.winner_policy,
+    tie_points: DEFAULT_COMPILE_OPTIONS.tie_points,
+    duplicate_normalization: {
+      merge_policy: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.merge_policy,
+      poi_aggregation: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.poi_aggregation,
+      best_aggregation: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.best_aggregation,
+    },
+    missing_data_policy: DEFAULT_COMPILE_OPTIONS.missing_data_policy,
+    include_labels: [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    diff_baseline: diffBaseline,
+  }
+}
+
+function rankingTrendForRow(row: any) {
+  return resolveRankingTrend(row?.diff?.ranking?.trend)
+}
+
+function rankingTrendClass(row: any) {
+  const trend = rankingTrendForRow(row)
+  if (trend === 'improved') return 'diff-improved'
+  if (trend === 'worsened') return 'diff-worsened'
+  if (trend === 'unchanged') return 'diff-unchanged'
+  if (trend === 'new') return 'diff-new'
+  return 'diff-na'
+}
+
+function rankingTrendText(row: any) {
+  const trend = rankingTrendForRow(row)
+  const deltaText = formatSignedDelta(row?.diff?.ranking?.delta)
+  if (trend === 'improved') return t('順位改善 {delta}', { delta: deltaText || '' }).trim()
+  if (trend === 'worsened') return t('順位悪化 {delta}', { delta: deltaText || '' }).trim()
+  if (trend === 'unchanged') return t('順位変化なし')
+  if (trend === 'new') return t('新規エントリー')
+  return t('差分なし')
+}
+
+function rankingDeltaText(row: any) {
+  return formatSignedDelta(row?.diff?.ranking?.delta)
+}
+
+function metricDeltaText(row: any, key: string) {
+  return formatSignedDelta(row?.diff?.metrics?.[key]?.delta)
+}
+
+function compileColumnLabel(key: string) {
+  const map: Record<string, string> = {
+    ranking: t('順位'),
+    team: t('チーム'),
+    win: t('勝利数'),
+    sum: t('合計'),
+    margin: t('マージン'),
+    vote: t('票'),
+    average: t('平均'),
+    sd: t('標準偏差'),
+  }
+  return map[key] ?? key
+}
+
+function formatCompileValue(value: unknown) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—'
+    return value.map((item) => String(item)).join(', ')
+  }
+  const numeric = toFiniteNumber(value)
+  if (numeric !== null) {
+    const rounded = Math.round(numeric * 1000) / 1000
+    return String(rounded)
+  }
+  if (value === null || value === undefined || value === '') return '—'
+  return String(value)
+}
+
+function teamName(id: string) {
+  return teamsStore.teams.find((team) => team._id === id)?.name ?? id
 }
 
 function syncPublishDraft() {
@@ -667,8 +981,8 @@ async function refresh() {
       submissionsStore.fetchSubmissions({ tournamentId: tournamentId.value }),
       teamsStore.fetchTeams(tournamentId.value),
       compiledStore.fetchLatest(tournamentId.value),
+      refreshCompiledHistory(),
     ])
-    lastRefreshedAt.value = new Date().toISOString()
     const queryRound = Number(route.query.round)
     const hasQueryRound = Number.isInteger(queryRound) && queryRound >= 1
     if (hasQueryRound && sortedRounds.value.some((item) => item.round === queryRound)) {
@@ -680,10 +994,18 @@ async function refresh() {
       selectedRound.value = sortedRounds.value[0]?.round ?? null
     }
     const queryTask = route.query.task
-    if (isHubTask(queryTask)) {
-      activeTask.value = queryTask
+    if (selectedRound.value !== null) {
+      if (isHubTask(queryTask)) {
+        roundTaskSelection.value = {
+          ...roundTaskSelection.value,
+          [selectedRound.value]: queryTask,
+        }
+        activeTask.value = queryTask
+      } else {
+        activeTask.value = resolveTaskForRound(selectedRound.value)
+      }
     } else {
-      activeTask.value = recommendedTask()
+      activeTask.value = 'draw'
     }
     syncPublishDraft()
   } catch (err: any) {
@@ -695,11 +1017,14 @@ async function refresh() {
 
 function selectRound(roundNumber: number) {
   selectedRound.value = roundNumber
+  const nextTask = resolveTaskForRound(roundNumber)
+  activeTask.value = nextTask
   router.replace({
     path: route.path,
     query: {
       ...route.query,
       round: String(roundNumber),
+      task: nextTask,
     },
   })
 }
@@ -710,6 +1035,12 @@ function isHubTask(value: unknown): value is HubTask {
 
 function selectTask(task: HubTask) {
   activeTask.value = task
+  if (selectedRound.value !== null) {
+    roundTaskSelection.value = {
+      ...roundTaskSelection.value,
+      [selectedRound.value]: task,
+    }
+  }
   router.replace({
     path: route.path,
     query: {
@@ -721,6 +1052,7 @@ function selectTask(task: HubTask) {
 
 async function runCompileWithSource(source: 'submissions' | 'raw') {
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  if (!canRunCompile.value) return
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
@@ -738,13 +1070,14 @@ async function runCompileWithSource(source: 'submissions' | 'raw') {
   const result = await compiledStore.runCompile(tournamentId.value, {
     source,
     rounds: effectiveCompileTargetRounds.value,
+    options: buildCompileOptions(),
   })
   if (!result) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
     return
   }
   compileMessage.value = t('集計が完了しました。')
-  await compiledStore.fetchLatest(tournamentId.value)
+  await Promise.all([compiledStore.fetchLatest(tournamentId.value), refreshCompiledHistory()])
 }
 
 function onCompileRoundToggle(roundNumber: number, event: Event) {
@@ -776,33 +1109,14 @@ async function confirmForcedCompile() {
   await runCompileWithSource('raw')
 }
 
-function openAllocationPage() {
-  if (selectedRound.value === null) return
-  router.push(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/allocation`)
-}
-
-function openRawResultPage() {
-  if (selectedRound.value === null) return
-  router.push(`/admin/${tournamentId.value}/rounds/${selectedRound.value}/result`)
-}
-
-function openSubmissionsPage() {
-  if (selectedRound.value === null) return
-  router.push({
-    path: `/admin/${tournamentId.value}/submissions`,
-    query: { round: String(selectedRound.value), context: 'round' },
-  })
-}
-
-function openReportsPage() {
-  if (selectedRound.value === null) {
-    router.push(`/admin/${tournamentId.value}/reports`)
-    return
+async function refreshCompiledHistory() {
+  if (!tournamentId.value) return
+  try {
+    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
+  } catch {
+    compiledHistory.value = []
   }
-  router.push({
-    path: `/admin/${tournamentId.value}/reports`,
-    query: { round: String(selectedRound.value) },
-  })
 }
 
 async function saveDrawPublication(): Promise<boolean> {
@@ -853,9 +1167,15 @@ watch(
     if (!Number.isInteger(nextRound) || nextRound < 1) return
     if (!sortedRounds.value.some((round) => round.round === nextRound)) return
     selectedRound.value = nextRound
-    if (!isHubTask(route.query.task)) {
-      activeTask.value = recommendedTask()
+    if (isHubTask(route.query.task)) {
+      roundTaskSelection.value = {
+        ...roundTaskSelection.value,
+        [nextRound]: route.query.task,
+      }
+      activeTask.value = route.query.task
+      return
     }
+    activeTask.value = resolveTaskForRound(nextRound)
   }
 )
 
@@ -864,9 +1184,19 @@ watch(
   (next) => {
     if (isHubTask(next)) {
       activeTask.value = next
+      if (selectedRound.value !== null) {
+        roundTaskSelection.value = {
+          ...roundTaskSelection.value,
+          [selectedRound.value]: next,
+        }
+      }
       return
     }
-    activeTask.value = recommendedTask()
+    if (selectedRound.value === null) {
+      activeTask.value = 'draw'
+      return
+    }
+    activeTask.value = resolveTaskForRound(selectedRound.value)
   }
 )
 
@@ -888,9 +1218,41 @@ watch(
 )
 
 watch(
+  baselineCompiledOptions,
+  (options) => {
+    if (compileDiffBaselineMode.value !== 'compiled') return
+    if (options.length === 0) {
+      compileDiffBaselineCompiledId.value = ''
+      return
+    }
+    const exists = options.some((option) => option.compiledId === compileDiffBaselineCompiledId.value)
+    if (!exists) {
+      compileDiffBaselineCompiledId.value = options[0].compiledId
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  compileDiffBaselineMode,
+  (mode) => {
+    if (mode !== 'compiled') {
+      compileDiffBaselineCompiledId.value = ''
+      return
+    }
+    const first = baselineCompiledOptions.value[0]
+    if (first && !compileDiffBaselineCompiledId.value) {
+      compileDiffBaselineCompiledId.value = first.compiledId
+    }
+  },
+  { immediate: true }
+)
+
+watch(
   tournamentId,
   () => {
     selectedRound.value = null
+    roundTaskSelection.value = {}
     refresh()
   },
   { immediate: true }
@@ -901,10 +1263,6 @@ watch(
 .section-header {
   align-items: center;
   gap: var(--space-2);
-}
-
-.section-meta {
-  margin-left: auto;
 }
 
 .round-bar-head {
@@ -944,6 +1302,25 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+.round-pill-step {
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.step-complete-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #86efac;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 8px;
 }
 
 .status-chip {
@@ -1129,6 +1506,93 @@ watch(
   gap: var(--space-2);
 }
 
+.step-inline-frame {
+  width: 100%;
+  min-height: 580px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.step-inline-frame-submissions {
+  min-height: 680px;
+}
+
+.compile-diff-controls {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.compile-diff-field {
+  min-width: 180px;
+  gap: 4px;
+}
+
+.compile-diff-field.wide {
+  flex: 1 1 280px;
+}
+
+.compile-result-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.compile-result-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.diff-legend {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.diff-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.diff-marker {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.diff-improved {
+  color: #15803d;
+}
+
+.diff-worsened {
+  color: #b91c1c;
+}
+
+.diff-unchanged {
+  color: #475569;
+}
+
+.diff-new {
+  color: #0f766e;
+}
+
+.diff-na {
+  color: var(--color-muted);
+}
+
+.diff-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-delta {
+  font-size: 0.75rem;
+}
+
 .compile-round-picker {
   display: flex;
   flex-wrap: wrap;
@@ -1276,6 +1740,14 @@ watch(
 
   .task-flow-arrow {
     display: none;
+  }
+
+  .step-inline-frame {
+    min-height: 440px;
+  }
+
+  .step-inline-frame-submissions {
+    min-height: 520px;
   }
 }
 </style>
