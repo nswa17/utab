@@ -1036,9 +1036,10 @@ function isHubTask(value: unknown): value is HubTask {
 function selectTask(task: HubTask) {
   activeTask.value = task
   if (selectedRound.value !== null) {
+    const roundNumber = selectedRound.value
     roundTaskSelection.value = {
       ...roundTaskSelection.value,
-      [selectedRound.value]: task,
+      [roundNumber]: task,
     }
   }
   router.replace({
