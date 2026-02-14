@@ -16,6 +16,7 @@ declare module 'vue' {
     EmptyState: typeof import('./components/common/EmptyState.vue')['default']
     Field: typeof import('./components/common/Field.vue')['default']
     FlexibleInput: typeof import('./components/common/FlexibleInput.vue')['default']
+    HelpTip: typeof import('./components/common/HelpTip.vue')['default']
     InputLabel: typeof import('./components/common/InputLabel.vue')['default']
     LazyItem: typeof import('./components/common/LazyItem.vue')['default']
     LinkList: typeof import('./components/common/LinkList.vue')['default']
