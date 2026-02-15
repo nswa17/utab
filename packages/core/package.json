@@ -22,8 +22,7 @@
   "scripts": {
     "build": "tsc -b",
     "lint": "echo 'lint not yet configured'",
-    "test": "node ../web/scripts/run-with-timeout.mjs 120 pnpm exec vitest run",
-    "test:full": "UTAB_FULL_CHECK=1 vitest run",
+    "test": "vitest run",
     "clean": "rm -rf dist"
   },
   "dependencies": {

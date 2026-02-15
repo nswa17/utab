@@ -4,9 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const isFullCheck = process.env.UTAB_FULL_CHECK === '1'
-const defaultTimeoutMs = 30_000
-const fullTimeoutMs = 600_000
 
 export default defineConfig({
   plugins: [vue()],
@@ -17,14 +14,10 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'node',
+    environment: 'happy-dom', // 'node' から変更
     passWithNoTests: true,
-    pool: 'forks',
-    fileParallelism: false,
-    maxWorkers: 1,
-    minWorkers: 1,
-    testTimeout: isFullCheck ? fullTimeoutMs : defaultTimeoutMs,
-    hookTimeout: isFullCheck ? fullTimeoutMs : defaultTimeoutMs,
+    testTimeout: 600000,
+    hookTimeout: 600000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

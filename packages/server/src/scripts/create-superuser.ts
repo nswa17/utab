@@ -5,13 +5,12 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '../../../..')
-const isProduction = process.env.NODE_ENV === 'production'
 
 dotenv.config({ path: path.join(rootDir, '.env') })
-if (isProduction) {
+if (process.env.NODE_ENV === 'production') {
   dotenv.config({ path: path.join(rootDir, '.env.production.local'), override: true })
 }
-if (!isProduction && !process.env.MONGODB_URI) {
+if (process.env.NODE_ENV !== 'production' && !process.env.MONGODB_URI) {
   dotenv.config({ path: path.join(rootDir, '.env.development') })
 }
 
@@ -25,7 +24,7 @@ function getSuperuserEnvValue(key: 'SUPERUSER_USERNAME' | 'SUPERUSER_PASSWORD', 
     return value
   }
 
-  if (isProduction) {
+  if (process.env.NODE_ENV === 'production') {
     throw new Error(`${key} is required in production. Set it in ${REQUIRED_IN_PRODUCTION}.`)
   }
 

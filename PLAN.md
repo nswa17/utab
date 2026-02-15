@@ -30,23 +30,13 @@
   - `pnpm -C packages/web test`（120秒 timeout）
   - `pnpm -C packages/web typecheck`（90秒 timeout）
   - `pnpm -C packages/web typecheck:vue`（120秒 timeout）
-- 差分中心実行として `pnpm test:changed`（`scripts/test-changed.mjs`）を追加し、変更ファイルに対して package単位で `vitest related` を実行できるようにした
-- `packages/server/test/integration.test.ts` は重いケースを `UTAB_FULL_CHECK=1` 時のみ実行する形に分離し、通常 `pnpm -C packages/server test` の待ち時間を削減した
-- `packages/server/test/integration.test.ts` は通常実行時に MongoMemoryServer 起動を行わず、軽量テストのみDB非依存で実行するようにした
-- フル実行コマンドは別名で維持済み
-  - `test:full`
-  - `typecheck:full`
-  - `typecheck:vue:full`
-- `test:full` は `UTAB_FULL_CHECK=1` を付与し、通常実行より長いテスト/フックタイムアウトを許可する
+- テスト実行導線は簡素化し、`pnpm test`（ルート）と各packageの `pnpm -C packages/<name> test` に一本化した
 
 ### 今後の方針
 
-- 方針1: 開発時は「短時間で失敗を返す」デフォルトコマンドを維持し、フリーズ検知を優先する
-- 方針2: リリース前/CI の最終確認は `*:full` を使う（長時間実行を明示的に選択）
-- 方針2.1: フル確認が必要なときは `pnpm test:full` を使い、`UTAB_FULL_CHECK=1` を明示して slowテストを含める
-- 方針3: `vitest` と `tsc` のハング再現条件を切り分ける（依存解決・Nodeバージョン・キャッシュ・ワーカー設定）
-- 方針4: 負荷/長時間系テストを将来導入する場合は通常 `test` から分離し、`test:load` のような明示コマンドに隔離する
-- 方針5: タイムアウト発生時は「コマンド・経過秒・再現条件」を `PLAN.md` と PR 説明に必ず記録する
+- 方針1: 実行導線は最小限に保ち、テストは `test` コマンドで全件実行する
+- 方針2: 実行時間・ハング問題はテスト分岐ではなく、環境調査（依存・Node/PNPM・キャッシュ）で解消する
+- 方針3: タイムアウト発生時は「コマンド・経過秒・再現条件」を `PLAN.md` と PR 説明に必ず記録する
 
 ### 追加で確認すべき重要ポイント
 

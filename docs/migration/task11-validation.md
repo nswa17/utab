@@ -34,7 +34,7 @@ pnpm -C packages/web test
 ## 3. Docker 起動確認
 
 ```bash
-docker-compose up --build
+docker-compose up -d --build
 ```
 
 ### ヘルスチェック
