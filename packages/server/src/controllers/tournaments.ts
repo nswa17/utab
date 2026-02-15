@@ -257,15 +257,27 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
     const sessionAccess = req.session.tournamentAccess ?? {}
 
     if (!access.required || action === 'skip') {
+      const grantedAt = Date.now()
+      const expiresAt = grantedAt + 24 * 60 * 60 * 1000
+      const entry = {
+        grantedAt,
+        expiresAt,
+        version: access.version,
+      }
       req.session.tournamentAccess = {
         ...sessionAccess,
-        [id]: {
-          grantedAt: Date.now(),
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-          version: access.version,
-        },
+        [id]: entry,
       }
-      res.json({ data: { tournamentId: id, granted: true, required: access.required }, errors: [] })
+      res.json({
+        data: {
+          tournamentId: id,
+          granted: true,
+          required: access.required,
+          version: entry.version,
+          expiresAt: entry.expiresAt,
+        },
+        errors: [],
+      })
       return
     }
 
@@ -291,16 +303,28 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
       return
     }
 
+    const grantedAt = Date.now()
+    const expiresAt = grantedAt + 24 * 60 * 60 * 1000
+    const entry = {
+      grantedAt,
+      expiresAt,
+      version: access.version,
+    }
     req.session.tournamentAccess = {
       ...sessionAccess,
-      [id]: {
-        grantedAt: Date.now(),
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        version: access.version,
-      },
+      [id]: entry,
     }
 
-    res.json({ data: { tournamentId: id, granted: true, required: access.required }, errors: [] })
+    res.json({
+      data: {
+        tournamentId: id,
+        granted: true,
+        required: access.required,
+        version: entry.version,
+        expiresAt: entry.expiresAt,
+      },
+      errors: [],
+    })
   } catch (err) {
     next(err)
   }
