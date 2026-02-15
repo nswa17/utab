@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json && vite build",
+    "build": "pnpm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "typecheck": "node ./scripts/run-with-timeout.mjs 90 pnpm exec tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:full": "tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:vue": "node ./scripts/run-with-timeout.mjs 120 pnpm exec vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "typecheck:vue:full": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "typecheck:ci": "pnpm run typecheck && pnpm run typecheck:vue",
     "lint": "echo 'lint not yet configured'"
   },
   "dependencies": {
@@ -28,6 +32,7 @@
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-vue": "^5.1.0",
+    "happy-dom": "^20.6.1",
     "jsdom": "^24.0.0",
     "terser": "^5.30.3",
     "typescript": "5.4.5",

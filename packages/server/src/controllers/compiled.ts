@@ -1,4 +1,4 @@
-import { Types, type Connection } from 'mongoose'
+import type { Connection } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
@@ -25,6 +25,8 @@ import {
   type CompileOptions,
   type CompileOptionsInput,
 } from '../types/compiled-options.js'
+import { buildDetailsForRounds, normalizeScoreWeights } from './shared/allocation-support.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type BallotPayload = {
   teamAId?: string
@@ -106,27 +108,6 @@ function toNumberArray(value: unknown): number[] {
 
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
-}
-
-function normalizeScoreWeights(scoreWeights: any): number[] {
-  if (Array.isArray(scoreWeights)) {
-    if (scoreWeights.every((v) => typeof v === 'number')) return scoreWeights
-    if (scoreWeights.every((v) => v && typeof v === 'object' && 'value' in v)) {
-      return scoreWeights.map((v) => Number(v.value))
-    }
-  }
-  return [1]
-}
-
-function buildDetailsForRounds(
-  details: any[] | undefined,
-  rounds: number[],
-  defaults: Record<string, unknown>
-) {
-  return rounds.map((r) => {
-    const existing = details?.find((d) => d.r === r) ?? {}
-    return { r, ...defaults, ...existing }
-  })
 }
 
 function resolveRounds(
@@ -341,7 +322,7 @@ async function resolveDiffBaselineDoc(
 ) {
   const CompiledModel = getCompiledModel(connection)
   if (compileOptions.diff_baseline.mode === 'compiled') {
-    if (!Types.ObjectId.isValid(compileOptions.diff_baseline.compiled_id)) {
+    if (!isValidObjectId(compileOptions.diff_baseline.compiled_id)) {
       return null
     }
     return CompiledModel.findOne({
@@ -1391,17 +1372,23 @@ function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
   }
 }
 
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
+}
+
 const makeListCompiled =
   (key: CompiledResultsKey): RequestHandler =>
   async (req, res, next) => {
     try {
       const { tournamentId, latest } = req.query as { tournamentId?: string; latest?: string }
-      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-        return
-      }
+      if (!ensureTournamentId(res, tournamentId)) return
 
       const connection = await getTournamentConnection(tournamentId)
       const CompiledModel = getCompiledModel(connection)
@@ -1448,12 +1435,7 @@ const makeCreateCompiled =
         rounds?: number[]
         options?: CompileOptionsInput
       }
-      if (!Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-        return
-      }
+      if (!ensureTournamentId(res, tournamentId)) return
 
       const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
       const { payload, connection } = await buildCompiledPayload(
@@ -1474,9 +1456,7 @@ const makeCreateCompiled =
       res.status(201).json({ data: toCompiledSubset(createdJson, key), errors: [] })
     } catch (err) {
       if ((err as any)?.status === 404) {
-        res
-          .status(404)
-          .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+        notFound(res, 'Tournament not found')
         return
       }
       next(err)
@@ -1494,12 +1474,7 @@ export const createCompiledAdjudicators: RequestHandler = makeCreateCompiled('co
 export const listCompiled: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, latest } = req.query as { tournamentId?: string; latest?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const CompiledModel = getCompiledModel(connection)
@@ -1539,12 +1514,7 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       rounds?: number[]
       options?: CompileOptionsInput
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
     const { payload, connection } = await buildCompiledPayload(
@@ -1564,9 +1534,7 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
     if ((err as any)?.status === 404) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)

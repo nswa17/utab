@@ -17,6 +17,7 @@
 import { computed, useAttrs } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
+import { resolveReloadButtonAttrs, resolveReloadButtonLabel } from '@/components/common/reload-button'
 
 defineOptions({ inheritAttrs: false })
 
@@ -41,18 +42,15 @@ const props = withDefaults(
 
 const attrs = useAttrs()
 const { t } = useI18n({ useScope: 'global' })
-const labelText = computed(() => props.label || t('再読み込み'))
-const buttonAttrs = computed(() => {
-  const target = String(props.target ?? '').trim()
-  const fallbackAriaLabel = target ? t('{target}を再読み込み', { target }) : labelText.value
-  const ariaLabel = String(attrs['aria-label'] ?? '').trim() || fallbackAriaLabel
-  const title = String(attrs.title ?? '').trim() || ariaLabel
-  return {
-    ...attrs,
-    'aria-label': ariaLabel,
-    title,
-  }
-})
+const labelText = computed(() => resolveReloadButtonLabel(props.label, t))
+const buttonAttrs = computed(() =>
+  resolveReloadButtonAttrs({
+    attrs: attrs as Record<string, unknown>,
+    target: props.target,
+    labelText: labelText.value,
+    t,
+  })
+)
 </script>
 
 <style scoped>

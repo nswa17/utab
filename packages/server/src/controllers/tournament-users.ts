@@ -1,8 +1,8 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
 import { hashPassword } from '../services/hash.service.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function sanitizeTournamentUserResponse(user: {
   _id: unknown
@@ -27,10 +27,8 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       role: 'organizer' | 'adjudicator' | 'speaker' | 'audience'
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
@@ -78,25 +76,20 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     const { id: tournamentId } = req.params
     const { username, userId } = req.query as { username?: string; userId?: string }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
     if (!username && !userId) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'username or userId is required' }],
-      })
+      badRequest(res, 'username or userId is required')
       return
     }
 
     const query = userId ? { _id: userId } : { username }
     const user = await UserModel.findOne(query).exec()
     if (!user) {
-      res.status(404).json({ data: null, errors: [{ name: 'NotFound', message: 'User not found' }] })
+      notFound(res, 'User not found')
       return
     }
 

@@ -430,6 +430,7 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import Table from '@/components/common/Table.vue'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 
 const route = useRoute()
 const submissions = useSubmissionsStore()
@@ -654,11 +655,6 @@ type SideMapping = {
   oppSlot: 'A' | 'B'
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => String(item)).filter(Boolean)
-}
-
 function toNumberArray(value: unknown): Array<number | undefined> {
   if (!Array.isArray(value)) return []
   return value.map((item) => {
@@ -672,11 +668,6 @@ function toFiniteNumberList(value: unknown): number[] {
   return value
     .map((item) => Number(item))
     .filter((item) => Number.isFinite(item))
-}
-
-function toBooleanArray(value: unknown): boolean[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => Boolean(item))
 }
 
 function formatNumber(value: number | undefined): string {

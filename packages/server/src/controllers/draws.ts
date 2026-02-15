@@ -1,4 +1,3 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import {
   teams as teamAllocations,
@@ -21,116 +20,21 @@ import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { sanitizeDrawForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  buildDetailsForRounds,
+  buildIdMaps,
+  ensureRounds,
+  extractDrawUserDefinedData,
+  hasSufficientAdjudicators,
+  normalizeInstitutionPriority,
+  normalizeScoreWeights,
+} from './shared/allocation-support.js'
+import { isValidObjectId, badRequest, notFound } from './shared/http-errors.js'
 
 const allocations = {
   teams: teamAllocations,
   adjudicators: adjudicatorAllocations,
   venues: venueAllocations,
-}
-
-type IdMaps = {
-  map: Map<string, number>
-  reverse: Map<number, string>
-}
-
-type RoundDetail = { r: number; [key: string]: unknown }
-
-function buildIdMaps(docs: Array<{ _id: unknown }>): IdMaps {
-  const map = new Map<string, number>()
-  const reverse = new Map<number, string>()
-  docs.forEach((doc, idx) => {
-    const id = String(doc._id)
-    const num = idx + 1
-    map.set(id, num)
-    reverse.set(num, id)
-  })
-  return { map, reverse }
-}
-
-function normalizeScoreWeights(scoreWeights: any): number[] {
-  if (Array.isArray(scoreWeights)) {
-    if (scoreWeights.every((v) => typeof v === 'number')) return scoreWeights
-    if (scoreWeights.every((v) => v && typeof v === 'object' && 'value' in v)) {
-      return scoreWeights.map((v) => Number(v.value))
-    }
-  }
-  return [1]
-}
-
-function normalizeInstitutionPriority(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 1
-  return parsed
-}
-
-function normalizeAdjudicatorCount(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return Math.floor(parsed)
-}
-
-function adjudicatorsRequiredPerSquare(numbers: {
-  chairs?: unknown
-  panels?: unknown
-  trainees?: unknown
-}): number {
-  return (
-    normalizeAdjudicatorCount(numbers.chairs) +
-    normalizeAdjudicatorCount(numbers.panels) +
-    normalizeAdjudicatorCount(numbers.trainees)
-  )
-}
-
-function hasSufficientAdjudicators(
-  availableCount: number,
-  allocationSquares: number,
-  numbers: { chairs?: unknown; panels?: unknown; trainees?: unknown }
-): boolean {
-  if (allocationSquares <= 0) return false
-  const requiredPerSquare = adjudicatorsRequiredPerSquare(numbers)
-  if (requiredPerSquare <= 0) return false
-  return availableCount >= allocationSquares * requiredPerSquare
-}
-
-function extractDrawUserDefinedData(draw: any): Record<string, unknown> | undefined {
-  const candidate = draw?.userDefinedData ?? draw?.user_defined_data
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
-  return candidate as Record<string, unknown>
-}
-
-function ensureRounds(round: number): number[] {
-  if (round <= 1) return []
-  return Array.from({ length: round - 1 }, (_, i) => i + 1)
-}
-
-function buildDetailsForRounds(
-  details: Array<{ r?: number; [key: string]: unknown }> | undefined,
-  rounds: number[],
-  defaults: Record<string, unknown>,
-  mapInstitutions?: (id: string) => number | undefined,
-  mapSpeakers?: (id: string) => number | undefined,
-  mapConflicts?: (id: string) => number | undefined
-) : RoundDetail[] {
-  return rounds.map((r): RoundDetail => {
-    const existing = details?.find((d) => d.r === r) ?? {}
-    const merged: RoundDetail = { r, ...defaults, ...existing }
-    if (mapInstitutions && Array.isArray(merged.institutions)) {
-      merged.institutions = merged.institutions
-        .map((id: string) => mapInstitutions(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    if (mapSpeakers && Array.isArray(merged.speakers)) {
-      merged.speakers = merged.speakers
-        .map((id: string) => mapSpeakers(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    if (mapConflicts && Array.isArray(merged.conflicts)) {
-      merged.conflicts = merged.conflicts
-        .map((id: string) => mapConflicts(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    return merged
-  })
 }
 
 export const listDraws: RequestHandler = async (req, res, next) => {
@@ -140,10 +44,8 @@ export const listDraws: RequestHandler = async (req, res, next) => {
       round?: string | number
       public?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
@@ -154,9 +56,7 @@ export const listDraws: RequestHandler = async (req, res, next) => {
     if (round !== undefined) {
       const parsed = Number(round)
       if (Number.isNaN(parsed)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round' }] })
+        badRequest(res, 'Invalid round')
         return
       }
       filter.round = parsed
@@ -185,10 +85,8 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       locked?: boolean
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
@@ -227,10 +125,8 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       save?: boolean
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
@@ -249,9 +145,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       ])
 
     if (!tournament) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
 
@@ -521,16 +415,12 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid draw id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid draw id')
       return
     }
 
@@ -538,9 +428,7 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
     const DrawModel = getDrawModel(connection)
     const deleted = await DrawModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Draw not found' }] })
+      notFound(res, 'Draw not found')
       return
     }
     res.json({ data: deleted, errors: [] })

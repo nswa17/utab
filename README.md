@@ -17,21 +17,11 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
 - まず **コアロジック（配席/集計順位アルゴリズム）を変えない改善** を優先する
 - メール送信や証明書生成など **運用コストが高い周辺業務は外部連携を基本** とし、UTab 側は CSV/JSON 出力を強化する
 
-## ローカルHTTPS（mkcert）
-
-ブラウザ警告なしで build 構成を HTTPS 検証できます。
-
-1. `pnpm https:setup`
-2. `pnpm docker:build:https:up`
-3. `https://localhost:8443` にアクセス
-
-停止は `pnpm docker:build:https:down`。
-
 ## Legacy(v1)からの主な変更点（v2）
 
 - 3リポジトリ構成をモノレポ化（`packages/core|server|web`）。旧実装は `legacy/` に保管
 - 全面 TypeScript 化（strict）とテスト基盤（Vitest）
-- Node.js 20+ / MongoDB 8.0+ / Mongoose 8 系へ更新
+- Node.js 20+（推奨: 24 LTS）/ MongoDB 8.0+ / Mongoose 8 系へ更新
 - 開発基盤: pnpm workspaces + Turbo、ESLint + Prettier、Docker、CI（GitHub Actions）
 - サーバー: 認証の刷新（MD5 → bcrypt）、アクセス制御・公開レスポンス制限・CSRF/CORS・レートリミットの導入
 - フロント: Vue 3 + Vite、Vuex → Pinia、Element UI → Element Plus
@@ -238,7 +228,7 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
 
 #### 実行環境
 
-- Node.js: 20.11.0 以上
+- Node.js: 20.11.0 以上（推奨: 24 LTS）
 - MongoDB: 8.0 以上
 
 ### 移行手順
@@ -254,7 +244,7 @@ mongodump --uri="mongodb://localhost:27017/your-db" --out=./backup
 ```bash
 docker-compose down
 # docker-compose.yml の mongo:8.0 を利用
-docker-compose up -d
+docker-compose up -d --build
 ```
 
 #### 3. 新バージョン起動
@@ -299,7 +289,7 @@ v2 は API 仕様を刷新しています。v1 クライアントは互換性が
 
 ## 必要環境
 
-- Node.js: 20.11.0 以上（`.nvmrc` 参照）
+- Node.js: 20.11.0 以上（推奨: 24 LTS, `.nvmrc` 参照）
 - pnpm: 8.0.0 以上（推奨: `pnpm@10`）
 - MongoDB: 8.0 以上
 
@@ -318,6 +308,26 @@ pnpm -C packages/server dev
 
 # Web
 pnpm -C packages/web dev
+```
+
+### テスト
+
+```bash
+# 全パッケージ
+pnpm test
+
+# package 単位
+pnpm -C packages/core test
+pnpm -C packages/server test
+pnpm -C packages/web test
+
+# 監視実行
+pnpm test:watch
+
+# Web の型チェック
+pnpm -C packages/web typecheck
+pnpm -C packages/web typecheck:vue
+pnpm -C packages/web typecheck:ci
 ```
 
 ### 管理者UI移行フラグ（Web）
@@ -340,7 +350,7 @@ pnpm -C packages/web dev
 ### Docker
 
 ```bash
-docker-compose up --build
+docker-compose up -d --build
 ```
 
 Web: http://localhost:8080  
@@ -355,7 +365,7 @@ API: http://localhost:3000/api/health
 ## 技術スタック
 
 - TypeScript 5.4+
-- Node.js 20+
+- Node.js 20+（推奨: 24 LTS）
 - MongoDB 8.0+
 - Vue 3 + Vite
 - Mongoose 8

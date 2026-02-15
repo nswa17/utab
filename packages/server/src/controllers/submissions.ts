@@ -1,8 +1,9 @@
-import { Types, type Connection } from 'mongoose'
+import type { Connection } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { getSubmissionModel } from '../models/submission.js'
 import { getRoundModel } from '../models/round.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
   const submittedEntityToken = String(submittedEntityId ?? '').trim()
@@ -17,6 +18,25 @@ function sumScores(scores: number[]): number {
 function arrayLengthMatches(value: unknown, expectedLength: number): boolean {
   if (!Array.isArray(value)) return true
   return value.length === expectedLength
+}
+
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
+}
+
+function ensureSubmissionId(res: Parameters<RequestHandler>[1], submissionId: string): boolean {
+  if (!isValidObjectId(submissionId)) {
+    badRequest(res, 'Invalid submission id')
+    return false
+  }
+  return true
 }
 
 type ValidationOutcome<T> = { ok: true; value: T } | { ok: false; message: string }
@@ -372,12 +392,7 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
       round?: string | number
     }
 
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
@@ -413,18 +428,11 @@ export const listParticipantSubmissions: RequestHandler = async (req, res, next)
       submittedEntityId?: string
     }
 
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const actor = String(submittedEntityId ?? '').trim()
     if (!actor) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'submittedEntityId is required' }] })
+      badRequest(res, 'submittedEntityId is required')
       return
     }
 
@@ -491,12 +499,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       mannerB?: number[]
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
@@ -521,10 +524,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       mannerB,
     })
     if (!normalized.ok) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: normalized.message }],
-      })
+      badRequest(res, normalized.message)
       return
     }
     const payload = normalized.value
@@ -586,12 +586,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       manner?: number
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const normalized = normalizeFeedbackPayload({
       adjudicatorId,
@@ -603,10 +598,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       manner,
     })
     if (!normalized.ok) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: normalized.message }],
-      })
+      badRequest(res, normalized.message)
       return
     }
     const payload = normalized.value
@@ -645,35 +637,20 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       payload?: Record<string, unknown>
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid submission id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureSubmissionId(res, id)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
     const existing = await SubmissionModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!existing) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Submission not found' }] })
+      notFound(res, 'Submission not found')
       return
     }
 
     const nextRound = round ?? Number(existing.round)
     if (!Number.isFinite(nextRound) || nextRound < 1) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'round must be an integer >= 1' }],
-      })
+      badRequest(res, 'round must be an integer >= 1')
       return
     }
 
@@ -686,20 +663,14 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         nextPayload
       )
       if (!normalizedBallot.ok) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: normalizedBallot.message }],
-        })
+        badRequest(res, normalizedBallot.message)
         return
       }
       nextPayload = normalizedBallot.value
     } else {
       const normalizedFeedback = normalizeFeedbackPayload(nextPayload)
       if (!normalizedFeedback.ok) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: normalizedFeedback.message }],
-        })
+        badRequest(res, normalizedFeedback.message)
         return
       }
       nextPayload = normalizedFeedback.value
@@ -719,9 +690,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Submission not found' }] })
+      notFound(res, 'Submission not found')
       return
     }
 

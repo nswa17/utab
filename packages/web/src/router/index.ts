@@ -1,42 +1,49 @@
-import { createRouter, createWebHistory, type Router } from 'vue-router'
+import { createRouter, createWebHistory, type Router, type RouterHistory } from 'vue-router'
 import type { Pinia } from 'pinia'
 import { setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
-import LoginView from '@/views/Login.vue'
-import SignupView from '@/views/Signup.vue'
-import AdminHome from '@/views/admin/AdminHome.vue'
-import AdminTournament from '@/views/admin/AdminTournament.vue'
-import AdminTournamentHome from '@/views/admin/AdminTournamentHome.vue'
-import AdminTournamentRounds from '@/views/admin/AdminTournamentRounds.vue'
-import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
-import AdminTournamentCompiled from '@/views/admin/AdminTournamentCompiled.vue'
-import AdminRoundOperationsHub from '@/views/admin/AdminRoundOperationsHub.vue'
-import AdminRoundIndex from '@/views/admin/round/AdminRoundIndex.vue'
-import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
-import AdminRoundResult from '@/views/admin/round/AdminRoundResult.vue'
-import UserHome from '@/views/user/UserHome.vue'
-import UserTournament from '@/views/user/UserTournament.vue'
-import UserTournamentHome from '@/views/user/UserTournamentHome.vue'
-import UserTournamentResults from '@/views/user/UserTournamentResults.vue'
-import UserParticipantLayout from '@/views/user/participant/UserParticipantLayout.vue'
-import UserParticipantHome from '@/views/user/participant/UserParticipantHome.vue'
-import UserParticipantRoundLayout from '@/views/user/participant/round/UserParticipantRoundLayout.vue'
-import UserRoundHome from '@/views/user/participant/round/UserRoundHome.vue'
-import UserRoundDraw from '@/views/user/participant/round/UserRoundDraw.vue'
-import UserRoundBallot from '@/views/user/participant/round/UserRoundBallot.vue'
-import UserRoundFeedback from '@/views/user/participant/round/UserRoundFeedback.vue'
-import UserRoundBallotHome from '@/views/user/participant/round/ballot/UserRoundBallotHome.vue'
-import UserRoundBallotEntry from '@/views/user/participant/round/ballot/UserRoundBallotEntry.vue'
-import UserRoundFeedbackHome from '@/views/user/participant/round/feedback/UserRoundFeedbackHome.vue'
-import UserRoundFeedbackEntry from '@/views/user/participant/round/feedback/UserRoundFeedbackEntry.vue'
 import { isAdminUiV2Enabled } from '@/config/feature-flags'
 
 type RouterOptions = {
   adminUiV2?: boolean
+  history?: RouterHistory
+  stubComponents?: boolean
 }
+
+const LoginView = () => import('@/views/Login.vue')
+const SignupView = () => import('@/views/Signup.vue')
+const AdminHome = () => import('@/views/admin/AdminHome.vue')
+const AdminTournament = () => import('@/views/admin/AdminTournament.vue')
+const AdminTournamentHome = () => import('@/views/admin/AdminTournamentHome.vue')
+const AdminTournamentRounds = () => import('@/views/admin/AdminTournamentRounds.vue')
+const AdminTournamentSubmissions = () => import('@/views/admin/AdminTournamentSubmissions.vue')
+const AdminTournamentCompiled = () => import('@/views/admin/AdminTournamentCompiled.vue')
+const AdminRoundOperationsHub = () => import('@/views/admin/AdminRoundOperationsHub.vue')
+const AdminRoundIndex = () => import('@/views/admin/round/AdminRoundIndex.vue')
+const AdminRoundAllocation = () => import('@/views/admin/round/AdminRoundAllocation.vue')
+const AdminRoundResult = () => import('@/views/admin/round/AdminRoundResult.vue')
+const UserHome = () => import('@/views/user/UserHome.vue')
+const UserTournament = () => import('@/views/user/UserTournament.vue')
+const UserTournamentHome = () => import('@/views/user/UserTournamentHome.vue')
+const UserTournamentResults = () => import('@/views/user/UserTournamentResults.vue')
+const UserParticipantLayout = () => import('@/views/user/participant/UserParticipantLayout.vue')
+const UserParticipantHome = () => import('@/views/user/participant/UserParticipantHome.vue')
+const UserParticipantRoundLayout = () => import('@/views/user/participant/round/UserParticipantRoundLayout.vue')
+const UserRoundHome = () => import('@/views/user/participant/round/UserRoundHome.vue')
+const UserRoundDraw = () => import('@/views/user/participant/round/UserRoundDraw.vue')
+const UserRoundBallot = () => import('@/views/user/participant/round/UserRoundBallot.vue')
+const UserRoundFeedback = () => import('@/views/user/participant/round/UserRoundFeedback.vue')
+const UserRoundBallotHome = () => import('@/views/user/participant/round/ballot/UserRoundBallotHome.vue')
+const UserRoundBallotEntry = () => import('@/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+const UserRoundFeedbackHome = () => import('@/views/user/participant/round/feedback/UserRoundFeedbackHome.vue')
+const UserRoundFeedbackEntry = () => import('@/views/user/participant/round/feedback/UserRoundFeedbackEntry.vue')
+const StubRouteComponent = { template: '<div />' }
 
 export function createAppRouter(options: RouterOptions = {}): Router {
   const adminUiV2 = options.adminUiV2 ?? isAdminUiV2Enabled()
+  const useStubComponents = options.stubComponents ?? false
+  const routeComponent = (component: unknown) =>
+    (useStubComponents ? StubRouteComponent : component) as any
   const adminChildren = adminUiV2
     ? [
         {
@@ -46,7 +53,7 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             query: to.query,
           }),
         },
-        { path: 'setup', component: AdminTournamentHome },
+        { path: 'setup', component: routeComponent(AdminTournamentHome) },
         {
           path: 'home',
           redirect: (to: any) => ({
@@ -54,7 +61,7 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             query: to.query,
           }),
         },
-        { path: 'operations', component: AdminRoundOperationsHub },
+        { path: 'operations', component: routeComponent(AdminRoundOperationsHub) },
         {
           path: 'rounds',
           redirect: (to: any) => ({
@@ -62,8 +69,8 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             query: to.query,
           }),
         },
-        { path: 'submissions', component: AdminTournamentSubmissions },
-        { path: 'reports', component: AdminTournamentCompiled },
+        { path: 'submissions', component: routeComponent(AdminTournamentSubmissions) },
+        { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
         {
           path: 'compiled',
           redirect: (to: any) => ({
@@ -80,101 +87,101 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             query: to.query,
           }),
         },
-        { path: 'home', component: AdminTournamentHome },
-        { path: 'setup', component: AdminTournamentHome },
-        { path: 'rounds', component: AdminRoundOperationsHub },
-        { path: 'operations', component: AdminRoundOperationsHub },
-        { path: 'submissions', component: AdminTournamentSubmissions },
-        { path: 'compiled', component: AdminTournamentCompiled },
-        { path: 'reports', component: AdminTournamentCompiled },
+        { path: 'home', component: routeComponent(AdminTournamentHome) },
+        { path: 'setup', component: routeComponent(AdminTournamentHome) },
+        { path: 'rounds', component: routeComponent(AdminRoundOperationsHub) },
+        { path: 'operations', component: routeComponent(AdminRoundOperationsHub) },
+        { path: 'submissions', component: routeComponent(AdminTournamentSubmissions) },
+        { path: 'compiled', component: routeComponent(AdminTournamentCompiled) },
+        { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
       ]
   return createRouter({
-    history: createWebHistory(),
+    history: options.history ?? createWebHistory(),
     routes: [
       { path: '/', redirect: '/user' },
-      { path: '/login', component: LoginView },
-      { path: '/signup', component: SignupView },
-      { path: '/admin', component: AdminHome, meta: { requiresAuth: true } },
+      { path: '/login', component: routeComponent(LoginView) },
+      { path: '/signup', component: routeComponent(SignupView) },
+      { path: '/admin', component: routeComponent(AdminHome), meta: { requiresAuth: true } },
       {
         path: '/admin-embed/:tournamentId/rounds/:round/allocation',
-        component: AdminRoundAllocation,
+        component: routeComponent(AdminRoundAllocation),
         meta: { requiresAuth: true },
       },
       {
         path: '/admin-embed/:tournamentId/submissions',
-        component: AdminTournamentSubmissions,
+        component: routeComponent(AdminTournamentSubmissions),
         meta: { requiresAuth: true },
       },
       {
         path: '/admin-embed/:tournamentId/reports',
-        component: AdminTournamentCompiled,
+        component: routeComponent(AdminTournamentCompiled),
         meta: { requiresAuth: true },
       },
       {
         path: '/admin-embed/:tournamentId/rounds/settings',
-        component: AdminTournamentRounds,
+        component: routeComponent(AdminTournamentRounds),
         meta: { requiresAuth: true },
       },
       {
         path: '/admin-embed/:tournamentId/rounds/:round/result',
-        component: AdminRoundResult,
+        component: routeComponent(AdminRoundResult),
         meta: { requiresAuth: true },
       },
       {
         path: '/admin/:tournamentId',
-        component: AdminTournament,
+        component: routeComponent(AdminTournament),
         meta: { requiresAuth: true, adminUiV2 },
         children: [
           ...adminChildren,
           {
             path: 'rounds/:round',
-            component: AdminRoundIndex,
+            component: routeComponent(AdminRoundIndex),
             children: [
               { path: '', redirect: 'allocation' },
-              { path: 'allocation', component: AdminRoundAllocation },
-              { path: 'result', component: AdminRoundResult },
+              { path: 'allocation', component: routeComponent(AdminRoundAllocation) },
+              { path: 'result', component: routeComponent(AdminRoundResult) },
             ],
           },
           { path: 'results', redirect: 'submissions' },
         ],
       },
-      { path: '/user', component: UserHome },
+      { path: '/user', component: routeComponent(UserHome) },
       {
         path: '/user/:tournamentId',
-        component: UserTournament,
+        component: routeComponent(UserTournament),
         children: [
           { path: '', redirect: 'home' },
-          { path: 'home', component: UserTournamentHome },
-          { path: 'results', component: UserTournamentResults },
+          { path: 'home', component: routeComponent(UserTournamentHome) },
+          { path: 'results', component: routeComponent(UserTournamentResults) },
           {
             path: ':participant(audience|speaker|adjudicator)',
-            component: UserParticipantLayout,
+            component: routeComponent(UserParticipantLayout),
             children: [
               { path: '', redirect: 'home' },
-              { path: 'home', component: UserParticipantHome },
+              { path: 'home', component: routeComponent(UserParticipantHome) },
               {
                 path: 'rounds/:round',
-                component: UserParticipantRoundLayout,
+                component: routeComponent(UserParticipantRoundLayout),
                 children: [
                   { path: '', redirect: 'home' },
-                  { path: 'home', component: UserRoundHome },
-                  { path: 'draw', component: UserRoundDraw },
+                  { path: 'home', component: routeComponent(UserRoundHome) },
+                  { path: 'draw', component: routeComponent(UserRoundDraw) },
                   {
                     path: 'ballot',
-                    component: UserRoundBallot,
+                    component: routeComponent(UserRoundBallot),
                     children: [
                       { path: '', redirect: 'home' },
-                      { path: 'home', component: UserRoundBallotHome },
-                      { path: 'entry', component: UserRoundBallotEntry },
+                      { path: 'home', component: routeComponent(UserRoundBallotHome) },
+                      { path: 'entry', component: routeComponent(UserRoundBallotEntry) },
                     ],
                   },
                   {
                     path: 'feedback',
-                    component: UserRoundFeedback,
+                    component: routeComponent(UserRoundFeedback),
                     children: [
                       { path: '', redirect: 'home' },
-                      { path: 'home', component: UserRoundFeedbackHome },
-                      { path: ':adjudicatorId', component: UserRoundFeedbackEntry },
+                      { path: 'home', component: routeComponent(UserRoundFeedbackHome) },
+                      { path: ':adjudicatorId', component: routeComponent(UserRoundFeedbackEntry) },
                     ],
                   },
                 ],

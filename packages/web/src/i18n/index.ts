@@ -12,7 +12,7 @@ function normalizeLocale(value: string | null | undefined): Locale | null {
 
 function resolveBrowserStorage(): Storage | null {
   if (typeof window === 'undefined') return null
-  if (typeof process !== 'undefined' && Boolean(process.env?.VITEST)) return null
+  if (import.meta.env.VITEST) return null
   try {
     const storage = window.localStorage as Storage | undefined
     return storage ?? null

@@ -1,12 +1,49 @@
 # UTab Plan
 
-最終更新: 2026-02-13
+最終更新: 2026-02-15
 
 ## 今やること（全体）
 
 - [x] `legacy/` は現状維持（本フェーズでは変更しない）
 - [x] ステージング→本番のデプロイ手順を確定（`DEPLOYMENT.md`）
 - [x] UI モダン化計画を `PLAN.md` に集約し、未完了だった `T24` の「手動 seed 確定」導線を実装
+
+---
+
+## テスト実行の問題整理（2026-02-15）
+
+### 問題
+
+- `pnpm -C packages/web test` が無出力のまま停止し、完走しないケースがある
+- `pnpm -C packages/web typecheck` / `typecheck:vue` も同様に停止するケースがある
+- `pnpm -C packages/server exec tsc -p tsconfig.json --noEmit` も同様に停止するケースがある
+- `pnpm -C packages/server lint`（対象ファイル限定実行を含む）も停止するケースがある
+- 既存コマンドが長時間ブロックすると、CI/ローカルの「壊れているのか遅いだけか」の切り分けができない
+
+### わかっていること
+
+- Web 側に「負荷試験専用」の明示的なテストスイートは見当たらない（静的文字列検証中心のテストが多数）
+- Typecheck 側は `tsconfig.lint.json` / `tsconfig.typecheck.json` でテストファイル除外済みであり、単純な対象過多だけが原因とは断定できない
+- 実行環境依存で `vitest` / `tsc` プロセスがハングしている可能性が高い
+- 2026-02-15 時点で `web test`/`web typecheck`/`web typecheck:vue` は timeout wrapper により `124` で終了することを確認（無限待機は回避）
+- 暫定対策として `packages/web/scripts/run-with-timeout.mjs` を追加し、以下をデフォルト短時間実行へ変更済み
+  - `pnpm -C packages/web test`（120秒 timeout）
+  - `pnpm -C packages/web typecheck`（90秒 timeout）
+  - `pnpm -C packages/web typecheck:vue`（120秒 timeout）
+- テスト実行導線は簡素化し、`pnpm test`（ルート）と各packageの `pnpm -C packages/<name> test` に一本化した
+
+### 今後の方針
+
+- 方針1: 実行導線は最小限に保ち、テストは `test` コマンドで全件実行する
+- 方針2: 実行時間・ハング問題はテスト分岐ではなく、環境調査（依存・Node/PNPM・キャッシュ）で解消する
+- 方針3: タイムアウト発生時は「コマンド・経過秒・再現条件」を `PLAN.md` と PR 説明に必ず記録する
+
+### 追加で確認すべき重要ポイント
+
+- `vitest` 実行時の worker 設定（`threads/pool`）とプロセス残留の有無
+- `tsc` / `vue-tsc` の incremental キャッシュ破損有無（`node_modules/.cache/*`）
+- `pnpm install` 後の lockfile 差分と依存解決揺れ
+- CI 環境とローカル環境での再現差（同一 Node/PNPM バージョンで比較）
 
 ---
 

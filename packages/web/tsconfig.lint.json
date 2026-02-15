@@ -1,5 +1,20 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsc/tsconfig.lint.tsbuildinfo",
+    "skipLibCheck": true
+  },
   "include": ["src/**/*.ts", "src/**/*.tsx", "env.d.ts"],
-  "exclude": ["src/**/*.vue", "node_modules", "dist", "tests", "test"]
+  "exclude": [
+    "src/**/*.vue",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/auto-imports.d.ts",
+    "src/components.d.ts",
+    "node_modules",
+    "dist",
+    "tests",
+    "test"
+  ]
 }

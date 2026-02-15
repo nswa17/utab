@@ -7,17 +7,37 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '../../../..')
 
 dotenv.config({ path: path.join(rootDir, '.env') })
-if (!process.env.MONGODB_URI) {
+if (process.env.NODE_ENV === 'production') {
+  dotenv.config({ path: path.join(rootDir, '.env.production.local'), override: true })
+}
+if (process.env.NODE_ENV !== 'production' && !process.env.MONGODB_URI) {
   dotenv.config({ path: path.join(rootDir, '.env.development') })
 }
 
 const ORGANIZER_USERNAME = 'test'
 const ORGANIZER_PASSWORD = 'test'
-const SUPERUSER_USERNAME = 'rn375'
-const SUPERUSER_PASSWORD = 'ryn552'
+const DEFAULT_SUPERUSER_USERNAME = 'rn375'
+const DEFAULT_SUPERUSER_PASSWORD = 'ryn552'
+const REQUIRED_IN_PRODUCTION = '.env.production.local (gitignored)'
 const TOURNAMENT_NAME = 'Organizer Demo Tournament'
 const TOURNAMENT_SEED_KEY = 'organizer-demo-v1'
 const STYLE_ID = 2
+
+function getSuperuserEnvValue(key: 'SUPERUSER_USERNAME' | 'SUPERUSER_PASSWORD', fallback: string): string {
+  const value = process.env[key]
+  if (value && value.trim().length > 0) {
+    return value
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${key} is required in production. Set it in ${REQUIRED_IN_PRODUCTION}.`)
+  }
+
+  return fallback
+}
+
+const SUPERUSER_USERNAME = getSuperuserEnvValue('SUPERUSER_USERNAME', DEFAULT_SUPERUSER_USERNAME)
+const SUPERUSER_PASSWORD = getSuperuserEnvValue('SUPERUSER_PASSWORD', DEFAULT_SUPERUSER_PASSWORD)
 
 type SeededTeam = {
   id: string

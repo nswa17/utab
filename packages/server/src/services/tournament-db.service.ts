@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import { env } from '../config/environment.js'
 import { logger } from '../middleware/logging.js'
 
-const connections = new Map<string, mongoose.Connection>()
+const connections = new Map<string, Promise<mongoose.Connection>>()
 
 export async function getTournamentConnection(tournamentId: string): Promise<mongoose.Connection> {
   const existing = connections.get(tournamentId)
@@ -12,6 +12,8 @@ export async function getTournamentConnection(tournamentId: string): Promise<mon
     dbName: `tournament-${tournamentId}`,
   })
 
+  let connectPromise: Promise<mongoose.Connection>
+
   connection.on('error', (err) => {
     logger.error({ err, tournamentId }, 'tournament mongodb connection error')
   })
@@ -19,17 +21,53 @@ export async function getTournamentConnection(tournamentId: string): Promise<mon
     logger.info({ tournamentId }, 'tournament mongodb connected')
   })
   connection.on('disconnected', () => {
-    connections.delete(tournamentId)
+    if (connections.get(tournamentId) === connectPromise) {
+      connections.delete(tournamentId)
+    }
   })
 
-  await connection.asPromise()
-  connections.set(tournamentId, connection)
-  return connection
+  connectPromise = connection
+    .asPromise()
+    .then(() => connection)
+    .catch(async (err) => {
+      try {
+        await connection.close()
+      } catch (closeErr) {
+        logger.error(
+          { err: closeErr, tournamentId },
+          'tournament mongodb disconnect error after failed connect'
+        )
+      }
+      throw err
+    })
+
+  connections.set(tournamentId, connectPromise)
+  try {
+    return await connectPromise
+  } catch (err) {
+    if (connections.get(tournamentId) === connectPromise) {
+      connections.delete(tournamentId)
+    }
+    throw err
+  }
 }
 
 export async function closeTournamentConnections(): Promise<void> {
+  const connectionEntries = Array.from(connections.entries())
+  const resolved = await Promise.allSettled(
+    connectionEntries.map(async ([tournamentId, connectionPromise]) => ({
+      tournamentId,
+      connection: await connectionPromise,
+    }))
+  )
+
   const tasks: Promise<void>[] = []
-  for (const [tournamentId, connection] of connections.entries()) {
+  for (const item of resolved) {
+    if (item.status !== 'fulfilled') {
+      logger.error({ err: item.reason }, 'tournament mongodb connection resolve error')
+      continue
+    }
+    const { tournamentId, connection } = item.value
     tasks.push(
       connection
         .close()

@@ -14,7 +14,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'jsdom',
+    environment: 'happy-dom', // 'node' から変更
     passWithNoTests: true,
     testTimeout: 600000,
     hookTimeout: 600000,

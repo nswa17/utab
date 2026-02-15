@@ -1,5 +1,5 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getInstitutionModel } from '../models/institution.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
@@ -9,10 +9,8 @@ import { sanitizeInstitutionForPublic } from '../services/response-sanitizer.js'
 export const listInstitutions: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -34,25 +32,19 @@ export const getInstitution: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid institution id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid institution id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
     const InstitutionModel = getInstitutionModel(connection)
     const institution = await InstitutionModel.findById(id).lean().exec()
     if (!institution) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Institution not found' }] })
+      notFound(res, 'Institution not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
@@ -73,23 +65,16 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
         userDefinedData?: unknown
       }>
       if (payload.length === 0) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+        badRequest(res, 'Empty payload')
         return
       }
       const tournamentId = payload[0].tournamentId
-      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+      if (!tournamentId || !isValidObjectId(tournamentId)) {
+        badRequest(res, 'Invalid tournament id')
         return
       }
       if (!payload.every((item) => item.tournamentId === tournamentId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-        })
+        badRequest(res, 'Mixed tournament ids are not supported')
         return
       }
       const connection = await getTournamentConnection(tournamentId)
@@ -106,10 +91,8 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
       priority?: number
       userDefinedData?: unknown
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -136,9 +119,7 @@ export const createInstitution: RequestHandler = async (req, res, next) => {
 export const bulkUpdateInstitutions: RequestHandler = async (req, res, next) => {
   try {
     if (!Array.isArray(req.body) || req.body.length === 0) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+      badRequest(res, 'Empty payload')
       return
     }
     const payload = req.body as Array<{
@@ -150,17 +131,12 @@ export const bulkUpdateInstitutions: RequestHandler = async (req, res, next) => 
       userDefinedData?: unknown
     }>
     const tournamentId = payload[0].tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     if (!payload.every((item) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
+      badRequest(res, 'Mixed tournament ids are not supported')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -190,10 +166,8 @@ export const bulkUpdateInstitutions: RequestHandler = async (req, res, next) => 
 export const bulkDeleteInstitutions: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const idList =
@@ -221,16 +195,12 @@ export const updateInstitution: RequestHandler = async (req, res, next) => {
       priority?: number
       userDefinedData?: unknown
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid institution id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid institution id')
       return
     }
     const update: Record<string, unknown> = {}
@@ -245,9 +215,7 @@ export const updateInstitution: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Institution not found' }] })
+      notFound(res, 'Institution not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -260,25 +228,19 @@ export const deleteInstitution: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid institution id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid institution id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
     const InstitutionModel = getInstitutionModel(connection)
     const deleted = await InstitutionModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Institution not found' }] })
+      notFound(res, 'Institution not found')
       return
     }
     res.json({ data: deleted, errors: [] })

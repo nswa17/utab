@@ -1,5 +1,5 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
@@ -9,10 +9,8 @@ import { sanitizeSpeakerForPublic } from '../services/response-sanitizer.js'
 export const listSpeakers: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -32,25 +30,19 @@ export const getSpeaker: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid speaker id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid speaker id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
     const SpeakerModel = getSpeakerModel(connection)
     const speaker = await SpeakerModel.findById(id).lean().exec()
     if (!speaker) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Speaker not found' }] })
+      notFound(res, 'Speaker not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
@@ -69,23 +61,16 @@ export const createSpeaker: RequestHandler = async (req, res, next) => {
         userDefinedData?: unknown
       }>
       if (payload.length === 0) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+        badRequest(res, 'Empty payload')
         return
       }
       const tournamentId = payload[0].tournamentId
-      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+      if (!tournamentId || !isValidObjectId(tournamentId)) {
+        badRequest(res, 'Invalid tournament id')
         return
       }
       if (!payload.every((item) => item.tournamentId === tournamentId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-        })
+        badRequest(res, 'Mixed tournament ids are not supported')
         return
       }
       const connection = await getTournamentConnection(tournamentId)
@@ -100,10 +85,8 @@ export const createSpeaker: RequestHandler = async (req, res, next) => {
       name: string
       userDefinedData?: unknown
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -124,9 +107,7 @@ export const createSpeaker: RequestHandler = async (req, res, next) => {
 export const bulkUpdateSpeakers: RequestHandler = async (req, res, next) => {
   try {
     if (!Array.isArray(req.body) || req.body.length === 0) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+      badRequest(res, 'Empty payload')
       return
     }
     const payload = req.body as Array<{
@@ -136,17 +117,12 @@ export const bulkUpdateSpeakers: RequestHandler = async (req, res, next) => {
       userDefinedData?: unknown
     }>
     const tournamentId = payload[0].tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     if (!payload.every((item) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
+      badRequest(res, 'Mixed tournament ids are not supported')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -174,10 +150,8 @@ export const bulkUpdateSpeakers: RequestHandler = async (req, res, next) => {
 export const bulkDeleteSpeakers: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const idList =
@@ -203,16 +177,12 @@ export const updateSpeaker: RequestHandler = async (req, res, next) => {
       name?: string
       userDefinedData?: unknown
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid speaker id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid speaker id')
       return
     }
     const update: Record<string, unknown> = {}
@@ -225,9 +195,7 @@ export const updateSpeaker: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Speaker not found' }] })
+      notFound(res, 'Speaker not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -240,25 +208,19 @@ export const deleteSpeaker: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid speaker id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid speaker id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
     const SpeakerModel = getSpeakerModel(connection)
     const deleted = await SpeakerModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Speaker not found' }] })
+      notFound(res, 'Speaker not found')
       return
     }
     res.json({ data: deleted, errors: [] })

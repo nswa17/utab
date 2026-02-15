@@ -1,4 +1,3 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getRoundModel } from '../models/round.js'
@@ -8,18 +7,13 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
 import { buildCompiledPayload } from './compiled.js'
-
-type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-type BreakSeeding = 'high_low'
-type BreakParticipant = { teamId: string; seed: number }
-type BreakConfig = {
-  enabled: boolean
-  source_rounds: number[]
-  size: number
-  cutoff_tie_policy: BreakCutoffTiePolicy
-  seeding: BreakSeeding
-  participants: BreakParticipant[]
-}
+import {
+  normalizeBreakConfig,
+  normalizeBreakSourceRounds,
+  type BreakCutoffTiePolicy,
+  type BreakSeeding,
+} from './shared/break-config.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type RoundDefaults = {
   userDefinedData: {
@@ -141,48 +135,6 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
   return merged
 }
 
-function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
-  if (!Array.isArray(sourceRounds)) return []
-  return Array.from(
-    new Set(
-      sourceRounds
-        .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
-    )
-  ).sort((left, right) => left - right)
-}
-
-function normalizeBreakParticipants(participants: unknown): BreakParticipant[] {
-  if (!Array.isArray(participants)) return []
-  return participants
-    .map((item) => ({
-      teamId: String((item as any)?.teamId ?? '').trim(),
-      seed: Number((item as any)?.seed),
-    }))
-    .filter((item) => item.teamId.length > 0 && Number.isInteger(item.seed) && item.seed >= 1)
-    .sort((left, right) => left.seed - right.seed)
-}
-
-function normalizeBreakConfig(roundNumber: number, input: unknown): BreakConfig {
-  const source = asRecord(input)
-  const enabled = source.enabled === true
-  const sizeRaw = Number(source.size)
-  const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : 8
-  const cutoff_tie_policy: BreakCutoffTiePolicy =
-    source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
-      ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
-      : 'manual'
-  const seeding: BreakSeeding = 'high_low'
-  return {
-    enabled,
-    source_rounds: normalizeBreakSourceRounds(roundNumber, source.source_rounds),
-    size,
-    cutoff_tie_policy,
-    seeding,
-    participants: normalizeBreakParticipants(source.participants),
-  }
-}
-
 function upsertTeamAvailabilityDetail(details: unknown, roundNumber: number, available: boolean) {
   const list = Array.isArray(details) ? details.map((detail) => ({ ...(detail as Record<string, unknown>) })) : []
   const index = list.findIndex((detail) => Number((detail as any)?.r) === roundNumber)
@@ -200,18 +152,45 @@ function upsertTeamAvailabilityDetail(details: unknown, roundNumber: number, ava
   return list.sort((left, right) => Number((left as any)?.r ?? 0) - Number((right as any)?.r ?? 0))
 }
 
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
+}
+
+function ensureRoundId(res: Parameters<RequestHandler>[1], id: string): boolean {
+  if (!isValidObjectId(id)) {
+    badRequest(res, 'Invalid round id')
+    return false
+  }
+  return true
+}
+
+function requireSingleTournamentPayload(
+  res: Parameters<RequestHandler>[1],
+  payload: Array<{ tournamentId: string }>
+): string | null {
+  const tournamentId = payload[0]?.tournamentId
+  if (!ensureTournamentId(res, tournamentId)) return null
+  if (!payload.every((item) => item.tournamentId === tournamentId)) {
+    badRequest(res, 'Mixed tournament ids are not supported')
+    return null
+  }
+  return tournamentId
+}
+
 export const listRounds: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, public: publicParam } = req.query as {
       tournamentId?: string
       public?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const rounds = await RoundModel.find({ tournamentId }).sort({ round: 1 }).lean().exec()
@@ -232,25 +211,13 @@ export const getRound: RequestHandler = async (req, res, next) => {
       tournamentId?: string
       public?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const round = await RoundModel.findById(id).lean().exec()
     if (!round) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
@@ -277,25 +244,11 @@ export const createRound: RequestHandler = async (req, res, next) => {
         userDefinedData?: unknown
       }>
       if (payload.length === 0) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+        badRequest(res, 'Empty payload')
         return
       }
-      const tournamentId = payload[0].tournamentId
-      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-        return
-      }
-      if (!payload.every((item) => item.tournamentId === tournamentId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-        })
-        return
-      }
+      const tournamentId = requireSingleTournamentPayload(res, payload)
+      if (!tournamentId) return
       const tournament = await TournamentModel.findById(tournamentId).lean().exec()
       const roundDefaults = normalizeRoundDefaults(
         asRecord((tournament as any)?.user_defined_data).round_defaults
@@ -333,12 +286,7 @@ export const createRound: RequestHandler = async (req, res, next) => {
       userDefinedData?: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const tournament = await TournamentModel.findById(tournamentId).lean().exec()
     const roundDefaults = normalizeRoundDefaults(asRecord((tournament as any)?.user_defined_data).round_defaults)
@@ -371,9 +319,7 @@ export const createRound: RequestHandler = async (req, res, next) => {
 export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
   try {
     if (!Array.isArray(req.body) || req.body.length === 0) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+      badRequest(res, 'Empty payload')
       return
     }
     const payload = req.body as Array<{
@@ -388,20 +334,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
       userDefinedData?: unknown
     }>
-    const tournamentId = payload[0].tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!payload.every((item) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
-      return
-    }
+    const tournamentId = requireSingleTournamentPayload(res, payload)
+    if (!tournamentId) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const ops = payload.map((item) => {
@@ -434,12 +368,7 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
 export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const idList =
       typeof ids === 'string' && ids.length > 0 ? ids.split(',').filter((id) => id.length > 0) : []
     const filter: Record<string, unknown> = { tournamentId }
@@ -480,18 +409,8 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       userDefinedData?: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
 
     const update: Record<string, unknown> = {}
     if (round !== undefined) update.round = round
@@ -510,9 +429,7 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -530,40 +447,20 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
       sourceRounds?: number[]
       size?: number
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!roundDoc) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
 
     const roundNumber = Number((roundDoc as any).round)
     if (!Number.isInteger(roundNumber) || roundNumber < 2) {
-      res.status(400).json({
-        data: null,
-        errors: [
-          {
-            name: 'BadRequest',
-            message: 'Break candidates require a target round number of 2 or later',
-          },
-        ],
-      })
+      badRequest(res, 'Break candidates require a target round number of 2 or later')
       return
     }
 
@@ -664,9 +561,7 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
     })
   } catch (err: any) {
     if ((err as any)?.status === 404) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -681,34 +576,20 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       break: unknown
       syncTeamAvailability?: boolean
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const TeamModel = getTeamModel(connection)
     const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!roundDoc) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
     const roundNumber = Number((roundDoc as any).round)
     if (!Number.isInteger(roundNumber) || roundNumber < 1) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round number' }] })
+      badRequest(res, 'Invalid round number')
       return
     }
 
@@ -721,24 +602,15 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       const seenSeeds = new Set<number>()
       for (const participant of normalizedBreak.participants) {
         if (!teamIds.has(participant.teamId)) {
-          res.status(400).json({
-            data: null,
-            errors: [{ name: 'BadRequest', message: `Unknown team in break participants: ${participant.teamId}` }],
-          })
+          badRequest(res, `Unknown team in break participants: ${participant.teamId}`)
           return
         }
         if (seenTeamIds.has(participant.teamId)) {
-          res.status(400).json({
-            data: null,
-            errors: [{ name: 'BadRequest', message: `Duplicate team in break participants: ${participant.teamId}` }],
-          })
+          badRequest(res, `Duplicate team in break participants: ${participant.teamId}`)
           return
         }
         if (seenSeeds.has(participant.seed)) {
-          res.status(400).json({
-            data: null,
-            errors: [{ name: 'BadRequest', message: `Duplicate seed in break participants: ${participant.seed}` }],
-          })
+          badRequest(res, `Duplicate seed in break participants: ${participant.seed}`)
           return
         }
         seenTeamIds.add(participant.teamId)
@@ -761,9 +633,7 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updatedRound) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
 
@@ -812,25 +682,13 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid round id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
     res.json({ data: deleted, errors: [] })

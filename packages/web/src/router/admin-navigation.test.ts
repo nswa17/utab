@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createPinia } from 'pinia'
+import { createMemoryHistory } from 'vue-router'
 import { createAppRouter, setupRouterGuards } from './index'
 import { useAuthStore } from '@/stores/auth'
 
 function createOrganizerRouter(adminUiV2 = true) {
   const pinia = createPinia()
-  const router = createAppRouter({ adminUiV2 })
+  const router = createAppRouter({ adminUiV2, history: createMemoryHistory(), stubComponents: true })
   setupRouterGuards(router, pinia)
   const auth = useAuthStore(pinia)
   auth.initialized = true
@@ -17,10 +18,6 @@ function createOrganizerRouter(adminUiV2 = true) {
 }
 
 describe('admin navigation routes', () => {
-  beforeEach(() => {
-    window.history.replaceState({}, '', '/')
-  })
-
   it('supports primary v2 admin paths when feature flag is enabled', async () => {
     const router = createOrganizerRouter(true)
 

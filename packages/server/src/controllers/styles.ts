@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { StyleModel } from '../models/style.js'
+import { notFound } from './shared/http-errors.js'
 
 export const listStyles: RequestHandler = async (_req, res, next) => {
   try {
@@ -31,7 +32,7 @@ export const updateStyle: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     if (!updated) {
-      res.status(404).json({ data: null, errors: [{ name: 'NotFound', message: 'Style not found' }] })
+      notFound(res, 'Style not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -45,7 +46,7 @@ export const deleteStyle: RequestHandler = async (req, res, next) => {
     const { id } = req.params
     const deleted = await StyleModel.findOneAndDelete({ id: Number(id) }).lean().exec()
     if (!deleted) {
-      res.status(404).json({ data: null, errors: [{ name: 'NotFound', message: 'Style not found' }] })
+      notFound(res, 'Style not found')
       return
     }
     res.json({ data: deleted, errors: [] })

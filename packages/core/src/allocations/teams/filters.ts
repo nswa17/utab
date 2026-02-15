@@ -1,28 +1,10 @@
 import { count, countCommon } from '../../general/math.js'
 import { findOne } from '../sys.js'
 import { accessDetail } from '../../general/tools.js'
-
-function normalizeInstitutionPriorityMap(value: unknown): Record<number, number> {
-  if (!value || typeof value !== 'object') return {}
-  const out: Record<number, number> = {}
-  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
-    const parsedKey = Number(key)
-    const parsedValue = Number(raw)
-    if (!Number.isFinite(parsedKey)) return
-    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
-  })
-  return out
-}
-
-function weightedCommonScore(
-  left: number[],
-  right: number[],
-  priorityMap: Record<number, number>
-): number {
-  const rightSet = new Set(right)
-  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
-  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
-}
+import {
+  normalizeInstitutionPriorityMap,
+  weightedCommonScore,
+} from '../common/institution-priority.js'
 
 export function filterByRandom(
   team: { id: number },
