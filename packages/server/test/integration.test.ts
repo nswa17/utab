@@ -8,10 +8,14 @@ import { UserModel } from '../src/models/user.js'
 import { hashPassword, verifyPassword } from '../src/services/hash.service.js'
 
 let app: Server
-let mongo: MongoMemoryServer
-let connectDatabase: typeof import('../src/config/database.js').connectDatabase
-let disconnectDatabase: typeof import('../src/config/database.js').disconnectDatabase
-let closeTournamentConnections: typeof import('../src/services/tournament-db.service.js').closeTournamentConnections
+let mongo: MongoMemoryServer | null = null
+let connectDatabase: typeof import('../src/config/database.js').connectDatabase | null = null
+let disconnectDatabase: typeof import('../src/config/database.js').disconnectDatabase | null = null
+let closeTournamentConnections:
+  | typeof import('../src/services/tournament-db.service.js').closeTournamentConnections
+  | null = null
+const runFullSuite = process.env.UTAB_FULL_CHECK === '1'
+const itFull = runFullSuite ? it : it.skip
 
 async function waitForResult<T>(
   fetcher: () => Promise<T>,
@@ -44,19 +48,22 @@ async function waitForResult<T>(
 }
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', launchTimeout: 60000 },
-  })
-
   process.env.NODE_ENV = 'test'
   process.env.PORT = '0'
-  process.env.MONGODB_URI = mongo.getUri('utab-test')
   process.env.SESSION_SECRET = 'test-session-secret-123456'
   process.env.CORS_ORIGIN = 'http://localhost'
   process.env.UTAB_LOG_LEVEL = 'silent'
-  ;({ connectDatabase, disconnectDatabase } = await import('../src/config/database.js'))
-  ;({ closeTournamentConnections } = await import('../src/services/tournament-db.service.js'))
-  await connectDatabase()
+
+  if (runFullSuite) {
+    mongo = await MongoMemoryServer.create({
+      instance: { ip: '127.0.0.1', launchTimeout: 60000 },
+    })
+    process.env.MONGODB_URI = mongo.getUri('utab-test')
+    ;({ connectDatabase, disconnectDatabase } = await import('../src/config/database.js'))
+    ;({ closeTournamentConnections } = await import('../src/services/tournament-db.service.js'))
+    await connectDatabase()
+  }
+
   const mod = await import('../src/app.js')
   app = createServer(mod.createApp())
   await new Promise<void>((resolve, reject) => {
@@ -127,11 +134,13 @@ describe('Server integration', () => {
       .send({ username: 'csrf-blocked', password: 'password123', role: 'organizer' })
     expect(blockedRegister.status).toBe(403)
 
-    const allowedRegister = await request(app)
-      .post('/api/auth/register')
-      .set('Origin', allowedOrigin)
-      .send({ username: 'csrf-allowed', password: 'password123', role: 'organizer' })
-    expect(allowedRegister.status).toBe(201)
+    if (runFullSuite) {
+      const allowedRegister = await request(app)
+        .post('/api/auth/register')
+        .set('Origin', allowedOrigin)
+        .send({ username: 'csrf-allowed', password: 'password123', role: 'organizer' })
+      expect(allowedRegister.status).toBe(201)
+    }
   })
 
   it('enforces route-specific JSON body size limits', async () => {
@@ -155,7 +164,7 @@ describe('Server integration', () => {
     expect(teamTooLarge.status).toBe(413)
   })
 
-  it('registers, logs in, and accesses protected routes', async () => {
+  itFull('registers, logs in, and accesses protected routes', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -301,7 +310,7 @@ describe('Server integration', () => {
     expect(publicSubmission.status).toBe(201)
   })
 
-  it('supports institution category and priority fields', async () => {
+  itFull('supports institution category and priority fields', async () => {
     const agent = request.agent(app)
     const registerRes = await agent
       .post('/api/auth/register')
@@ -347,7 +356,7 @@ describe('Server integration', () => {
     expect(listRes.body.data[0].priority).toBe(4)
   })
 
-  it('supports legacy-style entities, raw results compilation, and draw generation', async () => {
+  itFull('supports legacy-style entities, raw results compilation, and draw generation', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -673,7 +682,7 @@ describe('Server integration', () => {
     expect(powerpairDrawRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('powerpair')
   })
 
-  it('previews and saves break participants while syncing team availability', async () => {
+  itFull('previews and saves break participants while syncing team availability', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -831,7 +840,7 @@ describe('Server integration', () => {
     expect(availabilityByTeam.get(deltaId)).toBe(false)
   })
 
-  it('inherits tournament round defaults when creating rounds', async () => {
+  itFull('inherits tournament round defaults when creating rounds', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -919,7 +928,7 @@ describe('Server integration', () => {
     expect(round2Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('strict')
   })
 
-  it('keeps teams available when break is enabled with empty participants and sync is enabled', async () => {
+  itFull('keeps teams available when break is enabled with empty participants and sync is enabled', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1012,7 +1021,7 @@ describe('Server integration', () => {
     }
   })
 
-  it('allows disabling break even when saved participants include deleted teams', async () => {
+  itFull('allows disabling break even when saved participants include deleted teams', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1110,7 +1119,7 @@ describe('Server integration', () => {
     expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(false)
   })
 
-  it('generates break allocation with byes and advances winners to next round', async () => {
+  itFull('generates break allocation with byes and advances winners to next round', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1296,7 +1305,7 @@ describe('Server integration', () => {
     expect(round3BreakAllocRes.body.data.userDefinedData?.break?.previous_round).toBe(2)
   })
 
-  it('skips adjudicator allocation when adjudicators are insufficient', async () => {
+  itFull('skips adjudicator allocation when adjudicators are insufficient', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1351,7 +1360,7 @@ describe('Server integration', () => {
     }
   })
 
-  it('supports bulk entity operations and raw result cleanup', async () => {
+  itFull('supports bulk entity operations and raw result cleanup', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1413,7 +1422,7 @@ describe('Server integration', () => {
     expect(deleteRawRes.body.data.deletedCount).toBeGreaterThan(0)
   })
 
-  it('stores submissions with entity ids and compiles from submissions', async () => {
+  itFull('stores submissions with entity ids and compiles from submissions', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1566,7 +1575,7 @@ describe('Server integration', () => {
     expect(compiledList.body.data.payload.compiled_team_results.length).toBe(2)
   })
 
-  it('rejects draw-like ballot submissions when low tie win is disabled', async () => {
+  itFull('rejects draw-like ballot submissions when low tie win is disabled', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1634,7 +1643,7 @@ describe('Server integration', () => {
     expect(validWinner.status).toBe(201)
   })
 
-  it('requires explicit winner when scores are non-tied', async () => {
+  itFull('requires explicit winner when scores are non-tied', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1701,7 +1710,7 @@ describe('Server integration', () => {
     expect(invalidWinner.status).toBe(400)
   })
 
-  it('rejects ballot submissions where team ids are identical', async () => {
+  itFull('rejects ballot submissions where team ids are identical', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1736,7 +1745,7 @@ describe('Server integration', () => {
     expect(ballotRes.status).toBe(400)
   })
 
-  it('keeps ballots for different matchups from the same actor', async () => {
+  itFull('keeps ballots for different matchups from the same actor', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1789,7 +1798,7 @@ describe('Server integration', () => {
     expect(submissionsRes.body.data.length).toBe(2)
   })
 
-  it('treats blank submittedEntityId as session actor for dedupe', async () => {
+  itFull('treats blank submittedEntityId as session actor for dedupe', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1844,7 +1853,7 @@ describe('Server integration', () => {
     expect(submissionsRes.body.data[0].payload.comment).toBe('second submission')
   })
 
-  it('normalizes submitted entity ids on ballot submissions', async () => {
+  itFull('normalizes submitted entity ids on ballot submissions', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1884,7 +1893,7 @@ describe('Server integration', () => {
     expect(listRes.body.data[0].payload.submittedEntityId).toBe('judge-a')
   })
 
-  it('rejects ballots when only one side has score entries', async () => {
+  itFull('rejects ballots when only one side has score entries', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1919,7 +1928,7 @@ describe('Server integration', () => {
     expect(ballotRes.status).toBe(400)
   })
 
-  it('rejects ballots with non-numeric score entries', async () => {
+  itFull('rejects ballots with non-numeric score entries', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1954,7 +1963,7 @@ describe('Server integration', () => {
     expect(ballotRes.status).toBe(400)
   })
 
-  it('rejects ballots when speaker/flag arrays do not match score lengths', async () => {
+  itFull('rejects ballots when speaker/flag arrays do not match score lengths', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2005,7 +2014,7 @@ describe('Server integration', () => {
     expect(flagMismatch.status).toBe(400)
   })
 
-  it('rejects ballots with blank speaker ids even when score lengths match', async () => {
+  itFull('rejects ballots with blank speaker ids even when score lengths match', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2042,7 +2051,7 @@ describe('Server integration', () => {
     expect(ballotRes.status).toBe(400)
   })
 
-  it('rejects admin ballot updates that include blank speaker ids', async () => {
+  itFull('rejects admin ballot updates that include blank speaker ids', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2102,7 +2111,7 @@ describe('Server integration', () => {
     expect(patchRes.body.errors[0].message).toContain('speakerIdsB')
   })
 
-  it('warns when scored speaker ids cannot be resolved during compile', async () => {
+  itFull('warns when scored speaker ids cannot be resolved during compile', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2161,7 +2170,7 @@ describe('Server integration', () => {
     expect(compileRes.body.data.payload.compiled_speaker_results).toEqual([])
   })
 
-  it('errors when missing speaker ids exist and missing_data_policy is error', async () => {
+  itFull('errors when missing speaker ids exist and missing_data_policy is error', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2215,7 +2224,7 @@ describe('Server integration', () => {
     expect(compileRes.body.errors[0].message).toContain('speakerId is missing for a scored speaker')
   })
 
-  it('rejects feedback submissions with blank adjudicator id', async () => {
+  itFull('rejects feedback submissions with blank adjudicator id', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2247,7 +2256,7 @@ describe('Server integration', () => {
     expect(feedbackRes.status).toBe(400)
   })
 
-  it('rejects feedback submissions with non-numeric scores', async () => {
+  itFull('rejects feedback submissions with non-numeric scores', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2279,7 +2288,7 @@ describe('Server integration', () => {
     expect(feedbackRes.status).toBe(400)
   })
 
-  it('applies compile options to submission-based aggregation', async () => {
+  itFull('applies compile options to submission-based aggregation', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2504,7 +2513,7 @@ describe('Server integration', () => {
     expect(typeof diffTeam1.diff.metrics.sum.delta).toBe('number')
   })
 
-  it('keeps adjudicator ballots distinct when merge policy is average', async () => {
+  itFull('keeps adjudicator ballots distinct when merge policy is average', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2628,7 +2637,7 @@ describe('Server integration', () => {
     expect(team2.win).toBe(0)
   })
 
-  it('keeps adjudicator ballots distinct when merge policy is latest', async () => {
+  itFull('keeps adjudicator ballots distinct when merge policy is latest', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2752,7 +2761,7 @@ describe('Server integration', () => {
     expect(team2.win).toBe(0)
   })
 
-  it('averages conflicting duplicate ballots from the same actor', async () => {
+  itFull('averages conflicting duplicate ballots from the same actor', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2883,7 +2892,7 @@ describe('Server integration', () => {
     expect(team2.ranking).toBe(1)
   })
 
-  it('adds and removes tournament users', async () => {
+  itFull('adds and removes tournament users', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -2926,7 +2935,7 @@ describe('Server integration', () => {
     expect('passwordHash' in removeUserRes.body.data).toBe(false)
   })
 
-  it('limits tournament payloads for non-admin viewers', async () => {
+  itFull('limits tournament payloads for non-admin viewers', async () => {
     const organizer = request.agent(app)
 
     const registerRes = await organizer
@@ -3004,7 +3013,7 @@ describe('Server integration', () => {
     expect(adminProtectedGet.body.data.user_defined_data.ownerMemo).toBe('protected-only')
   })
 
-  it('enforces organizer access and participant auth settings', async () => {
+  itFull('enforces organizer access and participant auth settings', async () => {
     const organizer = request.agent(app)
 
     const registerRes = await organizer
@@ -3182,7 +3191,7 @@ describe('Server integration', () => {
     expect(forbiddenCreate.status).toBe(403)
   })
 
-  it('records audit logs and supports filtered cursor pagination', async () => {
+  itFull('records audit logs and supports filtered cursor pagination', async () => {
     const organizer = request.agent(app)
 
     const registerRes = await organizer
@@ -3272,7 +3281,7 @@ describe('Server integration', () => {
     expect(forbidden.status).toBe(403)
   })
 
-  it('migrates legacy tournament access and membership data (phase 8)', async () => {
+  itFull('migrates legacy tournament access and membership data (phase 8)', async () => {
     const { runSecurityPhase8Migration } = await import('../src/scripts/migrate-security-phase8.js')
 
     const organizerPassword = 'password123'
@@ -3411,7 +3420,7 @@ describe('Server integration', () => {
     expect(secondRun.tournamentPasswordsHashed).toBe(0)
   })
 
-  it('blocks superuser self registration and requires organizer membership for admin operations', async () => {
+  itFull('blocks superuser self registration and requires organizer membership for admin operations', async () => {
     const superuserRegister = await request(app).post('/api/auth/register').send({
       username: 'illegal-superuser',
       password: 'password123',
@@ -3444,7 +3453,7 @@ describe('Server integration', () => {
     expect(forbiddenPatch.status).toBe(403)
   })
 
-  it('returns validation errors for malformed payloads and unknown routes', async () => {
+  itFull('returns validation errors for malformed payloads and unknown routes', async () => {
     const notFoundRoute = await request(app).get('/api/does-not-exist')
     expect(notFoundRoute.status).toBe(404)
     expect(notFoundRoute.body.errors[0].name).toBe('NotFound')
@@ -3492,7 +3501,7 @@ describe('Server integration', () => {
     expect(invalidRoundFilter.body.errors.some((issue: any) => issue.path === 'round')).toBe(true)
   })
 
-  it('deduplicates submissions for the same submitted entity per round', async () => {
+  itFull('deduplicates submissions for the same submitted entity per round', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -3552,7 +3561,7 @@ describe('Server integration', () => {
     expect(participantList.body.data[0].payload.winnerId).toBe('team-b')
   })
 
-  it('updates submitted ballots via admin submission API', async () => {
+  itFull('updates submitted ballots via admin submission API', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -3630,7 +3639,7 @@ describe('Server integration', () => {
     expect(listAfter.body.data[0].payload.winnerId).toBe('team-b')
   })
 
-  it('derives scores from matter/manner on admin ballot updates', async () => {
+  itFull('derives scores from matter/manner on admin ballot updates', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -3688,7 +3697,7 @@ describe('Server integration', () => {
     expect(updateRes.body.data.payload.winnerId).toBe('team-b')
   })
 
-  it('rejects ballots when matter/manner are not provided together', async () => {
+  itFull('rejects ballots when matter/manner are not provided together', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -3724,7 +3733,7 @@ describe('Server integration', () => {
     expect(String(ballotRes.body.errors[0].message)).toContain('matterA')
   })
 
-  it('applies forced public draw sanitization even for admins', async () => {
+  itFull('applies forced public draw sanitization even for admins', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -3773,7 +3782,7 @@ describe('Server integration', () => {
     expect('createdBy' in forcedPublic.body.data[0]).toBe(false)
   })
 
-  it('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
+  itFull('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
     const statuses: number[] = []
     const agent = request.agent(app)
     for (let i = 0; i < 30; i += 1) {

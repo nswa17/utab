@@ -263,6 +263,7 @@ import {
   normalizeScoreRanges,
 } from '@/utils/score'
 import { hasDecisiveBallotScores } from '@/utils/ballot'
+import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 
 const route = useRoute()
 const router = useRouter()
@@ -560,21 +561,11 @@ function speakerTotal(matter: number | undefined, manner: number | undefined) {
   return Number(matter ?? 0) + Number(manner ?? 0)
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => String(item)).filter(Boolean)
-}
-
 function toNumberArray(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return value
     .map((item) => Number(item))
     .filter((item) => Number.isFinite(item))
-}
-
-function toBooleanArray(value: unknown): boolean[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => Boolean(item))
 }
 
 function currentMatchKey() {

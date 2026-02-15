@@ -1,0 +1,47 @@
+services:
+  server:
+    # Use the same build context/dockerfile but ensure we are in development mode
+    build:
+      target: base # Use the 'base' stage which just has installed dependencies, no build artifacts
+    # Mount the source code so changes reflect immediately
+    volumes:
+      - .:/app
+      # Use a named volume for node_modules to prevent host OS mismatch and keep container deps separate
+      - /app/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/server/node_modules
+      - /app/packages/web/node_modules
+    # Run the dev command (watch mode), ensuring core is built first
+    command: sh -c "corepack pnpm -C packages/core build && corepack pnpm -C packages/server dev"
+    environment:
+      CORS_ORIGIN: http://localhost:5173
+    # Enable TTY for better log output
+    tty: true
+
+  web:
+    # Build using the 'base' stage from server Dockerfile (because we need Node, not Nginx)
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+      target: base
+    # Mount source code
+    volumes:
+      - .:/app
+      # Share the same node_modules volume since it's a monorepo workspace
+      - /app/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/server/node_modules
+      - /app/packages/web/node_modules
+      - ./.certs:/certs:ro
+    ports:
+      - "5173:5173"
+    # Run Vite dev server, exposed to host. Ensure core is built.
+    command: sh -c "corepack pnpm -C packages/core build && corepack pnpm -C packages/web dev"
+    environment:
+      # Forward the server API URL if needed by frontend dev proxy
+      VITE_API_URL: http://localhost:3000/api
+      VITE_DEV_HTTPS: "true"
+      VITE_DEV_HTTPS_CERT: /certs/localhost.pem
+      VITE_DEV_HTTPS_KEY: /certs/localhost-key.pem
+    depends_on:
+      - server

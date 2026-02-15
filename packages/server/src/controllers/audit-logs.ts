@@ -2,6 +2,7 @@ import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { AuditLogModel } from '../models/audit-log.js'
+import { badRequest, isValidObjectId } from './shared/http-errors.js'
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 100
@@ -9,10 +10,6 @@ const MAX_LIMIT = 100
 type AuditLogCursor = {
   createdAt: string
   id: string
-}
-
-function badRequest(res: any, message: string) {
-  res.status(400).json({ data: null, errors: [{ name: 'BadRequest', message }] })
 }
 
 function forbidden(res: any) {
@@ -33,7 +30,7 @@ function decodeCursor(cursor: string): { createdAt: Date; id: Types.ObjectId } |
     if (!parsed.createdAt || !parsed.id) return null
     const createdAt = new Date(parsed.createdAt)
     if (Number.isNaN(createdAt.getTime())) return null
-    if (!Types.ObjectId.isValid(parsed.id)) return null
+    if (!isValidObjectId(parsed.id)) return null
     return { createdAt, id: new Types.ObjectId(parsed.id) }
   } catch {
     return null
@@ -74,7 +71,7 @@ export const listAuditLogs: RequestHandler = async (req, res, next) => {
       limit?: number
     }
 
-    if (tournamentId && !Types.ObjectId.isValid(tournamentId)) {
+    if (tournamentId && !isValidObjectId(tournamentId)) {
       badRequest(res, 'Invalid tournament id')
       return
     }

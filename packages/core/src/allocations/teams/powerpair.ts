@@ -3,6 +3,10 @@ import { sortTeams } from '../../general/sortings.js'
 import { accessDetail, filterAvailable } from '../../general/tools.js'
 import { decidePositions, findOne as findOneResult } from '../sys.js'
 import { sillyLogger } from '../../general/loggers.js'
+import {
+  normalizeInstitutionPriorityMap,
+  weightedCommonScore,
+} from '../common/institution-priority.js'
 
 type OddBracketMethod = 'pullup_top' | 'pullup_bottom' | 'pullup_random'
 type PairingMethod = 'slide' | 'fold' | 'random'
@@ -63,28 +67,6 @@ function normalizeConflictWeights(value: unknown): ConflictWeights {
     institution: normalizeWeight(raw.institution, 1),
     past_opponent: normalizeWeight(raw.past_opponent, 1),
   }
-}
-
-function normalizeInstitutionPriorityMap(value: unknown): Record<number, number> {
-  if (!value || typeof value !== 'object') return {}
-  const out: Record<number, number> = {}
-  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
-    const parsedKey = Number(key)
-    const parsedValue = Number(raw)
-    if (!Number.isFinite(parsedKey)) return
-    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
-  })
-  return out
-}
-
-function weightedCommonScore(
-  left: number[],
-  right: number[],
-  priorityMap: Record<number, number>
-): number {
-  const rightSet = new Set(right)
-  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
-  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
 }
 
 function normalizeMaxIterations(value: unknown, fallback = 24): number {

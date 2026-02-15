@@ -3,6 +3,10 @@ import { sillyLogger } from '../../general/loggers.js'
 import { shuffle, combinations, isin, countCommon } from '../../general/math.js'
 import { decidePositions, findOne as findOneResult } from '../sys.js'
 import { accessDetail } from '../../general/tools.js'
+import {
+  normalizeInstitutionPriorityMap,
+  weightedCommonScore,
+} from '../common/institution-priority.js'
 
 function addInformationToDivision(
   division: Array<{ win: number; teams: number[] }>,
@@ -173,28 +177,6 @@ function match(div: any[], pullupFunc: Function, config: any) {
     matchingPool.push([...matched])
   }
   return matchingPool
-}
-
-function normalizeInstitutionPriorityMap(value: unknown): Record<number, number> {
-  if (!value || typeof value !== 'object') return {}
-  const out: Record<number, number> = {}
-  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
-    const parsedKey = Number(key)
-    const parsedValue = Number(raw)
-    if (!Number.isFinite(parsedKey)) return
-    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
-  })
-  return out
-}
-
-function weightedCommonScore(
-  left: number[],
-  right: number[],
-  priorityMap: Record<number, number>
-): number {
-  const rightSet = new Set(right)
-  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
-  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
 }
 
 function normalizedWeight(value: unknown, fallback: number): number {

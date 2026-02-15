@@ -1,5 +1,5 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
@@ -9,10 +9,8 @@ import { sanitizeAdjudicatorForPublic } from '../services/response-sanitizer.js'
 export const listAdjudicators: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
@@ -34,25 +32,19 @@ export const getAdjudicator: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid adjudicator id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid adjudicator id')
       return
     }
     const connection = await getTournamentConnection(tournamentId)
     const AdjudicatorModel = getAdjudicatorModel(connection)
     const adjudicator = await AdjudicatorModel.findById(id).lean().exec()
     if (!adjudicator) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Adjudicator not found' }] })
+      notFound(res, 'Adjudicator not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
@@ -75,23 +67,16 @@ export const createAdjudicator: RequestHandler = async (req, res, next) => {
         userDefinedData?: unknown
       }>
       if (payload.length === 0) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+        badRequest(res, 'Empty payload')
         return
       }
       const tournamentId = payload[0].tournamentId
-      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-        res
-          .status(400)
-          .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+      if (!tournamentId || !isValidObjectId(tournamentId)) {
+        badRequest(res, 'Invalid tournament id')
         return
       }
       if (!payload.every((item) => item.tournamentId === tournamentId)) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-        })
+        badRequest(res, 'Mixed tournament ids are not supported')
         return
       }
       const connection = await getTournamentConnection(tournamentId)
@@ -111,10 +96,8 @@ export const createAdjudicator: RequestHandler = async (req, res, next) => {
       userDefinedData?: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
 
@@ -144,9 +127,7 @@ export const createAdjudicator: RequestHandler = async (req, res, next) => {
 export const bulkUpdateAdjudicators: RequestHandler = async (req, res, next) => {
   try {
     if (!Array.isArray(req.body) || req.body.length === 0) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Empty payload' }] })
+      badRequest(res, 'Empty payload')
       return
     }
     const payload = req.body as Array<{
@@ -160,17 +141,12 @@ export const bulkUpdateAdjudicators: RequestHandler = async (req, res, next) => 
       userDefinedData?: unknown
     }>
     const tournamentId = payload[0].tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     if (!payload.every((item) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
+      badRequest(res, 'Mixed tournament ids are not supported')
       return
     }
 
@@ -203,10 +179,8 @@ export const bulkUpdateAdjudicators: RequestHandler = async (req, res, next) => 
 export const bulkDeleteAdjudicators: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
     const idList =
@@ -237,16 +211,12 @@ export const updateAdjudicator: RequestHandler = async (req, res, next) => {
       userDefinedData?: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid adjudicator id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid adjudicator id')
       return
     }
 
@@ -268,9 +238,7 @@ export const updateAdjudicator: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Adjudicator not found' }] })
+      notFound(res, 'Adjudicator not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -283,16 +251,12 @@ export const deleteAdjudicator: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+    if (!tournamentId || !isValidObjectId(tournamentId)) {
+      badRequest(res, 'Invalid tournament id')
       return
     }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid adjudicator id' }] })
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid adjudicator id')
       return
     }
 
@@ -300,9 +264,7 @@ export const deleteAdjudicator: RequestHandler = async (req, res, next) => {
     const AdjudicatorModel = getAdjudicatorModel(connection)
     const deleted = await AdjudicatorModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Adjudicator not found' }] })
+      notFound(res, 'Adjudicator not found')
       return
     }
     res.json({ data: deleted, errors: [] })

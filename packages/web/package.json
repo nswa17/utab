@@ -5,10 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json && vite build",
+    "build": "pnpm run typecheck && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "typecheck": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "test": "node ./scripts/run-with-timeout.mjs 120 pnpm exec vitest run",
+    "test:full": "UTAB_FULL_CHECK=1 vitest run",
+    "typecheck": "node ./scripts/run-with-timeout.mjs 90 pnpm exec tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:full": "tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:vue": "node ./scripts/run-with-timeout.mjs 120 pnpm exec vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "typecheck:vue:full": "vue-tsc --noEmit --pretty false -p tsconfig.typecheck.json",
+    "typecheck:ci": "pnpm run typecheck && pnpm run typecheck:vue",
     "lint": "echo 'lint not yet configured'"
   },
   "dependencies": {

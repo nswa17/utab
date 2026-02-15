@@ -1,4 +1,3 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import {
   teams as teamAllocations,
@@ -22,6 +21,22 @@ import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { buildCompiledPayload } from './compiled.js'
+import {
+  buildDetailsForRounds,
+  buildIdMaps,
+  ensureRounds,
+  extractDrawUserDefinedData,
+  hasSufficientAdjudicators,
+  normalizeInstitutionPriority,
+  normalizeScoreWeights,
+  type IdMaps,
+} from './shared/allocation-support.js'
+import {
+  normalizeBreakConfig,
+  normalizeBreakParticipants,
+  type BreakParticipant,
+} from './shared/break-config.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 const allocations = {
   teams: teamAllocations,
@@ -29,38 +44,10 @@ const allocations = {
   venues: venueAllocations,
 }
 
-type IdMaps = {
-  map: Map<string, number>
-  reverse: Map<number, string>
-}
-
-type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-type BreakSeeding = 'high_low'
-type BreakParticipant = { teamId: string; seed: number }
 type BreakMatchMeta = {
   id: number
   gov: BreakParticipant
   opp: BreakParticipant
-}
-type BreakConfig = {
-  enabled: boolean
-  source_rounds: number[]
-  size: number
-  cutoff_tie_policy: BreakCutoffTiePolicy
-  seeding: BreakSeeding
-  participants: BreakParticipant[]
-}
-
-function buildIdMaps(docs: Array<{ _id: unknown }>): IdMaps {
-  const map = new Map<string, number>()
-  const reverse = new Map<number, string>()
-  docs.forEach((doc, idx) => {
-    const id = String(doc._id)
-    const num = idx + 1
-    map.set(id, num)
-    reverse.set(num, id)
-  })
-  return { map, reverse }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -72,6 +59,17 @@ function toHttpError(status: number, message: string): Error & { status: number 
   const err = new Error(message) as Error & { status: number }
   err.status = status
   return err
+}
+
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
 }
 
 function mapIdList(ids: unknown, map: Map<string, number>): number[] {
@@ -175,34 +173,6 @@ function mapCompiledAdjudicatorResultsFromSnapshot(
   return Array.from(byId.values())
 }
 
-function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
-  if (!Array.isArray(sourceRounds)) return []
-  return Array.from(
-    new Set(
-      sourceRounds
-        .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
-    )
-  ).sort((left, right) => left - right)
-}
-
-function normalizeBreakParticipants(participants: unknown): BreakParticipant[] {
-  if (!Array.isArray(participants)) return []
-  const teamIdSet = new Set<string>()
-  const seedSet = new Set<number>()
-  const normalized: BreakParticipant[] = []
-  for (const raw of participants) {
-    const teamId = String((raw as any)?.teamId ?? '').trim()
-    const seed = Number((raw as any)?.seed)
-    if (teamId.length === 0 || !Number.isInteger(seed) || seed < 1) continue
-    if (teamIdSet.has(teamId) || seedSet.has(seed)) continue
-    teamIdSet.add(teamId)
-    seedSet.add(seed)
-    normalized.push({ teamId, seed })
-  }
-  return normalized.sort((left, right) => left.seed - right.seed)
-}
-
 function normalizeBreakMatches(value: unknown): BreakMatchMeta[] {
   if (!Array.isArray(value)) return []
   const normalized: BreakMatchMeta[] = []
@@ -221,25 +191,6 @@ function normalizeBreakMatches(value: unknown): BreakMatchMeta[] {
     normalized.push({ id, gov, opp })
   }
   return normalized.sort((left, right) => left.id - right.id)
-}
-
-function normalizeBreakConfig(roundNumber: number, input: unknown): BreakConfig {
-  const source = asRecord(input)
-  const enabled = source.enabled === true
-  const sizeRaw = Number(source.size)
-  const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : 8
-  const cutoff_tie_policy: BreakCutoffTiePolicy =
-    source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
-      ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
-      : 'manual'
-  return {
-    enabled,
-    source_rounds: normalizeBreakSourceRounds(roundNumber, source.source_rounds),
-    size,
-    cutoff_tie_policy,
-    seeding: 'high_low',
-    participants: normalizeBreakParticipants(source.participants),
-  }
 }
 
 function highestPowerOfTwoLessOrEqual(input: number): number {
@@ -373,92 +324,6 @@ function validateBreakParticipants(participants: BreakParticipant[], validTeamId
   }
 }
 
-function normalizeScoreWeights(scoreWeights: any): number[] {
-  if (Array.isArray(scoreWeights)) {
-    if (scoreWeights.every((v) => typeof v === 'number')) return scoreWeights
-    if (scoreWeights.every((v) => v && typeof v === 'object' && 'value' in v)) {
-      return scoreWeights.map((v) => Number(v.value))
-    }
-  }
-  return [1]
-}
-
-function extractDrawUserDefinedData(draw: any): Record<string, unknown> | undefined {
-  const candidate = draw?.userDefinedData ?? draw?.user_defined_data
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
-  return candidate as Record<string, unknown>
-}
-
-function normalizeInstitutionPriority(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 1
-  return parsed
-}
-
-function normalizeAdjudicatorCount(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return Math.floor(parsed)
-}
-
-function adjudicatorsRequiredPerSquare(numbers: {
-  chairs?: unknown
-  panels?: unknown
-  trainees?: unknown
-}): number {
-  return (
-    normalizeAdjudicatorCount(numbers.chairs) +
-    normalizeAdjudicatorCount(numbers.panels) +
-    normalizeAdjudicatorCount(numbers.trainees)
-  )
-}
-
-function hasSufficientAdjudicators(
-  availableCount: number,
-  allocationSquares: number,
-  numbers: { chairs?: unknown; panels?: unknown; trainees?: unknown }
-): boolean {
-  if (allocationSquares <= 0) return false
-  const requiredPerSquare = adjudicatorsRequiredPerSquare(numbers)
-  if (requiredPerSquare <= 0) return false
-  return availableCount >= allocationSquares * requiredPerSquare
-}
-
-function ensureRounds(round: number): number[] {
-  if (round <= 1) return []
-  return Array.from({ length: round - 1 }, (_, i) => i + 1)
-}
-
-function buildDetailsForRounds(
-  details: any[] | undefined,
-  rounds: number[],
-  defaults: Record<string, unknown>,
-  mapInstitutions?: (id: string) => number | undefined,
-  mapSpeakers?: (id: string) => number | undefined,
-  mapConflicts?: (id: string) => number | undefined
-) {
-  return rounds.map((r) => {
-    const existing = details?.find((d) => d.r === r) ?? {}
-    const merged: Record<string, unknown> = { r, ...defaults, ...existing }
-    if (mapInstitutions && Array.isArray(merged.institutions)) {
-      merged.institutions = merged.institutions
-        .map((id: string) => mapInstitutions(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    if (mapSpeakers && Array.isArray(merged.speakers)) {
-      merged.speakers = merged.speakers
-        .map((id: string) => mapSpeakers(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    if (mapConflicts && Array.isArray(merged.conflicts)) {
-      merged.conflicts = merged.conflicts
-        .map((id: string) => mapConflicts(id))
-        .filter((v: number | undefined): v is number => v !== undefined)
-    }
-    return merged
-  })
-}
-
 type AllocationContext = {
   teamMaps: IdMaps
   adjudicatorMaps: IdMaps
@@ -489,7 +354,7 @@ async function buildAllocationContext(
   const CompiledModel = getCompiledModel(connection)
   const compiledSnapshotPromise = snapshotId
     ? (async () => {
-        if (!Types.ObjectId.isValid(snapshotId)) {
+        if (!isValidObjectId(snapshotId)) {
           throw toHttpError(400, 'Invalid snapshot id')
         }
         const compiledSnapshot = await CompiledModel.findOne({
@@ -776,12 +641,7 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       rounds?: number[]
       snapshotId: string
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
 
@@ -832,21 +692,15 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       message === 'break match pool must be even' ||
       message === 'Invalid snapshot id'
     ) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message }] })
+      badRequest(res, message)
       return
     }
     if (message === 'Compiled snapshot not found for tournament') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message }] })
+      notFound(res, message)
       return
     }
     if (err?.message === 'Tournament not found') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -859,19 +713,11 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
       tournamentId: string
       round: number
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const context = await buildAllocationContext(tournamentId, round)
     if (context.config.style.team_num !== 2) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Break allocation only supports team_num=2' }],
-      })
+      badRequest(res, 'Break allocation only supports team_num=2')
       return
     }
 
@@ -884,23 +730,22 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
     ])
     const roundDoc = roundDocs.find((doc: any) => Number(doc.round) === round)
     if (!roundDoc) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Round not found' }] })
+      notFound(res, 'Round not found')
       return
     }
 
-    const breakConfig = normalizeBreakConfig(round, asRecord((roundDoc as any).userDefinedData).break)
+    const breakConfig = normalizeBreakConfig(round, asRecord((roundDoc as any).userDefinedData).break, {
+      dedupeParticipants: true,
+    })
     if (!breakConfig.enabled) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Break config is not enabled for this round' }],
-      })
+      badRequest(res, 'Break config is not enabled for this round')
       return
     }
 
     const validTeamIds = new Set<string>(Array.from(context.teamMaps.map.keys()))
-    let stageParticipants = normalizeBreakParticipants(breakConfig.participants)
+    let stageParticipants = normalizeBreakParticipants(breakConfig.participants, {
+      dedupeParticipants: true,
+    })
     validateBreakParticipants(stageParticipants, validTeamIds)
 
     let derivedFromPreviousRound = false
@@ -908,26 +753,17 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
     if (stageParticipants.length === 0) {
       const previousRoundNumber = round - 1
       if (previousRoundNumber < 1) {
-        res.status(400).json({
-          data: null,
-          errors: [{ name: 'BadRequest', message: 'Break participants are not configured for this round' }],
-        })
+        badRequest(res, 'Break participants are not configured for this round')
         return
       }
       const previousDraw = drawDocs.find((doc: any) => Number(doc.round) === previousRoundNumber)
       const previousBreakMeta = asRecord(asRecord((previousDraw as any)?.userDefinedData).break)
-      const previousByes = normalizeBreakParticipants(previousBreakMeta.stage_byes)
+      const previousByes = normalizeBreakParticipants(previousBreakMeta.stage_byes, {
+        dedupeParticipants: true,
+      })
       const previousMatches = normalizeBreakMatches(previousBreakMeta.matches)
       if (previousByes.length === 0 && previousMatches.length === 0) {
-        res.status(400).json({
-          data: null,
-          errors: [
-            {
-              name: 'BadRequest',
-              message: 'No previous break stage metadata found. Configure participants manually.',
-            },
-          ],
-        })
+        badRequest(res, 'No previous break stage metadata found. Configure participants manually.')
         return
       }
       const winners = await resolveBreakMatchWinners(tournamentId, previousRoundNumber, previousMatches)
@@ -938,19 +774,13 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
     }
 
     if (stageParticipants.length < 2) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Not enough break participants to generate allocation' }],
-      })
+      badRequest(res, 'Not enough break participants to generate allocation')
       return
     }
 
     const stage = buildBreakStage(stageParticipants)
     if (stage.matches.length === 0) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'No break matches to allocate for this round' }],
-      })
+      badRequest(res, 'No break matches to allocate for this round')
       return
     }
 
@@ -993,15 +823,11 @@ export const createBreakAllocation: RequestHandler = async (req, res, next) => {
       message.startsWith('Unable to resolve break winners for previous round matches') ||
       message === 'break match pool must be even'
     ) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message }] })
+      badRequest(res, message)
       return
     }
     if (err?.message === 'Tournament not found') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -1018,16 +844,9 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
       rounds?: number[]
       snapshotId: string
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     if (!Array.isArray(allocation)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Allocation is required' }] })
+      badRequest(res, 'Allocation is required')
       return
     }
 
@@ -1098,21 +917,15 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
     res.json({ data: { r: round, allocation: mappedAllocation }, errors: [] })
   } catch (err: any) {
     if (err?.message === 'Invalid snapshot id') {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      badRequest(res, 'Invalid snapshot id')
       return
     }
     if (err?.message === 'Compiled snapshot not found for tournament') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      notFound(res, 'Compiled snapshot not found for tournament')
       return
     }
     if (err?.message === 'Tournament not found') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -1129,16 +942,9 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
       rounds?: number[]
       snapshotId: string
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     if (!Array.isArray(allocation)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Allocation is required' }] })
+      badRequest(res, 'Allocation is required')
       return
     }
 
@@ -1176,21 +982,15 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
     res.json({ data: { r: round, allocation: mappedAllocation }, errors: [] })
   } catch (err: any) {
     if (err?.message === 'Invalid snapshot id') {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      badRequest(res, 'Invalid snapshot id')
       return
     }
     if (err?.message === 'Compiled snapshot not found for tournament') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      notFound(res, 'Compiled snapshot not found for tournament')
       return
     }
     if (err?.message === 'Tournament not found') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -1206,12 +1006,7 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       rounds?: number[]
       snapshotId: string
     }
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
 
@@ -1305,21 +1100,15 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
     })
   } catch (err: any) {
     if (err?.message === 'Invalid snapshot id') {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid snapshot id' }] })
+      badRequest(res, 'Invalid snapshot id')
       return
     }
     if (err?.message === 'Compiled snapshot not found for tournament') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Compiled snapshot not found for tournament' }] })
+      notFound(res, 'Compiled snapshot not found for tournament')
       return
     }
     if (err?.message === 'Tournament not found') {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
     next(err)

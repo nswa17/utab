@@ -1,4 +1,3 @@
-import { Types } from 'mongoose'
 import type { Request, RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
@@ -13,11 +12,50 @@ import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
+import { buildDetailsForRounds, normalizeScoreWeights } from './shared/allocation-support.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
-function invalidTournament(res: any) {
-  res
-    .status(400)
-    .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
+}
+
+function ensureRawResultId(res: Parameters<RequestHandler>[1], docId: string): boolean {
+  if (!isValidObjectId(docId)) {
+    badRequest(res, 'Invalid raw result id')
+    return false
+  }
+  return true
+}
+
+function buildRawFilter(
+  tournamentId: string,
+  params: { round?: string; id?: string; fromId?: string }
+): Record<string, unknown> {
+  const filter: Record<string, unknown> = { tournamentId }
+  if (params.round !== undefined) filter.r = Number(params.round)
+  if (params.id !== undefined) filter.id = params.id
+  if (params.fromId !== undefined) filter.from_id = params.fromId
+  return filter
+}
+
+function requireSingleTournamentPayload(
+  res: Parameters<RequestHandler>[1],
+  payload: any[]
+): string | null {
+  const tournamentId = payload[0]?.tournamentId
+  if (!ensureTournamentId(res, tournamentId)) return null
+  if (!payload.every((item) => item.tournamentId === tournamentId)) {
+    badRequest(res, 'Mixed tournament ids are not supported')
+    return null
+  }
+  return tournamentId
 }
 
 async function isTournamentAdmin(req: Request, tournamentId: string): Promise<boolean> {
@@ -32,27 +70,6 @@ async function isTournamentAdmin(req: Request, tournamentId: string): Promise<bo
     .lean()
     .exec()
   return membership?.role === 'organizer'
-}
-
-function normalizeScoreWeights(scoreWeights: any): number[] {
-  if (Array.isArray(scoreWeights)) {
-    if (scoreWeights.every((v) => typeof v === 'number')) return scoreWeights
-    if (scoreWeights.every((v) => v && typeof v === 'object' && 'value' in v)) {
-      return scoreWeights.map((v: any) => Number(v.value))
-    }
-  }
-  return [1]
-}
-
-function buildDetailsForRounds(
-  details: any[] | undefined,
-  rounds: number[],
-  defaults: Record<string, unknown>
-) {
-  return rounds.map((r) => {
-    const existing = details?.find((d) => d.r === r) ?? {}
-    return { r, ...defaults, ...existing }
-  })
 }
 
 function resolveRounds(requestedRound: number | undefined, ...rawLists: Array<Array<{ r?: number }>>) {
@@ -77,16 +94,10 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawTeamResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const rawTeamResults = await Model.find(filter).lean().exec()
 
     if (await isTournamentAdmin(req, tournamentId)) {
@@ -106,9 +117,7 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
       getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
     ])
     if (!tournament) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
 
@@ -161,18 +170,8 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
 export const createRawTeamResult: RequestHandler = async (req, res, next) => {
   try {
     const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = payload[0]?.tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!payload.every((item: any) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
-      return
-    }
+    const tournamentId = requireSingleTournamentPayload(res, payload)
+    if (!tournamentId) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawTeamResultModel(connection)
     const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
@@ -192,25 +191,15 @@ export const updateRawTeamResult: RequestHandler = async (req, res, next) => {
   try {
     const { id: docId } = req.params
     const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawTeamResultModel(connection)
     const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw team result not found' }] })
+      notFound(res, 'Raw team result not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -223,23 +212,13 @@ export const deleteRawTeamResult: RequestHandler = async (req, res, next) => {
   try {
     const { id: docId } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawTeamResultModel(connection)
     const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw team result not found' }] })
+      notFound(res, 'Raw team result not found')
       return
     }
     res.json({ data: deleted, errors: [] })
@@ -256,16 +235,10 @@ export const deleteRawTeamResults: RequestHandler = async (req, res, next) => {
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawTeamResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const result = await Model.deleteMany(filter).exec()
     res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
   } catch (err) {
@@ -281,16 +254,10 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawSpeakerResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const rawSpeakerResults = await Model.find(filter).lean().exec()
 
     if (await isTournamentAdmin(req, tournamentId)) {
@@ -308,9 +275,7 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
       getSpeakerModel(connection).find({ tournamentId }).lean().exec(),
     ])
     if (!tournament) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Tournament not found' }] })
+      notFound(res, 'Tournament not found')
       return
     }
 
@@ -345,18 +310,8 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
 export const createRawSpeakerResult: RequestHandler = async (req, res, next) => {
   try {
     const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = payload[0]?.tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!payload.every((item: any) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
-      return
-    }
+    const tournamentId = requireSingleTournamentPayload(res, payload)
+    if (!tournamentId) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawSpeakerResultModel(connection)
     const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
@@ -376,25 +331,15 @@ export const updateRawSpeakerResult: RequestHandler = async (req, res, next) => 
   try {
     const { id: docId } = req.params
     const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawSpeakerResultModel(connection)
     const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw speaker result not found' }] })
+      notFound(res, 'Raw speaker result not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -407,23 +352,13 @@ export const deleteRawSpeakerResult: RequestHandler = async (req, res, next) => 
   try {
     const { id: docId } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawSpeakerResultModel(connection)
     const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw speaker result not found' }] })
+      notFound(res, 'Raw speaker result not found')
       return
     }
     res.json({ data: deleted, errors: [] })
@@ -440,16 +375,10 @@ export const deleteRawSpeakerResults: RequestHandler = async (req, res, next) =>
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawSpeakerResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const result = await Model.deleteMany(filter).exec()
     res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
   } catch (err) {
@@ -465,16 +394,10 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawAdjudicatorResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const rawAdjResults = await Model.find(filter).lean().exec()
 
     if (await isTournamentAdmin(req, tournamentId)) {
@@ -508,18 +431,8 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
 export const createRawAdjudicatorResult: RequestHandler = async (req, res, next) => {
   try {
     const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = payload[0]?.tournamentId
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!payload.every((item: any) => item.tournamentId === tournamentId)) {
-      res.status(400).json({
-        data: null,
-        errors: [{ name: 'BadRequest', message: 'Mixed tournament ids are not supported' }],
-      })
-      return
-    }
+    const tournamentId = requireSingleTournamentPayload(res, payload)
+    if (!tournamentId) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawAdjudicatorResultModel(connection)
     const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
@@ -539,25 +452,15 @@ export const updateRawAdjudicatorResult: RequestHandler = async (req, res, next)
   try {
     const { id: docId } = req.params
     const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawAdjudicatorResultModel(connection)
     const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
       .lean()
       .exec()
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw adjudicator result not found' }] })
+      notFound(res, 'Raw adjudicator result not found')
       return
     }
     res.json({ data: updated, errors: [] })
@@ -570,23 +473,13 @@ export const deleteRawAdjudicatorResult: RequestHandler = async (req, res, next)
   try {
     const { id: docId } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
-    if (!Types.ObjectId.isValid(docId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid raw result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRawResultId(res, docId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawAdjudicatorResultModel(connection)
     const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Raw adjudicator result not found' }] })
+      notFound(res, 'Raw adjudicator result not found')
       return
     }
     res.json({ data: deleted, errors: [] })
@@ -603,16 +496,10 @@ export const deleteRawAdjudicatorResults: RequestHandler = async (req, res, next
       id?: string
       fromId?: string
     }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      invalidTournament(res)
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const Model = getRawAdjudicatorResultModel(connection)
-    const filter: Record<string, unknown> = { tournamentId }
-    if (round !== undefined) filter.r = Number(round)
-    if (id !== undefined) filter.id = id
-    if (fromId !== undefined) filter.from_id = fromId
+    const filter = buildRawFilter(tournamentId, { round, id, fromId })
     const result = await Model.deleteMany(filter).exec()
     res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
   } catch (err) {

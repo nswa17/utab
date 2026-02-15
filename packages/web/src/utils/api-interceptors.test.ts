@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import { api, resetApiInterceptorsForTests, setupApiInterceptors } from './api'
 
 type TestRouter = {
   currentRoute: ReturnType<typeof ref>
@@ -7,14 +8,14 @@ type TestRouter = {
 }
 
 async function setup(path: string) {
-  vi.resetModules()
   const currentRoute = ref({ path, fullPath: path })
   const replace = vi.fn(async () => {})
   const router = { currentRoute, replace } as unknown as TestRouter
 
-  const mod = await import('./api')
-  mod.setupApiInterceptors(router as any)
-  const rejected = (mod.api.interceptors.response as any).handlers[0]?.rejected as (
+  resetApiInterceptorsForTests()
+  setupApiInterceptors(router as any)
+  const handlers = (api.interceptors.response as any).handlers as Array<{ rejected?: (error: any) => Promise<never> }>
+  const rejected = handlers.at(-1)?.rejected as (
     error: any
   ) => Promise<never>
 

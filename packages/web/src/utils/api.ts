@@ -8,12 +8,13 @@ export const api = axios.create({
 
 let interceptorsInstalled = false
 let redirectingToLogin = false
+let responseInterceptorId: number | null = null
 
 export function setupApiInterceptors(router: Router) {
   if (interceptorsInstalled) return
   interceptorsInstalled = true
 
-  api.interceptors.response.use(
+  responseInterceptorId = api.interceptors.response.use(
     (response) => response,
     async (error) => {
       const status = error?.response?.status
@@ -41,4 +42,13 @@ export function setupApiInterceptors(router: Router) {
       return Promise.reject(error)
     }
   )
+}
+
+export function resetApiInterceptorsForTests() {
+  if (responseInterceptorId !== null) {
+    api.interceptors.response.eject(responseInterceptorId)
+    responseInterceptorId = null
+  }
+  interceptorsInstalled = false
+  redirectingToLogin = false
 }

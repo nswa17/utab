@@ -1,19 +1,33 @@
-import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getResultModel } from '../models/result.js'
 import { sanitizeResultForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
+
+function ensureTournamentId(
+  res: Parameters<RequestHandler>[1],
+  tournamentId?: string
+): tournamentId is string {
+  if (!tournamentId || !isValidObjectId(tournamentId)) {
+    badRequest(res, 'Invalid tournament id')
+    return false
+  }
+  return true
+}
+
+function ensureResultId(res: Parameters<RequestHandler>[1], resultId: string): boolean {
+  if (!isValidObjectId(resultId)) {
+    badRequest(res, 'Invalid result id')
+    return false
+  }
+  return true
+}
 
 export const listResults: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
     const results = await ResultModel.find({ tournamentId }).lean().exec()
@@ -28,25 +42,13 @@ export const getResult: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureResultId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
     const result = await ResultModel.findById(id).lean().exec()
     if (!result) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Result not found' }] })
+      notFound(res, 'Result not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
@@ -64,12 +66,7 @@ export const createResult: RequestHandler = async (req, res, next) => {
       payload: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
@@ -94,18 +91,8 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       payload?: unknown
     }
 
-    if (!Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureResultId(res, id)) return
 
     const update: Record<string, unknown> = {}
     if (round !== undefined) update.round = round
@@ -122,9 +109,7 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updated) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Result not found' }] })
+      notFound(res, 'Result not found')
       return
     }
 
@@ -138,26 +123,14 @@ export const deleteResult: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
-    if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid tournament id' }] })
-      return
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      res
-        .status(400)
-        .json({ data: null, errors: [{ name: 'BadRequest', message: 'Invalid result id' }] })
-      return
-    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureResultId(res, id)) return
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
     const deleted = await ResultModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
-      res
-        .status(404)
-        .json({ data: null, errors: [{ name: 'NotFound', message: 'Result not found' }] })
+      notFound(res, 'Result not found')
       return
     }
     res.json({ data: deleted, errors: [] })

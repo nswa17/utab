@@ -1,12 +1,59 @@
 # UTab Plan
 
-最終更新: 2026-02-13
+最終更新: 2026-02-15
 
 ## 今やること（全体）
 
 - [x] `legacy/` は現状維持（本フェーズでは変更しない）
 - [x] ステージング→本番のデプロイ手順を確定（`DEPLOYMENT.md`）
 - [x] UI モダン化計画を `PLAN.md` に集約し、未完了だった `T24` の「手動 seed 確定」導線を実装
+
+---
+
+## テスト実行の問題整理（2026-02-15）
+
+### 問題
+
+- `pnpm -C packages/web test` が無出力のまま停止し、完走しないケースがある
+- `pnpm -C packages/web typecheck` / `typecheck:vue` も同様に停止するケースがある
+- `pnpm -C packages/server exec tsc -p tsconfig.json --noEmit` も同様に停止するケースがある
+- `pnpm -C packages/server lint`（対象ファイル限定実行を含む）も停止するケースがある
+- 既存コマンドが長時間ブロックすると、CI/ローカルの「壊れているのか遅いだけか」の切り分けができない
+
+### わかっていること
+
+- Web 側に「負荷試験専用」の明示的なテストスイートは見当たらない（静的文字列検証中心のテストが多数）
+- Typecheck 側は `tsconfig.lint.json` / `tsconfig.typecheck.json` でテストファイル除外済みであり、単純な対象過多だけが原因とは断定できない
+- 実行環境依存で `vitest` / `tsc` プロセスがハングしている可能性が高い
+- 2026-02-15 時点で `web test`/`web typecheck`/`web typecheck:vue` は timeout wrapper により `124` で終了することを確認（無限待機は回避）
+- 暫定対策として `packages/web/scripts/run-with-timeout.mjs` を追加し、以下をデフォルト短時間実行へ変更済み
+  - `pnpm -C packages/web test`（120秒 timeout）
+  - `pnpm -C packages/web typecheck`（90秒 timeout）
+  - `pnpm -C packages/web typecheck:vue`（120秒 timeout）
+- 差分中心実行として `pnpm test:changed`（`scripts/test-changed.mjs`）を追加し、変更ファイルに対して package単位で `vitest related` を実行できるようにした
+- `packages/server/test/integration.test.ts` は重いケースを `UTAB_FULL_CHECK=1` 時のみ実行する形に分離し、通常 `pnpm -C packages/server test` の待ち時間を削減した
+- `packages/server/test/integration.test.ts` は通常実行時に MongoMemoryServer 起動を行わず、軽量テストのみDB非依存で実行するようにした
+- フル実行コマンドは別名で維持済み
+  - `test:full`
+  - `typecheck:full`
+  - `typecheck:vue:full`
+- `test:full` は `UTAB_FULL_CHECK=1` を付与し、通常実行より長いテスト/フックタイムアウトを許可する
+
+### 今後の方針
+
+- 方針1: 開発時は「短時間で失敗を返す」デフォルトコマンドを維持し、フリーズ検知を優先する
+- 方針2: リリース前/CI の最終確認は `*:full` を使う（長時間実行を明示的に選択）
+- 方針2.1: フル確認が必要なときは `pnpm test:full` を使い、`UTAB_FULL_CHECK=1` を明示して slowテストを含める
+- 方針3: `vitest` と `tsc` のハング再現条件を切り分ける（依存解決・Nodeバージョン・キャッシュ・ワーカー設定）
+- 方針4: 負荷/長時間系テストを将来導入する場合は通常 `test` から分離し、`test:load` のような明示コマンドに隔離する
+- 方針5: タイムアウト発生時は「コマンド・経過秒・再現条件」を `PLAN.md` と PR 説明に必ず記録する
+
+### 追加で確認すべき重要ポイント
+
+- `vitest` 実行時の worker 設定（`threads/pool`）とプロセス残留の有無
+- `tsc` / `vue-tsc` の incremental キャッシュ破損有無（`node_modules/.cache/*`）
+- `pnpm install` 後の lockfile 差分と依存解決揺れ
+- CI 環境とローカル環境での再現差（同一 Node/PNPM バージョンで比較）
 
 ---
 

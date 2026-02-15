@@ -17,6 +17,8 @@
     "lint": "pnpm -C packages/core build && pnpm -C packages/server build",
     "lint:web": "pnpm -C packages/web exec tsc -p tsconfig.lint.json --noEmit",
     "test": "node scripts/ensure-node20.cjs && turbo run test",
+    "test:full": "node scripts/ensure-node20.cjs && UTAB_FULL_CHECK=1 turbo run test",
+    "test:changed": "node scripts/ensure-node20.cjs && node scripts/test-changed.mjs",
     "test:watch": "node scripts/ensure-node20.cjs && turbo run test -- --watch",
     "format": "prettier --write \"packages/**/*.{ts,tsx,vue,js,cjs,mjs,json,md,yml,yaml}\" \"docs/**/*.md\" \"*.md\"",
     "docker:up": "docker-compose up -d",

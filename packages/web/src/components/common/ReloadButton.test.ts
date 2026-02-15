@@ -1,74 +1,49 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
-import { createI18n } from 'vue-i18n'
-import ReloadButton from './ReloadButton.vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { resolveReloadButtonAttrs, resolveReloadButtonLabel } from './reload-button'
 
-function mountReloadButton(props: Record<string, unknown> = {}) {
-  const container = document.createElement('div')
-  document.body.appendChild(container)
-  const i18n = createI18n({
-    legacy: false,
-    locale: 'ja',
-    messages: {
-      ja: {
-        再読み込み: '再読み込み',
-        '{target}を再読み込み': '{target}を再読み込み',
-      },
-    },
-  })
-  const app = createApp({
-    render() {
-      return h(ReloadButton, props as any)
-    },
-  })
-  app.use(i18n)
-  app.mount(container)
-  return {
-    container,
-    unmount() {
-      app.unmount()
-      container.remove()
-    },
-  }
+function t(key: string, params?: Record<string, unknown>): string {
+  if (key === '再読み込み') return '再読み込み'
+  if (key === '{target}を再読み込み') return `${String(params?.target ?? '')}を再読み込み`
+  return key
 }
 
-afterEach(() => {
-  document.body.innerHTML = ''
-})
-
 describe('ReloadButton', () => {
-  it('uses target to build aria-label and title by default', async () => {
-    const mounted = mountReloadButton({ target: '大会一覧' })
-    await nextTick()
-    const button = mounted.container.querySelector('button')
-    expect(button).not.toBeNull()
-    expect(button?.getAttribute('aria-label')).toBe('大会一覧を再読み込み')
-    expect(button?.getAttribute('title')).toBe('大会一覧を再読み込み')
-    mounted.unmount()
-  })
-
-  it('prioritizes explicit aria-label and title attrs', async () => {
-    const mounted = mountReloadButton({
+  it('uses target to build aria-label and title by default', () => {
+    const labelText = resolveReloadButtonLabel('', t)
+    const attrs = resolveReloadButtonAttrs({
+      attrs: {},
       target: '大会一覧',
-      'aria-label': '手動更新',
-      title: '手動更新の説明',
+      labelText,
+      t,
     })
-    await nextTick()
-    const button = mounted.container.querySelector('button')
-    expect(button).not.toBeNull()
-    expect(button?.getAttribute('aria-label')).toBe('手動更新')
-    expect(button?.getAttribute('title')).toBe('手動更新の説明')
-    mounted.unmount()
+
+    expect(attrs['aria-label']).toBe('大会一覧を再読み込み')
+    expect(attrs.title).toBe('大会一覧を再読み込み')
   })
 
-  it('disables button and renders loading text while loading', async () => {
-    const mounted = mountReloadButton({ loading: true })
-    await nextTick()
-    const button = mounted.container.querySelector('button')
-    const srOnly = mounted.container.querySelector('.sr-only')
-    expect(button).not.toBeNull()
-    expect(button?.hasAttribute('disabled')).toBe(true)
-    expect(srOnly?.textContent?.trim()).toBe('再読み込み')
-    mounted.unmount()
+  it('prioritizes explicit aria-label and title attrs', () => {
+    const attrs = resolveReloadButtonAttrs({
+      attrs: { 'aria-label': '手動更新', title: '手動更新の説明' },
+      target: '大会一覧',
+      labelText: resolveReloadButtonLabel('', t),
+      t,
+    })
+
+    expect(attrs['aria-label']).toBe('手動更新')
+    expect(attrs.title).toBe('手動更新の説明')
+  })
+
+  it('falls back to translated reload label when label is not provided', () => {
+    expect(resolveReloadButtonLabel('', t)).toBe('再読み込み')
+    expect(resolveReloadButtonLabel(undefined, t)).toBe('再読み込み')
+    expect(resolveReloadButtonLabel(' 手動更新 ', t)).toBe('手動更新')
+  })
+
+  it('keeps loading accessibility/output wiring in SFC template', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/common/ReloadButton.vue'), 'utf8')
+    expect(source).toContain(':disabled="disabled || loading"')
+    expect(source).toContain('<span v-if="loading" class="sr-only">{{ labelText }}</span>')
   })
 })

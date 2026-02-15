@@ -1,21 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createPinia } from 'pinia'
+import { createMemoryHistory } from 'vue-router'
 import { createAppRouter, setupRouterGuards } from './index'
 import { useAuthStore } from '@/stores/auth'
 
 function createRouterWithAuth() {
   const pinia = createPinia()
-  const router = createAppRouter()
+  const router = createAppRouter({ history: createMemoryHistory(), stubComponents: true })
   setupRouterGuards(router, pinia)
   const auth = useAuthStore(pinia)
   return { router, auth }
 }
 
 describe('router guards', () => {
-  beforeEach(() => {
-    window.history.replaceState({}, '', '/')
-  })
-
   it('redirects unauthenticated admin access to login with redirect path', async () => {
     const { router, auth } = createRouterWithAuth()
     const fetchMe = vi.spyOn(auth, 'fetchMe').mockImplementation(async () => {
