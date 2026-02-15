@@ -11,7 +11,7 @@
 
 ## UI
 
-- [UI Modernization Plan](ui/ui-modernization-plan.md)
+- UI Modernization Plan はルートの [PLAN.md](../PLAN.md) に統合
 - [UI Map](ui/ui-map.md)
 - [UI Inventory](ui/ui-inventory.md)
 - [UI Issues](ui/ui-issues.md)

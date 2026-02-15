@@ -190,6 +190,16 @@ export class TournamentHandler {
           this.teams.results.organize(rs, { simple, force }),
           this.institutions.read(),
         ])
+        const institutionPriorityMap = Object.fromEntries(
+          (institutions as Array<{ id: number; priority?: unknown }>).map((institution) => {
+            const parsed = Number(institution.priority)
+            return [institution.id, Number.isFinite(parsed) && parsed >= 0 ? parsed : 1]
+          })
+        )
+        const configWithInstitutionPriority = {
+          ...config,
+          institution_priority_map: institutionPriorityMap,
+        }
 
         if (!force) {
           allocations.teams.precheck(teams, institutions, config.style, _for)
@@ -200,16 +210,24 @@ export class TournamentHandler {
                 _for,
                 teams,
                 compiledTeamResults,
-                config,
+                configWithInstitutionPriority,
                 algorithm_options
               )
-            : allocations.teams.standard.get(
-                _for,
-                teams,
-                compiledTeamResults,
-                algorithm_options,
-                config
-              )
+            : algorithm === 'powerpair'
+              ? allocations.teams.powerpair.get(
+                  _for,
+                  teams,
+                  compiledTeamResults,
+                  algorithm_options,
+                  configWithInstitutionPriority
+                )
+              : allocations.teams.standard.get(
+                  _for,
+                  teams,
+                  compiledTeamResults,
+                  algorithm_options,
+                  configWithInstitutionPriority
+                )
         return convertDraw(newDraw)
       },
     }

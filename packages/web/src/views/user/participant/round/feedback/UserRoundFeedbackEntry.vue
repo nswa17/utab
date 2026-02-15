@@ -6,7 +6,6 @@
     <div v-else-if="judge" class="card stack">
       <h4>{{ judge.name }}</h4>
       <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
-
       <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
         <input
           v-model.number="matter"
@@ -142,10 +141,32 @@ const round = computed(() => route.params.round as string)
 const adjudicatorId = computed(() => route.params.adjudicatorId as string)
 const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
 const { identityId: speakerIdentityId } = useParticipantIdentity(tournamentId, participant, 'speaker')
-
-const homePath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/feedback/home`
+const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-team'
 )
+const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-speaker'
+)
+const filter = computed(() => (typeof route.query.filter === 'string' ? route.query.filter : ''))
+const actorMode = computed<'team' | 'adjudicator'>(() => {
+  if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
+  if (participant.value === 'speaker') return 'team'
+  return 'adjudicator'
+})
+
+const homePath = computed(() => {
+  const query = new URLSearchParams()
+  if (filter.value) query.set('filter', filter.value)
+  query.set('actor', actorMode.value)
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/feedback/home${
+    suffix ? `?${suffix}` : ''
+  }`
+})
 const drawPath = computed(
   () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/draw`
 )
@@ -169,6 +190,26 @@ const judge = computed(() =>
 const roundConfig = computed(() =>
   rounds.rounds.find((item) => item.round === Number(round.value))
 )
+const teamFeedbackEnabled = computed(
+  () => roundConfig.value?.userDefinedData?.evaluate_from_teams !== false
+)
+const adjudicatorFeedbackEnabled = computed(
+  () => roundConfig.value?.userDefinedData?.evaluate_from_adjudicators !== false
+)
+const actorOptions = computed<Array<{ value: 'adjudicator' | 'team'; label: string }>>(() => {
+  if (participant.value !== 'adjudicator') return []
+  const options: Array<{ value: 'adjudicator' | 'team'; label: string }> = []
+  if (adjudicatorFeedbackEnabled.value) {
+    options.push({ value: 'adjudicator', label: t('ジャッジとして提出') })
+  }
+  if (teamFeedbackEnabled.value) {
+    options.push({
+      value: 'team',
+      label: evaluatorMode.value === 'speaker' ? t('スピーカーとして提出') : t('チームとして提出'),
+    })
+  }
+  return options
+})
 const evaluatorMode = computed(() => roundConfig.value?.userDefinedData?.evaluator_in_team ?? 'team')
 const useMatterManner = computed(
   () => roundConfig.value?.userDefinedData?.score_by_matter_manner !== false
@@ -196,6 +237,11 @@ const submittedEntityId = computed(() => {
     return evaluatorMode.value === 'speaker' ? speakerIdentityId.value : teamIdentityId.value
   }
   if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? judgeFeedbackSpeakerIdentityId.value
+        : judgeFeedbackTeamIdentityId.value
+    }
     return teamIdentityId.value
   }
   return ''
@@ -206,7 +252,14 @@ const identityReady = computed(() => {
       ? Boolean(teamIdentityId.value) && Boolean(speakerIdentityId.value)
       : Boolean(teamIdentityId.value)
   }
-  if (participant.value === 'adjudicator') return Boolean(teamIdentityId.value)
+  if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? Boolean(judgeFeedbackTeamIdentityId.value) && Boolean(judgeFeedbackSpeakerIdentityId.value)
+        : Boolean(judgeFeedbackTeamIdentityId.value)
+    }
+    return Boolean(teamIdentityId.value)
+  }
   return true
 })
 const identityHint = computed(() => {
@@ -216,6 +269,11 @@ const identityHint = computed(() => {
       : t('参加者ホームでチームを選択してください。')
   }
   if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker'
+        ? t('参加者ホームでチームとスピーカーを選択してください。')
+        : t('参加者ホームでチームを選択してください。')
+    }
     return t('参加者ホームでジャッジを選択してください。')
   }
   return t('参加者ホームで対象を選択してください。')
@@ -231,6 +289,11 @@ const confirmButtonLabel = computed(() =>
     ? t('{seconds}秒後に送信できます', { seconds: confirmCountdown.value })
     : t('確認して送信')
 )
+
+function setActorMode(mode: 'adjudicator' | 'team') {
+  const nextQuery = { ...route.query, actor: mode }
+  router.replace({ query: nextQuery })
+}
 
 function startCountdown(seconds = 3) {
   clearCountdown(false)
@@ -343,6 +406,18 @@ watch(range, (next) => {
   score.value = next.default
 }, { immediate: true })
 
+watch(
+  [participant, actorOptions],
+  () => {
+    if (participant.value !== 'adjudicator') return
+    if (actorOptions.value.length === 0) return
+    const current = actorMode.value
+    if (actorOptions.value.some((option) => option.value === current)) return
+    setActorMode(actorOptions.value[0].value)
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   clearCountdown()
@@ -388,4 +463,5 @@ onUnmounted(() => {
 .confirm-grid .full {
   grid-column: 1 / -1;
 }
+
 </style>

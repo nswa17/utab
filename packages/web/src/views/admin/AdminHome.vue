@@ -1,12 +1,7 @@
 <template>
   <section class="stack">
-    <div class="row">
+    <div class="row header-row">
       <h2>{{ $t('管理ダッシュボード') }}</h2>
-      <ReloadButton
-        @click="refresh"
-        :disabled="tournament.loading || styles.loading"
-        :loading="tournament.loading || styles.loading"
-      />
     </div>
     <div class="card stack">
       <h3 class="section-title">{{ $t('新規大会作成') }}</h3>
@@ -57,7 +52,7 @@
         <tbody>
           <tr v-for="item in filteredTournaments" :key="item._id">
             <td>
-              <RouterLink class="name-link" :to="`/admin/${item._id}/home`">
+              <RouterLink class="name-link" :to="`/admin/${item._id}/setup`">
                 <strong>{{ item.name }}</strong>
                 <span v-if="item.user_defined_data?.hidden" class="visibility-badge">
                   {{ $t('非公開') }}
@@ -68,7 +63,7 @@
             <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
             <td>
               <div class="row">
-                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/home`">
+                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/setup`">
                   {{ $t('大会管理') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
@@ -77,6 +72,25 @@
           </tr>
         </tbody>
       </Table>
+    </div>
+
+    <div
+      v-if="deleteModalTournament"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('削除') }}</h4>
+        <p class="muted">{{ $t('大会を削除しますか？関連データも削除されます。') }}</p>
+        <p class="muted small">{{ deleteModalTournament.name }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="tournament.loading" @click="confirmDeleteTournament">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -92,7 +106,6 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 
 const tournament = useTournamentStore()
 const styles = useStylesStore()
@@ -109,6 +122,7 @@ const visibleTournaments = computed(() => {
 })
 
 const searchQuery = ref('')
+const deleteModalTournamentId = ref('')
 const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
@@ -121,11 +135,21 @@ const filteredTournaments = computed(() => {
       })
     : visibleTournaments.value
   return filtered.slice().sort((a, b) => {
+    const timeA = Date.parse(String(a.updatedAt ?? a.createdAt ?? ''))
+    const timeB = Date.parse(String(b.updatedAt ?? b.createdAt ?? ''))
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+      return timeB - timeA
+    }
+    if (Number.isFinite(timeA) && !Number.isFinite(timeB)) return -1
+    if (!Number.isFinite(timeA) && Number.isFinite(timeB)) return 1
     const nameCompare = naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
     if (nameCompare !== 0) return nameCompare
     return naturalSortCollator.compare(String(a._id ?? ''), String(b._id ?? ''))
   })
 })
+const deleteModalTournament = computed(
+  () => visibleTournaments.value.find((item) => item._id === deleteModalTournamentId.value) ?? null
+)
 
 const form = reactive({
   name: '',
@@ -178,9 +202,18 @@ async function refresh() {
   }
 }
 
-async function remove(id: string) {
-  const ok = window.confirm(t('大会を削除しますか？関連データも削除されます。'))
-  if (!ok) return
+function remove(id: string) {
+  deleteModalTournamentId.value = id
+}
+
+function closeDeleteModal() {
+  deleteModalTournamentId.value = ''
+}
+
+async function confirmDeleteTournament() {
+  if (!deleteModalTournament.value) return
+  const id = deleteModalTournament.value._id
+  closeDeleteModal()
   await tournament.deleteTournament(id)
 }
 </script>
@@ -188,6 +221,34 @@ async function remove(id: string) {
 <style scoped>
 .error {
   color: var(--color-danger);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.header-row {
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .checkbox-field {

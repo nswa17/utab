@@ -57,6 +57,47 @@ function normalizeScoreWeights(scoreWeights: any): number[] {
   return [1]
 }
 
+function normalizeInstitutionPriority(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 1
+  return parsed
+}
+
+function normalizeAdjudicatorCount(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Math.floor(parsed)
+}
+
+function adjudicatorsRequiredPerSquare(numbers: {
+  chairs?: unknown
+  panels?: unknown
+  trainees?: unknown
+}): number {
+  return (
+    normalizeAdjudicatorCount(numbers.chairs) +
+    normalizeAdjudicatorCount(numbers.panels) +
+    normalizeAdjudicatorCount(numbers.trainees)
+  )
+}
+
+function hasSufficientAdjudicators(
+  availableCount: number,
+  allocationSquares: number,
+  numbers: { chairs?: unknown; panels?: unknown; trainees?: unknown }
+): boolean {
+  if (allocationSquares <= 0) return false
+  const requiredPerSquare = adjudicatorsRequiredPerSquare(numbers)
+  if (requiredPerSquare <= 0) return false
+  return availableCount >= allocationSquares * requiredPerSquare
+}
+
+function extractDrawUserDefinedData(draw: any): Record<string, unknown> | undefined {
+  const candidate = draw?.userDefinedData ?? draw?.user_defined_data
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
+  return candidate as Record<string, unknown>
+}
+
 function ensureRounds(round: number): number[] {
   if (round <= 1) return []
   return Array.from({ length: round - 1 }, (_, i) => i + 1)
@@ -134,10 +175,11 @@ export const listDraws: RequestHandler = async (req, res, next) => {
 
 export const upsertDraw: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, allocation, drawOpened, allocationOpened, locked } = req.body as {
+    const { tournamentId, round, allocation, userDefinedData, drawOpened, allocationOpened, locked } = req.body as {
       tournamentId: string
       round: number
       allocation: unknown[]
+      userDefinedData?: Record<string, unknown>
       drawOpened?: boolean
       allocationOpened?: boolean
       locked?: boolean
@@ -158,6 +200,7 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       {
         $set: {
           allocation,
+          ...(userDefinedData !== undefined ? { userDefinedData } : {}),
           drawOpened: drawOpened ?? false,
           allocationOpened: allocationOpened ?? false,
           locked: locked ?? false,
@@ -223,6 +266,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       style,
       preev_weights:
         (tournament as any).preev_weights ?? (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
+      institution_priority_map: {} as Record<number, number>,
     }
 
     const teamMaps = buildIdMaps(teams)
@@ -278,7 +322,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const institutionInstances = institutions.map((inst) => ({
       id: institutionMaps.map.get(String(inst._id))!,
       name: inst.name,
+      category:
+        typeof (inst as any).category === 'string' && String((inst as any).category).trim().length > 0
+          ? String((inst as any).category).trim()
+          : 'institution',
+      priority: normalizeInstitutionPriority((inst as any).priority),
     }))
+    config.institution_priority_map = Object.fromEntries(
+      institutionInstances.map((inst) => [inst.id, inst.priority])
+    )
 
     const mapFromId = (id: string) =>
       adjudicatorMaps.map.get(id) ??
@@ -334,23 +386,33 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       roundsForCompile
     )
 
-    let draw = allocations.teams.standard.get(
-      round,
-      teamInstances,
-      compiledTeamResults,
-      options?.team_allocation_algorithm_options ?? {},
-      config
-    )
-
-    if (options?.team_allocation_algorithm === 'strict') {
-      draw = allocations.teams.strict.get(
-        round,
-        teamInstances,
-        compiledTeamResults,
-        config,
-        options?.team_allocation_algorithm_options ?? {}
-      )
-    }
+    const teamAlgorithm = options?.team_allocation_algorithm ?? 'standard'
+    const teamAlgorithmOptions = options?.team_allocation_algorithm_options ?? {}
+    let draw =
+      teamAlgorithm === 'strict'
+        ? allocations.teams.strict.get(
+            round,
+            teamInstances,
+            compiledTeamResults,
+            config,
+            teamAlgorithmOptions
+          )
+        : teamAlgorithm === 'powerpair'
+          ? allocations.teams.powerpair.get(
+              round,
+              teamInstances,
+              compiledTeamResults,
+              teamAlgorithmOptions,
+              config
+            )
+          : allocations.teams.standard.get(
+              round,
+              teamInstances,
+              compiledTeamResults,
+              teamAlgorithmOptions,
+              config
+            )
+    const teamUserDefinedData = extractDrawUserDefinedData(draw)
 
     const numbersOfAdjudicators = options?.numbers_of_adjudicators ?? { chairs: 1, panels: 2, trainees: 0 }
     const adjudicatorAlgorithm = options?.adjudicator_allocation_algorithm ?? 'standard'
@@ -359,7 +421,10 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     let adjudicatorDraw = draw
     const allocationSquares = draw.allocation?.length ?? 0
     const availableAdjudicators = filterAvailable(adjudicatorInstances, round)
-    if (adjudicators.length > 0 && allocationSquares > 0 && availableAdjudicators.length >= allocationSquares) {
+    if (
+      adjudicators.length > 0 &&
+      hasSufficientAdjudicators(availableAdjudicators.length, allocationSquares, numbersOfAdjudicators)
+    ) {
       adjudicatorDraw =
         adjudicatorAlgorithm === 'traditional'
           ? allocations.adjudicators.traditional.get(
@@ -418,7 +483,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       }
     })
 
-    const payload = { r: round, allocation: mappedAllocation }
+    const payload = {
+      r: round,
+      allocation: mappedAllocation,
+      ...(teamUserDefinedData ? { userDefinedData: teamUserDefinedData } : {}),
+    }
 
     if (save) {
       const DrawModel = getDrawModel(connection)
@@ -430,6 +499,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
             drawOpened: false,
             allocationOpened: false,
             locked: false,
+            ...(teamUserDefinedData ? { userDefinedData: teamUserDefinedData } : {}),
           },
           $setOnInsert: { createdBy: req.session?.userId },
         },

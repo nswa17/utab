@@ -2,12 +2,24 @@
   <section class="stack">
     <div class="row section-row">
       <h3>{{ activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理') }}</h3>
-      <ReloadButton
-        class="section-reload"
-        @click="refresh"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
+    </div>
+    <div class="row setup-section-switch">
+      <button
+        type="button"
+        class="setup-section-tab"
+        :class="{ active: activeSection === 'overview' }"
+        @click="setActiveSection('overview')"
+      >
+        {{ $t('大会設定') }}
+      </button>
+      <button
+        type="button"
+        class="setup-section-tab"
+        :class="{ active: activeSection === 'data' }"
+        @click="setActiveSection('data')"
+      >
+        {{ $t('大会データ管理') }}
+      </button>
     </div>
     <p v-if="activeSection === 'overview'" class="muted small">
       {{ $t('大会の基本情報と公開設定を管理します。') }}
@@ -93,6 +105,224 @@
           </div>
         </article>
       </div>
+
+      <article class="card stack setup-rounds-card">
+        <div class="row setup-rounds-head">
+          <h4>{{ $t('新規ラウンド作成') }}</h4>
+        </div>
+        <details class="round-defaults-collapse">
+          <summary class="row round-defaults-summary">
+            <strong>{{ $t('ラウンドデフォルト設定') }}</strong>
+            <span class="muted small">{{ $t('新規ラウンド作成時に適用される標準設定です。') }}</span>
+          </summary>
+          <div class="stack round-defaults-body">
+            <div class="grid settings-options-grid">
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.evaluate_from_adjudicators" type="checkbox" />
+                <span>{{ $t('評価をジャッジから') }}</span>
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.evaluate_from_teams" type="checkbox" />
+                <span>{{ $t('評価をチームから') }}</span>
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.chairs_always_evaluated" type="checkbox" />
+                <span>{{ $t('チェアを常に評価') }}</span>
+              </label>
+              <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
+                <select
+                  v-model="roundDefaultsForm.userDefinedData.evaluator_in_team"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                >
+                  <option value="team">{{ $t('チーム') }}</option>
+                  <option value="speaker">{{ $t('スピーカー') }}</option>
+                </select>
+              </Field>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.no_speaker_score" type="checkbox" />
+                <span>{{ $t('スピーカースコア無し') }}</span>
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.score_by_matter_manner" type="checkbox" />
+                <span>{{ $t('Matter/Manner採点') }}</span>
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.poi" type="checkbox" />
+                <span>{{ $t('POI賞') }}</span>
+              </label>
+              <label class="row small setting-option">
+                <input v-model="roundDefaultsForm.userDefinedData.best" type="checkbox" />
+                <span>{{ $t('Best Speaker賞') }}</span>
+              </label>
+            </div>
+
+            <section class="stack">
+              <h5 class="settings-group-title">{{ $t('ブレイク基本方針') }}</h5>
+              <div class="grid settings-options-grid">
+                <Field :label="$t('ソース')" v-slot="{ id, describedBy }">
+                  <select v-model="roundDefaultsForm.break.source" :id="id" :aria-describedby="describedBy">
+                    <option value="submissions">{{ $t('提出データ') }}</option>
+                    <option value="raw">{{ $t('Raw結果') }}</option>
+                  </select>
+                </Field>
+                <Field :label="$t('ブレイク人数')" v-slot="{ id, describedBy }">
+                  <input
+                    v-model.number="roundDefaultsForm.break.size"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                    type="number"
+                    min="1"
+                  />
+                </Field>
+                <Field :label="$t('境界同点の扱い')" v-slot="{ id, describedBy }">
+                  <select
+                    v-model="roundDefaultsForm.break.cutoff_tie_policy"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  >
+                    <option value="manual">{{ $t('手動選抜') }}</option>
+                    <option value="include_all">{{ $t('同点は全員含める') }}</option>
+                    <option value="strict">{{ $t('人数を厳密適用') }}</option>
+                  </select>
+                </Field>
+                <Field :label="$t('シード方式')" v-slot="{ id, describedBy }">
+                  <select v-model="roundDefaultsForm.break.seeding" :id="id" :aria-describedby="describedBy">
+                    <option value="high_low">{{ $t('High-Low (1 vs N)') }}</option>
+                  </select>
+                </Field>
+              </div>
+            </section>
+
+            <div class="row">
+              <Button size="sm" @click="saveRoundDefaults" :disabled="isLoading">
+                {{ $t('ラウンドデフォルトを保存') }}
+              </Button>
+            </div>
+          </div>
+        </details>
+        <form class="grid setup-round-form" @submit.prevent="createRoundFromSetup">
+          <Field :label="$t('ラウンド番号')" required v-slot="{ id, describedBy }">
+            <input
+              v-model.number="setupRoundForm.round"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              min="1"
+            />
+          </Field>
+          <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+            <input
+              v-model="setupRoundForm.name"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="text"
+            />
+          </Field>
+          <Field :label="$t('種類')" v-slot="{ id, describedBy }">
+            <select
+              v-model="setupRoundForm.type"
+              :id="id"
+              :aria-describedby="describedBy"
+            >
+              <option value="standard">{{ $t('通常ラウンド') }}</option>
+              <option value="break">{{ $t('ブレイク') }}</option>
+            </select>
+          </Field>
+          <div class="row create-actions">
+            <Button type="submit" :disabled="isLoading">{{ $t('追加') }}</Button>
+          </div>
+        </form>
+        <p class="muted small">
+          {{ $t('新規ラウンドは大会セットアップのラウンドデフォルトを継承します。') }}
+        </p>
+        <p v-if="setupRoundError" class="error">{{ setupRoundError }}</p>
+        <p v-if="sortedRounds.length === 0" class="muted small">{{ $t('ラウンドがまだありません。') }}</p>
+        <div v-else class="stack setup-round-list">
+          <div
+            v-for="round in sortedRounds"
+            :key="round._id"
+            class="row setup-round-item"
+          >
+            <div class="stack tight">
+              <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
+              <span class="muted small">
+                {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
+              </span>
+            </div>
+            <details class="setup-round-details" @toggle="onSetupRoundDetailsToggle(round, $event)">
+              <summary class="row setup-round-details-summary">
+                <span class="setup-round-toggle-icon" aria-hidden="true"></span>
+                <div class="stack tight setup-round-summary-text">
+                  <strong>{{ $t('ラウンド詳細設定') }}</strong>
+                  <span class="muted small">
+                    {{ $t('このラウンドの公開・採点・ブレイク設定を編集します。') }}
+                  </span>
+                </div>
+              </summary>
+              <div v-if="isSetupRoundDetailsOpen(round._id)" class="stack setup-round-details-body">
+                <section class="stack setup-round-basic-panel">
+                  <div v-if="setupRoundEditingId === round._id" class="stack">
+                    <div class="grid setup-round-edit-grid">
+                      <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
+                        <input
+                          v-model.number="setupRoundEditForm.round"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          type="number"
+                          min="1"
+                        />
+                      </Field>
+                      <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+                        <input
+                          v-model="setupRoundEditForm.name"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                          type="text"
+                        />
+                      </Field>
+                      <Field :label="$t('種類')" v-slot="{ id, describedBy }">
+                        <select
+                          v-model="setupRoundEditForm.type"
+                          :id="id"
+                          :aria-describedby="describedBy"
+                        >
+                          <option value="standard">{{ $t('通常ラウンド') }}</option>
+                          <option value="break">{{ $t('ブレイク') }}</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <div class="row setup-round-item-actions">
+                      <Button size="sm" :disabled="isLoading" @click="saveEditRoundFromSetup(round)">
+                        {{ $t('保存') }}
+                      </Button>
+                      <Button variant="ghost" size="sm" :disabled="isLoading" @click="cancelEditRoundFromSetup">
+                        {{ $t('キャンセル') }}
+                      </Button>
+                    </div>
+                    <p v-if="setupRoundEditError" class="error small">
+                      {{ setupRoundEditError }}
+                    </p>
+                  </div>
+                  <p v-else class="muted small">
+                    {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
+                  </p>
+                </section>
+
+                <iframe
+                  class="setup-round-details-frame"
+                  :src="roundSettingsEmbedUrl(round.round)"
+                  :title="$t('ラウンド詳細設定')"
+                  loading="lazy"
+                />
+              </div>
+              <p v-else class="muted small setup-round-details-placeholder">
+                {{ $t('展開すると詳細設定を読み込みます。') }}
+              </p>
+            </details>
+          </div>
+        </div>
+      </article>
 
       <article class="card stack overview-qr-card">
         <div class="row overview-qr-head">
@@ -705,6 +935,25 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
+              <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
+                <input
+                  v-model="institutionForm.category"
+                  type="text"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                  :placeholder="$t('例: institution / region / league')"
+                />
+              </Field>
+              <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
+                <input
+                  v-model.number="institutionForm.priority"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  :id="id"
+                  :aria-describedby="describedBy"
+                />
+              </Field>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="institutions.loading">{{
                   $t('追加')
@@ -714,7 +963,7 @@
           </section>
           <section v-else class="stack block-panel">
             <label class="stack">
-              <span class="muted small">{{ $t('CSV例: Institution A') }}</span>
+              <span class="muted small">{{ $t('CSV例: Institution A,region,2') }}</span>
               <input
                 class="csv-file-input"
                 type="file"
@@ -743,6 +992,14 @@
             >
               <div>
                 <strong>{{ inst.name }}</strong>
+                <span class="muted small entity-inline-meta">
+                  {{
+                    $t('{category} / 優先度 {priority}', {
+                      category: institutionCategoryLabel(inst.category),
+                      priority: institutionPriorityValue(inst.priority),
+                    })
+                  }}
+                </span>
               </div>
               <div class="row">
                 <Button variant="ghost" size="sm" @click="startEditEntity('institution', inst)">
@@ -917,6 +1174,30 @@
             </label>
           </div>
         </div>
+        <div class="grid" v-else-if="editingEntity.type === 'institution'">
+          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
+          </Field>
+          <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
+            <input
+              v-model="entityForm.category"
+              type="text"
+              :id="id"
+              :aria-describedby="describedBy"
+              :placeholder="$t('例: institution / region / league')"
+            />
+          </Field>
+          <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
+            <input
+              v-model.number="entityForm.priority"
+              type="number"
+              min="0"
+              step="0.1"
+              :id="id"
+              :aria-describedby="describedBy"
+            />
+          </Field>
+        </div>
         <div class="grid" v-else>
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
@@ -953,12 +1234,30 @@
         </div>
       </div>
     </div>
+
+    <div
+      v-if="activeSection === 'data' && deleteEntityModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteEntityModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('削除') }}</h4>
+        <p class="muted">{{ deleteEntityPrompt }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { api } from '@/utils/api'
@@ -971,12 +1270,18 @@ import { useVenuesStore } from '@/stores/venues'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useInstitutionsStore } from '@/stores/institutions'
 import { renderMarkdown } from '@/utils/markdown'
+import {
+  buildRoundUserDefinedFromDefaults,
+  defaultRoundDefaults,
+  normalizeRoundDefaults,
+  serializeRoundDefaults,
+} from '@/utils/round-defaults'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 
 const route = useRoute()
+const router = useRouter()
 const tournamentStore = useTournamentStore()
 const styles = useStylesStore()
 const rounds = useRoundsStore()
@@ -1009,6 +1314,16 @@ const isLoading = computed(
     institutions.loading
 )
 
+function setActiveSection(section: 'overview' | 'data') {
+  const query = { ...route.query } as Record<string, any>
+  if (section === 'data') {
+    query.section = 'data'
+  } else {
+    delete query.section
+  }
+  router.replace({ path: route.path, query })
+}
+
 const tournamentForm = reactive({
   name: '',
   style: 1,
@@ -1017,6 +1332,29 @@ const tournamentForm = reactive({
   accessPassword: '',
   infoText: '',
 })
+const roundDefaultsForm = reactive(defaultRoundDefaults())
+const setupRoundForm = reactive<{
+  round: number
+  name: string
+  type: 'standard' | 'break'
+}>({
+  round: 1,
+  name: '',
+  type: 'standard',
+})
+const setupRoundError = ref('')
+const setupRoundEditingId = ref<string | null>(null)
+const setupRoundEditForm = reactive<{
+  round: number
+  name: string
+  type: 'standard' | 'break'
+}>({
+  round: 1,
+  name: '',
+  type: 'standard',
+})
+const setupRoundEditError = ref('')
+const setupRoundDetailsOpen = ref<Record<string, boolean>>({})
 const isTournamentPublic = computed({
   get: () => !tournamentForm.hidden,
   set: (value: boolean) => {
@@ -1045,7 +1383,11 @@ const adjudicatorConflictIds = ref<string[]>([])
 const adjudicatorConflictSearch = ref('')
 const venueForm = reactive({ name: '', available: true })
 const speakerForm = reactive({ name: '' })
-const institutionForm = reactive({ name: '' })
+const institutionForm = reactive({
+  name: '',
+  category: 'institution',
+  priority: 1,
+})
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
@@ -1076,6 +1418,8 @@ const speakerLimit = ref(20)
 const institutionLimit = ref(20)
 
 const editingEntity = ref<{ type: string; id: string } | null>(null)
+type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institution'
+const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
 const entityForm = reactive<any>({
   name: '',
   institutionId: '',
@@ -1083,6 +1427,8 @@ const entityForm = reactive<any>({
   strength: 5,
   preev: 0,
   active: true,
+  category: 'institution',
+  priority: 1,
 })
 const editTeamSpeakerSearch = ref('')
 const editTeamSelectedSpeakerIds = ref<string[]>([])
@@ -1093,8 +1439,21 @@ const editAdjudicatorConflictSearch = ref('')
 const entityError = ref<string | null>(null)
 const detailRows = ref<any[]>([])
 const csvError = ref<string | null>(null)
+const deleteEntityPrompt = computed(() => {
+  if (!deleteEntityModal.value) return ''
+  const { type } = deleteEntityModal.value
+  if (type === 'team') return t('チームを削除しますか？')
+  if (type === 'adjudicator') return t('ジャッジを削除しますか？')
+  if (type === 'venue') return t('会場を削除しますか？')
+  if (type === 'speaker') return t('スピーカーを削除しますか？')
+  return t('機関を削除しますか？')
+})
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
+const setupSuggestedRoundNumber = computed(() => {
+  if (sortedRounds.value.length === 0) return 1
+  return sortedRounds.value[sortedRounds.value.length - 1].round + 1
+})
 const managedRoundNumbers = computed(() => {
   if (sortedRounds.value.length > 0) {
     return sortedRounds.value.map((item) => item.round)
@@ -1341,6 +1700,13 @@ function applyTournamentForm() {
   )
   tournamentForm.accessPassword = savedAccessPassword
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
+  applyRoundDefaultsForm()
+}
+
+function applyRoundDefaultsForm() {
+  const normalized = normalizeRoundDefaults(tournament.value?.user_defined_data?.round_defaults)
+  Object.assign(roundDefaultsForm.userDefinedData, normalized.userDefinedData)
+  Object.assign(roundDefaultsForm.break, normalized.break)
 }
 
 async function refresh() {
@@ -1409,6 +1775,181 @@ async function saveTournament() {
   }
 }
 
+async function saveRoundDefaults() {
+  if (!tournament.value) return
+  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  delete nextUserDefined.submission_policy
+  await tournamentStore.updateTournament({
+    tournamentId: tournament.value._id,
+    user_defined_data: {
+      ...nextUserDefined,
+      round_defaults: serializeRoundDefaults(roundDefaultsForm),
+    },
+  })
+}
+
+function roundTypeLabel(round: any) {
+  const isBreak = Boolean(round?.userDefinedData?.break?.enabled)
+  return isBreak ? t('ブレイク') : t('通常ラウンド')
+}
+
+function roundSettingsEmbedUrl(roundNumber: number) {
+  const params = new URLSearchParams({
+    embed: '1',
+    round: String(roundNumber),
+  })
+  return `/admin-embed/${tournamentId.value}/rounds/settings?${params.toString()}`
+}
+
+function isSetupRoundDetailsOpen(roundId: string) {
+  return setupRoundDetailsOpen.value[roundId] === true
+}
+
+function onSetupRoundDetailsToggle(round: any, event: Event) {
+  const roundId = String(round?._id ?? '')
+  if (!roundId) return
+  const details = event.target as HTMLDetailsElement | null
+  const isOpen = Boolean(details?.open)
+  setupRoundDetailsOpen.value = {
+    ...setupRoundDetailsOpen.value,
+    [roundId]: isOpen,
+  }
+  if (isOpen) {
+    startEditRoundFromSetup(round)
+  }
+  if (!isOpen && setupRoundEditingId.value === roundId) {
+    cancelEditRoundFromSetup()
+  }
+}
+
+function roundTypeValue(round: any): 'standard' | 'break' {
+  return round?.userDefinedData?.break?.enabled === true ? 'break' : 'standard'
+}
+
+function normalizeBreakConfigForRoundEdit(input: unknown) {
+  const source = input && typeof input === 'object' ? (input as Record<string, any>) : {}
+  const breakDefaults = normalizeRoundDefaults(roundDefaultsForm).break
+  const sizeRaw = Number(source.size)
+  const cutoffTiePolicy =
+    source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
+      ? source.cutoff_tie_policy
+      : breakDefaults.cutoff_tie_policy
+  return {
+    enabled: source.enabled === true,
+    source: source.source === 'raw' ? 'raw' : breakDefaults.source,
+    source_rounds: Array.isArray(source.source_rounds) ? source.source_rounds : [],
+    size: Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : breakDefaults.size,
+    cutoff_tie_policy: cutoffTiePolicy,
+    seeding: source.seeding === 'high_low' ? 'high_low' : breakDefaults.seeding,
+    participants: Array.isArray(source.participants) ? source.participants : [],
+  }
+}
+
+async function createRoundFromSetup() {
+  if (!tournamentId.value) return
+  setupRoundError.value = ''
+  const roundNumber = Number(setupRoundForm.round)
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    setupRoundError.value = t('ラウンド番号を確認してください。')
+    return
+  }
+  if (sortedRounds.value.some((round) => Number(round.round) === roundNumber)) {
+    setupRoundError.value = t('同じラウンド番号が既に存在します。')
+    return
+  }
+
+  const userDefinedData = buildRoundUserDefinedFromDefaults(normalizeRoundDefaults(roundDefaultsForm)) as Record<
+    string,
+    any
+  >
+  if (setupRoundForm.type === 'break') {
+    userDefinedData.break = {
+      ...(userDefinedData.break ?? {}),
+      enabled: true,
+    }
+  }
+
+  const created = await rounds.createRound({
+    tournamentId: tournamentId.value,
+    round: roundNumber,
+    name: setupRoundForm.name || t('ラウンド {round}', { round: roundNumber }),
+    motionOpened: false,
+    teamAllocationOpened: false,
+    adjudicatorAllocationOpened: false,
+    userDefinedData,
+  })
+  if (!created?._id) {
+    setupRoundError.value = rounds.error ?? t('ラウンド追加に失敗しました。')
+    return
+  }
+  setupRoundForm.round = setupSuggestedRoundNumber.value
+  setupRoundForm.name = ''
+  setupRoundForm.type = 'standard'
+}
+
+function startEditRoundFromSetup(round: any) {
+  setupRoundEditError.value = ''
+  setupRoundEditingId.value = String(round?._id ?? '')
+  setupRoundEditForm.round = Number(round?.round ?? 1)
+  setupRoundEditForm.name = String(round?.name ?? '')
+  setupRoundEditForm.type = roundTypeValue(round)
+}
+
+function cancelEditRoundFromSetup() {
+  setupRoundEditError.value = ''
+  setupRoundEditingId.value = null
+  setupRoundEditForm.round = setupSuggestedRoundNumber.value
+  setupRoundEditForm.name = ''
+  setupRoundEditForm.type = 'standard'
+}
+
+async function saveEditRoundFromSetup(round: any) {
+  if (!tournamentId.value || !round?._id) return
+  if (setupRoundEditingId.value !== String(round._id)) return
+  setupRoundEditError.value = ''
+
+  const roundNumber = Number(setupRoundEditForm.round)
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    setupRoundEditError.value = t('ラウンド番号を確認してください。')
+    return
+  }
+  if (
+    sortedRounds.value.some(
+      (item) => String(item._id) !== String(round._id) && Number(item.round) === roundNumber
+    )
+  ) {
+    setupRoundEditError.value = t('同じラウンド番号が既に存在します。')
+    return
+  }
+
+  const currentUserDefined =
+    round?.userDefinedData && typeof round.userDefinedData === 'object'
+      ? ({ ...(round.userDefinedData as Record<string, any>) } as Record<string, any>)
+      : {}
+  const normalizedBreak = normalizeBreakConfigForRoundEdit(currentUserDefined.break)
+  const nextUserDefined: Record<string, any> = {
+    ...currentUserDefined,
+    break: {
+      ...normalizedBreak,
+      enabled: setupRoundEditForm.type === 'break',
+    },
+  }
+
+  const updated = await rounds.updateRound({
+    tournamentId: tournamentId.value,
+    roundId: String(round._id),
+    round: roundNumber,
+    name: setupRoundEditForm.name.trim() || t('ラウンド {round}', { round: roundNumber }),
+    userDefinedData: nextUserDefined,
+  })
+  if (!updated?._id) {
+    setupRoundEditError.value = rounds.error ?? t('ラウンド更新に失敗しました。')
+    return
+  }
+
+  cancelEditRoundFromSetup()
+}
+
 function parseNameList(value: string) {
   return value
     .split(',')
@@ -1443,6 +1984,17 @@ function resolveInstitutionId(value?: string) {
     (inst) => inst._id === token || inst.name === token
   )
   return matched?._id ?? ''
+}
+
+function institutionCategoryLabel(value?: string) {
+  const normalized = String(value ?? '').trim()
+  return normalized || 'institution'
+}
+
+function institutionPriorityValue(value?: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 1
+  return Math.round(parsed * 1000) / 1000
 }
 
 function resolveTeamSpeakerIds(entity: any): string[] {
@@ -1573,41 +2125,69 @@ async function handleCreateSpeaker() {
 
 async function handleCreateInstitution() {
   if (!institutionForm.name) return
+  const category = institutionCategoryLabel(institutionForm.category)
+  const priority = institutionPriorityValue(institutionForm.priority)
   await institutions.createInstitution({
     tournamentId: tournamentId.value,
     name: institutionForm.name,
+    category,
+    priority,
   })
   institutionForm.name = ''
+  institutionForm.category = 'institution'
+  institutionForm.priority = 1
 }
 
-async function removeTeam(id: string) {
-  const ok = window.confirm(t('チームを削除しますか？'))
-  if (!ok) return
-  await teams.deleteTeam(tournamentId.value, id)
+function openDeleteEntityModal(type: DeleteEntityType, id: string) {
+  if (!id) return
+  deleteEntityModal.value = { type, id }
 }
 
-async function removeAdjudicator(id: string) {
-  const ok = window.confirm(t('ジャッジを削除しますか？'))
-  if (!ok) return
-  await adjudicators.deleteAdjudicator(tournamentId.value, id)
+function closeDeleteEntityModal() {
+  deleteEntityModal.value = null
 }
 
-async function removeVenue(id: string) {
-  const ok = window.confirm(t('会場を削除しますか？'))
-  if (!ok) return
-  await venues.deleteVenue(tournamentId.value, id)
+async function confirmDeleteEntity() {
+  const modal = deleteEntityModal.value
+  if (!modal) return
+  closeDeleteEntityModal()
+  if (modal.type === 'team') {
+    await teams.deleteTeam(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'adjudicator') {
+    await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'venue') {
+    await venues.deleteVenue(tournamentId.value, modal.id)
+    return
+  }
+  if (modal.type === 'speaker') {
+    await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    return
+  }
+  await institutions.deleteInstitution(tournamentId.value, modal.id)
 }
 
-async function removeSpeaker(id: string) {
-  const ok = window.confirm(t('スピーカーを削除しますか？'))
-  if (!ok) return
-  await speakers.deleteSpeaker(tournamentId.value, id)
+function removeTeam(id: string) {
+  openDeleteEntityModal('team', id)
 }
 
-async function removeInstitution(id: string) {
-  const ok = window.confirm(t('機関を削除しますか？'))
-  if (!ok) return
-  await institutions.deleteInstitution(tournamentId.value, id)
+function removeAdjudicator(id: string) {
+  openDeleteEntityModal('adjudicator', id)
+}
+
+function removeVenue(id: string) {
+  openDeleteEntityModal('venue', id)
+}
+
+function removeSpeaker(id: string) {
+  openDeleteEntityModal('speaker', id)
+}
+
+function removeInstitution(id: string) {
+  openDeleteEntityModal('institution', id)
 }
 
 function startEditEntity(type: string, entity: any) {
@@ -1620,6 +2200,8 @@ function startEditEntity(type: string, entity: any) {
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.active = entity.active ?? true
+  entityForm.category = institutionCategoryLabel(entity.category)
+  entityForm.priority = institutionPriorityValue(entity.priority)
   if (type === 'venue') {
     entityForm.active =
       typeof entity.userDefinedData?.availableDefault === 'boolean'
@@ -1718,10 +2300,14 @@ async function saveEntityEdit() {
       name: entityForm.name,
     })
   } else if (editingEntity.value.type === 'institution') {
+    const category = institutionCategoryLabel(entityForm.category)
+    const priority = institutionPriorityValue(entityForm.priority)
     await institutions.updateInstitution({
       tournamentId: tournamentId.value,
       institutionId: id,
       name: entityForm.name,
+      category,
+      priority,
     })
   }
   cancelEditEntity()
@@ -1770,6 +2356,10 @@ function parseCsv(text: string) {
   const headerKeys = [
     'name',
     'institution',
+    'category',
+    'kind',
+    'type',
+    'priority',
     'speakers',
     'strength',
     'preev',
@@ -1953,7 +2543,17 @@ async function handleCsvUpload(type: string, event: Event) {
       } else if (type === 'institutions') {
         const name = get(row, 'name', 0)
         if (!name) continue
-        payload.push({ tournamentId: tournamentId.value, name })
+        const category =
+          headers.length === 0
+            ? (row[1] ?? '')
+            : findHeaderValue(headers, row, ['category', 'kind', 'type'])
+        const priorityRaw = headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
+        payload.push({
+          tournamentId: tournamentId.value,
+          name,
+          category: institutionCategoryLabel(category || undefined),
+          priority: institutionPriorityValue(Number(priorityRaw || 1)),
+        })
       }
     }
 
@@ -1994,7 +2594,31 @@ watch(
   tournamentId,
   () => {
     if (editingEntity.value) cancelEditEntity()
+    if (setupRoundEditingId.value) cancelEditRoundFromSetup()
+    setupRoundDetailsOpen.value = {}
     refresh()
+  },
+  { immediate: true }
+)
+
+watch(
+  sortedRounds,
+  () => {
+    const current = Number(setupRoundForm.round)
+    const duplicate = sortedRounds.value.some((round) => Number(round.round) === current)
+    if (!Number.isInteger(current) || current < 1 || duplicate) {
+      setupRoundForm.round = setupSuggestedRoundNumber.value
+    }
+    const existingIds = new Set(sortedRounds.value.map((round) => String(round._id)))
+    setupRoundDetailsOpen.value = Object.fromEntries(
+      Object.entries(setupRoundDetailsOpen.value).filter(([id]) => existingIds.has(id))
+    )
+    if (
+      setupRoundEditingId.value &&
+      !sortedRounds.value.some((round) => String(round._id) === setupRoundEditingId.value)
+    ) {
+      cancelEditRoundFromSetup()
+    }
   },
   { immediate: true }
 )
@@ -2013,6 +2637,9 @@ onUnmounted(() => {
 function onGlobalKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && editingEntity.value) {
     cancelEditEntity()
+  }
+  if (event.key === 'Escape' && setupRoundEditingId.value) {
+    cancelEditRoundFromSetup()
   }
 }
 </script>
@@ -2067,6 +2694,132 @@ function onGlobalKeydown(event: KeyboardEvent) {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.setup-rounds-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.setup-round-form {
+  align-items: end;
+}
+
+.setup-round-list {
+  padding-top: var(--space-1);
+}
+
+.setup-round-item {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.setup-round-edit-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  flex: 1 1 520px;
+  min-width: min(100%, 520px);
+}
+
+.setup-round-item-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.setup-round-details {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.setup-round-details-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-start;
+}
+
+.setup-round-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.setup-round-toggle-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+}
+
+.setup-round-toggle-icon::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-muted);
+  border-bottom: 2px solid var(--color-muted);
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+  margin-top: -2px;
+}
+
+.setup-round-summary-text {
+  min-width: 0;
+}
+
+.setup-round-details[open] .setup-round-toggle-icon::before {
+  transform: rotate(225deg);
+  margin-top: 1px;
+}
+
+.setup-round-details-body {
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.setup-round-basic-panel {
+  gap: var(--space-2);
+}
+
+.setup-round-details-frame {
+  width: 100%;
+  min-height: 420px;
+  height: clamp(420px, 56vh, 620px);
+  border: none;
+  display: block;
+  background: var(--color-surface);
+}
+
+.setup-round-details-placeholder {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.settings-options-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.setting-option {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-group-title {
+  margin: 0;
 }
 
 .switch-control {
@@ -2259,7 +3012,45 @@ textarea {
 }
 
 .section-reload {
-  margin-left: auto;
+  margin-left: 0;
+}
+
+.setup-section-switch {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.setup-section-tab {
+  border: none;
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.setup-section-tab:hover {
+  background: #f8fafc;
+  color: var(--color-primary);
+}
+
+.setup-section-tab.active {
+  background: var(--color-secondary);
+  color: var(--color-primary);
+}
+
+.setup-section-tab:last-child {
+  border-right: none;
 }
 
 .entity-switch {
@@ -2453,6 +3244,12 @@ textarea {
   width: min(980px, 100%);
   max-height: calc(100vh - 80px);
   overflow: auto;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .entity-edit-modal {

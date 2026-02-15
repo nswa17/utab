@@ -2,6 +2,9 @@
   <section class="stack">
     <div class="stack header-stack">
       <div class="row tournament-header">
+        <Button variant="secondary" size="sm" class="tournament-list-back" to="/user">
+          ← {{ $t('大会一覧') }}
+        </Button>
         <div v-if="participantUrl" class="header-qr-slot">
           <button
             type="button"
@@ -113,6 +116,7 @@ import QRCode from 'qrcode'
 import { useTournamentStore } from '@/stores/tournament'
 import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import Button from '@/components/common/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -133,6 +137,7 @@ const showTournamentNotice = computed(() => !isTournamentHomeRoute.value)
 const showSubnav = computed(() => {
   const homePath = `/user/${tournamentId.value}/home`
   const rootPath = `/user/${tournamentId.value}`
+  if (route.path.includes('/rounds/')) return false
   return route.path !== homePath && route.path !== rootPath
 })
 const showAudienceViewSwitch = computed(
@@ -169,12 +174,12 @@ const links = computed<ParticipantLink[]>(() => [
   { to: `/user/${tournamentId.value}/audience/home`, label: t('対戦表'), participant: 'audience' },
   {
     to: `/user/${tournamentId.value}/speaker/home`,
-    label: t('スピーカー'),
+    label: t('チーム評価'),
     participant: 'speaker',
   },
   {
     to: `/user/${tournamentId.value}/adjudicator/home`,
-    label: t('ジャッジ'),
+    label: t('ジャッジ評価'),
     participant: 'adjudicator',
   },
 ])
@@ -277,6 +282,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-3);
+}
+
+.tournament-list-back {
+  flex-shrink: 0;
 }
 
 .tournament-title {

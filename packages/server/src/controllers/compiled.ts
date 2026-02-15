@@ -46,6 +46,7 @@ type FeedbackPayload = {
 
 type CompiledPayload = {
   tournamentId: string
+  compile_source: 'submissions' | 'raw'
   rounds: Array<{ r: number; name: string }>
   compile_options: CompileOptions
   compile_warnings: string[]
@@ -63,6 +64,7 @@ type CompiledResultsKey =
 type CompiledSubset = {
   compiledId: string
   tournamentId: string
+  compile_source: 'submissions' | 'raw'
   rounds: Array<{ r: number; name: string }>
   compile_options: CompileOptions
   compile_warnings: string[]
@@ -810,6 +812,7 @@ async function buildCompiledPayloadFromRaw(
 
   const compiled: CompiledPayload = {
     tournamentId,
+    compile_source: 'raw',
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
     compile_options: compileOptions,
     compile_warnings: [],
@@ -1329,6 +1332,7 @@ async function buildCompiledPayloadFromSubmissions(
 
   const compiled: CompiledPayload = {
     tournamentId,
+    compile_source: 'submissions',
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
     compile_options: compileOptions,
     compile_warnings: compileWarnings,
@@ -1356,7 +1360,7 @@ async function buildCompiledPayloadFromSubmissions(
   return { payload: compiled, connection }
 }
 
-async function buildCompiledPayload(
+export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],
@@ -1373,6 +1377,7 @@ function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
   return {
     compiledId: String(doc?._id ?? payload._id ?? ''),
     tournamentId: String(tournamentId),
+    compile_source: payload.compile_source === 'raw' ? 'raw' : 'submissions',
     rounds: Array.isArray(payload.rounds) ? payload.rounds : [],
     compile_options: normalizeCompileOptions(payload.compile_options as CompileOptionsInput | undefined),
     compile_warnings: Array.isArray(payload.compile_warnings) ? payload.compile_warnings : [],
@@ -1457,6 +1462,7 @@ const makeCreateCompiled =
         requestedRounds,
         compileOptions
       )
+      payload.compile_source = payload.compile_source === 'raw' || source === 'raw' ? 'raw' : 'submissions'
       await attachDiffAgainstBaseline(payload, connection)
       const CompiledModel = getCompiledModel(connection)
       const created = await CompiledModel.create({
@@ -1547,6 +1553,7 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       requestedRounds,
       compileOptions
     )
+    payload.compile_source = payload.compile_source === 'raw' || source === 'raw' ? 'raw' : 'submissions'
     await attachDiffAgainstBaseline(payload, connection)
     const CompiledModel = getCompiledModel(connection)
     const created = await CompiledModel.create({

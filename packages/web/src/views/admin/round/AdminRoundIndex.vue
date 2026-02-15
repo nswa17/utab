@@ -20,6 +20,6 @@ const tournamentId = computed(() => route.params.tournamentId as string)
 const round = computed(() => route.params.round as string)
 
 function goBack() {
-  router.push(`/admin/${tournamentId.value}/rounds`)
+  router.push(`/admin/${tournamentId.value}/operations`)
 }
 </script>

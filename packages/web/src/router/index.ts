@@ -10,8 +10,10 @@ import AdminTournamentHome from '@/views/admin/AdminTournamentHome.vue'
 import AdminTournamentRounds from '@/views/admin/AdminTournamentRounds.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import AdminTournamentCompiled from '@/views/admin/AdminTournamentCompiled.vue'
+import AdminRoundOperationsHub from '@/views/admin/AdminRoundOperationsHub.vue'
 import AdminRoundIndex from '@/views/admin/round/AdminRoundIndex.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
+import AdminRoundResult from '@/views/admin/round/AdminRoundResult.vue'
 import UserHome from '@/views/user/UserHome.vue'
 import UserTournament from '@/views/user/UserTournament.vue'
 import UserTournamentHome from '@/views/user/UserTournamentHome.vue'
@@ -27,8 +29,65 @@ import UserRoundBallotHome from '@/views/user/participant/round/ballot/UserRound
 import UserRoundBallotEntry from '@/views/user/participant/round/ballot/UserRoundBallotEntry.vue'
 import UserRoundFeedbackHome from '@/views/user/participant/round/feedback/UserRoundFeedbackHome.vue'
 import UserRoundFeedbackEntry from '@/views/user/participant/round/feedback/UserRoundFeedbackEntry.vue'
+import { isAdminUiV2Enabled } from '@/config/feature-flags'
 
-export function createAppRouter(): Router {
+type RouterOptions = {
+  adminUiV2?: boolean
+}
+
+export function createAppRouter(options: RouterOptions = {}): Router {
+  const adminUiV2 = options.adminUiV2 ?? isAdminUiV2Enabled()
+  const adminChildren = adminUiV2
+    ? [
+        {
+          path: '',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/setup`,
+            query: to.query,
+          }),
+        },
+        { path: 'setup', component: AdminTournamentHome },
+        {
+          path: 'home',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/setup`,
+            query: to.query,
+          }),
+        },
+        { path: 'operations', component: AdminRoundOperationsHub },
+        {
+          path: 'rounds',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/operations`,
+            query: to.query,
+          }),
+        },
+        { path: 'submissions', component: AdminTournamentSubmissions },
+        { path: 'reports', component: AdminTournamentCompiled },
+        {
+          path: 'compiled',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/reports`,
+            query: to.query,
+          }),
+        },
+      ]
+    : [
+        {
+          path: '',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/home`,
+            query: to.query,
+          }),
+        },
+        { path: 'home', component: AdminTournamentHome },
+        { path: 'setup', component: AdminTournamentHome },
+        { path: 'rounds', component: AdminRoundOperationsHub },
+        { path: 'operations', component: AdminRoundOperationsHub },
+        { path: 'submissions', component: AdminTournamentSubmissions },
+        { path: 'compiled', component: AdminTournamentCompiled },
+        { path: 'reports', component: AdminTournamentCompiled },
+      ]
   return createRouter({
     history: createWebHistory(),
     routes: [
@@ -47,21 +106,33 @@ export function createAppRouter(): Router {
         meta: { requiresAuth: true },
       },
       {
+        path: '/admin-embed/:tournamentId/reports',
+        component: AdminTournamentCompiled,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/admin-embed/:tournamentId/rounds/settings',
+        component: AdminTournamentRounds,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/admin-embed/:tournamentId/rounds/:round/result',
+        component: AdminRoundResult,
+        meta: { requiresAuth: true },
+      },
+      {
         path: '/admin/:tournamentId',
         component: AdminTournament,
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, adminUiV2 },
         children: [
-          { path: '', redirect: 'home' },
-          { path: 'home', component: AdminTournamentHome },
-          { path: 'rounds', component: AdminTournamentRounds },
-          { path: 'submissions', component: AdminTournamentSubmissions },
-          { path: 'compiled', component: AdminTournamentCompiled },
+          ...adminChildren,
           {
             path: 'rounds/:round',
             component: AdminRoundIndex,
             children: [
               { path: '', redirect: 'allocation' },
               { path: 'allocation', component: AdminRoundAllocation },
+              { path: 'result', component: AdminRoundResult },
             ],
           },
           { path: 'results', redirect: 'submissions' },

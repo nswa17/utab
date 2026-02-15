@@ -26,6 +26,8 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   async function createInstitution(payload: {
     tournamentId: string
     name: string
+    category?: string
+    priority?: number
     userDefinedData?: Record<string, any>
   }) {
     loading.value = true
@@ -49,6 +51,8 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     tournamentId: string
     institutionId: string
     name?: string
+    category?: string
+    priority?: number
     userDefinedData?: Record<string, any>
   }) {
     loading.value = true
@@ -57,6 +61,8 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       const res = await api.patch(`/institutions/${payload.institutionId}`, {
         tournamentId: payload.tournamentId,
         name: payload.name,
+        category: payload.category,
+        priority: payload.priority,
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data

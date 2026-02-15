@@ -14,6 +14,7 @@ export interface Draw {
   tournamentId: string
   round: number
   allocation: DrawAllocationRow[]
+  userDefinedData?: Record<string, any>
   drawOpened?: boolean
   allocationOpened?: boolean
   locked?: boolean

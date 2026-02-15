@@ -189,6 +189,7 @@
       <p v-if="winnerRequiredWarning" class="error">{{ $t('スコア差がある場合は勝者を選択してください。') }}</p>
       <p v-if="lowTieWarning" class="error">{{ $t('低勝ち/同点勝ちは許可されていません。') }}</p>
       <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
+      <p v-if="prefillNotice" class="muted">{{ prefillNotice }}</p>
       <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
     </div>
 
@@ -292,9 +293,12 @@ const winnerId = ref('')
 const comment = ref('')
 const saved = ref(false)
 const submitError = ref('')
+const prefillNotice = ref('')
 const confirmOpen = ref(false)
 const successOpen = ref(false)
 const confirmCountdown = ref(0)
+const prefillLoadedKey = ref('')
+const prefillAppliedMatchKey = ref('')
 let countdownTimer: number | null = null
 let countdownDeadline = 0
 
@@ -556,6 +560,235 @@ function speakerTotal(matter: number | undefined, manner: number | undefined) {
   return Number(matter ?? 0) + Number(manner ?? 0)
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item)).filter(Boolean)
+}
+
+function toNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item))
+}
+
+function toBooleanArray(value: unknown): boolean[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => Boolean(item))
+}
+
+function currentMatchKey() {
+  const ids = [teamAId.value, teamBId.value].map((value) => value.trim()).filter(Boolean).sort()
+  if (ids.length !== 2) return ''
+  return ids.join('|')
+}
+
+type PrefillBallotPayload = {
+  teamAId: string
+  teamBId: string
+  winnerId?: string
+  comment?: string
+  speakerIdsA?: string[]
+  speakerIdsB?: string[]
+  scoresA?: number[]
+  scoresB?: number[]
+  matterA?: number[]
+  mannerA?: number[]
+  matterB?: number[]
+  mannerB?: number[]
+  bestA?: boolean[]
+  bestB?: boolean[]
+  poiA?: boolean[]
+  poiB?: boolean[]
+}
+
+function normalizePrefillPayload(
+  payload: Record<string, unknown> | null
+): PrefillBallotPayload | null {
+  if (!payload) return null
+  const sourceA = String(payload.teamAId ?? '')
+  const sourceB = String(payload.teamBId ?? '')
+  if (!sourceA || !sourceB) return null
+  const direct = sourceA === teamAId.value && sourceB === teamBId.value
+  const reverse = sourceA === teamBId.value && sourceB === teamAId.value
+  if (!direct && !reverse) return null
+
+  const winnerRaw = String(payload.winnerId ?? '')
+  const winnerId = reverse
+    ? winnerRaw === sourceA
+      ? sourceB
+      : winnerRaw === sourceB
+        ? sourceA
+        : ''
+    : winnerRaw
+
+  const mapSide = <T>(aValue: T, bValue: T): [T, T] =>
+    reverse ? [bValue, aValue] : [aValue, bValue]
+
+  const [speakerIdsAValue, speakerIdsBValue] = mapSide(
+    toStringArray(payload.speakerIdsA),
+    toStringArray(payload.speakerIdsB)
+  )
+  const [scoresAValue, scoresBValue] = mapSide(
+    toNumberArray(payload.scoresA),
+    toNumberArray(payload.scoresB)
+  )
+  const [matterAValue, matterBValue] = mapSide(
+    toNumberArray(payload.matterA),
+    toNumberArray(payload.matterB)
+  )
+  const [mannerAValue, mannerBValue] = mapSide(
+    toNumberArray(payload.mannerA),
+    toNumberArray(payload.mannerB)
+  )
+  const [bestAValue, bestBValue] = mapSide(
+    toBooleanArray(payload.bestA),
+    toBooleanArray(payload.bestB)
+  )
+  const [poiAValue, poiBValue] = mapSide(
+    toBooleanArray(payload.poiA),
+    toBooleanArray(payload.poiB)
+  )
+
+  return {
+    teamAId: teamAId.value,
+    teamBId: teamBId.value,
+    winnerId: winnerId || undefined,
+    comment: typeof payload.comment === 'string' ? payload.comment : undefined,
+    speakerIdsA: speakerIdsAValue,
+    speakerIdsB: speakerIdsBValue,
+    scoresA: scoresAValue,
+    scoresB: scoresBValue,
+    matterA: matterAValue,
+    mannerA: mannerAValue,
+    matterB: matterBValue,
+    mannerB: mannerBValue,
+    bestA: bestAValue,
+    bestB: bestBValue,
+    poiA: poiAValue,
+    poiB: poiBValue,
+  }
+}
+
+function applyPrefillPayload(payload: PrefillBallotPayload) {
+  winnerId.value = payload.winnerId ?? ''
+  comment.value = payload.comment ?? ''
+
+  if (noSpeakerScore.value) {
+    scoresA.value = []
+    scoresB.value = []
+    matterA.value = []
+    mannerA.value = []
+    matterB.value = []
+    mannerB.value = []
+    speakerIdsA.value = []
+    speakerIdsB.value = []
+    bestA.value = []
+    bestB.value = []
+    poiA.value = []
+    poiB.value = []
+    return
+  }
+
+  const countA = rolesA.value.length
+  const countB = rolesB.value.length
+
+  speakerIdsA.value = payload.speakerIdsA?.slice(0, countA) ?? speakerIdsA.value
+  speakerIdsB.value = payload.speakerIdsB?.slice(0, countB) ?? speakerIdsB.value
+  bestA.value = Array.from({ length: countA }, (_, index) => Boolean(payload.bestA?.[index]))
+  bestB.value = Array.from({ length: countB }, (_, index) => Boolean(payload.bestB?.[index]))
+  poiA.value = Array.from({ length: countA }, (_, index) => Boolean(payload.poiA?.[index]))
+  poiB.value = Array.from({ length: countB }, (_, index) => Boolean(payload.poiB?.[index]))
+
+  if (useMatterManner.value) {
+    const fallbackScoresA = payload.scoresA ?? []
+    const fallbackScoresB = payload.scoresB ?? []
+    const matterAValues =
+      payload.matterA && payload.matterA.length > 0
+        ? payload.matterA
+        : Array.from({ length: countA }, (_, index) => fallbackScoresA[index] ?? scoreRange(index).default)
+    const matterBValues =
+      payload.matterB && payload.matterB.length > 0
+        ? payload.matterB
+        : Array.from({ length: countB }, (_, index) => fallbackScoresB[index] ?? scoreRange(index).default)
+    const mannerAValues =
+      payload.mannerA && payload.mannerA.length > 0
+        ? payload.mannerA
+        : Array.from({ length: countA }, () => 0)
+    const mannerBValues =
+      payload.mannerB && payload.mannerB.length > 0
+        ? payload.mannerB
+        : Array.from({ length: countB }, () => 0)
+    matterA.value = Array.from({ length: countA }, (_, index) => Number(matterAValues[index] ?? 0))
+    mannerA.value = Array.from({ length: countA }, (_, index) => Number(mannerAValues[index] ?? 0))
+    matterB.value = Array.from({ length: countB }, (_, index) => Number(matterBValues[index] ?? 0))
+    mannerB.value = Array.from({ length: countB }, (_, index) => Number(mannerBValues[index] ?? 0))
+    scoresA.value = []
+    scoresB.value = []
+    return
+  }
+
+  scoresA.value = Array.from({ length: countA }, (_, index) => Number(payload.scoresA?.[index] ?? 0))
+  scoresB.value = Array.from({ length: countB }, (_, index) => Number(payload.scoresB?.[index] ?? 0))
+  matterA.value = []
+  mannerA.value = []
+  matterB.value = []
+  mannerB.value = []
+}
+
+async function fetchPrefillBallots() {
+  if (!identityReady.value || !identityId.value) {
+    prefillLoadedKey.value = ''
+    prefillAppliedMatchKey.value = ''
+    prefillNotice.value = ''
+    return
+  }
+  const roundNumber = Number(round.value)
+  if (!Number.isFinite(roundNumber) || roundNumber < 1) return
+  const loadKey = `${tournamentId.value}:${roundNumber}:${identityId.value}`
+  if (prefillLoadedKey.value === loadKey) return
+  prefillAppliedMatchKey.value = ''
+  prefillNotice.value = ''
+  prefillLoadedKey.value = loadKey
+  await submissions.fetchParticipantSubmissions({
+    tournamentId: tournamentId.value,
+    submittedEntityId: identityId.value,
+    type: 'ballot',
+    round: roundNumber,
+  })
+}
+
+function tryApplyPrefill() {
+  const roundNumber = Number(round.value)
+  const expectedLoadKey =
+    Number.isFinite(roundNumber) && identityId.value
+      ? `${tournamentId.value}:${roundNumber}:${identityId.value}`
+      : ''
+  if (expectedLoadKey && prefillLoadedKey.value !== expectedLoadKey) return
+
+  const key = currentMatchKey()
+  if (!key) {
+    prefillNotice.value = ''
+    return
+  }
+  if (prefillAppliedMatchKey.value === key) return
+
+  const found = submissions.submissions.find((item) => {
+    if (item.type !== 'ballot') return false
+    const normalized = normalizePrefillPayload((item.payload ?? null) as Record<string, unknown> | null)
+    return Boolean(normalized)
+  })
+  const normalized = normalizePrefillPayload((found?.payload ?? null) as Record<string, unknown> | null)
+  if (!normalized) {
+    prefillNotice.value = ''
+    prefillAppliedMatchKey.value = key
+    return
+  }
+  applyPrefillPayload(normalized)
+  prefillNotice.value = t('前回送信した内容を読み込みました。必要に応じて修正して再送信してください。')
+  prefillAppliedMatchKey.value = key
+}
+
 function startCountdown(seconds = 3) {
   clearCountdown(false)
   countdownDeadline = Date.now() + seconds * 1000
@@ -693,6 +926,23 @@ watch([teamAId, teamBId], () => {
     winnerId.value = ''
   }
 })
+
+watch(
+  [identityId, round],
+  () => {
+    fetchPrefillBallots().then(() => {
+      tryApplyPrefill()
+    })
+  },
+  { immediate: true }
+)
+
+watch(
+  [teamAId, teamBId, noSpeakerScore, useMatterManner, () => submissions.submissions],
+  () => {
+    tryApplyPrefill()
+  }
+)
 
 onMounted(() => {
   teams.fetchTeams(tournamentId.value)

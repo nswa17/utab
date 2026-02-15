@@ -4,6 +4,8 @@ const institutionSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
     name: { type: String, required: true },
+    category: { type: String, default: 'institution' },
+    priority: { type: Number, default: 1 },
     userDefinedData: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }

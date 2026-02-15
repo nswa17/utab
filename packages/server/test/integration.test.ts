@@ -1,12 +1,13 @@
 import request from 'supertest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
+import { createServer, type Server } from 'node:http'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
 import { UserModel } from '../src/models/user.js'
 import { hashPassword, verifyPassword } from '../src/services/hash.service.js'
 
-let app: import('express').Express
+let app: Server
 let mongo: MongoMemoryServer
 let connectDatabase: typeof import('../src/config/database.js').connectDatabase
 let disconnectDatabase: typeof import('../src/config/database.js').disconnectDatabase
@@ -19,12 +20,27 @@ async function waitForResult<T>(
   intervalMs = 50
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs
-  let last = await fetcher()
-  while (!predicate(last) && Date.now() < deadline) {
+  let lastValue: T | undefined
+  let hasValue = false
+  let lastError: unknown
+  while (Date.now() < deadline) {
+    try {
+      const current = await fetcher()
+      lastValue = current
+      hasValue = true
+      lastError = undefined
+      if (predicate(current)) {
+        return current
+      }
+    } catch (error) {
+      lastError = error
+    }
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
-    last = await fetcher()
   }
-  return last
+  if (hasValue && lastValue !== undefined) {
+    return lastValue
+  }
+  throw (lastError ?? new Error('waitForResult timed out without a successful response'))
 }
 
 beforeAll(async () => {
@@ -37,14 +53,39 @@ beforeAll(async () => {
   process.env.MONGODB_URI = mongo.getUri('utab-test')
   process.env.SESSION_SECRET = 'test-session-secret-123456'
   process.env.CORS_ORIGIN = 'http://localhost'
+  process.env.UTAB_LOG_LEVEL = 'silent'
   ;({ connectDatabase, disconnectDatabase } = await import('../src/config/database.js'))
   ;({ closeTournamentConnections } = await import('../src/services/tournament-db.service.js'))
   await connectDatabase()
   const mod = await import('../src/app.js')
-  app = mod.createApp()
+  app = createServer(mod.createApp())
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      app.off('listening', onListening)
+      reject(error)
+    }
+    const onListening = () => {
+      app.off('error', onError)
+      resolve()
+    }
+    app.once('error', onError)
+    app.once('listening', onListening)
+    app.listen(0, '127.0.0.1')
+  })
 })
 
 afterAll(async () => {
+  if (app?.listening) {
+    await new Promise<void>((resolve, reject) => {
+      app.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve()
+      })
+    })
+  }
   if (closeTournamentConnections) {
     await closeTournamentConnections()
   }
@@ -241,6 +282,7 @@ describe('Server integration', () => {
     expect(publicCompiled.status).toBe(200)
     expect(publicCompiled.body.data).not.toBeNull()
     expect('createdBy' in publicCompiled.body.data).toBe(false)
+    expect('compile_source' in publicCompiled.body.data.payload).toBe(false)
     expect('compile_options' in publicCompiled.body.data.payload).toBe(false)
     expect('compile_warnings' in publicCompiled.body.data.payload).toBe(false)
     expect('compile_diff_meta' in publicCompiled.body.data.payload).toBe(false)
@@ -257,6 +299,52 @@ describe('Server integration', () => {
       score: 6,
     })
     expect(publicSubmission.status).toBe(201)
+  })
+
+  it('supports institution category and priority fields', async () => {
+    const agent = request.agent(app)
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'institution-meta-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'institution-meta-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Institution Meta Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const createRes = await agent.post('/api/institutions').send({
+      tournamentId,
+      name: 'Region East',
+      category: 'region',
+      priority: 2.5,
+    })
+    expect(createRes.status).toBe(201)
+    const institutionId = createRes.body.data._id as string
+    expect(createRes.body.data.category).toBe('region')
+    expect(createRes.body.data.priority).toBe(2.5)
+
+    const updateRes = await agent.patch(`/api/institutions/${institutionId}`).send({
+      tournamentId,
+      category: 'league',
+      priority: 4,
+    })
+    expect(updateRes.status).toBe(200)
+    expect(updateRes.body.data.category).toBe('league')
+    expect(updateRes.body.data.priority).toBe(4)
+
+    const listRes = await agent.get(`/api/institutions?tournamentId=${tournamentId}`)
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toHaveLength(1)
+    expect(listRes.body.data[0].category).toBe('league')
+    expect(listRes.body.data[0].priority).toBe(4)
   })
 
   it('supports legacy-style entities, raw results compilation, and draw generation', async () => {
@@ -427,16 +515,21 @@ describe('Server integration', () => {
       .send({ tournamentId, source: 'raw', options: compileOptions })
     expect(compiledRes.status).toBe(201)
     expect(compiledRes.body.data.payload.rounds[0]?.name).toBe('Round One')
+    expect(compiledRes.body.data.payload.compile_source).toBe('raw')
     expect(compiledRes.body.data.payload.compiled_team_results.length).toBe(2)
     expect(compiledRes.body.data.payload.compiled_speaker_results.length).toBe(2)
     expect(compiledRes.body.data.payload.compiled_adjudicator_results.length).toBe(0)
     expect(compiledRes.body.data.payload.compile_options).toEqual(compileOptions)
+    const snapshotId = compiledRes.body.data._id as string
+    expect(typeof snapshotId).toBe('string')
+    expect(snapshotId.length).toBeGreaterThan(0)
 
     const compiledTeamsRes = await agent
       .post('/api/compiled/teams')
       .send({ tournamentId, source: 'raw' })
     expect(compiledTeamsRes.status).toBe(201)
     expect(compiledTeamsRes.body.data.results.length).toBe(2)
+    expect(compiledTeamsRes.body.data.compile_source).toBe('raw')
     expect(compiledTeamsRes.body.data.rounds[0]?.name).toBe('Round One')
     expect(compiledTeamsRes.body.data.rounds.length).toBeGreaterThan(0)
     expect(compiledTeamsRes.body.data.compile_options.winner_policy).toBe('winner_id_then_score')
@@ -489,14 +582,36 @@ describe('Server integration', () => {
     const teamAllocRes = await agent.post('/api/allocations/teams').send({
       tournamentId,
       round: 1,
+      snapshotId,
       options: { team_allocation_algorithm: 'standard' },
     })
     expect(teamAllocRes.status).toBe(200)
     expect(teamAllocRes.body.data.allocation.length).toBeGreaterThan(0)
 
+    const powerpairTeamAllocRes = await agent.post('/api/allocations/teams').send({
+      tournamentId,
+      round: 1,
+      snapshotId,
+      options: {
+        team_allocation_algorithm: 'powerpair',
+        team_allocation_algorithm_options: {
+          odd_bracket: 'pullup_top',
+          pairing_method: 'fold',
+          avoid_conflicts: 'one_up_one_down',
+        },
+      },
+    })
+    expect(powerpairTeamAllocRes.status).toBe(200)
+    expect(powerpairTeamAllocRes.body.data.allocation.length).toBeGreaterThan(0)
+    expect(powerpairTeamAllocRes.body.data.userDefinedData?.team_allocation_algorithm).toBe(
+      'powerpair'
+    )
+    expect(powerpairTeamAllocRes.body.data.userDefinedData?.powerpair?.brackets?.length).toBeGreaterThan(0)
+
     const adjAllocRes = await agent.post('/api/allocations/adjudicators').send({
       tournamentId,
       round: 1,
+      snapshotId,
       allocation: teamAllocRes.body.data.allocation,
       options: { numbers_of_adjudicators: { chairs: 1, panels: 0, trainees: 0 } },
     })
@@ -506,11 +621,679 @@ describe('Server integration', () => {
     const venueAllocRes = await agent.post('/api/allocations/venues').send({
       tournamentId,
       round: 1,
+      snapshotId,
       allocation: adjAllocRes.body.data.allocation,
       options: { venue_allocation_algorithm_options: { shuffle: false } },
     })
     expect(venueAllocRes.status).toBe(200)
     expect(venueAllocRes.body.data.allocation.length).toBeGreaterThan(0)
+
+    const missingSnapshotRes = await agent.post('/api/allocations/teams').send({
+      tournamentId,
+      round: 1,
+      options: { team_allocation_algorithm: 'standard' },
+    })
+    expect(missingSnapshotRes.status).toBe(400)
+
+    const otherTournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Legacy Open B',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1, 1, 1] } },
+      total_round_num: 2,
+    })
+    expect(otherTournamentRes.status).toBe(201)
+    const otherTournamentId = otherTournamentRes.body.data._id as string
+
+    const crossTournamentSnapshotRes = await agent.post('/api/allocations/teams').send({
+      tournamentId: otherTournamentId,
+      round: 1,
+      snapshotId,
+      options: { team_allocation_algorithm: 'standard' },
+    })
+    expect(crossTournamentSnapshotRes.status).toBe(404)
+    expect(crossTournamentSnapshotRes.body.errors?.[0]?.message).toBe(
+      'Compiled snapshot not found for tournament'
+    )
+
+    const powerpairDrawRes = await agent.post('/api/draws/generate').send({
+      tournamentId,
+      round: 1,
+      save: false,
+      options: {
+        team_allocation_algorithm: 'powerpair',
+        team_allocation_algorithm_options: {
+          odd_bracket: 'pullup_top',
+          pairing_method: 'fold',
+          avoid_conflicts: 'one_up_one_down',
+        },
+      },
+    })
+    expect(powerpairDrawRes.status).toBe(200)
+    expect(powerpairDrawRes.body.data.allocation.length).toBeGreaterThan(0)
+    expect(powerpairDrawRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('powerpair')
+  })
+
+  it('previews and saves break participants while syncing team availability', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-admin', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-admin', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Preview Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+
+    const round1Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const breakRoundId = round2Res.body.data._id as string
+
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 75,
+        margin: 5,
+        opponents: [deltaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -5,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 74,
+        margin: 3,
+        opponents: [gammaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 71,
+        margin: -3,
+        opponents: [betaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const candidatesRes = await agent.post(`/api/rounds/${breakRoundId}/break/candidates`).send({
+      tournamentId,
+      source: 'raw',
+      sourceRounds: [1],
+      size: 2,
+    })
+    expect(candidatesRes.status).toBe(200)
+    expect(candidatesRes.body.data.sourceRounds).toEqual([1])
+    expect(candidatesRes.body.data.candidates.length).toBe(4)
+    expect(candidatesRes.body.data.candidates[0].teamId).toBe(alphaId)
+    expect(candidatesRes.body.data.candidates[1].teamId).toBe(betaId)
+
+    const saveBreakRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(saveBreakRes.status).toBe(200)
+    expect(saveBreakRes.body.data.break.participants).toEqual([
+      { teamId: alphaId, seed: 1 },
+      { teamId: betaId, seed: 2 },
+    ])
+
+    const updatedRoundRes = await agent
+      .get(`/api/rounds/${breakRoundId}`)
+      .query({ tournamentId })
+    expect(updatedRoundRes.status).toBe(200)
+    expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(true)
+    expect(updatedRoundRes.body.data.userDefinedData.break.participants).toHaveLength(2)
+
+    const updatedTeamsRes = await agent.get('/api/teams').query({ tournamentId })
+    expect(updatedTeamsRes.status).toBe(200)
+    const updatedTeams = updatedTeamsRes.body.data as Array<{ _id: string; details?: any[] }>
+    const availabilityByTeam = new Map<string, boolean>()
+    updatedTeams.forEach((team) => {
+      const detail = team.details?.find((item: any) => Number(item.r) === 2)
+      availabilityByTeam.set(team._id, detail?.available !== false)
+    })
+    expect(availabilityByTeam.get(alphaId)).toBe(true)
+    expect(availabilityByTeam.get(betaId)).toBe(true)
+    expect(availabilityByTeam.get(gammaId)).toBe(false)
+    expect(availabilityByTeam.get(deltaId)).toBe(false)
+  })
+
+  it('inherits tournament round defaults when creating rounds', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'round-defaults-admin', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'round-defaults-admin', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Round Defaults Open',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      user_defined_data: {
+        round_defaults: {
+          userDefinedData: {
+            evaluate_from_adjudicators: false,
+            evaluate_from_teams: true,
+            chairs_always_evaluated: true,
+            evaluator_in_team: 'speaker',
+            no_speaker_score: true,
+            score_by_matter_manner: false,
+            poi: false,
+            best: true,
+            allow_low_tie_win: false,
+          },
+          break: {
+            source: 'raw',
+            size: 16,
+            cutoff_tie_policy: 'include_all',
+            seeding: 'high_low',
+          },
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const round1Res = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'R1',
+    })
+    expect(round1Res.status).toBe(201)
+    expect(round1Res.body.data.userDefinedData.evaluate_from_adjudicators).toBe(false)
+    expect(round1Res.body.data.userDefinedData.chairs_always_evaluated).toBe(true)
+    expect(round1Res.body.data.userDefinedData.evaluator_in_team).toBe('speaker')
+    expect(round1Res.body.data.userDefinedData.no_speaker_score).toBe(true)
+    expect(round1Res.body.data.userDefinedData.score_by_matter_manner).toBe(false)
+    expect(round1Res.body.data.userDefinedData.poi).toBe(false)
+    expect(round1Res.body.data.userDefinedData.allow_low_tie_win).toBe(false)
+    expect(round1Res.body.data.userDefinedData.break.size).toBe(16)
+    expect(round1Res.body.data.userDefinedData.break.source).toBe('raw')
+    expect(round1Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('include_all')
+
+    const round2Res = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'R2',
+      userDefinedData: {
+        no_speaker_score: false,
+        break: {
+          enabled: true,
+          source_rounds: [1],
+          size: 4,
+          cutoff_tie_policy: 'strict',
+          seeding: 'high_low',
+          participants: [],
+        },
+      },
+    })
+    expect(round2Res.status).toBe(201)
+    expect(round2Res.body.data.userDefinedData.evaluate_from_adjudicators).toBe(false)
+    expect(round2Res.body.data.userDefinedData.no_speaker_score).toBe(false)
+    expect(round2Res.body.data.userDefinedData.break.enabled).toBe(true)
+    expect(round2Res.body.data.userDefinedData.break.size).toBe(4)
+    expect(round2Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('strict')
+  })
+
+  it('keeps teams available when break is enabled with empty participants and sync is enabled', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-empty-sync', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-empty-sync', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Empty Sync Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+
+    const round1Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const breakRoundId = round2Res.body.data._id as string
+
+    const initialBreakRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(initialBreakRes.status).toBe(200)
+
+    const clearParticipantsRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(clearParticipantsRes.status).toBe(200)
+
+    const updatedTeamsRes = await agent.get('/api/teams').query({ tournamentId })
+    expect(updatedTeamsRes.status).toBe(200)
+    const updatedTeams = updatedTeamsRes.body.data as Array<{ _id: string; details?: any[] }>
+    for (const team of updatedTeams) {
+      const detail = team.details?.find((item: any) => Number(item.r) === 2)
+      expect(detail?.available).toBe(true)
+    }
+  })
+
+  it('allows disabling break even when saved participants include deleted teams', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-disable-stale', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-disable-stale', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Disable Stale Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+
+    const round1Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const breakRoundId = round2Res.body.data._id as string
+
+    const saveBreakRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(saveBreakRes.status).toBe(200)
+
+    const deleteTeamRes = await agent.delete(`/api/teams/${alphaId}?tournamentId=${tournamentId}`)
+    expect(deleteTeamRes.status).toBe(200)
+
+    const disableBreakRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: false,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          // stale participant reference should not block disabling break
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(disableBreakRes.status).toBe(200)
+    expect(disableBreakRes.body.data.break.enabled).toBe(false)
+
+    const updatedRoundRes = await agent
+      .get(`/api/rounds/${breakRoundId}`)
+      .query({ tournamentId })
+    expect(updatedRoundRes.status).toBe(200)
+    expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(false)
+  })
+
+  it('generates break allocation with byes and advances winners to next round', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-flow', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-flow', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Flow Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break R1' })
+    expect(round2Res.status).toBe(201)
+    const round3Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 3, name: 'Break R2' })
+    expect(round3Res.status).toBe(201)
+    const round2Id = round2Res.body.data._id as string
+    const round3Id = round3Res.body.data._id as string
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 75,
+        margin: 5,
+        opponents: [deltaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -5,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 74,
+        margin: 3,
+        opponents: [gammaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 71,
+        margin: -3,
+        opponents: [betaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const round2BreakRes = await agent.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 3,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+          { teamId: gammaId, seed: 3 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(round2BreakRes.status).toBe(200)
+
+    const round2BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(round2BreakAllocRes.status).toBe(200)
+    expect(round2BreakAllocRes.body.data.allocation).toHaveLength(1)
+    const matchTeams = round2BreakAllocRes.body.data.allocation[0].teams
+    expect([matchTeams.gov, matchTeams.opp].sort()).toEqual([betaId, gammaId].sort())
+    expect(round2BreakAllocRes.body.data.userDefinedData?.break?.stage_byes).toEqual([
+      { teamId: alphaId, seed: 1 },
+    ])
+
+    const saveRound2DrawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: round2BreakAllocRes.body.data.allocation,
+      userDefinedData: round2BreakAllocRes.body.data.userDefinedData,
+      drawOpened: false,
+      allocationOpened: false,
+      locked: false,
+    })
+    expect(saveRound2DrawRes.status).toBe(201)
+
+    const round2BallotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 2,
+      teamAId: betaId,
+      teamBId: gammaId,
+      winnerId: betaId,
+      scoresA: [75],
+      scoresB: [72],
+      submittedEntityId: 'break-judge',
+    })
+    expect(round2BallotRes.status).toBe(201)
+
+    const round3BreakRes = await agent.patch(`/api/rounds/${round3Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1, 2],
+        size: 3,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round3BreakRes.status).toBe(200)
+
+    const round3BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 3,
+    })
+    expect(round3BreakAllocRes.status).toBe(200)
+    expect(round3BreakAllocRes.body.data.allocation).toHaveLength(1)
+    const nextTeams = round3BreakAllocRes.body.data.allocation[0].teams
+    expect([nextTeams.gov, nextTeams.opp].sort()).toEqual([alphaId, betaId].sort())
+    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(true)
+    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.previous_round).toBe(2)
   })
 
   it('skips adjudicator allocation when adjudicators are insufficient', async () => {
@@ -1222,7 +2005,7 @@ describe('Server integration', () => {
     expect(flagMismatch.status).toBe(400)
   })
 
-  it('accepts ballots with blank speaker ids when score lengths match', async () => {
+  it('rejects ballots with blank speaker ids even when score lengths match', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -1256,24 +2039,24 @@ describe('Server integration', () => {
       speakerIdsB: ['   '],
       submittedEntityId: 'judge-a',
     })
-    expect(ballotRes.status).toBe(201)
+    expect(ballotRes.status).toBe(400)
   })
 
-  it('keeps speaker score alignment when speakerIds include blank entries', async () => {
+  it('rejects admin ballot updates that include blank speaker ids', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
       .post('/api/auth/register')
-      .send({ username: 'speaker-alignment', password: 'password123', role: 'organizer' })
+      .send({ username: 'blank-speaker-update', password: 'password123', role: 'organizer' })
     expect(registerRes.status).toBe(201)
 
     const loginRes = await agent
       .post('/api/auth/login')
-      .send({ username: 'speaker-alignment', password: 'password123' })
+      .send({ username: 'blank-speaker-update', password: 'password123' })
     expect(loginRes.status).toBe(200)
 
     const tournamentRes = await agent.post('/api/tournaments').send({
-      name: 'Speaker Alignment Open',
+      name: 'Blank Speaker Update Open',
       style: 1,
       options: { style: { team_num: 2, score_weights: [1] } },
       total_round_num: 1,
@@ -1281,77 +2064,42 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
 
-    const roundRes = await agent.post('/api/rounds').send({
-      tournamentId,
-      round: 1,
-      name: 'Round 1',
-    })
-    expect(roundRes.status).toBe(201)
-
-    const speakerResA1 = await agent.post('/api/speakers').send({ tournamentId, name: 'A1' })
-    expect(speakerResA1.status).toBe(201)
-    const speakerIdA1 = speakerResA1.body.data._id
-
-    const speakerResA2 = await agent.post('/api/speakers').send({ tournamentId, name: 'A2' })
-    expect(speakerResA2.status).toBe(201)
-    const speakerIdA2 = speakerResA2.body.data._id
-
-    const speakerResB1 = await agent.post('/api/speakers').send({ tournamentId, name: 'B1' })
-    expect(speakerResB1.status).toBe(201)
-    const speakerIdB1 = speakerResB1.body.data._id
-
-    const speakerResB2 = await agent.post('/api/speakers').send({ tournamentId, name: 'B2' })
-    expect(speakerResB2.status).toBe(201)
-    const speakerIdB2 = speakerResB2.body.data._id
-
-    const teamResA = await agent.post('/api/teams').send({
-      tournamentId,
-      name: 'Team A',
-      details: [{ r: 1, speakers: [speakerIdA1, speakerIdA2] }],
-    })
-    expect(teamResA.status).toBe(201)
-    const teamIdA = teamResA.body.data._id
-
-    const teamResB = await agent.post('/api/teams').send({
-      tournamentId,
-      name: 'Team B',
-      details: [{ r: 1, speakers: [speakerIdB1, speakerIdB2] }],
-    })
-    expect(teamResB.status).toBe(201)
-    const teamIdB = teamResB.body.data._id
-
     const ballotRes = await agent.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
-      teamAId: teamIdA,
-      teamBId: teamIdB,
-      winnerId: teamIdA,
-      scoresA: [70, 80],
-      scoresB: [60, 65],
-      speakerIdsA: [' ', speakerIdA2],
-      speakerIdsB: [speakerIdB1, speakerIdB2],
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76],
+      scoresB: [75],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
       submittedEntityId: 'judge-a',
     })
     expect(ballotRes.status).toBe(201)
 
-    const compileRes = await agent.post('/api/compiled').send({
+    const listRes = await agent
+      .get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+      .send()
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data.length).toBe(1)
+    const submissionId = listRes.body.data[0]._id
+
+    const patchRes = await agent.patch(`/api/submissions/${submissionId}`).send({
       tournamentId,
-      source: 'submissions',
-      options: {
-        include_labels: ['speakers'],
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        winnerId: 'team-a',
+        scoresA: [76],
+        scoresB: [75],
+        speakerIdsA: ['spk-a'],
+        speakerIdsB: [''],
+        submittedEntityId: 'judge-a',
       },
     })
-    expect(compileRes.status).toBe(201)
-    expect(compileRes.body.data.payload.compile_warnings).toEqual([])
-
-    const speakerResults = compileRes.body.data.payload.compiled_speaker_results
-    expect(speakerResults.length).toBe(4)
-    const speakerA1 = speakerResults.find((row: any) => row.id === speakerIdA1)
-    const speakerA2 = speakerResults.find((row: any) => row.id === speakerIdA2)
-    expect(speakerA1).toBeTruthy()
-    expect(speakerA2).toBeTruthy()
-    expect(speakerA1.sum).toBeCloseTo(70, 6)
-    expect(speakerA2.sum).toBeCloseTo(80, 6)
+    expect(patchRes.status).toBe(400)
+    expect(patchRes.body.errors[0].message).toContain('speakerIdsB')
   })
 
   it('warns when scored speaker ids cannot be resolved during compile', async () => {
@@ -1391,8 +2139,6 @@ describe('Server integration', () => {
       winnerId: 'team-a',
       scoresA: [76],
       scoresB: [75],
-      speakerIdsA: [''],
-      speakerIdsB: ['   '],
       submittedEntityId: 'judge-a',
     })
     expect(ballotRes.status).toBe(201)
@@ -1452,8 +2198,6 @@ describe('Server integration', () => {
       winnerId: 'team-a',
       scoresA: [76],
       scoresB: [75],
-      speakerIdsA: [''],
-      speakerIdsB: [''],
       submittedEntityId: 'judge-a',
     })
     expect(ballotRes.status).toBe(201)
@@ -2806,6 +3550,178 @@ describe('Server integration', () => {
     expect(participantList.status).toBe(200)
     expect(participantList.body.data.length).toBe(1)
     expect(participantList.body.data[0].payload.winnerId).toBe('team-b')
+  })
+
+  it('updates submitted ballots via admin submission API', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-update', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-update', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Update Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const createBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
+      comment: 'before update',
+      submittedEntityId: 'judge-a',
+    })
+    expect(createBallot.status).toBe(201)
+
+    const listBefore = await organizer.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listBefore.status).toBe(200)
+    expect(listBefore.body.data.length).toBe(1)
+    const submissionId = listBefore.body.data[0]._id as string
+
+    const updateRes = await organizer.patch(`/api/submissions/${submissionId}`).send({
+      tournamentId,
+      round: 1,
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        winnerId: 'team-b',
+        scoresA: [71],
+        scoresB: [74],
+        speakerIdsA: ['spk-a'],
+        speakerIdsB: ['spk-b'],
+        comment: 'after update',
+        submittedEntityId: 'judge-b',
+      },
+    })
+    expect(updateRes.status).toBe(200)
+    expect(updateRes.body.data.payload.winnerId).toBe('team-b')
+    expect(updateRes.body.data.payload.comment).toBe('after update')
+    expect(updateRes.body.data.payload.submittedEntityId).toBe('judge-b')
+
+    const invalidUpdate = await organizer.patch(`/api/submissions/${submissionId}`).send({
+      tournamentId,
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        winnerId: 'unknown-team',
+        scoresA: [75],
+        scoresB: [75],
+      },
+    })
+    expect(invalidUpdate.status).toBe(400)
+
+    const listAfter = await organizer.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listAfter.status).toBe(200)
+    expect(listAfter.body.data.length).toBe(1)
+    expect(listAfter.body.data[0].payload.comment).toBe('after update')
+    expect(listAfter.body.data[0].payload.winnerId).toBe('team-b')
+  })
+
+  it('derives scores from matter/manner on admin ballot updates', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-update-matter', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-update-matter', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Update Matter Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const createBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75, 74],
+      scoresB: [72, 71],
+      speakerIdsA: ['spk-a-1', 'spk-a-2'],
+      speakerIdsB: ['spk-b-1', 'spk-b-2'],
+      submittedEntityId: 'judge-a',
+    })
+    expect(createBallot.status).toBe(201)
+
+    const listRes = await organizer.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listRes.status).toBe(200)
+    const submissionId = listRes.body.data[0]._id as string
+
+    const updateRes = await organizer.patch(`/api/submissions/${submissionId}`).send({
+      tournamentId,
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        winnerId: 'team-b',
+        matterA: [40, 39],
+        mannerA: [36, 35],
+        matterB: [38, 37],
+        mannerB: [35, 34],
+        speakerIdsA: ['spk-a-1', 'spk-a-2'],
+        speakerIdsB: ['spk-b-1', 'spk-b-2'],
+        submittedEntityId: 'judge-b',
+      },
+    })
+    expect(updateRes.status).toBe(200)
+    expect(updateRes.body.data.payload.scoresA).toEqual([76, 74])
+    expect(updateRes.body.data.payload.scoresB).toEqual([73, 71])
+    expect(updateRes.body.data.payload.winnerId).toBe('team-b')
+  })
+
+  it('rejects ballots when matter/manner are not provided together', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-update-mm-pair', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-update-mm-pair', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Matter Pair Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const ballotRes = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      matterA: [40],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(400)
+    expect(String(ballotRes.body.errors[0].message)).toContain('matterA')
   })
 
   it('applies forced public draw sanitization even for admins', async () => {

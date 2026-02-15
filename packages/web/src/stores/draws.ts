@@ -37,6 +37,7 @@ export const useDrawsStore = defineStore('draws', () => {
     tournamentId: string
     round: number
     allocation: DrawAllocationRow[]
+    userDefinedData?: Record<string, any>
     drawOpened?: boolean
     allocationOpened?: boolean
     locked?: boolean

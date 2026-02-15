@@ -5,6 +5,7 @@ import {
   createFeedbackSubmission,
   listParticipantSubmissions,
   listSubmissions,
+  updateSubmission,
 } from '../controllers/submissions.js'
 import { requireTournamentAccess, requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
@@ -21,8 +22,8 @@ const ballotSchema = {
       teamAId: z.string().trim().min(1),
       teamBId: z.string().trim().min(1),
       winnerId: z.string().trim().min(1).optional(),
-      speakerIdsA: z.array(z.string().trim()).optional(),
-      speakerIdsB: z.array(z.string().trim()).optional(),
+      speakerIdsA: z.array(z.string().trim().min(1)).optional(),
+      speakerIdsB: z.array(z.string().trim().min(1)).optional(),
       scoresA: z.array(finiteScoreSchema),
       scoresB: z.array(finiteScoreSchema),
       comment: z.string().optional(),
@@ -65,6 +66,24 @@ const ballotSchema = {
           message: `${key} length must match scores`,
         })
       }
+      const paired = (
+        left: unknown[] | undefined,
+        right: unknown[] | undefined,
+        leftKey: string,
+        rightKey: string
+      ) => {
+        const hasLeft = Array.isArray(left)
+        const hasRight = Array.isArray(right)
+        if (hasLeft === hasRight) return
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [hasLeft ? rightKey : leftKey],
+          message: `${leftKey} and ${rightKey} must be provided together`,
+        })
+      }
+      paired(payload.matterA, payload.mannerA, 'matterA', 'mannerA')
+      paired(payload.matterB, payload.mannerB, 'matterB', 'mannerB')
+
       expectLength(payload.speakerIdsA, payload.scoresA.length, 'speakerIdsA')
       expectLength(payload.speakerIdsB, payload.scoresB.length, 'speakerIdsB')
       expectLength(payload.matterA, payload.scoresA.length, 'matterA')
@@ -109,6 +128,19 @@ const participantListSchema = {
   }),
 }
 
+const updateSchema = {
+  params: z.object({ id: z.string().min(1) }),
+  body: z
+    .object({
+      tournamentId: z.string().trim().min(1),
+      round: z.number().int().min(1).optional(),
+      payload: z.record(z.any()).optional(),
+    })
+    .refine((body) => body.round !== undefined || body.payload !== undefined, {
+      message: 'round or payload is required',
+    }),
+}
+
 router.get('/', requireTournamentAdmin(), validateRequest(listSchema), listSubmissions)
 router.get(
   '/mine',
@@ -128,5 +160,6 @@ router.post(
   validateRequest(feedbackSchema),
   createFeedbackSubmission
 )
+router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateSubmission)
 
 export { router as submissionRouter }

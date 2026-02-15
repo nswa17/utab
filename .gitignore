@@ -13,3 +13,5 @@ legacy/
 .pnpm-store
 *.tsbuildinfo
 tabbycat/
+.certs/*.pem
+!.certs/.gitkeep

@@ -36,15 +36,84 @@
         <p v-if="isSpeaker && speakerSelectionRequired && teamIdentityId && selectableSpeakers.length === 0" class="muted">
           {{ $t('このチームに選択可能なスピーカーがいません。') }}
         </p>
-        <label v-if="isAdjudicator" class="field">
-          <span>{{ $t('ジャッジ') }}</span>
-          <select v-model="teamIdentityId">
-            <option value="">{{ $t('未選択') }}</option>
-            <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
-              {{ adj.name }}
-            </option>
-          </select>
-        </label>
+        <template v-if="isAdjudicator">
+          <div class="stack">
+            <span>{{ $t('ロール') }}</span>
+            <div class="row role-switch" role="radiogroup" :aria-label="$t('ロール')">
+              <label class="role-option">
+                <input
+                  type="radio"
+                  :checked="adjudicatorRoleMode === 'adjudicator'"
+                  @change="setAdjudicatorRoleMode('adjudicator')"
+                />
+                <span>{{ $t('ジャッジとして提出') }}</span>
+              </label>
+              <label class="role-option">
+                <input
+                  type="radio"
+                  :checked="adjudicatorRoleMode === 'team'"
+                  @change="setAdjudicatorRoleMode('team')"
+                />
+                <span>{{ adjudicatorTeamRoleLabel }}</span>
+              </label>
+            </div>
+          </div>
+          <label v-if="adjudicatorRoleMode === 'adjudicator'" class="field">
+            <span>{{ $t('ジャッジ名') }}</span>
+            <select v-model="teamIdentityId">
+              <option value="">{{ $t('未選択') }}</option>
+              <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
+                {{ adj.name }}
+              </option>
+            </select>
+          </label>
+          <label v-if="adjudicatorRoleMode === 'team'" class="field">
+            <span>{{ $t('チーム名') }}</span>
+            <select v-model="judgeFeedbackTeamIdentityId">
+              <option value="">{{ $t('未選択') }}</option>
+              <option v-for="team in teamsStore.teams" :key="team._id" :value="team._id">
+                {{ team.name }}
+              </option>
+            </select>
+          </label>
+          <label v-if="adjudicatorRoleMode === 'team' && judgeFeedbackSpeakerSelectionRequired" class="field">
+            <span>{{ $t('スピーカー名') }}</span>
+            <select
+              v-model="judgeFeedbackSpeakerIdentityId"
+              :disabled="!judgeFeedbackTeamIdentityId || judgeFeedbackSelectableSpeakers.length === 0"
+            >
+              <option value="">{{ $t('未選択') }}</option>
+              <option
+                v-for="speaker in judgeFeedbackSelectableSpeakers"
+                :key="speaker._id"
+                :value="speaker._id"
+              >
+                {{ speaker.name }}
+              </option>
+            </select>
+          </label>
+          <p
+            v-if="
+              adjudicatorRoleMode === 'team' &&
+              judgeFeedbackSpeakerSelectionRequired &&
+              !judgeFeedbackTeamIdentityId
+            "
+            class="muted"
+          >
+            {{ $t('先にチームを選択してください。') }}
+          </p>
+          <p
+            v-if="
+              adjudicatorRoleMode === 'team' &&
+              judgeFeedbackSpeakerSelectionRequired &&
+              judgeFeedbackTeamIdentityId &&
+              judgeFeedbackSelectableSpeakers.length === 0
+            "
+            class="muted"
+          >
+            {{ $t('このチームに選択可能なスピーカーがいません。') }}
+          </p>
+        </template>
       </div>
 
       <template v-if="isAudience">
@@ -106,8 +175,9 @@
                     <strong>{{ teamName(row.teams.opp) }}</strong>
                   </div>
                 </div>
-                <div v-if="adjudicatorAllocationVisible(round.round)" class="muted tiny">
-                  {{ $t('チェア:') }} {{ adjudicatorNames(row.chairs) }}
+                <div v-if="adjudicatorAllocationVisible(round.round)" class="draw-chair-line">
+                  <span class="draw-chair-label">{{ $t('チェア:') }}</span>
+                  <span class="draw-chair-names">{{ adjudicatorNames(row.chairs) }}</span>
                 </div>
               </div>
             </div>
@@ -268,6 +338,16 @@ const participant = computed(() => route.params.participant as string)
 
 const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
 const { identityId: speakerIdentityId } = useParticipantIdentity(tournamentId, participant, 'speaker')
+const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-team'
+)
+const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participant,
+  'team-feedback-speaker'
+)
 
 const isAudience = computed(() => participant.value === 'audience')
 const isAdjudicator = computed(() => participant.value === 'adjudicator')
@@ -289,11 +369,10 @@ const drawsByRound = computed(() => {
   return map
 })
 
-const selectableSpeakers = computed(() => {
-  if (!isSpeaker.value || !teamIdentityId.value) return []
-  const team = teamsStore.teams.find((item) => item._id === teamIdentityId.value)
+function speakersForTeam(teamId: string) {
+  if (!teamId) return []
+  const team = teamsStore.teams.find((item) => item._id === teamId)
   if (!team) return []
-
   const detailSpeakerIds = new Set<string>()
   ;(team.details ?? []).forEach((detail: any) => {
     ;(detail?.speakers ?? []).forEach((id: any) => {
@@ -308,6 +387,11 @@ const selectableSpeakers = computed(() => {
     (team.speakers ?? []).map((speaker: any) => String(speaker?.name ?? '')).filter(Boolean)
   )
   return speakersStore.speakers.filter((speaker) => speakerNames.has(speaker.name))
+}
+
+const selectableSpeakers = computed(() => {
+  if (!isSpeaker.value || !teamIdentityId.value) return []
+  return speakersForTeam(teamIdentityId.value)
 })
 
 const speakerSelectionRequired = computed(() => {
@@ -320,6 +404,29 @@ const speakerSelectionRequired = computed(() => {
     )
   })
 })
+
+const judgeFeedbackSpeakerSelectionRequired = computed(() =>
+  visibleRounds.value.some((round) => {
+    const userDefined = round.userDefinedData ?? {}
+    return (
+      userDefined.evaluate_from_teams !== false &&
+      (userDefined.evaluator_in_team ?? 'team') === 'speaker'
+    )
+  })
+)
+const adjudicatorRoleMode = ref<'adjudicator' | 'team'>('adjudicator')
+const adjudicatorTeamRoleLabel = computed(() =>
+  judgeFeedbackSpeakerSelectionRequired.value ? t('スピーカーとして提出') : t('チームとして提出')
+)
+
+const judgeFeedbackSelectableSpeakers = computed(() => {
+  if (!judgeFeedbackTeamIdentityId.value) return []
+  return speakersForTeam(judgeFeedbackTeamIdentityId.value)
+})
+
+function setAdjudicatorRoleMode(mode: 'adjudicator' | 'team') {
+  adjudicatorRoleMode.value = mode
+}
 
 const isLoading = computed(
   () =>
@@ -387,7 +494,10 @@ const identityReadyForTasks = computed(() => {
     return Boolean(teamIdentityId.value)
   }
   if (isAdjudicator.value) {
-    return Boolean(teamIdentityId.value)
+    if (adjudicatorRoleMode.value === 'adjudicator') {
+      return Boolean(teamIdentityId.value)
+    }
+    return Boolean(judgeFeedbackTeamIdentityId.value || judgeFeedbackSpeakerIdentityId.value)
   }
   return false
 })
@@ -417,15 +527,28 @@ const tasks = computed<TaskItem[]>(() => {
 
     if (isSpeaker.value) {
       const teamId = teamIdentityId.value
-      const hasAssignedMatch = allocation.some(
+      const teamRows = allocation.filter(
         (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
       )
+      const hasAssignedMatch = teamRows.length > 0
       if (!hasAssignedMatch) return
       if (!adjudicatorOpen) return
       if (roundItem.userDefinedData?.evaluate_from_teams === false) return
       const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
       const submittedEntityId = evaluatorInTeam === 'speaker' ? speakerIdentityId.value : teamId
       if (!submittedEntityId) return
+      const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
+      const teamJudgeIds = Array.from(
+        new Set(
+          teamRows.flatMap((row: any) =>
+            chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
+          )
+        )
+      )
+      const targetPath =
+        teamJudgeIds.length === 1
+          ? `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
+          : `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
       const completed = feedbackSubmittedKeySet.value.has(
         `${roundNumber}:${submittedEntityId}`
       )
@@ -433,49 +556,115 @@ const tasks = computed<TaskItem[]>(() => {
       list.push({
         id: `speaker-feedback-${roundNumber}-${evaluatorInTeam}`,
         round: roundNumber,
-        title: t('フィードバック'),
+        title: t('ジャッジ評価'),
         completed,
         statusLabel: completed ? t('完了') : t('未完了'),
         actionLabel: completed ? t('修正して送信') : t('入力'),
-        to: `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/home?filter=team`,
+        to: targetPath,
       })
       return
     }
 
     if (isAdjudicator.value) {
       if (!adjudicatorOpen) return
-      const adjudicatorId = teamIdentityId.value
-      const hasAssignedMatch = allocation.some((row: any) =>
-        [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
-          adjudicatorId
+      if (adjudicatorRoleMode.value === 'adjudicator') {
+        const adjudicatorId = teamIdentityId.value
+        const adjudicatorRows = adjudicatorId
+          ? allocation.filter((row: any) =>
+              [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
+                adjudicatorId
+              )
+            )
+          : []
+        const hasJudgeAssignedMatch = adjudicatorRows.length > 0
+        if (hasJudgeAssignedMatch) {
+          const ballotTargetPath =
+            adjudicatorRows.length === 1
+              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
+              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`
+          const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
+          list.push({
+            id: `adjudicator-ballot-${roundNumber}`,
+            round: roundNumber,
+            title: t('スコアシート'),
+            description: t('ドローから試合を選択'),
+            completed: ballotCompleted,
+            statusLabel: ballotCompleted ? t('完了') : t('未完了'),
+            actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
+            to: ballotTargetPath,
+          })
+        }
+
+        if (
+          hasJudgeAssignedMatch &&
+          roundItem.userDefinedData?.evaluate_from_adjudicators !== false
+        ) {
+          const feedbackPeers = Array.from(
+            new Set(
+              adjudicatorRows.flatMap((row: any) =>
+                [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].filter(
+                  (id: string) => id !== adjudicatorId
+                )
+              )
+            )
+          )
+          const feedbackTargetPath =
+            feedbackPeers.length === 1
+              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${feedbackPeers[0]}?filter=adjudicator&actor=adjudicator`
+              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`
+          const feedbackCompleted = feedbackSubmittedKeySet.value.has(
+            `${roundNumber}:${adjudicatorId}`
+          )
+          list.push({
+            id: `adjudicator-feedback-${roundNumber}`,
+            round: roundNumber,
+            title: t('ジャッジ評価（ジャッジ）'),
+            completed: feedbackCompleted,
+            statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
+            actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
+            to: feedbackTargetPath,
+          })
+        }
+      }
+
+      if (adjudicatorRoleMode.value === 'team' && roundItem.userDefinedData?.evaluate_from_teams !== false) {
+        const teamId = judgeFeedbackTeamIdentityId.value
+        const teamRows = teamId
+          ? allocation.filter(
+              (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
+            )
+          : []
+        const hasTeamAssignedMatch = teamRows.length > 0
+        if (!hasTeamAssignedMatch) return
+        const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
+        const submittedEntityId =
+          evaluatorInTeam === 'speaker'
+            ? judgeFeedbackSpeakerIdentityId.value
+            : judgeFeedbackTeamIdentityId.value
+        if (!submittedEntityId) return
+        const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
+        const teamJudgeIds = Array.from(
+          new Set(
+            teamRows.flatMap((row: any) =>
+              chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
+            )
+          )
         )
-      )
-      if (!hasAssignedMatch) return
-
-      const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
-      list.push({
-        id: `adjudicator-ballot-${roundNumber}`,
-        round: roundNumber,
-        title: t('スコアシート'),
-        description: t('ドローから試合を選択'),
-        completed: ballotCompleted,
-        statusLabel: ballotCompleted ? t('完了') : t('未完了'),
-        actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
-        to: `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`,
-      })
-
-      if (roundItem.userDefinedData?.evaluate_from_adjudicators !== false) {
+        const targetPath =
+          teamJudgeIds.length === 1
+            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
+            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
         const feedbackCompleted = feedbackSubmittedKeySet.value.has(
-          `${roundNumber}:${adjudicatorId}`
+          `${roundNumber}:${submittedEntityId}`
         )
         list.push({
-          id: `adjudicator-feedback-${roundNumber}`,
+          id: `team-feedback-via-adjudicator-${roundNumber}-${evaluatorInTeam}`,
           round: roundNumber,
-          title: t('フィードバック'),
+          title: t('ジャッジ評価（チーム）'),
           completed: feedbackCompleted,
           statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
           actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-          to: `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator`,
+          to: targetPath,
         })
       }
     }
@@ -508,6 +697,14 @@ const tasksHint = computed(() => {
   }
   if (isSpeaker.value && speakerSelectionRequired.value && !speakerIdentityId.value) {
     return t('参加者ホームでスピーカーを選択すると、評価対象を絞り込めます。')
+  }
+  if (
+    isAdjudicator.value &&
+    judgeFeedbackSpeakerSelectionRequired.value &&
+    judgeFeedbackTeamIdentityId.value &&
+    !judgeFeedbackSpeakerIdentityId.value
+  ) {
+    return t('ジャッジ評価でスピーカー単位を使うラウンドでは、スピーカーを選択してください。')
   }
   return t('タスクはありません。')
 })
@@ -678,6 +875,36 @@ async function refreshTaskSubmissions() {
     submissionsStore.submissions = Array.from(merged.values())
     return
   }
+  if (isAdjudicator.value) {
+    const ids =
+      adjudicatorRoleMode.value === 'adjudicator'
+        ? [teamIdentityId.value]
+        : [judgeFeedbackTeamIdentityId.value]
+    if (
+      adjudicatorRoleMode.value === 'team' &&
+      judgeFeedbackSpeakerSelectionRequired.value &&
+      judgeFeedbackSpeakerIdentityId.value
+    ) {
+      ids.push(judgeFeedbackSpeakerIdentityId.value)
+    }
+    const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
+    if (normalizedIds.length === 0) {
+      submissionsStore.clearSubmissions()
+      return
+    }
+    const merged = new Map<string, any>()
+    for (const entityId of normalizedIds) {
+      const rows = await submissionsStore.fetchParticipantSubmissions({
+        tournamentId: tournamentId.value,
+        submittedEntityId: entityId,
+      })
+      rows.forEach((item) => {
+        merged.set(item._id, item)
+      })
+    }
+    submissionsStore.submissions = Array.from(merged.values())
+    return
+  }
   if (!activeSubmittedEntityId.value) {
     submissionsStore.clearSubmissions()
     return
@@ -729,13 +956,42 @@ watch(
 )
 
 watch(
+  [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, judgeFeedbackSpeakerSelectionRequired],
+  () => {
+    if (!isAdjudicator.value) return
+    if (!judgeFeedbackSpeakerSelectionRequired.value) {
+      judgeFeedbackSpeakerIdentityId.value = ''
+      return
+    }
+    if (!judgeFeedbackTeamIdentityId.value) {
+      judgeFeedbackSpeakerIdentityId.value = ''
+      return
+    }
+    if (!judgeFeedbackSpeakerIdentityId.value) return
+    const exists = judgeFeedbackSelectableSpeakers.value.some(
+      (speaker) => speaker._id === judgeFeedbackSpeakerIdentityId.value
+    )
+    if (!exists) {
+      judgeFeedbackSpeakerIdentityId.value = ''
+    }
+  },
+  { immediate: true }
+)
+
+watch(
   [participant, () => teamsStore.teams],
   () => {
-    if (!isSpeaker.value) return
-    if (!teamIdentityId.value) return
-    const exists = teamsStore.teams.some((team) => team._id === teamIdentityId.value)
-    if (!exists) {
-      teamIdentityId.value = ''
+    if (isSpeaker.value && teamIdentityId.value) {
+      const exists = teamsStore.teams.some((team) => team._id === teamIdentityId.value)
+      if (!exists) {
+        teamIdentityId.value = ''
+      }
+    }
+    if (isAdjudicator.value && judgeFeedbackTeamIdentityId.value) {
+      const exists = teamsStore.teams.some((team) => team._id === judgeFeedbackTeamIdentityId.value)
+      if (!exists) {
+        judgeFeedbackTeamIdentityId.value = ''
+      }
     }
   },
   { immediate: true, deep: true }
@@ -758,9 +1014,29 @@ watch([activeSubmittedEntityId, speakerIdentityId, speakerSelectionRequired], ()
   refreshTaskSubmissions()
 })
 
+watch(adjudicatorRoleMode, (mode) => {
+  if (!isAdjudicator.value) return
+  if (mode === 'adjudicator') {
+    judgeFeedbackTeamIdentityId.value = ''
+    judgeFeedbackSpeakerIdentityId.value = ''
+    return
+  }
+  teamIdentityId.value = ''
+})
+
+watch(
+  [judgeFeedbackTeamIdentityId, judgeFeedbackSpeakerIdentityId, judgeFeedbackSpeakerSelectionRequired],
+  () => {
+    refreshTaskSubmissions()
+  }
+)
+
 watch(
   [participant, tournamentId, () => teamsStore.teams.length, () => route.query.viewMode],
   () => {
+    if (!isAdjudicator.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+    }
     if (!isAudience.value) return
     if (route.query.viewMode === 'card' || route.query.viewMode === 'table') return
     router.replace({
@@ -769,6 +1045,24 @@ watch(
         viewMode: 'table',
       },
     })
+  },
+  { immediate: true }
+)
+
+watch(
+  [isAdjudicator, teamIdentityId, judgeFeedbackTeamIdentityId],
+  () => {
+    if (!isAdjudicator.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+      return
+    }
+    if (teamIdentityId.value) {
+      adjudicatorRoleMode.value = 'adjudicator'
+      return
+    }
+    if (judgeFeedbackTeamIdentityId.value) {
+      adjudicatorRoleMode.value = 'team'
+    }
   },
   { immediate: true }
 )
@@ -827,6 +1121,23 @@ select {
 
 .tight {
   gap: 4px;
+}
+
+.role-switch {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.role-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  font-size: 12px;
+  color: var(--color-text);
 }
 
 .compact-round {
@@ -915,6 +1226,24 @@ select {
   gap: 6px;
 }
 
+.draw-chair-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.draw-chair-label {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.draw-chair-names {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 .compact-draw-list {
   gap: var(--space-2);
 }
@@ -942,7 +1271,8 @@ select {
 }
 
 .side-card strong {
-  font-size: 12px;
+  font-size: 1rem;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

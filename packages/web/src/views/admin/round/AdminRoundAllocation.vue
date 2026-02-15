@@ -1,18 +1,13 @@
 <template>
   <section class="stack">
     <div class="row section-header">
-      <h4>{{ $t('対戦表設定') }}</h4>
-      <span v-if="drawUpdatedAt" class="muted">{{
-        $t('更新: {time}', { time: drawUpdatedAt })
-      }}</span>
-      <ReloadButton
-        class="header-reload"
-        @click="refresh"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
+      <div class="stack tight">
+        <h4>{{ $t('対戦表設定') }}</h4>
+        <span class="muted small">{{ roundHeading }}</span>
+      </div>
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
+    <p v-if="adjudicatorImportInfo" class="muted import-info">{{ adjudicatorImportInfo }}</p>
 
     <div class="card stack" v-if="formError || draws.error">
       <p v-if="formError" class="error">{{ formError }}</p>
@@ -22,14 +17,6 @@
     <div class="card stack" v-if="unsubmittedEnabled && !isEmbeddedRoute">
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
-        <Button
-          variant="secondary"
-          size="sm"
-          @click="refreshSubmissions"
-          :disabled="submissionsStore.loading"
-        >
-          {{ $t('更新') }}
-        </Button>
       </div>
       <div v-if="missingBallotSubmitters.length === 0" class="muted">
         {{ $t('スコアシート未提出はありません。') }}
@@ -353,28 +340,62 @@
           </div>
           <div class="card stack soft table-wrap">
             <div v-if="previewRows.length === 0" class="muted">{{ $t('有効なマッチがありません。') }}</div>
-            <table v-else class="draw-preview-table">
-              <thead>
-                <tr>
-                  <th>{{ $t('会場') }}</th>
-                  <th>{{ govLabel }}</th>
-                  <th>{{ oppLabel }}</th>
-                  <th>{{ $t('チェア') }}</th>
-                  <th>{{ $t('パネル') }}</th>
-                  <th>{{ $t('トレーニー') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in previewRows" :key="`preview-${item.key}`">
-                  <td>{{ item.venueLabel }}</td>
-                  <td>{{ item.govName }}</td>
-                  <td>{{ item.oppName }}</td>
-                  <td>{{ item.chairsLabel }}</td>
-                  <td>{{ item.panelsLabel }}</td>
-                  <td>{{ item.traineesLabel }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-else class="preview-grid">
+              <section class="stack preview-lane-card">
+                <strong class="small">{{ $t('公開順') }}</strong>
+                <table class="draw-preview-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('会場') }}</th>
+                      <th>{{ govLabel }}</th>
+                      <th>{{ oppLabel }}</th>
+                      <th>{{ $t('Win') }}</th>
+                      <th>{{ $t('チェア') }}</th>
+                      <th>{{ $t('パネル') }}</th>
+                      <th>{{ $t('トレーニー') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in previewRowsByVenue" :key="`preview-venue-${item.key}`">
+                      <td>{{ item.venueLabel }}</td>
+                      <td>{{ item.govName }}</td>
+                      <td>{{ item.oppName }}</td>
+                      <td>{{ item.winLabel }}</td>
+                      <td>{{ item.chairsLabel }}</td>
+                      <td>{{ item.panelsLabel }}</td>
+                      <td>{{ item.traineesLabel }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+              <section class="stack preview-lane-card">
+                <strong class="small">{{ $t('Win順') }}</strong>
+                <table class="draw-preview-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('会場') }}</th>
+                      <th>{{ govLabel }}</th>
+                      <th>{{ oppLabel }}</th>
+                      <th>{{ $t('Win') }}</th>
+                      <th>{{ $t('チェア') }}</th>
+                      <th>{{ $t('パネル') }}</th>
+                      <th>{{ $t('トレーニー') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in previewRowsByWin" :key="`preview-win-${item.key}`">
+                      <td>{{ item.venueLabel }}</td>
+                      <td>{{ item.govName }}</td>
+                      <td>{{ item.oppName }}</td>
+                      <td>{{ item.winLabel }}</td>
+                      <td>{{ item.chairsLabel }}</td>
+                      <td>{{ item.panelsLabel }}</td>
+                      <td>{{ item.traineesLabel }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
           </div>
         </section>
 
@@ -387,6 +408,14 @@
               :disabled="isLoading || requestLoading"
             >
               {{ $t('自動生成') }}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              @click="openAdjudicatorImportModal"
+              :disabled="isLoading || locked"
+            >
+              {{ $t('ジャッジ組み合わせ取込') }}
             </Button>
             <Button
               variant="secondary"
@@ -413,13 +442,80 @@
               </span>
             </label>
             <span class="action-spacer"></span>
-            <Button variant="danger" size="sm" @click="deleteCurrentDraw" :disabled="!currentDraw">
+            <Button variant="danger" size="sm" @click="openDeleteDrawModal" :disabled="!currentDraw">
               {{ $t('削除') }}
             </Button>
           </div>
         </div>
       </template>
     </section>
+
+    <div
+      v-if="showAdjudicatorImportModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeAdjudicatorImportModal"
+    >
+      <section class="modal card stack auto-modal import-modal" role="dialog" aria-modal="true">
+        <div class="row auto-generate-header">
+          <div class="row auto-label">
+            <strong>{{ $t('ジャッジ組み合わせ取込') }}</strong>
+            <span class="help-tip" :title="$t('CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。')"
+              >?</span
+            >
+          </div>
+          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
+        <div class="grid">
+          <label class="stack">
+            <span class="option-title">{{ $t('取り込み方式') }}</span>
+            <select v-model="adjudicatorImportMode">
+              <option value="replace">{{ $t('置換') }}</option>
+              <option value="append">{{ $t('追記') }}</option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">{{ $t('CSV/TSVファイル') }}</span>
+            <input
+              class="csv-file-input"
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
+              @change="handleAdjudicatorImportFile"
+            />
+          </label>
+        </div>
+        <label class="stack">
+          <span class="option-title">{{ $t('取り込みデータ') }}</span>
+          <textarea
+            v-model="adjudicatorImportText"
+            class="import-textarea"
+            rows="8"
+            :placeholder="$t('例: match,chairs,panels,trainees')"
+          ></textarea>
+        </label>
+        <p class="muted small">
+          {{
+            $t(
+              'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）'
+            )
+          }}
+        </p>
+        <pre class="import-example">match,chairs,panels,trainees
+1,Judge A,Judge B|Judge C,
+2,Judge D,,Judge E</pre>
+        <p v-if="adjudicatorImportError" class="error">{{ adjudicatorImportError }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">{{
+            $t('取消')
+          }}</Button>
+          <Button size="sm" @click="applyAdjudicatorImport" :disabled="locked">
+            {{ $t('取り込み') }}
+          </Button>
+        </div>
+      </section>
+    </div>
 
     <div
       v-if="showAutoGenerateModal"
@@ -492,6 +588,8 @@
             </span>
             <select v-model="autoOptions.teamAlgorithm">
               <option value="standard">{{ $t('標準') }}</option>
+              <option value="break">{{ $t('ブレイク') }}</option>
+              <option value="powerpair">{{ $t('Power Pair') }}</option>
               <option value="strict">{{ $t('厳密') }}</option>
             </select>
           </label>
@@ -539,6 +637,100 @@
               </label>
             </div>
           </div>
+        </div>
+        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'powerpair'">
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('奇数ブラケット処理') }}
+              <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
+            </span>
+            <select v-model="autoOptions.teamPowerpairOddBracket">
+              <option
+                v-for="option in teamPowerpairOddBracketOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('ペアリング方式') }}
+              <span class="help-tip" :title="$t('パワーペアのブラケット内ペアリング方式です。')"
+                >?</span
+              >
+            </span>
+            <select v-model="autoOptions.teamPowerpairPairingMethod">
+              <option
+                v-for="option in teamPowerpairPairingOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack">
+            <span class="option-title">
+              {{ $t('衝突回避方式') }}
+              <span class="help-tip" :title="$t('パワーペアで使う衝突回避方式です。')">?</span>
+            </span>
+            <select v-model="autoOptions.teamPowerpairAvoidConflicts">
+              <option
+                v-for="option in teamPowerpairConflictOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('機関衝突重み') }}
+              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('過去対戦重み') }}
+              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairConflictPastOpponentWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+            <span class="option-title">
+              {{ $t('最大スワップ試行') }}
+              <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamPowerpairMaxSwapIterations"
+              type="number"
+              min="0"
+              step="1"
+            />
+          </label>
+        </div>
+        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
+          <p class="muted">
+            {{
+              $t(
+                'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。'
+              )
+            }}
+          </p>
         </div>
         <div class="grid" v-else>
           <label class="stack">
@@ -592,6 +784,30 @@
               {{ $t('衝突回避') }}
               <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
             </span>
+          </label>
+          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+            <span class="option-title">
+              {{ $t('機関衝突重み') }}
+              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
+          </label>
+          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+            <span class="option-title">
+              {{ $t('過去対戦重み') }}
+              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+            </span>
+            <input
+              v-model.number="autoOptions.teamStrictConflictPastOpponentWeight"
+              type="number"
+              min="0"
+              step="0.1"
+            />
           </label>
         </div>
         <div class="grid" v-if="autoOptions.adjudicatorAlgorithm === 'standard'">
@@ -678,6 +894,24 @@
       </section>
     </div>
 
+    <div
+      v-if="showDeleteDrawModal"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteDrawModal"
+    >
+      <section class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('ドロー削除') }}</h4>
+        <p class="muted">{{ $t('このドローを削除しますか？') }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteCurrentDraw">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </section>
+    </div>
+
     <aside v-if="displayDetail" class="floating-detail card stack">
       <div class="row">
         <strong>{{ detailPanelLabel }}</strong>
@@ -715,9 +949,13 @@ import { useStylesStore } from '@/stores/styles'
 import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
-import ReloadButton from '@/components/common/ReloadButton.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
+import {
+  applyAdjudicatorImportEntries,
+  parseAdjudicatorImportText,
+  type AdjudicatorImportMode,
+} from '@/utils/adjudicator-import'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -749,16 +987,31 @@ const considerAllRounds = ref(true)
 const considerRounds = ref<number[]>([])
 const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
+const generatedUserDefinedData = ref<Record<string, any> | null>(null)
 const showAutoGenerateModal = ref(false)
+const showAdjudicatorImportModal = ref(false)
+const showDeleteDrawModal = ref(false)
+const adjudicatorImportText = ref('')
+const adjudicatorImportMode = ref<AdjudicatorImportMode>('replace')
+const adjudicatorImportError = ref<string | null>(null)
+const adjudicatorImportInfo = ref<string | null>(null)
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
   teamMethod: 'straight',
   teamFilters: ['by_strength', 'by_side', 'by_past_opponent', 'by_institution'],
+  teamPowerpairOddBracket: 'pullup_top',
+  teamPowerpairPairingMethod: 'fold',
+  teamPowerpairAvoidConflicts: 'one_up_one_down',
+  teamPowerpairConflictInstitutionWeight: 1,
+  teamPowerpairConflictPastOpponentWeight: 1,
+  teamPowerpairMaxSwapIterations: 24,
   teamStrictPairingMethod: 'random',
   teamStrictPullupMethod: 'fromtop',
   teamStrictPositionMethod: 'adjusted',
   teamStrictAvoidConflict: true,
+  teamStrictConflictInstitutionWeight: 1,
+  teamStrictConflictPastOpponentWeight: 1,
   adjudicatorAlgorithm: 'standard',
   adjudicatorFilters: [
     'by_bubble',
@@ -796,6 +1049,23 @@ const teamStrictPairingOptions = computed(() => [
   { value: 'slide', label: t('スライド') },
   { value: 'sort', label: t('ソート') },
   { value: 'adjusted', label: t('調整') },
+])
+
+const teamPowerpairOddBracketOptions = computed(() => [
+  { value: 'pullup_top', label: t('上位から') },
+  { value: 'pullup_bottom', label: t('下位から') },
+  { value: 'pullup_random', label: t('ランダム') },
+])
+
+const teamPowerpairPairingOptions = computed(() => [
+  { value: 'slide', label: t('スライド') },
+  { value: 'fold', label: t('フォールド') },
+  { value: 'random', label: t('ランダム') },
+])
+
+const teamPowerpairConflictOptions = computed(() => [
+  { value: 'one_up_one_down', label: t('one-up-one-down') },
+  { value: 'off', label: t('なし') },
 ])
 
 const teamStrictPullupOptions = computed(() => [
@@ -842,17 +1112,17 @@ const isLoading = computed(
 )
 const currentDraw = computed(() => draws.draws.find((item) => item.round === round.value))
 const roundConfig = computed(() => roundsStore.rounds.find((item) => item.round === round.value))
+const roundHeading = computed(() => {
+  const name = String(roundConfig.value?.name ?? '').trim()
+  if (name.length > 0) return t('ラウンド {round}: {name}', { round: round.value, name })
+  return t('ラウンド {round}', { round: round.value })
+})
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
-const drawUpdatedAt = computed(() => {
-  if (!currentDraw.value?.updatedAt) return ''
-  const date = new Date(currentDraw.value.updatedAt)
-  return Number.isNaN(date.getTime()) ? currentDraw.value.updatedAt : date.toLocaleString()
-})
 const priorRounds = computed(() =>
   roundsStore.rounds
     .filter((item) => item.round < round.value)
@@ -894,12 +1164,17 @@ function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
     allocationOpened.value = Boolean(draw.allocationOpened)
     locked.value = Boolean(draw.locked)
     savedDrawId.value = draw._id ?? null
+    generatedUserDefinedData.value =
+      draw.userDefinedData && typeof draw.userDefinedData === 'object'
+        ? (draw.userDefinedData as Record<string, any>)
+        : null
   } else {
     allocation.value = []
     drawOpened.value = false
     allocationOpened.value = false
     locked.value = false
     savedDrawId.value = null
+    generatedUserDefinedData.value = null
   }
   savedSnapshot.value = allocationSnapshot()
 }
@@ -908,7 +1183,7 @@ async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
   try {
-    const [, , , , , latestCompiled] = await Promise.all([
+    await Promise.all([
       teams.fetchTeams(tournamentId.value),
       adjudicators.fetchAdjudicators(tournamentId.value),
       draws.fetchDraws(tournamentId.value, round.value),
@@ -924,20 +1199,9 @@ async function refresh() {
         round: round.value,
       }),
     ])
-    if (!latestCompiled) {
-      await compiledStore.runCompile(tournamentId.value)
-    }
   } finally {
     sectionLoading.value = false
   }
-}
-
-async function refreshSubmissions() {
-  if (!tournamentId.value) return
-  await submissionsStore.fetchSubmissions({
-    tournamentId: tournamentId.value,
-    round: round.value,
-  })
 }
 
 function addRow() {
@@ -969,6 +1233,7 @@ async function save() {
     tournamentId: tournamentId.value,
     round: round.value,
     allocation: validRows,
+    ...(generatedUserDefinedData.value ? { userDefinedData: generatedUserDefinedData.value } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
@@ -979,6 +1244,71 @@ async function save() {
   }
   savedSnapshot.value = allocationSnapshot()
   savedDrawId.value = saved?._id ?? savedDrawId.value
+}
+
+function openAdjudicatorImportModal() {
+  adjudicatorImportError.value = null
+  showAdjudicatorImportModal.value = true
+}
+
+function closeAdjudicatorImportModal() {
+  showAdjudicatorImportModal.value = false
+  adjudicatorImportError.value = null
+}
+
+async function handleAdjudicatorImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  adjudicatorImportError.value = null
+  adjudicatorImportText.value = await file.text()
+  input.value = ''
+}
+
+function applyAdjudicatorImport() {
+  adjudicatorImportError.value = null
+  adjudicatorImportInfo.value = null
+  if (locked.value) {
+    adjudicatorImportError.value = t('ドローがロックされているため取り込みできません。')
+    return
+  }
+
+  const parsed = parseAdjudicatorImportText(adjudicatorImportText.value)
+  if (parsed.errors.length > 0) {
+    adjudicatorImportError.value = parsed.errors.join(' / ')
+    return
+  }
+  if (parsed.entries.length === 0) {
+    adjudicatorImportError.value = t('取り込み可能な行がありません。')
+    return
+  }
+
+  const applied = applyAdjudicatorImportEntries({
+    allocation: allocation.value,
+    entries: parsed.entries,
+    teams: teams.teams.map((team) => ({ _id: String(team._id), name: String(team.name ?? '') })),
+    adjudicators: adjudicators.adjudicators.map((adj) => ({
+      _id: String(adj._id),
+      name: String(adj.name ?? ''),
+    })),
+    mode: adjudicatorImportMode.value,
+  })
+  if (applied.errors.length > 0) {
+    adjudicatorImportError.value = applied.errors.join(' / ')
+    return
+  }
+
+  allocation.value = applied.allocation.map((row) => ({
+    venue: row.venue ?? '',
+    teams: { gov: String(row.teams.gov ?? ''), opp: String(row.teams.opp ?? '') },
+    chairs: [...(row.chairs ?? [])],
+    panels: [...(row.panels ?? [])],
+    trainees: [...(row.trainees ?? [])],
+  }))
+  adjudicatorImportInfo.value = t('ジャッジ組み合わせを {count} 試合に取り込みました。', {
+    count: applied.appliedRows,
+  })
+  closeAdjudicatorImportModal()
 }
 
 async function requestAllocation() {
@@ -992,7 +1322,24 @@ async function requestAllocation() {
             pullup_method: autoOptions.value.teamStrictPullupMethod,
             position_method: autoOptions.value.teamStrictPositionMethod,
             avoid_conflict: autoOptions.value.teamStrictAvoidConflict,
+            conflict_weights: {
+              institution: autoOptions.value.teamStrictConflictInstitutionWeight,
+              past_opponent: autoOptions.value.teamStrictConflictPastOpponentWeight,
+            },
           }
+        : autoOptions.value.teamAlgorithm === 'powerpair'
+          ? {
+              odd_bracket: autoOptions.value.teamPowerpairOddBracket,
+              pairing_method: autoOptions.value.teamPowerpairPairingMethod,
+              avoid_conflicts: autoOptions.value.teamPowerpairAvoidConflicts,
+              conflict_weights: {
+                institution: autoOptions.value.teamPowerpairConflictInstitutionWeight,
+                past_opponent: autoOptions.value.teamPowerpairConflictPastOpponentWeight,
+              },
+              max_swap_iterations: autoOptions.value.teamPowerpairMaxSwapIterations,
+            }
+        : autoOptions.value.teamAlgorithm === 'break'
+          ? {}
         : {
             method: autoOptions.value.teamMethod,
             filters: autoOptions.value.teamFilters,
@@ -1016,6 +1363,15 @@ async function requestAllocation() {
       )
       return
     }
+    if (autoOptions.value.teamAlgorithm === 'break' && requestScope.value !== 'teams') {
+      requestError.value = t('ブレイク生成は対象をチームに設定してください。')
+      return
+    }
+    const snapshotId = String(compiledStore.compiled?._id ?? '').trim()
+    if (!snapshotId) {
+      requestError.value = t('集計結果がありません。先に集計を実行してください。')
+      return
+    }
     const options = {
       team_allocation_algorithm: autoOptions.value.teamAlgorithm,
       team_allocation_algorithm_options: teamOptions,
@@ -1032,6 +1388,7 @@ async function requestAllocation() {
     const basePayload: Record<string, any> = {
       tournamentId: tournamentId.value,
       round: round.value,
+      snapshotId,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
     }
@@ -1039,7 +1396,8 @@ async function requestAllocation() {
     let endpoint = '/allocations'
     let payload = basePayload
     if (requestScope.value === 'teams') {
-      endpoint = '/allocations/teams'
+      endpoint =
+        autoOptions.value.teamAlgorithm === 'break' ? '/allocations/break' : '/allocations/teams'
     } else if (requestScope.value === 'adjudicators') {
       endpoint = '/allocations/adjudicators'
       payload = { ...basePayload, allocation: allocation.value }
@@ -1052,6 +1410,14 @@ async function requestAllocation() {
     const data = res.data?.data
     if (data?.allocation) {
       allocation.value = cloneAllocation(data.allocation)
+      if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
+        generatedUserDefinedData.value =
+          data.userDefinedData && typeof data.userDefinedData === 'object'
+            ? (data.userDefinedData as Record<string, any>)
+            : null
+      } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
+        generatedUserDefinedData.value = null
+      }
       showAutoGenerateModal.value = false
     }
   } catch (err: any) {
@@ -1133,9 +1499,15 @@ const compiledAdjMap = computed(() => {
 type AllocationPreviewRow = {
   key: string
   matchIndex: number
+  venuePriority: number
   venueLabel: string
   govName: string
   oppName: string
+  govWin: number
+  oppWin: number
+  winLabel: string
+  winTotal: number
+  winGap: number
   chairsLabel: string
   panelsLabel: string
   traineesLabel: string
@@ -1150,21 +1522,56 @@ const previewRows = computed<AllocationPreviewRow[]>(() => {
   return allocation.value.map((row, index) => {
     const govId = row.teams.gov
     const oppId = row.teams.opp
+    const govResult = compiledTeamMap.value.get(String(govId))
+    const oppResult = compiledTeamMap.value.get(String(oppId))
+    const govWin = Number(govResult?.win)
+    const oppWin = Number(oppResult?.win)
+    const normalizedGovWin = Number.isFinite(govWin) ? govWin : 0
+    const normalizedOppWin = Number.isFinite(oppWin) ? oppWin : 0
     const venueLabel = row.venue ? venueName(row.venue) : t('会場未定')
     const govName = govId ? teamName(govId) : t('未選択')
     const oppName = oppId ? teamName(oppId) : t('未選択')
     return {
       key: `${index}-${govId}-${oppId}-${row.venue ?? ''}`,
       matchIndex: index,
+      venuePriority: venuePriority(row.venue),
       venueLabel,
       govName,
       oppName,
+      govWin: normalizedGovWin,
+      oppWin: normalizedOppWin,
+      winLabel: `${normalizedGovWin}-${normalizedOppWin}`,
+      winTotal: normalizedGovWin + normalizedOppWin,
+      winGap: Math.abs(normalizedGovWin - normalizedOppWin),
       chairsLabel: adjudicatorListLabel(row.chairs ?? []),
       panelsLabel: adjudicatorListLabel(row.panels ?? []),
       traineesLabel: adjudicatorListLabel(row.trainees ?? []),
     }
   })
 })
+
+const previewRowsByVenue = computed<AllocationPreviewRow[]>(() =>
+  previewRows.value
+    .slice()
+    .sort((left, right) => {
+      if (left.venuePriority !== right.venuePriority) return left.venuePriority - right.venuePriority
+      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
+      if (venueCompare !== 0) return venueCompare
+      return left.matchIndex - right.matchIndex
+    })
+)
+
+const previewRowsByWin = computed<AllocationPreviewRow[]>(() =>
+  previewRows.value
+    .slice()
+    .sort((left, right) => {
+      if (left.winTotal !== right.winTotal) return right.winTotal - left.winTotal
+      if (left.winGap !== right.winGap) return left.winGap - right.winGap
+      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
+      if (venueCompare !== 0) return venueCompare
+      return left.matchIndex - right.matchIndex
+    })
+)
 
 function teamNameById(id: string) {
   return teams.teams.find((team) => team._id === id)?.name ?? id
@@ -1781,6 +2188,14 @@ function venueName(id: string) {
   return venues.venues.find((venue) => venue._id === id)?.name ?? id
 }
 
+function venuePriority(id?: string) {
+  if (!id) return Number.MAX_SAFE_INTEGER
+  const venue = venues.venues.find((item) => item._id === id)
+  const detail = venue ? detailForRound(venue.details, round.value) : null
+  const priority = Number((detail as any)?.priority)
+  return Number.isFinite(priority) ? priority : Number.MAX_SAFE_INTEGER
+}
+
 const unassignedAdjudicators = computed(() => {
   const assigned = new Set<string>()
   allocation.value.forEach((row) => {
@@ -1791,10 +2206,18 @@ const unassignedAdjudicators = computed(() => {
   return availableAdjudicators.value.filter((adj) => !assigned.has(adj._id))
 })
 
-async function deleteCurrentDraw() {
+function openDeleteDrawModal() {
+  if (!currentDraw.value?._id || isLoading.value) return
+  showDeleteDrawModal.value = true
+}
+
+function closeDeleteDrawModal() {
+  showDeleteDrawModal.value = false
+}
+
+async function confirmDeleteCurrentDraw() {
   if (!currentDraw.value?._id) return
-  const ok = window.confirm(t('このドローを削除しますか？'))
-  if (!ok) return
+  closeDeleteDrawModal()
   const deleted = await draws.deleteDraw(currentDraw.value._id, tournamentId.value)
   if (deleted) {
     syncFromDraw(null)
@@ -1830,6 +2253,15 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => autoOptions.value.teamAlgorithm,
+  (next) => {
+    if (next === 'break') {
+      requestScope.value = 'teams'
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -1841,10 +2273,11 @@ watch(
 
 .section-header {
   align-items: center;
+  gap: var(--space-2);
 }
 
 .header-reload {
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .action-row {
@@ -1985,6 +2418,19 @@ watch(
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+}
+
+.preview-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.preview-lane-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-surface);
 }
 
 .draw-preview-table {
@@ -2322,6 +2768,50 @@ watch(
 
 .auto-modal {
   gap: var(--space-3);
+}
+
+.import-modal {
+  width: min(860px, 100%);
+}
+
+.import-info {
+  margin-top: -4px;
+}
+
+.import-textarea {
+  min-height: 180px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace);
+}
+
+.import-example {
+  margin: 0;
+  white-space: pre-wrap;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.csv-file-input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: var(--color-surface);
+}
+
+.csv-file-input::file-selector-button {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 10px;
+  margin-right: 10px;
 }
 
 .modal-actions {

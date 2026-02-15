@@ -44,6 +44,8 @@ describe('compiled store', () => {
     mockedApi.post.mockResolvedValueOnce({
       data: {
         data: {
+          _id: 'snapshot-001',
+          createdAt: '2026-02-13T00:00:00.000Z',
           payload: {
             compile_options: options,
             compiled_team_results: [{ id: 'team-1' }],
@@ -65,6 +67,8 @@ describe('compiled store', () => {
       options,
     })
     expect(result).toEqual({
+      _id: 'snapshot-001',
+      createdAt: '2026-02-13T00:00:00.000Z',
       compile_options: options,
       compiled_team_results: [{ id: 'team-1' }],
     })

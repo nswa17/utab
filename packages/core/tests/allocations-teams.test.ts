@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { standard } from '../src/allocations/teams.js'
+import { filterByInstitution } from '../src/allocations/teams/filters.js'
 
 describe('allocations/teams', () => {
   it('creates a draw allocation for two teams', () => {
@@ -37,5 +38,30 @@ describe('allocations/teams', () => {
     expect(draw.r).toBe(1)
     expect(draw.allocation).toHaveLength(1)
     expect(draw.allocation[0].teams).toEqual([2, 1])
+  })
+
+  it('uses institution priorities when comparing institution conflicts', () => {
+    const baseTeam = {
+      id: 10,
+      details: [{ r: 1, institutions: [1, 2] }],
+    }
+    const candidateA = {
+      id: 11,
+      details: [{ r: 1, institutions: [1] }],
+    }
+    const candidateB = {
+      id: 12,
+      details: [{ r: 1, institutions: [2] }],
+    }
+    const compared = filterByInstitution(baseTeam, candidateA, candidateB, {
+      r: 1,
+      config: {
+        institution_priority_map: {
+          1: 1,
+          2: 4,
+        },
+      },
+    })
+    expect(compared).toBe(-1)
   })
 })

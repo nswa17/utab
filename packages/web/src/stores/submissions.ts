@@ -41,6 +41,13 @@ export interface FeedbackSubmissionPayload {
   manner?: number
 }
 
+export interface UpdateSubmissionPayload {
+  tournamentId: string
+  submissionId: string
+  round?: number
+  payload?: Record<string, unknown>
+}
+
 export const useSubmissionsStore = defineStore('submissions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -163,6 +170,28 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     }
   }
 
+  async function updateSubmission(payload: UpdateSubmissionPayload) {
+    beginRequest()
+    error.value = null
+    try {
+      const res = await api.patch(`/submissions/${payload.submissionId}`, {
+        tournamentId: payload.tournamentId,
+        round: payload.round,
+        payload: payload.payload,
+      })
+      const updated = res.data?.data ?? null
+      if (updated?._id) {
+        submissions.value = submissions.value.map((item) => (item._id === updated._id ? updated : item))
+      }
+      return updated
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
+      return null
+    } finally {
+      endRequest()
+    }
+  }
+
   return {
     loading,
     error,
@@ -172,5 +201,6 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     clearSubmissions,
     submitBallot,
     submitFeedback,
+    updateSubmission,
   }
 })

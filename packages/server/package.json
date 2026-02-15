@@ -9,7 +9,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -b",
     "start": "node dist/server.js",
-    "test": "vitest run",
+    "test": "node ../../scripts/ensure-node20.cjs && vitest run",
     "lint": "eslint src --ext .ts",
     "reset-styles": "tsx src/scripts/reset-styles.ts",
     "migrate-security-phase8": "tsx src/scripts/migrate-security-phase8.ts",

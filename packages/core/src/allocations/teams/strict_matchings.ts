@@ -1,7 +1,8 @@
 import { clone } from 'lodash-es'
 import { sillyLogger } from '../../general/loggers.js'
-import { shuffle, combinations, isin } from '../../general/math.js'
+import { shuffle, combinations, isin, countCommon } from '../../general/math.js'
 import { decidePositions, findOne as findOneResult } from '../sys.js'
+import { accessDetail } from '../../general/tools.js'
 
 function addInformationToDivision(
   division: Array<{ win: number; teams: number[] }>,
@@ -174,8 +175,210 @@ function match(div: any[], pullupFunc: Function, config: any) {
   return matchingPool
 }
 
-function resolveDp(_teams: any[], matching: any[], _compiledTeamResults: any[]) {
-  return matching
+function normalizeInstitutionPriorityMap(value: unknown): Record<number, number> {
+  if (!value || typeof value !== 'object') return {}
+  const out: Record<number, number> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([key, raw]) => {
+    const parsedKey = Number(key)
+    const parsedValue = Number(raw)
+    if (!Number.isFinite(parsedKey)) return
+    out[parsedKey] = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 1
+  })
+  return out
+}
+
+function weightedCommonScore(
+  left: number[],
+  right: number[],
+  priorityMap: Record<number, number>
+): number {
+  const rightSet = new Set(right)
+  const common = Array.from(new Set(left.filter((value) => rightSet.has(value))))
+  return common.reduce((total, id) => total + (priorityMap[id] ?? 1), 0)
+}
+
+function normalizedWeight(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function pairConflictScore(
+  teamAId: number,
+  teamBId: number,
+  teamById: Map<number, any>,
+  resultById: Map<number, any>,
+  round: number,
+  institutionPriorityMap: Record<number, number>,
+  conflictWeights: { institution: number; past_opponent: number }
+): number {
+  const teamA = teamById.get(teamAId)
+  const teamB = teamById.get(teamBId)
+  const institutionsA = (accessDetail(teamA, round)?.institutions ?? []) as number[]
+  const institutionsB = (accessDetail(teamB, round)?.institutions ?? []) as number[]
+  const institutionOverlap =
+    Object.keys(institutionPriorityMap).length > 0
+      ? weightedCommonScore(institutionsA, institutionsB, institutionPriorityMap)
+      : countCommon(institutionsA, institutionsB)
+
+  const pastA = Array.isArray(resultById.get(teamAId)?.past_opponents)
+    ? (resultById.get(teamAId)?.past_opponents as number[])
+    : []
+  const pastB = Array.isArray(resultById.get(teamBId)?.past_opponents)
+    ? (resultById.get(teamBId)?.past_opponents as number[])
+    : []
+  const pastOverlap =
+    pastA.filter((id) => id === teamBId).length + pastB.filter((id) => id === teamAId).length
+
+  return (
+    conflictWeights.institution * institutionOverlap +
+    conflictWeights.past_opponent * pastOverlap
+  )
+}
+
+function matchConflictScore(
+  match: number[],
+  teamById: Map<number, any>,
+  resultById: Map<number, any>,
+  round: number,
+  institutionPriorityMap: Record<number, number>,
+  conflictWeights: { institution: number; past_opponent: number }
+): number {
+  let score = 0
+  for (let i = 0; i < match.length; i += 1) {
+    for (let j = i + 1; j < match.length; j += 1) {
+      score += pairConflictScore(
+        match[i],
+        match[j],
+        teamById,
+        resultById,
+        round,
+        institutionPriorityMap,
+        conflictWeights
+      )
+    }
+  }
+  return score
+}
+
+function resolveDp(
+  teams: any[],
+  matching: number[][],
+  compiledTeamResults: any[],
+  {
+    round,
+    config,
+    conflict_weights,
+    max_swap_iterations = 24,
+  }: {
+    round: number
+    config: any
+    conflict_weights?: { institution?: number; past_opponent?: number }
+    max_swap_iterations?: number
+  }
+) {
+  const teamById = new Map<number, any>(teams.map((team) => [team.id, team]))
+  const resultById = new Map<number, any>(
+    (compiledTeamResults as any[]).map((result) => [Number(result.id), result])
+  )
+  const institutionPriorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
+  const conflictWeights = {
+    institution: normalizedWeight(conflict_weights?.institution, 1),
+    past_opponent: normalizedWeight(conflict_weights?.past_opponent, 1),
+  }
+  if (conflictWeights.institution === 0 && conflictWeights.past_opponent === 0) {
+    return matching
+  }
+
+  const swapsLimit = Math.max(0, Math.floor(Number(max_swap_iterations) || 0))
+  let next = matching.map((match) => [...match])
+  for (let iteration = 0; iteration < swapsLimit; iteration += 1) {
+    let best:
+      | {
+          improvement: number
+          leftIndex: number
+          rightIndex: number
+          leftPos: number
+          rightPos: number
+        }
+      | null = null
+
+    for (let leftIndex = 0; leftIndex < next.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < next.length; rightIndex += 1) {
+        const leftMatch = next[leftIndex]
+        const rightMatch = next[rightIndex]
+        if (!Array.isArray(leftMatch) || !Array.isArray(rightMatch)) continue
+
+        const before =
+          matchConflictScore(
+            leftMatch,
+            teamById,
+            resultById,
+            round,
+            institutionPriorityMap,
+            conflictWeights
+          ) +
+          matchConflictScore(
+            rightMatch,
+            teamById,
+            resultById,
+            round,
+            institutionPriorityMap,
+            conflictWeights
+          )
+
+        for (let leftPos = 0; leftPos < leftMatch.length; leftPos += 1) {
+          for (let rightPos = 0; rightPos < rightMatch.length; rightPos += 1) {
+            const swappedLeft = [...leftMatch]
+            const swappedRight = [...rightMatch]
+            ;[swappedLeft[leftPos], swappedRight[rightPos]] = [
+              swappedRight[rightPos],
+              swappedLeft[leftPos],
+            ]
+            const after =
+              matchConflictScore(
+                swappedLeft,
+                teamById,
+                resultById,
+                round,
+                institutionPriorityMap,
+                conflictWeights
+              ) +
+              matchConflictScore(
+                swappedRight,
+                teamById,
+                resultById,
+                round,
+                institutionPriorityMap,
+                conflictWeights
+              )
+            const improvement = before - after
+            if (improvement <= 0) continue
+            if (
+              !best ||
+              improvement > best.improvement ||
+              (improvement === best.improvement &&
+                (leftIndex < best.leftIndex ||
+                  (leftIndex === best.leftIndex &&
+                    (rightIndex < best.rightIndex ||
+                      (rightIndex === best.rightIndex &&
+                        (leftPos < best.leftPos ||
+                          (leftPos === best.leftPos && rightPos < best.rightPos)))))))
+            ) {
+              best = { improvement, leftIndex, rightIndex, leftPos, rightPos }
+            }
+          }
+        }
+      }
+    }
+
+    if (!best) break
+    ;[next[best.leftIndex][best.leftPos], next[best.rightIndex][best.rightPos]] = [
+      next[best.rightIndex][best.rightPos],
+      next[best.leftIndex][best.leftPos],
+    ]
+  }
+
+  return next
 }
 
 export function strictMatching(
@@ -187,6 +390,17 @@ export function strictMatching(
     pullup_method = 'fromtop',
     position_method = 'adjusted',
     avoid_conflict = true,
+    conflict_weights,
+    round = 1,
+    max_swap_iterations = 24,
+  }: {
+    pairing_method?: string
+    pullup_method?: string
+    position_method?: string
+    avoid_conflict?: boolean
+    conflict_weights?: { institution?: number; past_opponent?: number }
+    round?: number
+    max_swap_iterations?: number
   } = {}
 ) {
   sillyLogger(strictMatching, arguments, 'draws')
@@ -210,7 +424,14 @@ export function strictMatching(
   const matching = preMatching.map((ts: number[]) =>
     positionFuncs[position_method](ts, compiledTeamResults, config)
   )
-  const finalMatching = avoid_conflict ? resolveDp(teams, matching, compiledTeamResults) : matching
+  const finalMatching = avoid_conflict
+    ? resolveDp(teams, matching, compiledTeamResults, {
+        round,
+        config,
+        conflict_weights,
+        max_swap_iterations,
+      })
+    : matching
   return finalMatching
 }
 

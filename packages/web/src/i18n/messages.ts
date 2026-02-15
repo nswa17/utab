@@ -8,20 +8,62 @@ const en = {
   'CSV例: Room 101': 'CSV example: Room 101',
   'CSV例: Speaker A': 'CSV example: Speaker A',
   'CSV例: Institution A': 'CSV example: Institution A',
+  'CSV例: Institution A,region,2': 'CSV example: Institution A,region,2',
+  受賞者CSV: 'Awardees CSV',
+  参加者CSV: 'Participants CSV',
   CSV取り込み: 'Import CSV',
   CSV取り込みに失敗しました: 'CSV import failed.',
+  'CSV/TSVファイル': 'CSV/TSV file',
+  'CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。':
+    'Paste CSV/TSV to bulk-apply adjudicator assignments for this round.',
+  ジャッジ組み合わせ取込: 'Import adjudicator pairings',
+  取り込み方式: 'Import mode',
+  取り込みデータ: 'Import data',
+  取り込み: 'Import',
+  置換: 'Replace',
+  追記: 'Append',
+  '例: match,chairs,panels,trainees': 'Example: match,chairs,panels,trainees',
+  'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）':
+    'Format: (1) match,chairs,panels,trainees (match is 1-based) (2) gov,opp,chairs,panels,trainees (team name/ID).',
+  'ドローがロックされているため取り込みできません。': 'Cannot import while the draw is locked.',
+  '取り込み可能な行がありません。': 'No importable rows found.',
+  'ジャッジ組み合わせを {count} 試合に取り込みました。':
+    'Imported adjudicator assignments for {count} matches.',
   English: 'English',
   'Evaluator in Team': 'Evaluator in Team',
   Govマージン: 'Gov Margin',
   Gov勝利: 'Gov Win',
   ID: 'ID',
   JSON形式が正しくありません: 'Invalid JSON format',
+  編集モード: 'Edit mode',
+  フォーム: 'Form',
+  提出者ID: 'Submitted entity ID',
+  合計スコア: 'Total score',
+  'チーム A Matter': 'Team A Matter',
+  'チーム A Manner': 'Team A Manner',
+  'チーム B Matter': 'Team B Matter',
+  'チーム B Manner': 'Team B Manner',
+  'チーム A スコア': 'Team A scores',
+  'チーム B スコア': 'Team B scores',
+  '数値はカンマ区切りで入力してください。例: 75, 74, 73':
+    'Enter numbers as comma-separated values, e.g. 75, 74, 73.',
+  '{label} に数値以外が含まれています。': '{label} contains non-numeric values.',
+  'チームIDを確認してください。': 'Check team IDs.',
+  '勝者はチームA/チームBのいずれかを指定してください。':
+    'Winner must be either Team A or Team B.',
+  'チーム A の Matter/Manner 件数を一致させてください。':
+    'Team A Matter/Manner counts must match.',
+  'チーム B の Matter/Manner 件数を一致させてください。':
+    'Team B Matter/Manner counts must match.',
+  '前回送信した内容を読み込みました。必要に応じて修正して再送信してください。':
+    'Loaded your previous submission. Edit and resubmit if needed.',
   Manner: 'Manner',
   Matter: 'Matter',
   'Matter/Manner採点': 'Matter/Manner scoring',
   POI: 'POI',
   POI合計: 'Total POI',
   POI賞: 'POI Award',
+  'Power Pair': 'Power Pair',
   Preev: 'Pre-evaluation',
   'Preev: {value}': 'Pre-evaluation: {value}',
   事前評価: 'Pre-evaluation',
@@ -41,10 +83,12 @@ const en = {
   '{a} と {b} は過去に対戦済みです': '{a} and {b} have faced before',
   '{count} 件': '{count} items',
   '{label} 結果': '{label} results',
+  '{category} / 優先度 {priority}': '{category} / Priority {priority}',
   '{name} が片側に偏っています': 'Side imbalance for {name}',
   '{name} は利用不可': '{name} is unavailable',
   あなたの情報: 'Your details',
   いいえ: 'No',
+  キャンセル: 'Cancel',
   ここにチームをドロップ: 'Drop team here',
   ここに会場をドロップ: 'Drop venue here',
   'このドローを削除しますか？': 'Delete this draw?',
@@ -71,12 +115,128 @@ const en = {
     'Manage teams, adjudicators, venues, and institutions.',
   'チーム・ジャッジ・スピーカー・所属機関・会場を管理します。':
     'Manage teams, adjudicators, speakers, institutions, and venues.',
+  大会セットアップ: 'Tournament setup',
+  ラウンド運営: 'Round operations',
+  '結果確定・レポート': 'Finalize & reports',
+  ラウンドデフォルト設定: 'Round defaults',
+  '新規ラウンド作成時に適用される標準設定です。':
+    'Default settings applied when creating a new round.',
+  ブレイク基本方針: 'Break defaults',
+  ラウンドデフォルトを保存: 'Save round defaults',
+  '新規ラウンドは大会セットアップのラウンドデフォルトを継承します。':
+    'New rounds inherit round defaults from tournament setup.',
+  ラウンド運営ハブ: 'Round operations hub',
+  運営ステップ: 'Operation steps',
+  '運営は左から順に進みます。後続ステップは前段の完了後に実行してください。':
+    'Proceed from left to right. Run later steps after earlier steps are completed.',
+  実行可能: 'Ready',
+  前段階待ち: 'Waiting',
+  開始ステップ: 'Start',
+  '前段: {task}': 'Depends on: {task}',
+  前ラウンド集計: 'Previous-round compile',
+  '対戦生成に必要な前ラウンド集計が不足しています。未集計: {rounds}':
+    'Missing previous-round compile data required for draw generation. Missing: {rounds}',
+  'このラウンドには前提となる集計ラウンドがありません。':
+    'This round has no prerequisite rounds for compile.',
+  '公開後に提出を回収します。先に公開/ロックで公開してください。':
+    'Collect submissions after publication. Publish/lock first.',
+  '提出回収後に集計を実行します。': 'Run compile after collecting submissions.',
+  集計設定: 'Compile settings',
+  表示スナップショット: 'Displayed snapshot',
+  '表示中: {label}': 'Showing: {label}',
+  '集計スナップショットはまだありません。': 'No compiled snapshots yet.',
+  '必要な場合のみ詳細再計算を実行してください。':
+    'Run detailed recomputation only when needed.',
+  詳細再計算を開く: 'Open detailed recomputation',
+  詳細再計算を閉じる: 'Close detailed recomputation',
+  新画面へ移動: 'Open new flow',
+  読み取り専用: 'Read only',
+  '旧導線は読み取り専用です。新画面で操作してください。':
+    'Legacy flow is read-only. Use the new flow for operations.',
+  提出データ一本化ガイド: 'Submission-first migration guide',
+  '提出一覧で不足提出を解消し、重複提出を整理します。':
+    'Resolve missing submissions and clean duplicate submissions in the submissions page.',
+  '生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。':
+    'If raw-result corrections are needed, reflect them in submission edits and recompile.',
+  '提出データソースに戻して再計算し、確定snapshotを選択して出力します。':
+    'Switch back to submission source, recompile, then output from a finalized snapshot.',
+  '表示中スナップショットは「生結果データ」です（例外モード）。':
+    'The displayed snapshot was compiled from raw results (exception mode).',
+  ラウンド運営へ: 'Open round operations',
+  次ラウンド対戦生成: 'Next-round pairing',
+  '公開/ロック': 'Publish / Lock',
+  レポートを開く: 'Open reports',
+  対戦表設定を開く: 'Open draw settings',
+  生結果を開く: 'Open raw results',
+  ラウンド詳細設定へ: 'Open round settings',
+  'まず対戦表を生成してください。': 'Generate the draw first.',
+  'ラウンドを選択してください。': 'Select a round.',
+  'このラウンドまでを提出データで集計します。':
+    'Compile using submission data up to this round.',
+  'このラウンドまでを生結果データで集計します。':
+    'Compile using raw results up to this round.',
+  '対戦生成と保存は対戦表設定で実行します。':
+    'Generate and save pairings from draw settings.',
+  '集計対象ラウンド: {rounds}': 'Compile rounds: {rounds}',
+  '次ラウンド: {round}': 'Next round: {round}',
+  '対象ラウンド: {round}': 'Target round: {round}',
+  '次ラウンドの対戦を生成': 'Generate next-round draw',
+  'このラウンドの対戦を生成': 'Generate draw for this round',
+  '対戦表設定（この画面内）': 'Draw settings (inline)',
+  '生結果（この画面内）': 'Raw results (inline)',
+  '提出一覧（この画面内）': 'Submissions (inline)',
+  'レポート（この画面内）': 'Reports (inline)',
+  強制実行: 'Force run',
+  強制実行の確認: 'Confirm force run',
+  強制実行する: 'Force run now',
+  '強制実行（生結果）': 'Force run (raw results)',
+  '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
+    'Force run uses raw-result source. Ranking may become unstable when it differs from submissions or submitter data is incomplete.',
+  '未提出・重複提出があると結果が偏る可能性があります。':
+    'Missing or duplicate submissions may bias the results.',
+  '提出者ID不足のデータは集計漏れ・誤集計の原因になります。':
+    'Rows missing submitter IDs may cause omitted or incorrect aggregation.',
+  '提出ソースが混在している場合、直近の入力で上書きされることがあります。':
+    'Mixed submission sources can overwrite each other with latest inputs.',
+  '強制実行では生結果データを使用します。未提出・提出者不足・入力揺れがあると順位が不安定になる可能性があります。続行しますか？':
+    'Force run uses raw results. Missing submissions/submitter gaps/input inconsistencies may destabilize rankings. Continue?',
+  '次ラウンドが未作成です。先にラウンドを追加してください。':
+    'The next round does not exist yet. Create it first.',
+  公開設定を保存: 'Save publication settings',
+  準備中: 'Preparing',
+  回収中: 'Collecting',
+  集計済み: 'Compiled',
+  生成済み: 'Generated',
+  確定: 'Finalized',
+  '集計が完了しました。': 'Compilation completed.',
+  '対戦を生成しました。': 'Draw generated.',
+  '公開状態を更新しました。': 'Publication status updated.',
+  '集計に失敗しました。': 'Compilation failed.',
+  '集計結果がありません。先に集計を実行してください。':
+    'No compiled snapshot is available. Run compilation first.',
+  '集計結果を表示するデータがありません。': 'No rows are available for this compiled result.',
+  '対戦生成に失敗しました。': 'Failed to generate draw.',
+  '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
+  '読み込みに失敗しました。': 'Failed to load data.',
+  '未提出のチーム評価があります（提出 {submitted}/{expected}）。提出一覧を確認してください。':
+    'Some ballots are still missing (submitted {submitted}/{expected}). Check submissions.',
+  '提出者情報が不足したチーム評価が {count} 件あります。提出一覧で提出者を補完してください。':
+    '{count} ballots have missing submitter information. Fix submitter data in submissions.',
+  '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
+    'Cannot run compile because selected round ballots are incomplete.',
+  '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
+    'Cannot generate next-round draw because selected round ballots are incomplete.',
+  '最新スナップショットに選択ラウンドが含まれていません。先に集計を実行してください。':
+    'Selected round is not included in the latest snapshot. Run compile first.',
+  '次ラウンド生成では最新スナップショットを参照します。':
+    'Next-round generation will use the latest snapshot.',
   オリジナル: 'Original',
   キー: 'Key',
   キー生成: 'Generate keys',
   クリア: 'Clear',
   クレジット: 'Credit',
   コメント: 'Comment',
+  カテゴリ: 'Category',
   サイド: 'Side',
   サイド偏り: 'Side bias',
   サイド偏り回避: 'Avoid side bias',
@@ -152,6 +312,7 @@ const en = {
   チーム方式: 'Team method',
   'チーム/スピーカーからのフィードバック入力を有効にします。':
     'Enable feedback submissions from teams/speakers.',
+  ドロー削除: 'Delete draw',
   'データが不足しています。': 'Not enough data.',
   トレーニー: 'Trainee',
   'トレーニー (ドラッグ)': 'Trainee (drag)',
@@ -207,6 +368,11 @@ const en = {
   'ラウンドを削除しますか？': 'Delete this round?',
   ラウンド一覧: 'Rounds list',
   ラウンド名: 'Round name',
+  提出種別: 'Submission type',
+  対戦: 'Match',
+  対象ジャッジ: 'Target adjudicator',
+  ロール: 'Role',
+  更新日時: 'Updated at',
   ラウンド番号: 'Round number',
   ラウンド編集: 'Edit round',
   ラウンド管理: 'Round management',
@@ -258,11 +424,25 @@ const en = {
   優先度: 'Priority',
   元に戻す: 'Revert',
   全体: 'All',
+  奇数ブラケット処理: 'Odd bracket handling',
   全削除: 'Delete all',
   公平性: 'Fairness',
   '公開されているラウンドを選択してください。': 'Select a published round.',
   公開中の大会: 'Open tournaments',
   再読み込み: 'Reload',
+  '{target}を再読み込み': 'Reload {target}',
+  '最終更新: {time}': 'Last updated: {time}',
+  '対戦表更新: {time}': 'Draw updated: {time}',
+  通常ラウンド: 'Standard round',
+  通常運用: 'Standard operation',
+  例外運用: 'Exceptional operation',
+  例外モード: 'Exception mode',
+  高度な運用を開く: 'Open advanced mode',
+  高度な運用を閉じる: 'Close advanced mode',
+  '通常運用は提出データを使用します。生結果データは、例外的な補正が必要な場合のみ利用してください。':
+    'Standard operation uses submission data. Use raw results only for exceptional corrections.',
+  '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。':
+    'Exception mode is active. Recomputing with raw results. Return to submission data for standard operation.',
   凡例: 'Legend',
   出席: 'Attendance',
   '利用不可 (出欠/利用設定)': 'Unavailable (attendance/settings)',
@@ -277,6 +457,8 @@ const en = {
   勝利数の差が大きい: 'Large win count difference',
   勝者: 'Winner',
   勝者を選択: 'Select winner',
+  ラウンド削除: 'Delete round',
+  'ラウンド {round} を削除しますか？': 'Delete round {round}?',
   引き分け: 'Draw',
   '未選択で引き分けとして送信できます。': 'Leave unselected to submit as a draw.',
   '勝者（{round}）': 'Winner in {round}',
@@ -372,6 +554,7 @@ const en = {
   対象ラウンド: 'Target rounds',
   平均: 'Average',
   強さ: 'Strength',
+  機関衝突重み: 'Institution conflict weight',
   '強さ: {value}': 'Strength: {value}',
   '推奨範囲: 0〜10': 'Recommended range: 0 to 10',
   '入力範囲: {from}〜{to} (刻み {unit})': 'Range: {from} to {to} (step {unit})',
@@ -391,6 +574,8 @@ const en = {
   提出管理: 'Submission management',
   提出データ: 'Submission data',
   提出データ閲覧: 'View submission data',
+  Raw結果: 'Raw results',
+  参加: 'Include',
   提出一覧: 'Submissions',
   提出状況: 'Submission status',
   '提出がありません。': 'No submissions.',
@@ -405,11 +590,47 @@ const en = {
   政府: 'Government',
   '政府 (ドラッグ)': 'Government (drag)',
   新規ラウンド作成: 'Create new round',
+  'ラウンド作成は大会セットアップで行います。':
+    'Create rounds from tournament setup.',
+  'ラウンド番号を確認してください。': 'Check the round number.',
+  '同じラウンド番号が既に存在します。': 'That round number already exists.',
+  'ラウンド追加に失敗しました。': 'Failed to add the round.',
+  'ラウンド更新に失敗しました。': 'Failed to update the round.',
   新規追加: 'Add new',
   新規大会作成: 'Create new tournament',
   '新規生結果 (JSON)': 'New raw result (JSON)',
   生結果: 'Raw results',
   生結果データ: 'Raw result data',
+  ブレイク: 'Break',
+  勝敗点: 'Wins',
+  ブレイク設定: 'Break settings',
+  ブレイクラウンドとして扱う: 'Enable break round mode',
+  '有効化すると、参加チーム確定時に Team.details[r].available を同期します。':
+    'When enabled, Team.details[r].available is synchronized when participants are finalized.',
+  参照ラウンド: 'Source rounds',
+  '未選択時は直前までの全ラウンドを参照します。':
+    'If none selected, all previous rounds are used.',
+  ブレイク人数: 'Break size',
+  境界同点の扱い: 'Cutoff tie policy',
+  手動選抜: 'Manual selection',
+  同点は全員含める: 'Include all tied teams',
+  人数を厳密適用: 'Strict cutoff size',
+  シード: 'Seed',
+  シード方式: 'Seeding',
+  'High-Low (1 vs N)': 'High-Low (1 vs N)',
+  '候補更新中...': 'Refreshing candidates...',
+  ブレイク候補を更新: 'Refresh break candidates',
+  候補順位でシード再設定: 'Reset seeds from candidate ranking',
+  ブレイク参加を保存: 'Save break participants',
+  'ブレイク生成は対象をチームに設定してください。':
+    'Set scope to Teams when using break generation.',
+  'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。':
+    'Generates matchups from round break settings in seed order (1 vs N, 2 vs N-1 ...).',
+  '選択中 {selected}/{total}': 'Selected {selected}/{total}',
+  'ブレイク候補の取得に失敗しました。': 'Failed to load break candidates.',
+  'ブレイク設定の保存に失敗しました。': 'Failed to save break settings.',
+  'シードは1以上の整数で入力してください。': 'Seed must be an integer of 1 or greater.',
+  'シード番号が重複しています。': 'Seed numbers must be unique.',
   新規登録: 'Sign up',
   '既存のドローがないため、adjudicators/venues 生成には先にチーム割り当てが必要です。':
     'No existing draw. Team allocation is required before generating adjudicators/venues.',
@@ -466,6 +687,7 @@ const en = {
   行追加: 'Add row',
   衝突: 'Conflict',
   衝突チーム: 'Conflict teams',
+  衝突回避方式: 'Conflict avoidance mode',
   衝突回避: 'Avoid conflict',
   表彰枠: 'Max ranking',
   表示: 'Show',
@@ -474,6 +696,7 @@ const en = {
   公開中: 'Public',
   装飾: 'Decorated',
   観客: 'Audience',
+  最大スワップ試行: 'Max swap attempts',
   評価する: 'Evaluate',
   タップしてフィードバック入力: 'Tap to open feedback form',
   '評価するジャッジを選択してください。': 'Select an adjudicator to evaluate.',
@@ -512,6 +735,7 @@ const en = {
   過去に対戦済み: 'Faced before',
   過去に担当済み: 'Judged before',
   過去ラウンドをすべて考慮: 'Consider all previous rounds',
+  過去対戦重み: 'Past matchup weight',
   過去対戦回避: 'Avoid past opponents',
   '選択したジャッジの割当が見つかりません。': 'Selected adjudicator assignment not found.',
   '選択したスピーカーの割当が見つかりません。': 'Selected speaker assignment not found.',
@@ -565,6 +789,10 @@ const en = {
   生成対象: 'Included labels',
   差分比較: 'Diff baseline',
   最新集計: 'Latest compiled',
+  過去の集計結果を選択: 'Select previous compile',
+  比較対象: 'Baseline target',
+  '過去の集計結果を選ぶ場合は比較対象を選択してください。':
+    'Select a baseline target when comparing with a previous compile.',
   指定compiled: 'Specific compiled',
   '比較対象 compiled ID': 'Baseline compiled ID',
   '指定compiledを選ぶ場合はIDを入力してください。':
@@ -577,8 +805,31 @@ const en = {
   '欠損サマリー: {policy} / {labels}': 'Missing data: {policy} / Labels: {labels}',
   '差分サマリー: {value}': 'Diff baseline: {value}',
   基準なし: 'No baseline',
+  '選択した過去集計: {label}': 'Selected previous compile: {label}',
+  '選択した過去集計（ID: {id}）': 'Selected previous compile (ID: {id})',
   '指定compiled（ID: {id}）': 'Specific compiled (ID: {id})',
   '最新集計（ID: {id}）': 'Latest compiled (ID: {id})',
+  '提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。':
+    'Submissions compiles submitted forms. Raw uses values edited directly in the raw results screen.',
+  'ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。':
+    'Only selected rounds are compiled. If none are selected, all rounds are included.',
+  '順位が同点のときにどの指標を先に比較するかを決めます。':
+    'Defines which metric breaks ties first when ranks are tied.',
+  'Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。':
+    'Chooses whether winnerId or scores are prioritized when determining winners from ballots.',
+  '引き分けを許可する設定のときに、各チームへ与える勝敗点です。':
+    'Points assigned to each team when a draw is allowed.',
+  '同じ提出者から複数提出がある場合の扱いです。':
+    'How duplicate submissions from the same submitter are handled.',
+  'POIの重複値を平均か最大でまとめます。':
+    'How duplicate POI values are merged (average or maximum).',
+  'Best Speakerの重複値を平均か最大でまとめます。':
+    'How duplicate Best Speaker values are merged (average or maximum).',
+  '必要データが欠けていた場合に、警告で続行するか、除外するか、エラー停止するかを選びます。':
+    'Choose whether missing required data should warn, be excluded, or stop with an error.',
+  '生成するランキングの種類を選びます。': 'Choose which ranking categories to generate.',
+  '差分比較の基準です。最新集計か、過去集計を選んで比較できます。':
+    'Sets the diff baseline. Compare with the latest compile or a selected previous compile.',
   'ヘルプ:ソース':
     'Choose submissions or raw results as the compile source. Submissions are normalized first.',
   'ヘルプ:ラウンド':
@@ -612,6 +863,7 @@ const en = {
   新規エントリー: 'New entry',
   差分なし: 'No diff',
   提出状況サマリー: 'Submission status summary',
+  コメントシートCSV: 'Comment sheet CSV',
   提出一覧を開く: 'Open submissions page',
   '提出 {submitted}/{expected} | 未提出 {missing} | 重複 {duplicates} | 不明 {unknown}':
     'Submitted {submitted}/{expected} | Missing {missing} | Duplicates {duplicates} | Unknown {unknown}',
@@ -638,6 +890,7 @@ const en = {
   検索: 'Search',
   構造化編集に切替: 'Switch to structured editor',
   機関名で検索: 'Search by institution name',
+  '例: institution / region / league': 'e.g. institution / region / league',
   次のスライド: 'Next slide',
   確認して送信: 'Confirm and submit',
   '{seconds}秒後に送信できます': 'Available in {seconds}s',
@@ -684,10 +937,17 @@ const en = {
   Win順プレビュー: 'Win-order preview',
   'CSV例: name,strength,preev,active,available,conflicts,available_r1':
     'CSV example: name,strength,preev,active,available,conflicts,available_r1',
+  'one-up-one-down': 'one-up-one-down',
   '1マッチあたりのチェア人数です。': 'Number of chairs per match.',
   '1マッチあたりのトレーニー人数です。': 'Number of trainees per match.',
   '1マッチあたりのパネル人数です。': 'Number of panels per match.',
   'ブラケット間の繰り上げ方法を指定します。': 'Configure how teams are pulled up between brackets.',
+  'パワーペアの奇数ブラケット処理です。':
+    'Odd-bracket handling method for power-paired draws.',
+  'パワーペアのブラケット内ペアリング方式です。':
+    'Pairing method used inside each power-pair bracket.',
+  'パワーペアで使う衝突回避方式です。':
+    'Conflict-avoidance mode used in power-pair draws.',
   '会場をランダムに割り当てる場合に有効にします。': 'Enable to randomize venue allocation.',
   '考慮対象にする過去ラウンドを個別に選択します。':
     'Choose past rounds to consider individually.',
@@ -695,6 +955,10 @@ const en = {
     'Pairing method for strict team allocation.',
   '同一機関や衝突指定の対戦を避けます。':
     'Avoid same-institution and conflict-marked matchups.',
+  '同一属性（機関）衝突の回避強度です。':
+    'Weight for avoiding same-attribute (institution) conflicts.',
+  '衝突回避のスワップ試行上限です。':
+    'Maximum number of swap attempts for conflict avoidance.',
   'サイド配置の方法を指定します。': 'Choose how sides are assigned.',
   'ジャッジ割り当て時に適用する制約を選択します。':
     'Select constraints for adjudicator allocation.',
@@ -708,6 +972,8 @@ const en = {
     'Ordering strategy used by the standard algorithm.',
   '過去ラウンドの履歴を使って重複対戦や偏りを抑えます。':
     'Use previous rounds to reduce repeat matchups and bias.',
+  '過去対戦の再マッチ回避強度です。':
+    'Weight for avoiding rematches against past opponents.',
   '適用する制約を複数選択できます。': 'You can select multiple constraints.',
   '同系統のジャッジが偏らないように分散させます。':
     'Scatter panels to reduce clustering of similar judges.',

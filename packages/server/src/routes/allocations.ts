@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   createAllocation,
   createAdjudicatorAllocation,
+  createBreakAllocation,
   createTeamAllocation,
   createVenueAllocation,
 } from '../controllers/allocations.js'
@@ -33,17 +34,27 @@ const baseBodySchema = z.object({
   rounds: z.array(z.number().int().min(1)).optional(),
 })
 
-const allocationBodySchema = baseBodySchema.extend({
+const baseBodyWithSnapshotSchema = baseBodySchema.extend({
+  snapshotId: z.string().min(1),
+})
+
+const allocationBodySchema = baseBodyWithSnapshotSchema.extend({
   allocation: z.array(allocationRowSchema),
 })
 
-router.post('/', requireTournamentAdmin(), validateRequest({ body: baseBodySchema }), createAllocation)
+router.post(
+  '/',
+  requireTournamentAdmin(),
+  validateRequest({ body: baseBodyWithSnapshotSchema }),
+  createAllocation
+)
 router.post(
   '/teams',
   requireTournamentAdmin(),
-  validateRequest({ body: baseBodySchema }),
+  validateRequest({ body: baseBodyWithSnapshotSchema }),
   createTeamAllocation
 )
+router.post('/break', requireTournamentAdmin(), validateRequest({ body: baseBodySchema }), createBreakAllocation)
 router.post(
   '/adjudicators',
   requireTournamentAdmin(),

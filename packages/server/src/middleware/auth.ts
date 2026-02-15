@@ -1,18 +1,9 @@
 import type { Request, RequestHandler } from 'express'
 import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
-import { TournamentMemberModel } from '../models/tournament-member.js'
 import { getTournamentAccessConfig } from '../services/tournament-access.service.js'
 
-type TournamentAccessSession = {
-  grantedAt: number
-  expiresAt: number
-  version: number
-}
-type TournamentGuardMode = 'view' | 'access'
-
-const TOURNAMENT_ACCESS_ABSOLUTE_MS = 24 * 60 * 60 * 1000
-const TOURNAMENT_ACCESS_IDLE_MS = 2 * 60 * 60 * 1000
+type Role = 'superuser' | 'organizer' | 'adjudicator' | 'speaker' | 'audience'
 
 function respondUnauthorized(res: any, message = 'Please login first') {
   res.status(401).json({ data: null, errors: [{ name: 'Unauthorized', message }] })
@@ -47,118 +38,59 @@ function getTournamentId(req: Request, paramName = 'tournamentId'): string | nul
   return toStringValue(raw)
 }
 
-function getTournamentAccessStore(req: Request): Record<string, TournamentAccessSession> {
-  if (!req.session.tournamentAccess) {
-    req.session.tournamentAccess = {}
-  }
-  return req.session.tournamentAccess
+function hasTournamentMembership(req: Request, tournamentId: string): boolean {
+  const tournaments = (req.session?.tournaments ?? []).map((id) => String(id))
+  return tournaments.includes(String(tournamentId))
 }
 
-function normalizeTournamentAccessEntry(
-  value: unknown
-): TournamentAccessSession | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const raw = value as Record<string, unknown>
-  const grantedAt = Number(raw.grantedAt)
-  const expiresAt = Number(raw.expiresAt)
-  const version = Number(raw.version)
-
-  if (!Number.isFinite(grantedAt) || !Number.isFinite(expiresAt) || !Number.isFinite(version)) {
-    return null
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
   }
-
-  return {
-    grantedAt,
-    expiresAt,
-    version,
-  }
+  return value as Record<string, unknown>
 }
 
-function calculateExpiry(grantedAt: number, now: number): number {
-  return Math.min(grantedAt + TOURNAMENT_ACCESS_ABSOLUTE_MS, now + TOURNAMENT_ACCESS_IDLE_MS)
-}
+function isTournamentPublic(auth: unknown, publicRoles: Role[]): boolean {
+  const authObject = asRecord(auth)
+  const accessObject = asRecord(authObject.access)
+  const hasAccessShape = Object.keys(accessObject).length > 0
 
-export function grantTournamentAccess(
-  req: Request,
-  tournamentId: string,
-  version: number
-): TournamentAccessSession {
-  const store = getTournamentAccessStore(req)
-  const current = normalizeTournamentAccessEntry(store[tournamentId])
-  const now = Date.now()
-  const grantedAt = current && current.version === version ? current.grantedAt : now
-  const next: TournamentAccessSession = {
-    grantedAt,
-    expiresAt: calculateExpiry(grantedAt, now),
-    version,
+  if (hasAccessShape) {
+    const access = getTournamentAccessConfig(authObject)
+    return access.required !== true
   }
-  store[tournamentId] = next
-  return next
+
+  return publicRoles.some((publicRole) => asRecord(authObject[publicRole]).required !== true)
 }
 
-export function revokeTournamentAccess(req: Request, tournamentId: string): void {
-  const store = getTournamentAccessStore(req)
-  delete store[tournamentId]
-}
-
-export function getValidTournamentAccess(
-  req: Request,
-  tournamentId: string,
-  version: number,
-  options?: { touch?: boolean }
-): TournamentAccessSession | null {
-  const touch = options?.touch !== false
-  const store = getTournamentAccessStore(req)
-  const current = normalizeTournamentAccessEntry(store[tournamentId])
-  if (!current) {
-    delete store[tournamentId]
-    return null
-  }
+function hasSessionTournamentAccess(req: Request, tournamentId: string, auth: unknown): boolean {
+  const sessionAccess = req.session?.tournamentAccess?.[String(tournamentId)]
+  if (!sessionAccess) return false
 
   const now = Date.now()
-  const absoluteDeadline = current.grantedAt + TOURNAMENT_ACCESS_ABSOLUTE_MS
-  const expired = now > current.expiresAt || now > absoluteDeadline || current.version !== version
-  if (expired) {
-    delete store[tournamentId]
-    return null
+  if (sessionAccess.expiresAt <= now) {
+    delete req.session?.tournamentAccess?.[String(tournamentId)]
+    return false
   }
 
-  if (!touch) return current
-
-  const next: TournamentAccessSession = {
-    ...current,
-    expiresAt: calculateExpiry(current.grantedAt, now),
-  }
-  store[tournamentId] = next
-  return next
-}
-
-function ensureTournamentAccess(
-  req: Request,
-  tournamentId: string,
-  version: number,
-  options: { autoGrant: boolean }
-): TournamentAccessSession | null {
-  const existing = getValidTournamentAccess(req, tournamentId, version, { touch: true })
-  if (existing) return existing
-  if (!options.autoGrant) return null
-  return grantTournamentAccess(req, tournamentId, version)
+  const config = getTournamentAccessConfig(auth)
+  return sessionAccess.version === config.version
 }
 
 export async function hasTournamentAdminAccess(req: Request, tournamentId: string): Promise<boolean> {
-  const role = req.session?.usertype
+  if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) return false
+  if (!req.session?.userId) return false
+
+  const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+  if (!tournament) return false
+
+  const role = req.session.usertype
   if (role === 'superuser') return true
-  if (!req.session?.userId || role !== 'organizer') return false
 
-  const membership = await TournamentMemberModel.findOne({
-    tournamentId: String(tournamentId),
-    userId: String(req.session.userId),
-  })
-    .select({ role: 1, _id: 0 })
-    .lean()
-    .exec()
-
-  return membership?.role === 'organizer'
+  if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+    return true
+  }
+  return false
 }
 
 export const requireAuth: RequestHandler = (req, res, next) => {
@@ -197,26 +129,50 @@ export function requireTournamentAdmin(paramName = 'tournamentId'): RequestHandl
         return
       }
 
-      if (!(await hasTournamentAdminAccess(req, tournamentId))) {
-        if (!req.session?.userId) {
-          respondUnauthorized(res)
-          return
-        }
-        respondForbidden(res, 'Tournament admin access required')
+      if (!req.session?.userId) {
+        respondUnauthorized(res)
         return
       }
 
-      next()
+      const role = req.session.usertype
+      if (role === 'superuser') {
+        next()
+        return
+      }
+
+      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+        next()
+        return
+      }
+
+      respondForbidden(res, 'Tournament admin access required')
     } catch (err) {
       next(err)
     }
   }
 }
 
-function createTournamentGuard(
-  mode: TournamentGuardMode,
-  paramName = 'tournamentId'
+export function requireTournamentView(paramName = 'tournamentId'): RequestHandler {
+  return requireTournamentRole(['audience'], {
+    sessionRoles: ['audience', 'speaker', 'adjudicator'],
+    paramName,
+  })
+}
+
+export function requireTournamentAccess(paramName = 'tournamentId'): RequestHandler {
+  return requireTournamentRole(['audience'], {
+    sessionRoles: ['audience', 'speaker', 'adjudicator'],
+    paramName,
+  })
+}
+
+export function requireTournamentRole(
+  publicRoles: Role[],
+  options?: { sessionRoles?: Role[]; paramName?: string }
 ): RequestHandler {
+  const sessionRoles = options?.sessionRoles ?? publicRoles
+  const paramName = options?.paramName ?? 'tournamentId'
+
   return async (req, res, next) => {
     try {
       const tournamentId = getTournamentId(req, paramName)
@@ -230,40 +186,45 @@ function createTournamentGuard(
         respondNotFound(res)
         return
       }
+      const authConfig = (tournament as any).auth
+      const isPublic = isTournamentPublic(authConfig, publicRoles)
 
-      if (await hasTournamentAdminAccess(req, tournamentId)) {
+      const role = req.session?.usertype
+      if (role === 'superuser') {
         next()
         return
       }
 
-      const accessConfig = getTournamentAccessConfig((tournament as any).auth)
-      const access = ensureTournamentAccess(req, tournamentId, accessConfig.version, {
-        autoGrant: !accessConfig.required,
-      })
-
-      if (mode === 'access' && !access) {
-        respondUnauthorized(res, 'Tournament access required')
+      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+        next()
         return
       }
 
-      if (mode === 'view' && accessConfig.required && !access) {
-        respondUnauthorized(res, 'Tournament access required')
+      if (
+        role &&
+        sessionRoles.includes(role) &&
+        hasTournamentMembership(req, tournamentId) &&
+        isPublic
+      ) {
+        next()
         return
       }
 
-      next()
+      if (hasSessionTournamentAccess(req, tournamentId, authConfig)) {
+        next()
+        return
+      }
+
+      if (isPublic) {
+        next()
+        return
+      }
+
+      respondUnauthorized(res, 'Login required for this tournament')
     } catch (err) {
       next(err)
     }
   }
-}
-
-export function requireTournamentView(paramName = 'tournamentId'): RequestHandler {
-  return createTournamentGuard('view', paramName)
-}
-
-export function requireTournamentAccess(paramName = 'tournamentId'): RequestHandler {
-  return createTournamentGuard('access', paramName)
 }
 
 export const ensureSession: RequestHandler = (_req, _res, next) => {
