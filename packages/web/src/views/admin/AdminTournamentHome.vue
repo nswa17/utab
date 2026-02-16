@@ -158,9 +158,19 @@
             :key="round._id"
             class="stack setup-round-item"
           >
-            <div class="stack tight">
-              <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
-              <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span>
+            <div class="row setup-round-item-head">
+              <div class="stack tight">
+                <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
+                <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span>
+              </div>
+              <Button
+                variant="danger"
+                size="sm"
+                :disabled="isLoading"
+                @click="requestRemoveRoundFromSetup(String(round._id))"
+              >
+                {{ $t('削除') }}
+              </Button>
             </div>
 
             <section class="card soft stack setup-round-motion-panel">
@@ -998,6 +1008,34 @@
       </div>
     </div>
 
+    <div
+      v-if="activeSection === 'overview' && setupRoundDeleteTarget"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeSetupRoundDeleteModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ $t('ラウンド削除') }}</h4>
+        <p class="muted">
+          {{
+            $t('ラウンド {round} を削除しますか？', {
+              round:
+                setupRoundDeleteTarget.name ||
+                $t('ラウンド {round}', { round: setupRoundDeleteTarget.round }),
+            })
+          }}
+        </p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeSetupRoundDeleteModal">
+            {{ $t('キャンセル') }}
+          </Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRoundFromSetup">
+            {{ $t('削除') }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
     <ImportTextModal
       :open="activeSection === 'data' && showEntityImportModal"
       v-model:text="entityImportText"
@@ -1581,6 +1619,12 @@ const deleteEntityPrompt = computed(() => {
 })
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
+const setupRoundDeleteId = ref<string | null>(null)
+const setupRoundDeleteTarget = computed(() => {
+  const id = String(setupRoundDeleteId.value ?? '').trim()
+  if (!id) return null
+  return sortedRounds.value.find((round) => String(round._id) === id) ?? null
+})
 const setupSuggestedRoundNumber = computed(() => {
   if (sortedRounds.value.length === 0) return 1
   return sortedRounds.value[sortedRounds.value.length - 1].round + 1
@@ -2203,6 +2247,29 @@ async function createRoundFromSetup() {
   setupRoundForm.round = setupSuggestedRoundNumber.value
   setupRoundForm.name = ''
   setupRoundForm.type = 'standard'
+}
+
+function requestRemoveRoundFromSetup(roundId: string) {
+  if (!roundId) return
+  setupRoundDeleteId.value = roundId
+}
+
+function closeSetupRoundDeleteModal() {
+  setupRoundDeleteId.value = null
+}
+
+async function confirmRemoveRoundFromSetup() {
+  const roundId = String(setupRoundDeleteId.value ?? '').trim()
+  if (!roundId) return
+  closeSetupRoundDeleteModal()
+  const deleted = await rounds.deleteRound(tournamentId.value, roundId)
+  if (!deleted) return
+  const next = { ...setupRoundDetailsOpen.value }
+  delete next[roundId]
+  setupRoundDetailsOpen.value = next
+  if (setupRoundEditingId.value === roundId) {
+    cancelEditRoundFromSetup()
+  }
 }
 
 function startEditRoundFromSetup(round: any) {
@@ -3112,6 +3179,7 @@ watch(
     }
     if (editingEntity.value) cancelEditEntity()
     if (setupRoundEditingId.value) cancelEditRoundFromSetup()
+    setupRoundDeleteId.value = null
     showRoundDefaultsModal.value = false
     closeEntityImportModal()
     setupRoundDetailsOpen.value = {}
@@ -3137,6 +3205,12 @@ watch(
       !sortedRounds.value.some((round) => String(round._id) === setupRoundEditingId.value)
     ) {
       cancelEditRoundFromSetup()
+    }
+    if (
+      setupRoundDeleteId.value &&
+      !sortedRounds.value.some((round) => String(round._id) === setupRoundDeleteId.value)
+    ) {
+      setupRoundDeleteId.value = null
     }
   },
   { immediate: true }
@@ -3166,6 +3240,9 @@ onUnmounted(() => {
 })
 
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && setupRoundDeleteTarget.value) {
+    closeSetupRoundDeleteModal()
+  }
   if (event.key === 'Escape' && showRoundDefaultsModal.value) {
     showRoundDefaultsModal.value = false
   }
@@ -3287,6 +3364,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
   border-radius: var(--radius-md);
   padding: var(--space-2);
   background: var(--color-surface);
+}
+
+.setup-round-item-head {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .setup-round-motion-panel {
