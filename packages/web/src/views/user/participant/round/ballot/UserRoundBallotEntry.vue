@@ -236,7 +236,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTaskList">{{ $t('タスク一覧に戻る') }}</Button>
+          <Button size="sm" @click="goToTaskList">{{ $t('参加者ホームに戻る') }}</Button>
         </div>
       </div>
     </div>
@@ -933,6 +933,18 @@ watch(
   () => {
     tryApplyPrefill()
   }
+)
+
+watch(
+  () => route.query.submitter,
+  (value) => {
+    if (typeof value !== 'string') return
+    const normalized = value.trim()
+    if (!normalized) return
+    if (identityId.value === normalized) return
+    identityId.value = normalized
+  },
+  { immediate: true }
 )
 
 onMounted(() => {

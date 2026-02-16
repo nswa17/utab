@@ -14,12 +14,12 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('snapshotSelectOptions')
   })
 
-  it('keeps recomputation options inside a collapsible advanced panel', () => {
+  it('opens recomputation options in the detailed settings modal', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('showRecomputeOptions')
-    expect(source).toContain('詳細再計算を開く')
-    expect(source).toContain('詳細再計算を閉じる')
-    expect(source).toContain('recompute-panel')
+    expect(source).toContain('詳細設定')
+    expect(source).toContain('recompute-modal')
+    expect(source).toContain("@click=\"showRecomputeOptions = true\"")
   })
 
   it('shows a submission-first migration guide when raw source mode is active', () => {

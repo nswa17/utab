@@ -59,12 +59,12 @@
         <tbody>
           <tr v-for="row in sortedRows" :key="`preview-${row.key}`">
             <td>{{ row.venueLabel }}</td>
-            <td>{{ row.govName }}</td>
-            <td>{{ row.oppName }}</td>
-            <td>{{ row.winLabel }}</td>
-            <td>{{ row.chairsLabel }}</td>
-            <td>{{ row.panelsLabel }}</td>
-            <td>{{ row.traineesLabel }}</td>
+            <td>{{ teamVisible ? row.govName : $t('非公開') }}</td>
+            <td>{{ teamVisible ? row.oppName : $t('非公開') }}</td>
+            <td>{{ teamVisible ? row.winLabel : '—' }}</td>
+            <td>{{ adjudicatorVisible ? row.chairsLabel : $t('非公開') }}</td>
+            <td>{{ adjudicatorVisible ? row.panelsLabel : $t('非公開') }}</td>
+            <td>{{ adjudicatorVisible ? row.traineesLabel : $t('非公開') }}</td>
           </tr>
         </tbody>
       </table>
@@ -86,10 +86,14 @@ const props = withDefaults(
     rows: DrawPreviewRow[]
     govLabel?: string
     oppLabel?: string
+    teamVisible?: boolean
+    adjudicatorVisible?: boolean
   }>(),
   {
     govLabel: 'Gov',
     oppLabel: 'Opp',
+    teamVisible: true,
+    adjudicatorVisible: true,
   }
 )
 
@@ -104,6 +108,10 @@ const sortCollator = new Intl.Collator(['ja', 'en'], {
 })
 
 function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
+  if (!props.teamVisible && (key === 'gov' || key === 'opp' || key === 'win')) return ''
+  if (!props.adjudicatorVisible && (key === 'chair' || key === 'panel' || key === 'trainee')) {
+    return ''
+  }
   if (key === 'venue') return row.venueLabel
   if (key === 'gov') return row.govName
   if (key === 'opp') return row.oppName

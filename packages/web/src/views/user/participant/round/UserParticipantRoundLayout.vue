@@ -13,7 +13,7 @@
       </RouterLink>
     </nav>
     <div v-else class="row task-header">
-      <Button variant="ghost" size="sm" @click="goTaskList">← {{ $t('タスク一覧') }}</Button>
+      <Button variant="ghost" size="sm" @click="goTaskList">← {{ $t('参加者ホーム') }}</Button>
       <h3>{{ currentTaskLabel }}</h3>
     </div>
     <RouterView />

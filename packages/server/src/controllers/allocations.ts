@@ -642,8 +642,13 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       snapshotId?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
+    const normalizedSnapshotId = typeof snapshotId === 'string' ? snapshotId.trim() : ''
+    if (!normalizedSnapshotId) {
+      badRequest(res, 'Snapshot id is required')
+      return
+    }
 
-    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
+    const context = await buildAllocationContext(tournamentId, round, rounds, normalizedSnapshotId)
 
     const teamAlgorithm = options?.team_allocation_algorithm ?? 'standard'
     const teamAlgorithmOptions = options?.team_allocation_algorithm_options ?? {}

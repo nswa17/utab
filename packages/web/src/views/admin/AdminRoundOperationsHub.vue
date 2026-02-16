@@ -111,22 +111,22 @@
                       />
                     </label>
                     <label class="row publish-switch-inline publish-switch-inline-compact">
-                      <span class="publish-switch-label">{{ $t('対戦表公開（チームのみ）') }}</span>
+                      <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
                       <ToggleSwitch
                         class="publish-switch-toggle"
                         :model-value="drawOpenedValue"
                         :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                        :aria-label="$t('対戦表公開（チームのみ）')"
+                        :aria-label="$t('チーム割り当て')"
                         @update:model-value="(checked) => onPublishToggle('drawOpened', checked)"
                       />
                     </label>
                     <label class="row publish-switch-inline publish-switch-inline-compact">
-                      <span class="publish-switch-label">{{ $t('対戦表公開（ジャッジのみ）') }}</span>
+                      <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
                       <ToggleSwitch
                         class="publish-switch-toggle"
                         :model-value="allocationOpenedValue"
                         :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                        :aria-label="$t('対戦表公開（ジャッジのみ）')"
+                        :aria-label="$t('ジャッジ割り当て')"
                         @update:model-value="(checked) => onPublishToggle('allocationOpened', checked)"
                       />
                     </label>
@@ -136,12 +136,25 @@
             </div>
             <section class="stack publish-preview-section">
               <div class="row preview-head">
-                <h4>{{ $t('対戦表') }}</h4>
+                <h4>{{ $t('対戦表プレビュー') }}</h4>
+                <div class="row preview-visibility-chip-list">
+                  <span class="preview-visibility-chip" :class="drawOpenedValue ? 'is-open' : 'is-closed'">
+                    {{ $t('チーム') }}: {{ drawOpenedValue ? $t('公開') : $t('非公開') }}
+                  </span>
+                  <span
+                    class="preview-visibility-chip"
+                    :class="allocationOpenedValue ? 'is-open' : 'is-closed'"
+                  >
+                    {{ $t('ジャッジ') }}: {{ allocationOpenedValue ? $t('公開') : $t('非公開') }}
+                  </span>
+                </div>
               </div>
               <DrawPreviewTable
                 :rows="publishPreviewRows"
                 :gov-label="$t('政府')"
                 :opp-label="$t('反対')"
+                :team-visible="drawOpenedValue"
+                :adjudicator-visible="allocationOpenedValue"
               />
             </section>
             <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
@@ -1978,6 +1991,35 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.preview-visibility-chip-list {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preview-visibility-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.preview-visibility-chip.is-open {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.preview-visibility-chip.is-closed {
+  border-color: #fdba74;
+  color: #9a3412;
+  background: #fff7ed;
 }
 
 .modal-backdrop {

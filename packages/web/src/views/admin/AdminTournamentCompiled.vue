@@ -29,37 +29,9 @@
           <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
         </div>
         <p v-else class="muted small">{{ $t('集計スナップショットはまだありません。') }}</p>
-        <div class="row recompute-toggle-row">
-          <p class="muted small">{{ $t('必要な場合のみ詳細再計算を実行してください。') }}</p>
-          <Button variant="ghost" size="sm" @click="showRecomputeOptions = !showRecomputeOptions">
-            {{ showRecomputeOptions ? $t('詳細再計算を閉じる') : $t('詳細再計算を開く') }}
-          </Button>
-        </div>
-        <div v-if="showRecomputeOptions" class="stack recompute-panel">
-          <CompileOptionsEditor
-            v-model:source="compileSource"
-            v-model:source-rounds="compileRounds"
-            v-model:ranking-preset="rankingPriorityPreset"
-            v-model:ranking-order="rankingPriorityOrder"
-            v-model:winner-policy="compileWinnerPolicy"
-            v-model:tie-points="compileTiePoints"
-            v-model:merge-policy="compileDuplicateMergePolicy"
-            v-model:poi-aggregation="compilePoiAggregation"
-            v-model:best-aggregation="compileBestAggregation"
-            v-model:missing-data-policy="compileMissingDataPolicy"
-            v-model:include-labels="compileIncludeLabels"
-            :show-source-rounds="true"
-            :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
-            :disabled="isLoading"
-          />
-          <p v-if="isRawSourceSelected" class="muted warning">
-            {{
-              $t(
-                '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
-              )
-            }}
-          </p>
-        </div>
+        <p class="muted small">
+          {{ $t('必要な場合のみ詳細設定で再計算条件を変更してください。') }}
+        </p>
         <div v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary">
           <div class="row submission-summary-header">
             <h5>{{ $t('提出状況サマリー') }}</h5>
@@ -148,6 +120,9 @@
         <div class="row compile-actions">
           <Button @click="runCompile" :disabled="isLoading || !canRunCompile">
             {{ $t('レポート生成') }}
+          </Button>
+          <Button variant="secondary" @click="showRecomputeOptions = true">
+            {{ $t('詳細設定') }}
           </Button>
         </div>
         <div v-if="compileWarnings.length > 0" class="stack compile-warning-list">
@@ -405,13 +380,67 @@
     </div>
 
     <div
+      v-if="showRecomputeOptions"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="showRecomputeOptions = false"
+    >
+      <div class="modal card stack report-modal recompute-modal" role="dialog" aria-modal="true">
+        <div class="row report-modal-head">
+          <strong>{{ $t('詳細設定') }}</strong>
+          <Button variant="ghost" size="sm" @click="showRecomputeOptions = false">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
+        <p class="muted small">
+          {{ $t('必要な場合のみ詳細設定で再計算条件を変更してください。') }}
+        </p>
+        <div class="stack recompute-panel">
+          <CompileOptionsEditor
+            v-model:source="compileSource"
+            v-model:source-rounds="compileRounds"
+            v-model:ranking-preset="rankingPriorityPreset"
+            v-model:ranking-order="rankingPriorityOrder"
+            v-model:winner-policy="compileWinnerPolicy"
+            v-model:tie-points="compileTiePoints"
+            v-model:merge-policy="compileDuplicateMergePolicy"
+            v-model:poi-aggregation="compilePoiAggregation"
+            v-model:best-aggregation="compileBestAggregation"
+            v-model:missing-data-policy="compileMissingDataPolicy"
+            v-model:include-labels="compileIncludeLabels"
+            :show-source-rounds="true"
+            :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
+            :disabled="isLoading"
+          />
+          <p v-if="isRawSourceSelected" class="muted warning">
+            {{
+              $t(
+                '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
+              )
+            }}
+          </p>
+        </div>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="showRecomputeOptions = false">
+            {{ $t('取消') }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <div
       v-if="rawCompileConfirmOpen"
       class="modal-backdrop"
       role="presentation"
       @click.self="closeRawCompileConfirm"
     >
-      <div class="modal card stack" role="dialog" aria-modal="true">
-        <h4>{{ $t('強制実行の確認') }}</h4>
+      <div class="modal card stack report-modal" role="dialog" aria-modal="true">
+        <div class="row report-modal-head">
+          <strong>{{ $t('強制実行の確認') }}</strong>
+          <Button variant="ghost" size="sm" @click="closeRawCompileConfirm">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
         <p class="muted">
           {{
             $t(
@@ -426,7 +455,7 @@
         </ul>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeRawCompileConfirm">
-            {{ $t('キャンセル') }}
+            {{ $t('取消') }}
           </Button>
           <Button size="sm" :disabled="isLoading" @click="confirmRawCompile">
             {{ $t('強制実行する') }}
@@ -1941,13 +1970,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   flex-wrap: wrap;
 }
 
-.recompute-toggle-row {
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
 .recompute-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -2087,6 +2109,22 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .compile-actions {
   justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.report-modal {
+  gap: var(--space-3);
+}
+
+.recompute-modal {
+  width: min(980px, 100%);
+}
+
+.report-modal-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .pill-group {

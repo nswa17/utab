@@ -313,34 +313,57 @@
 
       <template v-else>
         <div class="card stack">
-          <h4>{{ $t('タスク一覧') }}</h4>
-          <p v-if="tasks.length === 0" class="muted">{{ tasksHint }}</p>
-          <div v-else class="stack task-groups">
-            <section
-              v-for="group in taskGroups"
-              :key="group.round"
-              class="card soft stack task-group-card"
+          <h4>{{ $t('入力開始') }}</h4>
+          <p v-if="!pendingTaskContext" class="muted">
+            {{ $t('対戦表の評価ボタンから入力を開始してください。') }}
+          </p>
+          <template v-else>
+            <p class="muted">
+              {{
+                $t('対象ラウンド: {round}', {
+                  round: pendingTaskContext.round,
+                })
+              }}
+            </p>
+            <p v-if="pendingBallotContext" class="muted">
+              {{
+                $t('対象試合: {gov} vs {opp}', {
+                  gov: teamName(pendingBallotContext.teamA),
+                  opp: teamName(pendingBallotContext.teamB),
+                })
+              }}
+            </p>
+            <p
+              v-if="
+                pendingBallotContext &&
+                pendingBallotContext.submitterCandidates.length > 0
+              "
+              class="muted small"
             >
-              <h5 class="task-group-title">{{ group.label }}</h5>
-              <ul class="list compact task-list">
-                <li v-for="task in group.items" :key="task.id" class="list-item task-item">
-                  <div class="stack tight">
-                    <strong>{{ task.title }}</strong>
-                    <span class="muted small">{{ task.statusLabel }}</span>
-                    <span v-if="task.description" class="muted small">{{ task.description }}</span>
-                  </div>
-                  <Button
-                    :variant="task.completed ? 'secondary' : 'primary'"
-                    size="sm"
-                    class="task-action"
-                    :to="task.to"
-                  >
-                    {{ task.actionLabel }}
-                  </Button>
-                </li>
-              </ul>
-            </section>
-          </div>
+              {{
+                $t('提出候補ジャッジ: {names}', {
+                  names: adjudicatorNames(pendingBallotContext.submitterCandidates),
+                })
+              }}
+            </p>
+            <p v-if="pendingFeedbackContext" class="muted">
+              {{
+                $t('対象試合: {gov} vs {opp}', {
+                  gov: teamName(pendingFeedbackContext.teamGov),
+                  opp: teamName(pendingFeedbackContext.teamOpp),
+                })
+              }}
+            </p>
+            <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
+            <div v-else class="row pending-task-actions">
+              <Button :to="pendingTaskPrimaryPath">
+                {{ pendingTaskPrimaryLabel }}
+              </Button>
+              <Button variant="secondary" :to="pendingTaskDrawPath">
+                {{ $t('対戦表') }}
+              </Button>
+            </div>
+          </template>
         </div>
       </template>
     </div>
@@ -359,24 +382,12 @@ import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useDrawsStore } from '@/stores/draws'
 import { useVenuesStore } from '@/stores/venues'
-import { useSubmissionsStore } from '@/stores/submissions'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
-
-type TaskItem = {
-  id: string
-  round: number
-  title: string
-  description?: string
-  completed: boolean
-  statusLabel: string
-  actionLabel: string
-  to: string
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -388,7 +399,6 @@ const adjudicatorsStore = useAdjudicatorsStore()
 const speakersStore = useSpeakersStore()
 const drawsStore = useDrawsStore()
 const venuesStore = useVenuesStore()
-const submissionsStore = useSubmissionsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -484,8 +494,7 @@ const isLoading = computed(
     teamsStore.loading ||
     adjudicatorsStore.loading ||
     speakersStore.loading ||
-    venuesStore.loading ||
-    submissionsStore.loading
+    venuesStore.loading
 )
 
 const errorMessage = computed(
@@ -498,7 +507,6 @@ const errorMessage = computed(
     adjudicatorsStore.error ||
     speakersStore.error ||
     venuesStore.error ||
-    submissionsStore.error ||
     ''
 )
 
@@ -519,209 +527,142 @@ const audienceSortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, se
 const normalizedAudienceTeamQuery = computed(() => audienceTeamQuery.value.trim().toLowerCase())
 const hasAudienceTeamQuery = computed(() => normalizedAudienceTeamQuery.value.length > 0)
 
-const feedbackSubmittedKeySet = computed(() => {
-  const set = new Set<string>()
-  submissionsStore.submissions.forEach((item) => {
-    if (item.type !== 'feedback') return
-    const submittedEntityId = String((item.payload as any)?.submittedEntityId ?? '')
-    if (!submittedEntityId) return
-    set.add(`${Number(item.round)}:${submittedEntityId}`)
-  })
-  return set
-})
-
-const ballotSubmittedKeySet = computed(() => {
-  const set = new Set<string>()
-  submissionsStore.submissions.forEach((item) => {
-    if (item.type !== 'ballot') return
-    const submittedEntityId = String((item.payload as any)?.submittedEntityId ?? '')
-    if (!submittedEntityId) return
-    set.add(`${Number(item.round)}:${submittedEntityId}`)
-  })
-  return set
-})
-
-const identityReadyForTasks = computed(() => {
-  if (isSpeaker.value) {
-    return Boolean(teamIdentityId.value)
-  }
-  if (isAdjudicator.value) {
-    if (judgeEvaluationActorMode.value === 'adjudicator') {
-      return Boolean(teamIdentityId.value)
+type PendingTaskContext =
+  | {
+      kind: 'ballot'
+      round: number
+      teamA: string
+      teamB: string
+      submitterCandidates: string[]
     }
-    if (!judgeFeedbackTeamIdentityId.value) return false
-    if (speakerSelectionRequired.value && !judgeFeedbackSpeakerIdentityId.value) return false
-    return true
-  }
-  return false
-})
-
-const activeSubmittedEntityId = computed(() => {
-  if (isSpeaker.value) {
-    return teamIdentityId.value
-  }
-  if (isAdjudicator.value) {
-    if (judgeEvaluationActorMode.value === 'adjudicator') {
-      return teamIdentityId.value
-    }
-    return speakerSelectionRequired.value
-      ? judgeFeedbackSpeakerIdentityId.value
-      : judgeFeedbackTeamIdentityId.value
-  }
-  return ''
-})
-
-const tasks = computed<TaskItem[]>(() => {
-  if (isAudience.value) return []
-  if (!identityReadyForTasks.value) return []
-
-  const list: TaskItem[] = []
-  visibleRounds.value.forEach((roundItem) => {
-    const roundNumber = Number(roundItem.round)
-    const draw = drawsByRound.value.get(roundNumber)
-    const teamOpen = teamAllocationVisible(roundNumber)
-    const adjudicatorOpen = adjudicatorAllocationVisible(roundNumber)
-    if (!draw || !teamOpen) return
-    const allocation = Array.isArray(draw.allocation) ? draw.allocation : []
-
-    if (isSpeaker.value) {
-      if (!adjudicatorOpen) return
-      const adjudicatorId = teamIdentityId.value
-      const adjudicatorRows = adjudicatorId
-        ? allocation.filter((row: any) =>
-            [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
-              adjudicatorId
-            )
-          )
-        : []
-      if (adjudicatorRows.length === 0) return
-      const ballotTargetPath =
-        adjudicatorRows.length === 1
-          ? `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
-          : `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/home`
-      const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
-      list.push({
-        id: `speaker-ballot-${roundNumber}`,
-        round: roundNumber,
-        title: t('チーム評価'),
-        description: t('ドローから試合を選択'),
-        completed: ballotCompleted,
-        statusLabel: ballotCompleted ? t('完了') : t('未完了'),
-        actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
-        to: ballotTargetPath,
-      })
-      return
+  | {
+      kind: 'feedback'
+      round: number
+      teamGov: string
+      teamOpp: string
+      targetJudgeIds: string[]
     }
 
-    if (isAdjudicator.value) {
-      if (!adjudicatorOpen) return
-
-      if (judgeEvaluationActorMode.value === 'team') {
-        if (roundItem.userDefinedData?.evaluate_from_teams === false) return
-        const teamId = judgeFeedbackTeamIdentityId.value
-        const teamRows = allocation.filter(
-          (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
-        )
-        if (teamRows.length === 0) return
-        const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
-        const submittedEntityId =
-          evaluatorInTeam === 'speaker' ? judgeFeedbackSpeakerIdentityId.value : teamId
-        if (!submittedEntityId) return
-        const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
-        const teamJudgeIds = Array.from(
-          new Set(
-            teamRows.flatMap((row: any) =>
-              chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
-            )
-          )
-        )
-        if (teamJudgeIds.length === 0) return
-        const targetPath =
-          teamJudgeIds.length === 1
-            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
-            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
-        const completed = feedbackSubmittedKeySet.value.has(`${roundNumber}:${submittedEntityId}`)
-        list.push({
-          id: `adjudicator-feedback-team-${roundNumber}-${evaluatorInTeam}`,
-          round: roundNumber,
-          title: t('ジャッジ評価'),
-          completed,
-          statusLabel: completed ? t('完了') : t('未完了'),
-          actionLabel: completed ? t('修正して送信') : t('入力'),
-          to: targetPath,
+function parseQueryList(value: unknown) {
+  if (typeof value !== 'string' || value.trim().length === 0) return []
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((item) => {
+          const token = item.trim()
+          try {
+            return decodeURIComponent(token)
+          } catch {
+            return token
+          }
         })
-        return
-      }
+        .filter(Boolean)
+    )
+  )
+}
 
-      if (roundItem.userDefinedData?.evaluate_from_adjudicators === false) return
-      const adjudicatorId = teamIdentityId.value
-      const adjudicatorRows = adjudicatorId
-        ? allocation.filter((row: any) =>
-            [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
-              adjudicatorId
-            )
-          )
-        : []
-      if (adjudicatorRows.length === 0) return
-      const judgeTargets = Array.from(
-        new Set(
-          adjudicatorRows
-            .flatMap((row: any) => [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])])
-            .filter((id: string) => id && id !== adjudicatorId)
-        )
-      )
-      if (judgeTargets.length === 0) return
-      const targetPath =
-        judgeTargets.length === 1
-          ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${judgeTargets[0]}?actor=adjudicator`
-          : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?actor=adjudicator`
-      const completed = feedbackSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
-      list.push({
-        id: `adjudicator-feedback-adj-${roundNumber}`,
-        round: roundNumber,
-        title: t('ジャッジ評価'),
-        completed,
-        statusLabel: completed ? t('完了') : t('未完了'),
-        actionLabel: completed ? t('修正して送信') : t('入力'),
-        to: targetPath,
-      })
-    }
-  })
+const pendingTaskContext = computed<PendingTaskContext | null>(() => {
+  if (isAudience.value) return null
+  const task = typeof route.query.task === 'string' ? route.query.task : ''
+  const roundNumber = Number(route.query.round)
+  if (!Number.isFinite(roundNumber) || roundNumber < 1) return null
 
-  return list
-})
-
-const taskGroups = computed(() => {
-  const map = new Map<number, TaskItem[]>()
-  tasks.value.forEach((task) => {
-    const list = map.get(task.round) ?? []
-    list.push(task)
-    map.set(task.round, list)
-  })
-  return Array.from(map.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([roundNumber, items]) => ({
+  if (task === 'ballot') {
+    const teamA = typeof route.query.teamA === 'string' ? route.query.teamA.trim() : ''
+    const teamB = typeof route.query.teamB === 'string' ? route.query.teamB.trim() : ''
+    if (!teamA || !teamB) return null
+    return {
+      kind: 'ballot',
       round: roundNumber,
-      label:
-        visibleRounds.value.find((round) => Number(round.round) === Number(roundNumber))?.name ??
-        t('ラウンド {round}', { round: roundNumber }),
-      items,
-    }))
+      teamA,
+      teamB,
+      submitterCandidates: parseQueryList(route.query.submitters),
+    }
+  }
+
+  if (task === 'feedback') {
+    const teamGov = typeof route.query.teamGov === 'string' ? route.query.teamGov.trim() : ''
+    const teamOpp = typeof route.query.teamOpp === 'string' ? route.query.teamOpp.trim() : ''
+    const targetJudgeIds = parseQueryList(route.query.targets)
+    if (!teamGov || !teamOpp || targetJudgeIds.length === 0) return null
+    return {
+      kind: 'feedback',
+      round: roundNumber,
+      teamGov,
+      teamOpp,
+      targetJudgeIds,
+    }
+  }
+  return null
 })
 
-const tasksHint = computed(() => {
-  if (!identityReadyForTasks.value) {
-    if (isSpeaker.value) return t('タスク一覧を表示するには「あなたの情報」でジャッジを選択してください。')
-    if (isAdjudicator.value && judgeEvaluationActorMode.value === 'team') {
-      if (speakerSelectionRequired.value) {
-        return t('タスク一覧を表示するには「あなたの情報」でチームとスピーカーを選択してください。')
-      }
-      return t('タスク一覧を表示するには「あなたの情報」でチームを選択してください。')
-    }
-    if (isAdjudicator.value) return t('タスク一覧を表示するには「あなたの情報」でジャッジを選択してください。')
-    return t('タスク一覧を表示するには「あなたの情報」を選択してください。')
+const pendingBallotContext = computed(() => {
+  if (!pendingTaskContext.value || pendingTaskContext.value.kind !== 'ballot') return null
+  return pendingTaskContext.value
+})
+
+const pendingFeedbackContext = computed(() => {
+  if (!pendingTaskContext.value || pendingTaskContext.value.kind !== 'feedback') return null
+  return pendingTaskContext.value
+})
+
+const pendingTaskReady = computed(() => {
+  if (!pendingTaskContext.value) return false
+  if (pendingTaskContext.value.kind === 'ballot') {
+    return isSpeaker.value && Boolean(teamIdentityId.value)
   }
-  return t('タスクはありません。')
+  if (!isAdjudicator.value) return false
+  if (!judgeFeedbackTeamIdentityId.value) return false
+  if (speakerSelectionRequired.value && !judgeFeedbackSpeakerIdentityId.value) return false
+  return true
+})
+
+const pendingTaskHint = computed(() => {
+  if (!pendingTaskContext.value) return ''
+  if (pendingTaskContext.value.kind === 'ballot') {
+    return t('先に提出者を選択すると入力ボタンが表示されます。')
+  }
+  if (speakerSelectionRequired.value) {
+    return t('先に提出者を選択すると入力ボタンが表示されます。')
+  }
+  return t('先に提出者を選択すると入力ボタンが表示されます。')
+})
+
+const pendingTaskPrimaryLabel = computed(() => {
+  if (!pendingTaskContext.value) return t('入力')
+  return pendingTaskContext.value.kind === 'ballot'
+    ? t('チーム評価を開始')
+    : t('ジャッジ評価を開始')
+})
+
+const pendingTaskDrawPath = computed(() => {
+  if (!pendingTaskContext.value) {
+    return `/user/${tournamentId.value}/${participant.value}/home`
+  }
+  return `/user/${tournamentId.value}/${participant.value}/rounds/${pendingTaskContext.value.round}/draw`
+})
+
+const pendingTaskPrimaryPath = computed(() => {
+  if (!pendingTaskContext.value || !pendingTaskReady.value) return ''
+  if (pendingTaskContext.value.kind === 'ballot') {
+    const query = new URLSearchParams({
+      teamA: pendingTaskContext.value.teamA,
+      teamB: pendingTaskContext.value.teamB,
+      submitter: teamIdentityId.value,
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${pendingTaskContext.value.round}/ballot/entry?${query.toString()}`
+  }
+  const feedbackQuery = new URLSearchParams({
+    filter: 'team',
+    actor: 'team',
+    team: judgeFeedbackTeamIdentityId.value,
+  })
+  const judgeId = pendingTaskContext.value.targetJudgeIds[0]
+  if (pendingTaskContext.value.targetJudgeIds.length === 1 && judgeId) {
+    return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(judgeId)}?${feedbackQuery.toString()}`
+  }
+  return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/home?${feedbackQuery.toString()}`
 })
 
 function audienceTeamMatchesQuery(teamId?: string) {
@@ -758,9 +699,21 @@ function roundHasAudienceMatch(roundNumber: number) {
 }
 
 function preferredTeamIdForRow(row: DrawAllocationRow) {
-  if (audienceTeamMatchesQuery(row?.teams?.gov)) return row.teams?.gov ?? ''
-  if (audienceTeamMatchesQuery(row?.teams?.opp)) return row.teams?.opp ?? ''
-  return row.teams?.gov ?? row.teams?.opp ?? ''
+  const govMatched = audienceTeamMatchesQuery(row?.teams?.gov)
+  const oppMatched = audienceTeamMatchesQuery(row?.teams?.opp)
+  if (govMatched && !oppMatched) return row.teams?.gov ?? ''
+  if (oppMatched && !govMatched) return row.teams?.opp ?? ''
+  return ''
+}
+
+function rowAdjudicatorIds(row: DrawAllocationRow) {
+  return Array.from(
+    new Set([...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])])
+  ).filter(Boolean)
+}
+
+function encodeList(values: string[]) {
+  return values.map((value) => encodeURIComponent(value)).join(',')
 }
 
 function judgeEvaluationEnabled(roundNumber: number) {
@@ -775,23 +728,57 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (!teamA || !teamB) {
     return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/home`
   }
-  return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/entry?teamA=${encodeURIComponent(teamA)}&teamB=${encodeURIComponent(teamB)}`
+  const adjudicatorIds = rowAdjudicatorIds(row)
+  if (adjudicatorIds.length === 1) {
+    const query = new URLSearchParams({
+      teamA,
+      teamB,
+      submitter: adjudicatorIds[0],
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/entry?${query.toString()}`
+  }
+  const query = new URLSearchParams({
+    task: 'ballot',
+    round: String(roundNumber),
+    teamA,
+    teamB,
+  })
+  if (adjudicatorIds.length > 0) {
+    query.set('submitters', encodeList(adjudicatorIds))
+  }
+  return `/user/${tournamentId.value}/speaker/home?${query.toString()}`
 }
 
 function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
-  const query = new URLSearchParams({
-    filter: 'team',
-    actor: 'team',
-  })
+  const teamGov = String(row?.teams?.gov ?? '')
+  const teamOpp = String(row?.teams?.opp ?? '')
+  const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+  if (!teamGov || !teamOpp || targetIds.length === 0) {
+    return `/user/${tournamentId.value}/adjudicator/home`
+  }
+
   const teamId = preferredTeamIdForRow(row)
   if (teamId) {
-    query.set('team', teamId)
+    const query = new URLSearchParams({
+      filter: 'team',
+      actor: 'team',
+      team: teamId,
+    })
+    if (targetIds.length === 1) {
+      return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}?${query.toString()}`
+    }
+    return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?${query.toString()}`
   }
-  const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
-  if (targetIds.length === 1) {
-    return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}?${query.toString()}`
-  }
-  return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?${query.toString()}`
+
+  const unresolvedQuery = new URLSearchParams({
+    actor: 'team',
+    task: 'feedback',
+    round: String(roundNumber),
+    teamGov,
+    teamOpp,
+    targets: encodeList(targetIds),
+  })
+  return `/user/${tournamentId.value}/adjudicator/home?${unresolvedQuery.toString()}`
 }
 
 function isRoundExpanded(roundNumber: number) {
@@ -947,65 +934,6 @@ async function refresh() {
     speakersStore.fetchSpeakers(tournamentId.value),
     venuesStore.fetchVenues(tournamentId.value),
   ])
-  await refreshTaskSubmissions()
-}
-
-async function refreshTaskSubmissions() {
-  if (!tournamentId.value || isAudience.value) {
-    submissionsStore.clearSubmissions()
-    return
-  }
-  if (isSpeaker.value) {
-    const ids = [teamIdentityId.value]
-    const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
-    if (normalizedIds.length === 0) {
-      submissionsStore.clearSubmissions()
-      return
-    }
-    const merged = new Map<string, any>()
-    for (const entityId of normalizedIds) {
-      const rows = await submissionsStore.fetchParticipantSubmissions({
-        tournamentId: tournamentId.value,
-        submittedEntityId: entityId,
-      })
-      rows.forEach((item) => {
-        merged.set(item._id, item)
-      })
-    }
-    submissionsStore.submissions = Array.from(merged.values())
-    return
-  }
-  if (isAdjudicator.value) {
-    const ids =
-      judgeEvaluationActorMode.value === 'adjudicator'
-        ? [teamIdentityId.value]
-        : [judgeFeedbackTeamIdentityId.value, judgeFeedbackSpeakerIdentityId.value]
-    const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
-    if (normalizedIds.length === 0) {
-      submissionsStore.clearSubmissions()
-      return
-    }
-    const merged = new Map<string, any>()
-    for (const entityId of normalizedIds) {
-      const rows = await submissionsStore.fetchParticipantSubmissions({
-        tournamentId: tournamentId.value,
-        submittedEntityId: entityId,
-      })
-      rows.forEach((item) => {
-        merged.set(item._id, item)
-      })
-    }
-    submissionsStore.submissions = Array.from(merged.values())
-    return
-  }
-  if (!activeSubmittedEntityId.value) {
-    submissionsStore.clearSubmissions()
-    return
-  }
-  await submissionsStore.fetchParticipantSubmissions({
-    tournamentId: tournamentId.value,
-    submittedEntityId: activeSubmittedEntityId.value,
-  })
 }
 
 function audienceTeamQueryStorageKey() {
@@ -1145,20 +1073,6 @@ watch(
 )
 
 watch(
-  [
-    activeSubmittedEntityId,
-    teamIdentityId,
-    judgeFeedbackTeamIdentityId,
-    judgeFeedbackSpeakerIdentityId,
-    speakerSelectionRequired,
-    judgeEvaluationActorMode,
-  ],
-  () => {
-    refreshTaskSubmissions()
-  }
-)
-
-watch(
   [tournamentId, participant],
   () => {
     refresh()
@@ -1201,34 +1115,9 @@ select {
   width: 100%;
 }
 
-.task-list {
-  display: grid;
+.pending-task-actions {
   gap: var(--space-2);
-}
-
-.task-groups {
-  gap: var(--space-2);
-}
-
-.task-group-card {
-  border: 1px solid var(--color-border);
-  padding: var(--space-2);
-}
-
-.task-group-title {
-  margin: 0;
-  font-size: 14px;
-}
-
-.task-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.task-action {
-  min-width: 120px;
+  flex-wrap: wrap;
 }
 
 .tight {
@@ -1411,6 +1300,17 @@ select {
   flex-wrap: wrap;
 }
 
+.compact-draw-list .draw-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.compact-draw-list .draw-actions :deep(.btn) {
+  width: 100%;
+  justify-content: center;
+}
+
 .draw-actions-cell {
   min-width: 180px;
 }
@@ -1476,10 +1376,6 @@ select {
 }
 
 @media (max-width: 720px) {
-  .task-item {
-    grid-template-columns: 1fr;
-  }
-
   .match-sides {
     grid-template-columns: 1fr;
   }

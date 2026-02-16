@@ -1,8 +1,5 @@
 <template>
   <section class="stack">
-    <div class="row section-row">
-      <h3 class="page-title">{{ activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理') }}</h3>
-    </div>
     <p v-if="activeSection === 'overview'" class="muted small">
       {{ $t('大会の基本情報と公開設定を管理します。') }}
     </p>
@@ -64,8 +61,9 @@
             <input
               v-model="tournamentForm.accessPassword"
               :aria-label="$t('大会パスワード')"
-              type="password"
+              type="text"
               autocomplete="new-password"
+              :disabled="!tournamentForm.accessRequired"
             />
             <p class="muted small">{{ accessPasswordHelpText }}</p>
           </article>
@@ -165,66 +163,46 @@
               <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span>
             </div>
 
-            <div class="grid setup-round-status-grid">
-              <article class="card soft stack setup-round-status-card">
-                <h5>{{ $t('モーション公開') }}</h5>
-                <label class="switch-control">
-                  <span class="switch-label">{{ $t('非公開') }}</span>
-                  <ToggleSwitch
-                    :model-value="Boolean(round.motionOpened)"
-                    :disabled="roundPublicationBusy"
-                    :aria-label="$t('モーション公開')"
-                    @update:model-value="(checked) => onSetupMotionOpenedChange(round, checked)"
-                  />
-                  <span class="switch-label">{{ $t('公開') }}</span>
-                </label>
-              </article>
-              <article class="card soft stack setup-round-status-card">
-                <h5>{{ $t('チーム割り当て') }}</h5>
-                <label class="switch-control">
-                  <span class="switch-label">{{ $t('非公開') }}</span>
-                  <ToggleSwitch
-                    :model-value="Boolean(round.teamAllocationOpened)"
-                    :disabled="roundPublicationBusy"
-                    :aria-label="$t('チーム割り当て')"
-                    @update:model-value="(checked) => onSetupTeamAllocationChange(round, checked)"
-                  />
-                  <span class="switch-label">{{ $t('公開') }}</span>
-                </label>
-              </article>
-              <article class="card soft stack setup-round-status-card">
-                <h5>{{ $t('ジャッジ割り当て') }}</h5>
-                <label class="switch-control">
-                  <span class="switch-label">{{ $t('非公開') }}</span>
-                  <ToggleSwitch
-                    :model-value="Boolean(round.adjudicatorAllocationOpened)"
-                    :disabled="roundPublicationBusy"
-                    :aria-label="$t('ジャッジ割り当て')"
-                    @update:model-value="(checked) => onSetupAdjudicatorAllocationChange(round, checked)"
-                  />
-                  <span class="switch-label">{{ $t('公開') }}</span>
-                </label>
-              </article>
-              <article class="card soft stack setup-round-status-card">
-                <h5>{{ $t('提出状況') }}</h5>
-                <div class="status-line">
-                  <span>{{ $t('スコアシート') }}</span>
-                  <strong>{{ setupBallotSubmittedCount(round) }}/{{ setupBallotExpectedCount(round) }}</strong>
-                </div>
-                <div class="status-line">
-                  <span>{{ $t('フィードバック') }}</span>
-                  <strong>{{ setupFeedbackSubmittedCount(round) }}/{{ setupFeedbackExpectedCount(round) }}</strong>
-                </div>
-              </article>
-            </div>
-
             <section class="card soft stack setup-round-motion-panel">
               <RoundMotionEditor
                 :tournament-id="tournamentId"
                 :round-id="String(round._id)"
                 :saved-motion="Array.isArray(round.motions) ? String(round.motions[0] ?? '') : ''"
                 :disabled="roundPublicationBusy"
-              />
+              >
+                <template #status>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.motionOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('モーション公開')"
+                      @update:model-value="(checked) => onSetupMotionOpenedChange(round, checked)"
+                    />
+                  </label>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.teamAllocationOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('チーム割り当て')"
+                      @update:model-value="(checked) => onSetupTeamAllocationChange(round, checked)"
+                    />
+                  </label>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.adjudicatorAllocationOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('ジャッジ割り当て')"
+                      @update:model-value="(checked) => onSetupAdjudicatorAllocationChange(round, checked)"
+                    />
+                  </label>
+                </template>
+              </RoundMotionEditor>
             </section>
 
             <details
@@ -527,31 +505,40 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="adjudicatorForm.strength"
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
+              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
+                <template #label-suffix>
+                  <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <input
+                    v-model.number="adjudicatorForm.strength"
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  />
+                </template>
               </Field>
               <Field
                 :label="$t('事前評価')"
                 :help="$t('推奨範囲: 0〜10')"
-                v-slot="{ id, describedBy }"
               >
-                <input
-                  v-model.number="adjudicatorForm.preev"
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
+                <template #label-suffix>
+                  <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <input
+                    v-model.number="adjudicatorForm.preev"
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  />
+                </template>
               </Field>
               <div class="availability-control">
                 <label class="row small">
@@ -564,7 +551,7 @@
                 <input
                   v-model="adjudicatorInstitutionSearch"
                   type="text"
-                  :placeholder="$t('機関名で検索')"
+                  :placeholder="$t('コンフリクトグループ名で検索')"
                 />
                 <div class="relation-picker">
                   <label
@@ -807,7 +794,7 @@
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateInstitution">
-              <Field :label="$t('機関名')" required v-slot="{ id, describedBy }">
+              <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="institutionForm.name"
                   type="text"
@@ -815,14 +802,21 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
-                <input
-                  v-model="institutionForm.category"
-                  type="text"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  :placeholder="$t('例: institution / region / league')"
-                />
+              <Field :label="$t('カテゴリ')">
+                <template #label-suffix>
+                  <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <select v-model="institutionForm.category" :id="id" :aria-describedby="describedBy">
+                    <option
+                      v-for="option in institutionCategoryOptions"
+                      :key="`institution-category-create-${option.value}`"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </template>
               </Field>
               <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
                 <input
@@ -858,7 +852,7 @@
               v-model="institutionSearch"
               :id="id"
               :aria-describedby="describedBy"
-              :placeholder="$t('機関名で検索')"
+              :placeholder="$t('コンフリクトグループ名で検索')"
             />
           </Field>
           <p v-if="institutions.error" class="error">{{ institutions.error }}</p>
@@ -1039,27 +1033,37 @@
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
-          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-            <input
-              v-model.number="entityForm.strength"
-              type="number"
-              min="0"
-              max="10"
-              step="0.1"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
+          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
+            <template #label-suffix>
+              <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <input
+                v-model.number="entityForm.strength"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+                :id="id"
+                :aria-describedby="describedBy"
+              />
+            </template>
           </Field>
-          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-            <input
-              v-model.number="entityForm.preev"
-              type="number"
-              min="0"
-              max="10"
-              step="0.1"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
+          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
+            <template #label-suffix>
+              <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <input
+                v-model.number="entityForm.preev"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+                :id="id"
+                :aria-describedby="describedBy"
+              />
+            </template>
           </Field>
           <div class="availability-control">
             <label class="row small">
@@ -1072,7 +1076,7 @@
             <input
               v-model="editAdjudicatorInstitutionSearch"
               type="text"
-              :placeholder="$t('機関名で検索')"
+              :placeholder="$t('コンフリクトグループ名で検索')"
             />
             <div class="relation-picker">
               <label
@@ -1119,17 +1123,24 @@
           </div>
         </div>
         <div class="grid" v-else-if="editingEntity.type === 'institution'">
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+          <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
-          <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
-            <input
-              v-model="entityForm.category"
-              type="text"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('例: institution / region / league')"
-            />
+          <Field :label="$t('カテゴリ')">
+            <template #label-suffix>
+              <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <select v-model="entityForm.category" :id="id" :aria-describedby="describedBy">
+                <option
+                  v-for="option in institutionCategoryOptions"
+                  :key="`institution-category-edit-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </template>
           </Field>
           <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
             <input
@@ -1228,6 +1239,7 @@ import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import CollapseHeader from '@/components/common/CollapseHeader.vue'
+import HelpTip from '@/components/common/HelpTip.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
@@ -1271,13 +1283,14 @@ const isLoading = computed(
     submissions.loading
 )
 const roundPublicationBusy = computed(() => rounds.loading || sectionLoading.value)
+const DEFAULT_TOURNAMENT_ACCESS_PASSWORD = 'password'
 
 const tournamentForm = reactive({
   name: '',
   style: 1,
   hidden: false,
   accessRequired: false,
-  accessPassword: '',
+  accessPassword: DEFAULT_TOURNAMENT_ACCESS_PASSWORD,
   infoText: '',
 })
 const roundDefaultsForm = reactive(defaultRoundDefaults())
@@ -1357,6 +1370,12 @@ const institutionForm = reactive({
   category: 'institution',
   priority: 1,
 })
+
+const institutionCategoryOptions = [
+  { value: 'institution', label: 'institution' },
+  { value: 'region', label: 'region' },
+  { value: 'league', label: 'league' },
+] as const
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
@@ -1625,10 +1644,10 @@ const canSaveTournamentNotice = computed(() => {
 })
 
 const accessPasswordHelpText = computed(() => {
-  if (accessPasswordConfigured.value) {
-    return t('大会パスワードは表示・編集できます。空欄で保存すると解除されます。')
+  if (tournamentForm.accessRequired) {
+    return t('空欄にすると大会パスワード設定を解除し、初期値に戻します。')
   }
-  return t('大会パスワードを設定すると、参加者に入力を求められます。')
+  return t('スイッチをオンにすると編集できます。未設定時の初期値は "password" です。')
 })
 const tournamentAutosaveText = computed(() => {
   if (tournamentAutosaveStatus.value === 'saving') return t('大会設定を保存中...')
@@ -1725,21 +1744,29 @@ function entityTypeLabel(type: string) {
   return map[type] ?? type
 }
 
+function applyAccessForm(authValue: unknown) {
+  const auth = authValue && typeof authValue === 'object' ? (authValue as Record<string, any>) : {}
+  const access =
+    auth.access && typeof auth.access === 'object' ? (auth.access as Record<string, any>) : {}
+  const required = access.required === true
+  const savedAccessPassword =
+    typeof access.password === 'string' ? String(access.password).trim() : ''
+  const hasPassword = access.hasPassword === true || savedAccessPassword.length > 0
+  accessPasswordConfigured.value = required && hasPassword
+  tournamentForm.accessRequired = required
+  tournamentForm.accessPassword =
+    required && savedAccessPassword.length > 0
+      ? savedAccessPassword
+      : DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+}
+
 function applyTournamentForm() {
   if (!tournament.value) return
   isApplyingTournamentForm.value = true
   tournamentForm.name = tournament.value.name
   tournamentForm.style = tournament.value.style
   tournamentForm.hidden = Boolean(tournament.value.user_defined_data?.hidden)
-  tournamentForm.accessRequired = Boolean(tournament.value.auth?.access?.required)
-  const savedAccessPassword =
-    typeof tournament.value.auth?.access?.password === 'string'
-      ? String(tournament.value.auth.access.password)
-      : ''
-  accessPasswordConfigured.value = Boolean(
-    tournament.value.auth?.access?.hasPassword || savedAccessPassword
-  )
-  tournamentForm.accessPassword = savedAccessPassword
+  applyAccessForm(tournament.value.auth)
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
   applyRoundDefaultsForm()
   void nextTick(() => {
@@ -1798,6 +1825,7 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
   const passwordInput = tournamentForm.accessPassword.trim()
+  const nextPassword = passwordInput || DEFAULT_TOURNAMENT_ACCESS_PASSWORD
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const currentInfo = nextUserDefined.info && typeof nextUserDefined.info === 'object'
@@ -1813,7 +1841,9 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   const authPayload: Record<string, any> = {}
   authPayload.access = { required: tournamentForm.accessRequired }
   if (tournamentForm.accessRequired) {
-    authPayload.access.password = passwordInput || null
+    authPayload.access.password = nextPassword
+  } else {
+    authPayload.access.password = null
   }
   const updated = await tournamentStore.updateTournament({
     tournamentId: tournament.value._id,
@@ -1827,12 +1857,11 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     },
   })
   if (updated) {
-    const savedAccessPassword =
-      typeof updated.auth?.access?.password === 'string' ? String(updated.auth.access.password) : ''
-    accessPasswordConfigured.value = Boolean(
-      updated.auth?.access?.hasPassword || savedAccessPassword
-    )
-    tournamentForm.accessPassword = savedAccessPassword
+    isApplyingTournamentForm.value = true
+    applyAccessForm(updated.auth)
+    void nextTick(() => {
+      isApplyingTournamentForm.value = false
+    })
     tournamentAutosaveStatus.value = 'saved'
     tournamentAutosaveError.value = ''
     if (tournamentAutosaveStatusTimer) {
@@ -1913,113 +1942,6 @@ async function saveRoundDefaults() {
 function roundTypeLabel(round: any) {
   const isBreak = Boolean(round?.userDefinedData?.break?.enabled)
   return isBreak ? t('ブレイク') : t('通常ラウンド')
-}
-
-function setupExpectedAdjudicatorIds(roundNumber: number) {
-  const set = new Set<string>()
-  const draw = draws.draws.find((item) => Number(item.round) === Number(roundNumber))
-  const allocation = Array.isArray(draw?.allocation) ? draw.allocation : []
-  allocation.forEach((row: any) => {
-    ;(row?.chairs ?? []).forEach((id: any) => id && set.add(String(id)))
-    ;(row?.panels ?? []).forEach((id: any) => id && set.add(String(id)))
-    ;(row?.trainees ?? []).forEach((id: any) => id && set.add(String(id)))
-  })
-  return set
-}
-
-function setupExpectedTeamIds(roundNumber: number) {
-  const set = new Set<string>()
-  const draw = draws.draws.find((item) => Number(item.round) === Number(roundNumber))
-  const allocation = Array.isArray(draw?.allocation) ? draw.allocation : []
-  allocation.forEach((row: any) => {
-    if (row?.teams?.gov) set.add(String(row.teams.gov))
-    if (row?.teams?.opp) set.add(String(row.teams.opp))
-  })
-  return set
-}
-
-function setupTeamSpeakerIds(teamId: string, roundNumber: number) {
-  const team = teams.teams.find((item) => item._id === teamId)
-  if (!team) return []
-  const detail = team.details?.find((item: any) => Number(item.r) === Number(roundNumber))
-  const detailSpeakerIds = (detail?.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) return detailSpeakerIds
-  return (team.speakers ?? [])
-    .map((speaker: any) => {
-      const name = String(speaker?.name ?? '')
-      if (!name) return ''
-      return speakers.speakers.find((item) => item.name === name)?._id ?? ''
-    })
-    .filter(Boolean)
-}
-
-function setupSubmittedIds(roundNumber: number, type: 'ballot' | 'feedback') {
-  const set = new Set<string>()
-  submissions.submissions.forEach((item) => {
-    if (Number(item.round) !== Number(roundNumber) || item.type !== type) return
-    const id = (item.payload as any)?.submittedEntityId
-    if (id) set.add(String(id))
-  })
-  return set
-}
-
-function setupIntersectionCount(expected: Set<string>, actual: Set<string>) {
-  let count = 0
-  expected.forEach((id) => {
-    if (actual.has(id)) count += 1
-  })
-  return count
-}
-
-function setupBallotExpectedCount(round: any) {
-  return setupExpectedAdjudicatorIds(Number(round.round)).size
-}
-
-function setupBallotSubmittedCount(round: any) {
-  const expected = setupExpectedAdjudicatorIds(Number(round.round))
-  const actual = setupSubmittedIds(Number(round.round), 'ballot')
-  return setupIntersectionCount(expected, actual)
-}
-
-function setupFeedbackExpectedCount(round: any) {
-  const roundNumber = Number(round.round)
-  const expected = new Set<string>()
-  const userDefined = round.userDefinedData ?? {}
-  const teamIds = setupExpectedTeamIds(roundNumber)
-  if (userDefined.evaluate_from_teams !== false) {
-    if ((userDefined.evaluator_in_team ?? 'team') === 'speaker') {
-      teamIds.forEach((teamId) => {
-        setupTeamSpeakerIds(teamId, roundNumber).forEach((id) => expected.add(id))
-      })
-    } else {
-      teamIds.forEach((id) => expected.add(id))
-    }
-  }
-  if (userDefined.evaluate_from_adjudicators !== false) {
-    setupExpectedAdjudicatorIds(roundNumber).forEach((id) => expected.add(id))
-  }
-  return expected.size
-}
-
-function setupFeedbackSubmittedCount(round: any) {
-  const roundNumber = Number(round.round)
-  const expected = new Set<string>()
-  const userDefined = round.userDefinedData ?? {}
-  const teamIds = setupExpectedTeamIds(roundNumber)
-  if (userDefined.evaluate_from_teams !== false) {
-    if ((userDefined.evaluator_in_team ?? 'team') === 'speaker') {
-      teamIds.forEach((teamId) => {
-        setupTeamSpeakerIds(teamId, roundNumber).forEach((id) => expected.add(id))
-      })
-    } else {
-      teamIds.forEach((id) => expected.add(id))
-    }
-  }
-  if (userDefined.evaluate_from_adjudicators !== false) {
-    setupExpectedAdjudicatorIds(roundNumber).forEach((id) => expected.add(id))
-  }
-  const actual = setupSubmittedIds(roundNumber, 'feedback')
-  return setupIntersectionCount(expected, actual)
 }
 
 async function onSetupMotionOpenedChange(round: any, checked: boolean) {
@@ -2302,9 +2224,16 @@ function resolveInstitutionId(value?: string) {
   return matched?._id ?? ''
 }
 
+type InstitutionCategory = (typeof institutionCategoryOptions)[number]['value']
+
+function normalizeInstitutionCategory(value?: string): InstitutionCategory {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'region' || normalized === 'league') return normalized
+  return 'institution'
+}
+
 function institutionCategoryLabel(value?: string) {
-  const normalized = String(value ?? '').trim()
-  return normalized || 'institution'
+  return normalizeInstitutionCategory(value)
 }
 
 function institutionPriorityValue(value?: number) {
@@ -2928,6 +2857,36 @@ watch(
 )
 
 watch(
+  () => tournamentForm.accessRequired,
+  (required) => {
+    if (isApplyingTournamentForm.value) return
+    if (!required) {
+      accessPasswordConfigured.value = false
+      if (tournamentForm.accessPassword !== DEFAULT_TOURNAMENT_ACCESS_PASSWORD) {
+        tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+      }
+      return
+    }
+    accessPasswordConfigured.value = true
+    if (!tournamentForm.accessPassword.trim()) {
+      tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+    }
+  }
+)
+
+watch(
+  () => tournamentForm.accessPassword,
+  (password) => {
+    if (isApplyingTournamentForm.value) return
+    if (!tournamentForm.accessRequired) return
+    if (String(password).trim().length > 0) return
+    tournamentForm.accessRequired = false
+    accessPasswordConfigured.value = false
+    tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+  }
+)
+
+watch(
   () => [
     tournamentForm.style,
     tournamentForm.hidden,
@@ -3131,32 +3090,32 @@ function onGlobalKeydown(event: KeyboardEvent) {
   background: var(--color-surface);
 }
 
-.setup-round-status-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.setup-round-status-card {
-  border: 1px solid var(--color-border);
-  padding: var(--space-2);
-  gap: var(--space-2);
-}
-
-.setup-round-status-card h5 {
-  margin: 0;
-  font-size: 14px;
-}
-
 .setup-round-motion-panel {
   border: 1px solid var(--color-border);
   gap: var(--space-2);
 }
 
-.status-line {
-  display: flex;
+.publish-switch-inline {
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  font-size: 13px;
+}
+
+.publish-switch-inline-compact {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.publish-switch-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.publish-switch-toggle {
+  flex: 0 0 auto;
 }
 
 .setup-round-edit-grid {
@@ -3347,21 +3306,6 @@ textarea {
   padding: var(--space-3);
   display: grid;
   gap: var(--space-3);
-}
-
-.section-row {
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.page-title {
-  margin: 0;
-  color: var(--color-text);
-  font-size: clamp(1.55rem, 1.9vw, 1.92rem);
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  font-weight: 750;
 }
 
 .entity-switch {

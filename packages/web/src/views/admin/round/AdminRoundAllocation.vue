@@ -358,7 +358,7 @@
 
         <section class="stack board-block">
           <div class="row preview-head">
-            <h4>{{ $t('対戦表') }}</h4>
+            <h4>{{ $t('対戦表プレビュー') }}</h4>
           </div>
           <DrawPreviewTable :rows="previewRows" :gov-label="govLabel" :opp-label="oppLabel" />
         </section>

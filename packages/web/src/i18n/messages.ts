@@ -179,6 +179,9 @@ const en = {
     'No compiled snapshots for previous rounds. Run compile first.',
   '必要な場合のみ詳細再計算を実行してください。':
     'Run detailed recomputation only when needed.',
+  '必要な場合のみ詳細設定で再計算条件を変更してください。':
+    'Change recomputation settings only when needed.',
+  詳細設定: 'Detailed settings',
   詳細再計算を開く: 'Open detailed recomputation',
   詳細再計算を閉じる: 'Close detailed recomputation',
   新画面へ移動: 'Open new flow',
@@ -519,7 +522,17 @@ const en = {
   参加者: 'Participant',
   参加者に非公開: 'Hidden from participants',
   大会を非公開: 'Hide tournament',
+  参加者ホーム: 'Participant home',
   参加者ダッシュボード: 'Participant dashboard',
+  入力開始: 'Start input',
+  '対戦表の評価ボタンから入力を開始してください。':
+    'Start input from the evaluation buttons in the draw.',
+  '対象試合: {gov} vs {opp}': 'Target match: {gov} vs {opp}',
+  '提出候補ジャッジ: {names}': 'Candidate submitter judges: {names}',
+  '先に提出者を選択すると入力ボタンが表示されます。':
+    'Select a submitter first to show the input button.',
+  チーム評価を開始: 'Start team evaluation',
+  ジャッジ評価を開始: 'Start adjudicator evaluation',
   現在公開中の大会: 'Currently open tournaments',
   '参加者ホームでジャッジを選択してください。': 'Select an adjudicator on the participant home.',
   '参加者ホームでジャッジを選択すると、割当の試合に絞り込めます。':
@@ -561,6 +574,10 @@ const en = {
   大会パスワード必須: 'Require tournament password',
   '大会パスワードを入力してください。': 'Enter the tournament password.',
   '空欄なら現在のパスワードを維持します。': 'Leave blank to keep the current password.',
+  '空欄にすると大会パスワード設定を解除し、初期値に戻します。':
+    'Clearing this field disables tournament password and resets to the default value.',
+  'スイッチをオンにすると編集できます。未設定時の初期値は "password" です。':
+    'Turn the switch on to edit. The default value is "password" when not configured.',
   '大会ホームでパスワードを入力してください。':
     'Enter the tournament password from the tournament home.',
   'アクセス確認に失敗しました。': 'Failed to verify tournament access.',
@@ -613,7 +630,11 @@ const en = {
   強さ: 'Strength',
   機関衝突重み: 'Institution conflict weight',
   '強さ: {value}': 'Strength: {value}',
+  '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。':
+    'Strength is an internal score used for auto allocation; higher values are more likely to be placed at top rooms.',
   '推奨範囲: 0〜10': 'Recommended range: 0 to 10',
+  '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。':
+    'Pre-evaluation is a prior estimate used for auto allocation priority.',
   '入力範囲: {from}〜{to} (刻み {unit})': 'Range: {from} to {to} (step {unit})',
   役割: 'Role',
   役割選択: 'Select role',
@@ -709,8 +730,12 @@ const en = {
   '権限が一致しません。ログイン情報を確認してください。':
     'Role does not match. Please check your login.',
   機関: 'Institution',
+  コンフリクトグループ: 'Conflict group',
   '機関を削除しますか？': 'Delete this institution?',
   機関名: 'Institution name',
+  コンフリクトグループ名で検索: 'Search conflict group name',
+  'institution / region / league から選択します。競合判定の粒度を揃えるために使います。':
+    'Choose from institution / region / league to align conflict-detection granularity.',
   '機関衝突 (チーム/ジャッジ)': 'Institution conflict (team/judge)',
   点: 'pts',
   生データ: 'Raw',
@@ -1016,6 +1041,7 @@ const en = {
   'コピーしました。': 'Copied.',
   候補を圧縮表示: 'Compact waiting list',
   公開前プレビュー: 'Pre-publish preview',
+  対戦表プレビュー: 'Draw preview',
   提出サマリ: 'Submission summary',
   表彰コピー: 'Award copy',
   '部屋順 / Win順を公開前に確認できます。': 'Check room order and win order before publish.',
@@ -1070,6 +1096,7 @@ const en = {
   選択してください: 'Please select',
   タスク一覧: 'Task list',
   'タスク一覧に戻る': 'Back to task list',
+  '参加者ホームに戻る': 'Back to participant home',
   対戦表に戻る: 'Back to draw',
   送信完了: 'Submitted',
   '送信しました。次の操作を選択してください。': 'Submitted. Choose where to go next.',

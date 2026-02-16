@@ -299,27 +299,48 @@ function teamEvaluationPath(row: any) {
   if (!teamA || !teamB) {
     return `/user/${tournamentId.value}/speaker/rounds/${round.value}/ballot/home`
   }
+  const submitterCandidates = Array.from(
+    new Set([...(row?.chairs ?? []), ...(row?.panels ?? []), ...(row?.trainees ?? [])])
+  ).filter(Boolean)
+  if (submitterCandidates.length === 1) {
+    const query = new URLSearchParams({
+      teamA,
+      teamB,
+      submitter: String(submitterCandidates[0]),
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${round.value}/ballot/entry?${query.toString()}`
+  }
   const query = new URLSearchParams({
+    task: 'ballot',
+    round: String(round.value),
     teamA,
     teamB,
   })
-  return `/user/${tournamentId.value}/speaker/rounds/${round.value}/ballot/entry?${query.toString()}`
+  if (submitterCandidates.length > 0) {
+    query.set(
+      'submitters',
+      submitterCandidates.map((id: string) => encodeURIComponent(String(id))).join(',')
+    )
+  }
+  return `/user/${tournamentId.value}/speaker/home?${query.toString()}`
 }
 
 function judgeEvaluationPath(row: any) {
-  const query = new URLSearchParams({
-    filter: 'team',
-    actor: 'team',
-  })
-  const preferredTeam = String(row?.teams?.gov ?? row?.teams?.opp ?? '')
-  if (preferredTeam) {
-    query.set('team', preferredTeam)
-  }
+  const teamGov = String(row?.teams?.gov ?? '')
+  const teamOpp = String(row?.teams?.opp ?? '')
   const targetIds = Array.from(new Set([...(row?.chairs ?? []), ...(row?.panels ?? [])])).filter(Boolean)
-  if (targetIds.length === 1) {
-    return `/user/${tournamentId.value}/adjudicator/rounds/${round.value}/feedback/${encodeURIComponent(String(targetIds[0]))}?${query.toString()}`
+  if (!teamGov || !teamOpp || targetIds.length === 0) {
+    return `/user/${tournamentId.value}/adjudicator/home`
   }
-  return `/user/${tournamentId.value}/adjudicator/rounds/${round.value}/feedback/home?${query.toString()}`
+  const query = new URLSearchParams({
+    actor: 'team',
+    task: 'feedback',
+    round: String(round.value),
+    teamGov,
+    teamOpp,
+    targets: targetIds.map((id: string) => encodeURIComponent(String(id))).join(','),
+  })
+  return `/user/${tournamentId.value}/adjudicator/home?${query.toString()}`
 }
 
 function judgeEvaluationEnabled() {
@@ -561,6 +582,17 @@ onMounted(() => {
 .draw-actions {
   gap: var(--space-1);
   flex-wrap: wrap;
+}
+
+.card.stack > .draw-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.card.stack > .draw-actions :deep(.btn) {
+  width: 100%;
+  justify-content: center;
 }
 
 .draw-actions-cell {
