@@ -7,7 +7,7 @@
       </div>
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
-    <p v-if="adjudicatorImportInfo" class="muted import-info">{{ adjudicatorImportInfo }}</p>
+    <p v-if="allocationImportInfo" class="muted import-info">{{ allocationImportInfo }}</p>
 
     <div class="card stack" v-if="formError || draws.error">
       <p v-if="formError" class="error">{{ formError }}</p>
@@ -376,10 +376,10 @@
             <Button
               variant="secondary"
               size="sm"
-              @click="openAdjudicatorImportModal"
+              @click="openAllocationImportModal"
               :disabled="isLoading || locked"
             >
-              {{ $t('ジャッジ組み合わせ取込') }}
+              {{ $t('対戦表組み合わせ取込') }}
             </Button>
             <Button
               variant="secondary"
@@ -415,24 +415,22 @@
     </section>
 
     <ImportTextModal
-      :open="showAdjudicatorImportModal"
-      v-model:text="adjudicatorImportText"
-      v-model:mode="adjudicatorImportMode"
-      :title="$t('ジャッジ組み合わせ取込')"
-      :help-text="$t('CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。')"
-      :mode-options="adjudicatorImportModeOptions"
-      :placeholder="$t('例: match,chairs,panels,trainees')"
+      :open="showAllocationImportModal"
+      v-model:text="allocationImportText"
+      :title="$t('対戦表組み合わせ取込')"
+      :help-text="$t('CSV/TSVを貼り付けるかファイル選択して、非空セルだけ対戦表へ反映します。')"
+      :placeholder="$t('例: match,venue,gov,opp,chairs,panels,trainees')"
       :description="
         $t(
-          'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）'
+          '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ管理で取り込み）。'
         )
       "
-      :example="'match,chairs,panels,trainees\n1,Judge A,Judge B|Judge C,\n2,Judge D,,Judge E'"
-      :error="adjudicatorImportError"
+      :example="'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,,,Team D,,Judge D,'"
+      :error="allocationImportError"
       :disabled="locked"
-      @file-change="handleAdjudicatorImportFile"
-      @close="closeAdjudicatorImportModal"
-      @submit="applyAdjudicatorImport"
+      @file-change="handleAllocationImportFile"
+      @close="closeAllocationImportModal"
+      @submit="applyAllocationImport"
     />
 
     <div
@@ -910,10 +908,9 @@ import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { DrawPreviewRow } from '@/types/draw-preview'
 import {
-  applyAdjudicatorImportEntries,
-  parseAdjudicatorImportText,
-  type AdjudicatorImportMode,
-} from '@/utils/adjudicator-import'
+  applyDrawAllocationImportEntries,
+  parseDrawAllocationImportText,
+} from '@/utils/draw-allocation-import'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -969,21 +966,14 @@ const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
 const generatedUserDefinedData = ref<Record<string, any> | null>(null)
 const showAutoGenerateModal = ref(false)
-const showAdjudicatorImportModal = ref(false)
+const showAllocationImportModal = ref(false)
 const showDeleteDrawModal = ref(false)
 const compiledHistory = ref<any[]>([])
 const selectedAutoSnapshotId = ref('')
 const selectedDetailSnapshotId = ref('')
-const adjudicatorImportText = ref('')
-const adjudicatorImportMode = ref<AdjudicatorImportMode>('replace')
-const adjudicatorImportError = ref<string | null>(null)
-const adjudicatorImportInfo = ref<string | null>(null)
-const adjudicatorImportModeOptions = computed<Array<{ value: AdjudicatorImportMode; label: string }>>(
-  () => [
-    { value: 'replace', label: t('置換') },
-    { value: 'append', label: t('追記') },
-  ]
-)
+const allocationImportText = ref('')
+const allocationImportError = ref<string | null>(null)
+const allocationImportInfo = ref<string | null>(null)
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
@@ -1563,44 +1553,44 @@ async function save() {
   savedDrawId.value = saved?._id ?? savedDrawId.value
 }
 
-function openAdjudicatorImportModal() {
-  adjudicatorImportError.value = null
-  showAdjudicatorImportModal.value = true
+function openAllocationImportModal() {
+  allocationImportError.value = null
+  showAllocationImportModal.value = true
 }
 
-function closeAdjudicatorImportModal() {
-  showAdjudicatorImportModal.value = false
-  adjudicatorImportError.value = null
+function closeAllocationImportModal() {
+  showAllocationImportModal.value = false
+  allocationImportError.value = null
 }
 
-async function handleAdjudicatorImportFile(event: Event) {
+async function handleAllocationImportFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  adjudicatorImportError.value = null
-  adjudicatorImportText.value = await file.text()
+  allocationImportError.value = null
+  allocationImportText.value = await file.text()
   input.value = ''
 }
 
-function applyAdjudicatorImport() {
-  adjudicatorImportError.value = null
-  adjudicatorImportInfo.value = null
+function applyAllocationImport() {
+  allocationImportError.value = null
+  allocationImportInfo.value = null
   if (locked.value) {
-    adjudicatorImportError.value = t('ドローがロックされているため取り込みできません。')
+    allocationImportError.value = t('ドローがロックされているため取り込みできません。')
     return
   }
 
-  const parsed = parseAdjudicatorImportText(adjudicatorImportText.value)
+  const parsed = parseDrawAllocationImportText(allocationImportText.value)
   if (parsed.errors.length > 0) {
-    adjudicatorImportError.value = parsed.errors.join(' / ')
+    allocationImportError.value = parsed.errors.join(' / ')
     return
   }
   if (parsed.entries.length === 0) {
-    adjudicatorImportError.value = t('取り込み可能な行がありません。')
+    allocationImportError.value = t('取り込み可能な行がありません。')
     return
   }
 
-  const applied = applyAdjudicatorImportEntries({
+  const applied = applyDrawAllocationImportEntries({
     allocation: allocation.value,
     entries: parsed.entries,
     teams: teams.teams.map((team) => ({ _id: String(team._id), name: String(team.name ?? '') })),
@@ -1608,10 +1598,13 @@ function applyAdjudicatorImport() {
       _id: String(adj._id),
       name: String(adj.name ?? ''),
     })),
-    mode: adjudicatorImportMode.value,
+    venues: venues.venues.map((venue) => ({
+      _id: String(venue._id),
+      name: String(venue.name ?? ''),
+    })),
   })
   if (applied.errors.length > 0) {
-    adjudicatorImportError.value = applied.errors.join(' / ')
+    allocationImportError.value = applied.errors.join(' / ')
     return
   }
 
@@ -1622,10 +1615,64 @@ function applyAdjudicatorImport() {
     panels: [...(row.panels ?? [])],
     trainees: [...(row.trainees ?? [])],
   }))
-  adjudicatorImportInfo.value = t('ジャッジ組み合わせを {count} 試合に取り込みました。', {
+  allocationImportInfo.value = t('対戦表組み合わせを {count} 試合に取り込みました。', {
     count: applied.appliedRows,
   })
-  closeAdjudicatorImportModal()
+  closeAllocationImportModal()
+}
+
+function teamPairKey(row: DrawAllocationRow) {
+  const gov = String(row.teams?.gov ?? '')
+  const opp = String(row.teams?.opp ?? '')
+  if (!gov || !opp) return ''
+  return [gov, opp].sort().join('::')
+}
+
+function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
+  const currentRows = cloneAllocation(allocation.value)
+  const rowsByPair = new Map<string, DrawAllocationRow[]>()
+
+  currentRows.forEach((row) => {
+    const key = teamPairKey(row)
+    if (!key) return
+    const list = rowsByPair.get(key) ?? []
+    list.push(row)
+    rowsByPair.set(key, list)
+  })
+
+  return generatedRows.map((generatedRow, index) => {
+    const nextRow: DrawAllocationRow = {
+      venue: generatedRow.venue ?? '',
+      teams: {
+        gov: String(generatedRow.teams?.gov ?? ''),
+        opp: String(generatedRow.teams?.opp ?? ''),
+      },
+      chairs: [...(generatedRow.chairs ?? [])],
+      panels: [...(generatedRow.panels ?? [])],
+      trainees: [...(generatedRow.trainees ?? [])],
+    }
+
+    let preservedRow: DrawAllocationRow | undefined
+    const key = teamPairKey(nextRow)
+    if (key) {
+      const matchedRows = rowsByPair.get(key) ?? []
+      if (matchedRows.length > 0) {
+        preservedRow = matchedRows.shift()
+      }
+    }
+    if (!preservedRow) {
+      preservedRow = currentRows[index]
+    }
+    if (!preservedRow) return nextRow
+
+    return {
+      venue: preservedRow.venue ?? '',
+      teams: nextRow.teams,
+      chairs: [...(preservedRow.chairs ?? [])],
+      panels: [...(preservedRow.panels ?? [])],
+      trainees: [...(preservedRow.trainees ?? [])],
+    }
+  })
 }
 
 async function requestAllocation() {
@@ -1724,7 +1771,11 @@ async function requestAllocation() {
     const res = await api.post(endpoint, payload)
     const data = res.data?.data
     if (data?.allocation) {
-      allocation.value = cloneAllocation(data.allocation)
+      const generatedRows = cloneAllocation(data.allocation)
+      allocation.value =
+        requestScope.value === 'teams'
+          ? mergeTeamScopeAllocation(generatedRows)
+          : generatedRows
       if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
         generatedUserDefinedData.value =
           data.userDefinedData && typeof data.userDefinedData === 'object'

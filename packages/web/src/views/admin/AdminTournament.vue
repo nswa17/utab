@@ -305,6 +305,10 @@ watch(
 .header-title-block h2 {
   margin: 0;
   line-height: 1.2;
+  color: var(--color-text);
+  font-size: clamp(1.9rem, 2.4vw, 2.45rem);
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .header-reload {

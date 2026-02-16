@@ -3358,10 +3358,10 @@ textarea {
 .page-title {
   margin: 0;
   color: var(--color-text);
-  font-size: clamp(1.95rem, 2.2vw, 2.25rem);
+  font-size: clamp(1.55rem, 1.9vw, 1.92rem);
   line-height: 1.2;
   letter-spacing: 0.01em;
-  font-weight: 800;
+  font-weight: 750;
 }
 
 .entity-switch {

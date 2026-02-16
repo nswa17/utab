@@ -4,8 +4,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    globalSetup: './test/global-setup.ts',
-    setupFiles: ['./test/setup-env.ts'],
     pool: 'forks',
     fileParallelism: true,
     maxWorkers: 2,
