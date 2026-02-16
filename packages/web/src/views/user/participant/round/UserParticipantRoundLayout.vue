@@ -49,18 +49,9 @@ function isTabActive(tab: 'draw' | 'ballot' | 'feedback') {
   return route.path.includes(`/rounds/${round.value}/${tab}`)
 }
 
-const actorMode = computed<'team' | 'adjudicator'>(() => {
-  if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
-  if (participant.value === 'speaker') return 'team'
-  return 'adjudicator'
-})
-
 const currentTaskLabel = computed(() => {
-  if (route.path.includes('/ballot/')) return t('スコアシート')
-  if (route.path.includes('/feedback/')) {
-    if (participant.value === 'speaker') return t('ジャッジ評価')
-    return actorMode.value === 'team' ? t('チーム評価') : t('ジャッジフィードバック')
-  }
+  if (route.path.includes('/ballot/')) return t('チーム評価')
+  if (route.path.includes('/feedback/')) return t('ジャッジ評価')
   if (route.path.includes('/draw')) return t('対戦表')
   return t('ラウンド {round}', { round: round.value })
 })

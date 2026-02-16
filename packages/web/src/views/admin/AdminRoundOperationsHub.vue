@@ -1,7 +1,7 @@
 <template>
   <section class="stack">
     <div class="row section-header">
-      <h3>{{ $t('ラウンド運営ハブ') }}</h3>
+      <h3 class="page-title">{{ $t('ラウンド運営ハブ') }}</h3>
     </div>
 
     <LoadingState v-if="sectionLoading" />
@@ -74,95 +74,106 @@
           </div>
           <p v-if="activeTaskHint" class="muted small">{{ activeTaskHint }}</p>
 
-          <section v-if="activeTask === 'draw'" class="card soft stack step-card">
-            <div class="row step-title-row">
-              <strong>1. {{ $t('対戦生成') }}</strong>
-            </div>
+          <section v-if="activeTask === 'draw'" class="stack step-content">
             <p class="muted small">
               {{ $t('対象ラウンド: {round}', { round: selectedRound }) }}
-            </p>
-            <p v-if="drawDependencyWarning" class="muted warning">
-              {{ drawDependencyWarning }}
             </p>
             <p class="muted small">
               {{ $t('対戦生成と保存は対戦表設定で実行します。') }}
             </p>
-            <iframe
-              v-if="allocationEmbedUrl"
-              class="step-inline-frame"
-              :src="allocationEmbedUrl"
-              :title="$t('対戦表設定')"
-              loading="lazy"
+            <AdminRoundAllocation
+              v-if="selectedRound !== null"
+              :embedded="true"
+              :embedded-round="selectedRound"
             />
           </section>
 
-          <section v-else-if="activeTask === 'publish'" class="card soft stack step-card">
-            <div class="row step-title-row">
-              <strong>2. {{ $t('公開/ロック') }}</strong>
-            </div>
+          <section v-else-if="activeTask === 'publish'" class="stack step-content">
             <p v-if="!selectedRoundHasDraw" class="muted small">{{ $t('まず対戦表を生成してください。') }}</p>
-            <template v-else>
-              <div class="publish-switch-grid">
-                <label class="publish-switch-card">
-                  <span class="publish-switch-label">{{ $t('ドロー公開') }}</span>
-                  <span class="toggle-switch">
-                    <input
-                      type="checkbox"
-                      :checked="drawPublishDraft.drawOpened"
-                      :disabled="isLoading || publicationSaving"
-                      @change="onPublishToggle('drawOpened', $event)"
-                    />
-                    <span class="toggle-slider"></span>
-                  </span>
-                </label>
-                <label class="publish-switch-card">
-                  <span class="publish-switch-label">{{ $t('割り当て公開') }}</span>
-                  <span class="toggle-switch">
-                    <input
-                      type="checkbox"
-                      :checked="drawPublishDraft.allocationOpened"
-                      :disabled="isLoading || publicationSaving"
-                      @change="onPublishToggle('allocationOpened', $event)"
-                    />
-                    <span class="toggle-slider"></span>
-                  </span>
-                </label>
-                <label class="publish-switch-card">
-                  <span class="publish-switch-label">{{ $t('ドローをロック') }}</span>
-                  <span class="toggle-switch">
-                    <input
-                      type="checkbox"
-                      :checked="drawPublishDraft.locked"
-                      :disabled="isLoading || publicationSaving"
-                      @change="onPublishToggle('locked', $event)"
-                    />
-                    <span class="toggle-slider"></span>
-                  </span>
-                </label>
+            <div class="publish-switch-grid">
+              <section class="publish-switch-card motion-publish-card">
+                <RoundMotionEditor
+                  v-if="selectedRoundData"
+                  :tournament-id="tournamentId"
+                  :round-id="String(selectedRoundData._id)"
+                  :saved-motion="selectedMotion"
+                  :disabled="publicationSwitchBusy"
+                >
+                  <template #status>
+                    <label class="row publish-switch-inline publish-switch-inline-compact">
+                      <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
+                      <ToggleSwitch
+                        class="publish-switch-toggle"
+                        :model-value="motionOpenedValue"
+                        :disabled="publicationSwitchBusy"
+                        :aria-label="$t('モーション公開')"
+                        @update:model-value="onMotionPublishToggle"
+                      />
+                    </label>
+                    <label class="row publish-switch-inline publish-switch-inline-compact">
+                      <span class="publish-switch-label">{{ $t('対戦表公開（チームのみ）') }}</span>
+                      <ToggleSwitch
+                        class="publish-switch-toggle"
+                        :model-value="drawOpenedValue"
+                        :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                        :aria-label="$t('対戦表公開（チームのみ）')"
+                        @update:model-value="(checked) => onPublishToggle('drawOpened', checked)"
+                      />
+                    </label>
+                    <label class="row publish-switch-inline publish-switch-inline-compact">
+                      <span class="publish-switch-label">{{ $t('対戦表公開（ジャッジのみ）') }}</span>
+                      <ToggleSwitch
+                        class="publish-switch-toggle"
+                        :model-value="allocationOpenedValue"
+                        :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                        :aria-label="$t('対戦表公開（ジャッジのみ）')"
+                        @update:model-value="(checked) => onPublishToggle('allocationOpened', checked)"
+                      />
+                    </label>
+                  </template>
+                </RoundMotionEditor>
+              </section>
+            </div>
+            <section class="stack publish-preview-section">
+              <div class="row preview-head">
+                <h4>{{ $t('対戦表') }}</h4>
               </div>
-              <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
-              <iframe
-                v-if="rawResultEmbedUrl"
-                class="step-inline-frame"
-                :src="rawResultEmbedUrl"
-                :title="$t('生結果')"
-                loading="lazy"
+              <DrawPreviewTable
+                :rows="publishPreviewRows"
+                :gov-label="$t('政府')"
+                :opp-label="$t('反対')"
               />
-            </template>
+            </section>
+            <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
           </section>
 
-          <section v-else-if="activeTask === 'submissions'" class="card soft stack step-card">
-            <div class="row step-title-row">
-              <strong>3. {{ $t('提出状況') }}</strong>
-            </div>
-            <div class="grid stat-grid">
-              <div class="stat">
+          <section v-else-if="activeTask === 'submissions'" class="stack step-content">
+            <div class="grid submission-overview-grid">
+              <div class="card soft stack submission-overview-card">
+                <span class="muted small">{{ $t('提出数') }}</span>
+                <strong>{{ totalSubmittedCount(selectedRound) }} / {{ totalExpectedCount(selectedRound) }}</strong>
+                <span class="muted small">
+                  {{
+                    $t('提出者情報不足: チーム評価 {ballot} / ジャッジフィードバック {feedback}', {
+                      ballot: unknownSubmissionCount(selectedRound, 'ballot'),
+                      feedback: unknownSubmissionCount(selectedRound, 'feedback'),
+                    })
+                  }}
+                </span>
+              </div>
+              <div class="card soft stack submission-overview-card">
                 <span class="muted small">{{ $t('スコアシート') }}</span>
                 <strong>{{ ballotSubmittedCount(selectedRound) }} / {{ ballotExpectedCount(selectedRound) }}</strong>
+                <span class="muted small">
+                  {{ $t('提出者情報不足: {count}', { count: unknownSubmissionCount(selectedRound, 'ballot') }) }}
+                </span>
               </div>
-              <div class="stat">
+              <div class="card soft stack submission-overview-card">
                 <span class="muted small">{{ $t('フィードバック') }}</span>
                 <strong>{{ feedbackSubmittedCount(selectedRound) }} / {{ feedbackExpectedCount(selectedRound) }}</strong>
+                <span class="muted small">
+                  {{ $t('提出者情報不足: {count}', { count: unknownSubmissionCount(selectedRound, 'feedback') }) }}
+                </span>
               </div>
             </div>
             <p v-if="selectedRoundBallotGapWarning" class="muted warning">
@@ -171,21 +182,23 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <iframe
-              v-if="submissionsEmbedUrl"
-              class="step-inline-frame step-inline-frame-submissions"
-              :src="submissionsEmbedUrl"
-              :title="$t('提出一覧')"
-              loading="lazy"
+            <AdminTournamentSubmissions
+              v-if="selectedRound !== null"
+              class="step-inline-submissions"
+              :embedded="true"
+              :embedded-round="selectedRound"
+              :hide-summary-cards="true"
+              :split-by-evaluation="true"
             />
           </section>
 
-          <section v-else class="card soft stack step-card">
-            <div class="row step-title-row">
-              <strong>4. {{ $t('集計設定') }}</strong>
-            </div>
+          <section v-else class="stack step-content">
             <p class="muted small">
-              {{ $t('選択したラウンドを提出データで集計します。') }}
+              {{
+                $t(
+                  '提出結果を集計して、このラウンド終了時点の成績を確定します。成績に含めるラウンドを下で選択してください。未選択のラウンドはこの時点の成績に反映されません。'
+                )
+              }}
             </p>
             <p class="muted small">
               {{
@@ -209,49 +222,40 @@
                 <span>{{ roundLabel(roundNumber) }}</span>
               </label>
             </div>
+            <section class="card soft stack compile-option-panel">
+              <h5>{{ $t('集計オプション') }}</h5>
+              <CompileOptionsEditor
+                v-model:source="compileSource"
+                v-model:ranking-preset="rankingPriorityPreset"
+                v-model:ranking-order="rankingPriorityOrder"
+                v-model:winner-policy="compileWinnerPolicy"
+                v-model:tie-points="compileTiePoints"
+                v-model:merge-policy="compileDuplicateMergePolicy"
+                v-model:poi-aggregation="compilePoiAggregation"
+                v-model:best-aggregation="compileBestAggregation"
+                v-model:missing-data-policy="compileMissingDataPolicy"
+                v-model:include-labels="compileIncludeLabels"
+                :disabled="isLoading"
+              />
+            </section>
             <p v-if="selectedRoundBallotGapWarning" class="muted warning">
               {{ selectedRoundBallotGapWarning }}
             </p>
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <div class="row compile-diff-controls">
-              <label class="stack compile-diff-field">
-                <span class="muted small">{{ $t('差分比較') }}</span>
-                <select v-model="compileDiffBaselineMode">
-                  <option value="latest">{{ $t('最新集計') }}</option>
-                  <option value="compiled">{{ $t('過去の集計結果を選択') }}</option>
-                </select>
-              </label>
-              <label v-if="compileDiffBaselineMode === 'compiled'" class="stack compile-diff-field wide">
-                <span class="muted small">{{ $t('比較対象') }}</span>
-                <select v-model="compileDiffBaselineCompiledId">
-                  <option value="">{{ $t('選択してください') }}</option>
-                  <option
-                    v-for="option in baselineCompiledOptions"
-                    :key="option.compiledId"
-                    :value="option.compiledId"
-                  >
-                    {{ baselineCompiledOptionLabel(option) }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <p v-if="compileDiffBaselineMode === 'compiled' && !compileDiffBaselineCompiledId.trim()" class="muted warning">
-              {{ $t('過去の集計結果を選ぶ場合は比較対象を選択してください。') }}
-            </p>
             <div class="row step-actions">
               <Button
                 size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile || !canRunCompile"
-                @click="runCompileWithSource('submissions')"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || (compileSource === 'submissions' && shouldBlockSubmissionCompile)"
+                @click="runCompileWithSource(compileSource)"
               >
                 {{ $t('集計を実行') }}
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || !canRunCompile"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished"
                 @click="openForceCompileModal"
               >
                 {{ $t('強制実行') }}
@@ -260,8 +264,18 @@
             </div>
             <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
               <div class="row compile-result-head">
-                <strong>{{ $t('集計レポート') }}</strong>
-                <span class="muted small">{{ $t('差分基準: {baseline}', { baseline: compileDiffBaselineLabel }) }}</span>
+                <div class="stack tight">
+                  <strong>{{ $t('集計レポート') }}</strong>
+                  <span class="muted small">{{ $t('差分基準: {baseline}', { baseline: compileDiffBaselineLabel }) }}</span>
+                </div>
+                <CompiledSnapshotSelect
+                  v-if="baselineCompiledOptions.length > 0"
+                  v-model="compileDiffBaselineCompiledId"
+                  class="compile-result-baseline-select"
+                  :label="$t('過去の集計結果')"
+                  :options="compileDiffSnapshotOptions"
+                  :placeholder="$t('最新集計')"
+                />
               </div>
               <div class="row diff-legend">
                 <span class="diff-legend-item">
@@ -281,12 +295,17 @@
                 <thead>
                   <tr>
                     <th v-for="key in compileColumns" :key="`compile-col-${key}`">
-                      {{ compileColumnLabel(key) }}
+                      <SortHeaderButton
+                        compact
+                        :label="compileColumnLabel(key)"
+                        :indicator="compileSortIndicator(key)"
+                        @click="setCompileSort(key)"
+                      />
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in compileRows" :key="String(row?.id ?? '')">
+                  <tr v-for="row in sortedCompileRows" :key="String(row?.id ?? '')">
                     <td v-for="key in compileColumns" :key="`compile-${String(row?.id ?? '')}-${key}`">
                       <span v-if="key === 'team'">{{ teamName(String(row?.id ?? '')) }}</span>
                       <span v-else-if="key === 'ranking'" class="diff-value">
@@ -330,23 +349,50 @@
     >
       <div class="modal card stack" role="dialog" aria-modal="true">
         <h4>{{ $t('強制実行の確認') }}</h4>
-        <p class="muted">
-          {{
-            $t(
-              '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
-            )
-          }}
-        </p>
-        <ul class="list compact">
-          <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
-          <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
-          <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
-        </ul>
+        <div class="force-warning-banner">
+          <strong>{{ $t('注意: 強制実行は例外運用です。') }}</strong>
+          <p>
+            {{
+              $t(
+                '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
+              )
+            }}
+          </p>
+          <ul class="list compact force-warning-list">
+            <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
+            <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
+            <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
+          </ul>
+        </div>
+        <section class="card soft stack force-option-panel">
+          <h5>{{ $t('強制実行オプション') }}</h5>
+          <label class="stack force-option-field">
+            <span class="muted small">{{ $t('欠損データの扱い') }}</span>
+            <select v-model="forceCompileMissingDataPolicy">
+              <option value="warn">{{ $t('警告して続行') }}</option>
+              <option value="exclude">{{ $t('欠損データを除外') }}</option>
+              <option value="error">{{ $t('欠損があれば中止') }}</option>
+            </select>
+          </label>
+          <div class="stack force-option-field">
+            <span class="muted small">{{ $t('生成対象') }}</span>
+            <div class="grid force-include-grid">
+              <label v-for="option in forceIncludeLabelOptions" :key="`force-include-${option.value}`" class="row">
+                <input
+                  type="checkbox"
+                  :checked="forceCompileIncludeLabels.includes(option.value)"
+                  @change="toggleForceCompileIncludeLabel(option.value, $event)"
+                />
+                <span>{{ option.label }}</span>
+              </label>
+            </div>
+          </div>
+        </section>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeForceCompileModal">
             {{ $t('キャンセル') }}
           </Button>
-          <Button size="sm" :disabled="isLoading" @click="confirmForcedCompile">
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmForcedCompile">
             {{ $t('強制実行する') }}
           </Button>
         </div>
@@ -356,19 +402,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Table from '@/components/common/Table.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
+import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
+import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
+import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
+import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
 import { useDrawsStore } from '@/stores/draws'
 import { useSubmissionsStore } from '@/stores/submissions'
 import { useTeamsStore } from '@/stores/teams'
 import { useCompiledStore } from '@/stores/compiled'
+import { useAdjudicatorsStore } from '@/stores/adjudicators'
+import { useVenuesStore } from '@/stores/venues'
 import { api } from '@/utils/api'
-import { DEFAULT_COMPILE_OPTIONS, type CompileOptions } from '@/types/compiled'
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  normalizeCompileOptions,
+  type CompileRankingMetric,
+  type CompileIncludeLabel,
+  type CompileOptions,
+} from '@/types/compiled'
+import type { DrawPreviewRow } from '@/types/draw-preview'
 import {
   formatSignedDelta,
   rankingTrendSymbol,
@@ -386,6 +449,8 @@ const drawsStore = useDrawsStore()
 const submissionsStore = useSubmissionsStore()
 const teamsStore = useTeamsStore()
 const compiledStore = useCompiledStore()
+const adjudicatorsStore = useAdjudicatorsStore()
+const venuesStore = useVenuesStore()
 
 const tournamentId = computed(() => String(route.params.tournamentId ?? ''))
 const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.round - b.round))
@@ -400,17 +465,45 @@ const actionError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
-const compileDiffBaselineMode = ref<'latest' | 'compiled'>('latest')
+const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
+  DEFAULT_COMPILE_OPTIONS.ranking_priority.preset
+)
+const rankingPriorityOrder = ref<CompileRankingMetric[]>([
+  ...DEFAULT_COMPILE_OPTIONS.ranking_priority.order,
+])
+const compileWinnerPolicy = ref<CompileOptions['winner_policy']>(
+  DEFAULT_COMPILE_OPTIONS.winner_policy
+)
+const compileTiePoints = ref<number>(DEFAULT_COMPILE_OPTIONS.tie_points)
+const compileDuplicateMergePolicy = ref<CompileOptions['duplicate_normalization']['merge_policy']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.merge_policy
+)
+const compilePoiAggregation = ref<CompileOptions['duplicate_normalization']['poi_aggregation']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.poi_aggregation
+)
+const compileBestAggregation = ref<CompileOptions['duplicate_normalization']['best_aggregation']>(
+  DEFAULT_COMPILE_OPTIONS.duplicate_normalization.best_aggregation
+)
+const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
+  DEFAULT_COMPILE_OPTIONS.missing_data_policy
+)
+const compileIncludeLabels = ref<CompileIncludeLabel[]>([
+  ...DEFAULT_COMPILE_OPTIONS.include_labels,
+])
 const compileDiffBaselineCompiledId = ref('')
 const compiledHistory = ref<any[]>([])
 const selectedCompileRounds = ref<number[]>([])
 const forceCompileModalOpen = ref(false)
 const publicationSaving = ref(false)
-const drawPublishDraft = reactive({
-  drawOpened: false,
-  allocationOpened: false,
-  locked: false,
-})
+const compileSortKey = ref('ranking')
+const compileSortDirection = ref<'asc' | 'desc'>('asc')
+const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
+  DEFAULT_COMPILE_OPTIONS.missing_data_policy
+)
+const forceCompileIncludeLabels = ref<CompileIncludeLabel[]>([
+  ...DEFAULT_COMPILE_OPTIONS.include_labels,
+])
+const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
 const isLoading = computed(
   () =>
@@ -419,6 +512,8 @@ const isLoading = computed(
     drawsStore.loading ||
     submissionsStore.loading ||
     teamsStore.loading ||
+    adjudicatorsStore.loading ||
+    venuesStore.loading ||
     compiledStore.loading
 )
 const loadError = computed(
@@ -428,6 +523,8 @@ const loadError = computed(
     drawsStore.error ||
     submissionsStore.error ||
     teamsStore.error ||
+    adjudicatorsStore.error ||
+    venuesStore.error ||
     compiledStore.error ||
     ''
 )
@@ -442,8 +539,19 @@ const selectedRoundLabel = computed(() => {
 const selectedDraw = computed(() =>
   drawsStore.draws.find((draw) => Number(draw.round) === selectedRound.value) ?? null
 )
+const motionOpenedValue = computed(() => Boolean(selectedRoundData.value?.motionOpened))
+const selectedMotion = computed(() => {
+  const motions = Array.isArray(selectedRoundData.value?.motions) ? selectedRoundData.value?.motions : []
+  return motions[0] ? String(motions[0]) : ''
+})
+const drawOpenedValue = computed(() => Boolean(selectedDraw.value?.drawOpened))
+const allocationOpenedValue = computed(() => Boolean(selectedDraw.value?.allocationOpened))
+const lockedValue = computed(() => Boolean(selectedDraw.value?.locked))
 const selectedRoundHasDraw = computed(
   () => Boolean(selectedDraw.value && Array.isArray(selectedDraw.value.allocation) && selectedDraw.value.allocation.length > 0)
+)
+const publicationSwitchBusy = computed(
+  () => publicationSaving.value || roundsStore.loading || drawsStore.loading
 )
 const selectedRoundPublished = computed(
   () => Boolean(selectedDraw.value?.drawOpened && selectedDraw.value?.allocationOpened)
@@ -493,10 +601,12 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const canRunCompile = computed(() => {
-  if (compileDiffBaselineMode.value !== 'compiled') return true
-  return compileDiffBaselineCompiledId.value.trim().length > 0
-})
+const compileDiffSnapshotOptions = computed(() =>
+  baselineCompiledOptions.value.map((option) => ({
+    value: option.compiledId,
+    label: baselineCompiledOptionLabel(option),
+  }))
+)
 const compileRows = computed<any[]>(() => {
   return Array.isArray(compiledStore.compiled?.compiled_team_results)
     ? compiledStore.compiled!.compiled_team_results
@@ -508,6 +618,29 @@ const compileColumns = computed(() => {
     compileRows.value.some((row) => toFiniteNumber(row?.[key]) !== null)
   )
   return ['ranking', 'team', ...visibleMetrics]
+})
+const sortedCompileRows = computed<any[]>(() => {
+  const key = compileSortKey.value
+  const direction = compileSortDirection.value === 'asc' ? 1 : -1
+  return compileRows.value
+    .map((row, index) => ({ row, index }))
+    .sort((leftEntry, rightEntry) => {
+      const left = compileSortValue(leftEntry.row, key)
+      const right = compileSortValue(rightEntry.row, key)
+      const numericLeft = typeof left === 'number' ? left : null
+      const numericRight = typeof right === 'number' ? right : null
+      if (numericLeft !== null && numericRight !== null) {
+        const delta = numericLeft - numericRight
+        if (delta !== 0) return direction * delta
+        return leftEntry.index - rightEntry.index
+      }
+      const textLeft = String(left ?? '')
+      const textRight = String(right ?? '')
+      const diff = sortCollator.compare(textLeft, textRight)
+      if (diff !== 0) return direction * diff
+      return leftEntry.index - rightEntry.index
+    })
+    .map((entry) => entry.row)
 })
 const compileDiffMeta = computed<any | null>(() =>
   compiledStore.compiled?.compile_diff_meta && typeof compiledStore.compiled.compile_diff_meta === 'object'
@@ -523,29 +656,9 @@ const compileDiffBaselineLabel = computed(() => {
     if (selected) {
       return t('選択した過去集計: {label}', { label: baselineCompiledOptionLabel(selected) })
     }
-    return t('選択した過去集計（ID: {id}）', { id: baselineId })
+    return t('選択した過去集計')
   }
-  return t('最新集計（ID: {id}）', { id: baselineId })
-})
-const allocationEmbedUrl = computed(() => {
-  if (selectedRound.value === null) return ''
-  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/rounds/${selectedRound.value}/allocation`, {
-    embed: '1',
-  })
-})
-const rawResultEmbedUrl = computed(() => {
-  if (selectedRound.value === null) return ''
-  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/rounds/${selectedRound.value}/result`, {
-    embed: '1',
-  })
-})
-const submissionsEmbedUrl = computed(() => {
-  if (selectedRound.value === null) return ''
-  return buildEmbedUrl(`/admin-embed/${tournamentId.value}/submissions`, {
-    context: 'round',
-    round: selectedRound.value,
-    embed: '1',
-  })
+  return t('最新集計')
 })
 const snapshotIncludesSelectedRound = computed(() => {
   if (selectedRound.value === null) return false
@@ -616,6 +729,14 @@ function feedbackSubmittedCount(roundNumber: number) {
   return countSubmissionActors(submissionsForRound(roundNumber, 'feedback'), submissionActorKey)
 }
 
+function totalExpectedCount(roundNumber: number) {
+  return ballotExpectedCount(roundNumber) + feedbackExpectedCount(roundNumber)
+}
+
+function totalSubmittedCount(roundNumber: number) {
+  return ballotSubmittedCount(roundNumber) + feedbackSubmittedCount(roundNumber)
+}
+
 function ballotExpectedCount(roundNumber: number) {
   return adjudicatorCount(roundNumber)
 }
@@ -673,40 +794,18 @@ const selectedRoundUnknownBallotWarning = computed(() => {
   })
 })
 
-const previousRoundNumbersForDraw = computed(() => {
-  if (selectedRound.value === null) return []
-  return sortedRounds.value
-    .filter((round) => Number(round.round) < selectedRound.value!)
-    .map((round) => Number(round.round))
-})
-const missingCompiledRoundsForDraw = computed(() =>
-  previousRoundNumbersForDraw.value.filter((round) => !compiledSnapshotRoundSet.value.has(round))
-)
-const drawDependencyWarning = computed(() => {
-  if (previousRoundNumbersForDraw.value.length === 0) return ''
-  if (missingCompiledRoundsForDraw.value.length === 0) return ''
-  return t('対戦生成に必要な前ラウンド集計が不足しています。未集計: {rounds}', {
-    rounds: missingCompiledRoundsForDraw.value.join(', '),
-  })
-})
-
 const shouldBlockSubmissionCompile = computed(() => selectedRoundBallotGap.value.hasGap)
-const shouldBlockDrawGeneration = computed(() => missingCompiledRoundsForDraw.value.length > 0)
 
 function roundTaskStates(roundNumber: number): Record<HubTask, HubTaskState> {
   const draw = drawsStore.draws.find((item) => Number(item.round) === roundNumber)
   const hasDraw = Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
   const published = Boolean(draw?.drawOpened && draw?.allocationOpened)
-  const previousRounds = sortedRounds.value
-    .filter((round) => Number(round.round) < roundNumber)
-    .map((round) => Number(round.round))
-  const shouldBlockDraw = previousRounds.some((round) => !compiledSnapshotRoundSet.value.has(round))
   const expected = ballotExpectedCount(roundNumber)
   const submitted = ballotSubmittedCount(roundNumber)
   const unknown = unknownSubmissionCount(roundNumber, 'ballot')
   const hasGap = (expected > 0 && submitted < expected) || unknown > 0
 
-  const drawState: HubTaskState = hasDraw ? 'done' : shouldBlockDraw ? 'blocked' : 'ready'
+  const drawState: HubTaskState = hasDraw ? 'done' : 'ready'
   const publishState: HubTaskState = published ? 'done' : !hasDraw ? 'blocked' : 'ready'
   const submissionsState: HubTaskState = !published ? 'blocked' : hasGap ? 'ready' : 'done'
   const compileState: HubTaskState = compiledRoundSet.value.has(roundNumber)
@@ -763,7 +862,7 @@ const operationTasks = computed<Array<{ key: HubTask; order: number; label: stri
     {
       key: 'publish',
       order: 2,
-      label: t('公開/ロック'),
+      label: t('公開設定'),
       state: states.publish,
       stateLabel: taskStateLabel(states.publish),
     },
@@ -787,24 +886,22 @@ const operationTasks = computed<Array<{ key: HubTask; order: number; label: stri
 const activeTaskHint = computed(() => {
   if (selectedRound.value === null) return ''
   if (activeTask.value === 'draw') {
-    if (drawDependencyWarning.value) return drawDependencyWarning.value
-    if (previousRoundNumbersForDraw.value.length === 0) {
-      return t('このラウンドには前提となる集計ラウンドがありません。')
-    }
-    return t('対戦生成では最新スナップショットを参照します。')
+    return t('対戦生成では参照集計結果を選択できます。未選択でも自動生成できます。')
   }
   if (activeTask.value === 'publish' && !selectedRoundHasDraw.value) {
     return t('まず対戦表を生成してください。')
   }
   if (activeTask.value === 'submissions' && !selectedRoundPublished.value) {
-    return t('公開後に提出を回収します。先に公開/ロックで公開してください。')
+    return t('公開後に提出を回収します。先に公開設定で公開してください。')
   }
   if (activeTask.value === 'compile') {
     if (!selectedRoundPublished.value) {
-      return t('公開後に提出を回収します。先に公開/ロックで公開してください。')
+      return t('公開後に提出を回収します。先に公開設定で公開してください。')
     }
     if (selectedRoundBallotGapWarning.value) return selectedRoundBallotGapWarning.value
-    return t('提出回収後に集計を実行します。')
+    return t(
+      '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。'
+    )
   }
   return ''
 })
@@ -822,7 +919,7 @@ function roundStatus(roundNumber: number): RoundOperationStatus {
 function roundCurrentStepLabel(roundNumber: number) {
   const nextTask = recommendedTaskForRound(roundNumber)
   if (nextTask === 'draw') return `1. ${t('対戦生成')}`
-  if (nextTask === 'publish') return `2. ${t('公開/ロック')}`
+  if (nextTask === 'publish') return `2. ${t('公開設定')}`
   if (nextTask === 'submissions') return `3. ${t('提出状況')}`
   return `4. ${t('集計設定')}`
 }
@@ -864,39 +961,107 @@ function baselineCompiledOptionLabel(option: BaselineCompiledOption) {
       : option.rounds.length > 0
         ? option.rounds.map((roundNumber) => roundLabel(roundNumber))
         : [t('全ラウンド')]
-  return `${formatCompiledTimestamp(option.createdAt)} / ${roundNames.join(', ')} / ID: ${option.compiledId}`
+  return `${t('日時')}: ${formatCompiledTimestamp(option.createdAt)} / ${t('考慮ラウンド')}: ${roundNames.join(', ')}`
 }
 
-function buildEmbedUrl(path: string, query: Record<string, string | number | undefined>) {
-  const params = new URLSearchParams()
-  Object.entries(query).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') return
-    params.set(key, String(value))
-  })
-  const queryString = params.toString()
-  if (!queryString) return path
-  return `${path}?${queryString}`
+const forceIncludeLabelOptions = computed<Array<{ value: CompileIncludeLabel; label: string }>>(() => [
+  { value: 'teams', label: t('チーム') },
+  { value: 'speakers', label: t('スピーカー') },
+  { value: 'adjudicators', label: t('ジャッジ') },
+  { value: 'poi', label: t('POI') },
+  { value: 'best', label: t('Best') },
+])
+
+function normalizeCompileSourceRounds(sourceRounds: unknown, maxRound: number): number[] {
+  if (!Array.isArray(sourceRounds)) return []
+  return Array.from(
+    new Set(
+      sourceRounds
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 1 && value <= maxRound)
+    )
+  ).sort((left, right) => left - right)
 }
 
-function buildCompileOptions(): CompileOptions {
+function applyCompileDraftFromRound() {
+  if (selectedRound.value === null) return
+  const userDefined = (selectedRoundData.value?.userDefinedData ?? {}) as Record<string, any>
+  const rawCompile = (userDefined.compile ?? {}) as Record<string, any>
+  const compileOptionsSource =
+    rawCompile.options && typeof rawCompile.options === 'object'
+      ? (rawCompile.options as CompileOptions)
+      : (rawCompile as CompileOptions)
+  const normalizedOptions = normalizeCompileOptions(compileOptionsSource)
+  compileSource.value = rawCompile.source === 'raw' ? 'raw' : 'submissions'
+  rankingPriorityPreset.value = normalizedOptions.ranking_priority.preset
+  rankingPriorityOrder.value = [...normalizedOptions.ranking_priority.order]
+  compileWinnerPolicy.value = normalizedOptions.winner_policy
+  compileTiePoints.value = normalizedOptions.tie_points
+  compileDuplicateMergePolicy.value = normalizedOptions.duplicate_normalization.merge_policy
+  compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
+  compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
+  compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
+  compileIncludeLabels.value =
+    normalizedOptions.include_labels.length > 0
+      ? [...normalizedOptions.include_labels]
+      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
+  const allowedRounds = compileTargetRounds.value
+  const configuredRounds = normalizeCompileSourceRounds(rawCompile.source_rounds, selectedRound.value).filter(
+    (roundNumber) => allowedRounds.includes(roundNumber)
+  )
+  selectedCompileRounds.value =
+    configuredRounds.length > 0 ? configuredRounds : allowedRounds.slice()
+}
+
+function toggleForceCompileIncludeLabel(label: CompileIncludeLabel, event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const checked = Boolean(input?.checked)
+  const current = new Set(forceCompileIncludeLabels.value)
+  if (checked) {
+    current.add(label)
+  } else {
+    current.delete(label)
+  }
+  const normalized = DEFAULT_COMPILE_OPTIONS.include_labels.filter((value) => current.has(value))
+  forceCompileIncludeLabels.value =
+    normalized.length > 0 ? normalized : [...DEFAULT_COMPILE_OPTIONS.include_labels]
+}
+
+function buildCompileOptions(overrides?: {
+  missing_data_policy?: CompileOptions['missing_data_policy']
+  include_labels?: CompileIncludeLabel[]
+}): CompileOptions {
+  const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
   const diffBaseline =
-    compileDiffBaselineMode.value === 'compiled' && compileDiffBaselineCompiledId.value.trim()
-      ? { mode: 'compiled' as const, compiled_id: compileDiffBaselineCompiledId.value.trim() }
+    selectedBaselineId.length > 0
+      ? { mode: 'compiled' as const, compiled_id: selectedBaselineId }
       : { mode: 'latest' as const }
+  const includeLabels =
+    Array.isArray(overrides?.include_labels) && overrides.include_labels.length > 0
+      ? Array.from(new Set(overrides.include_labels))
+      : Array.from(new Set(compileIncludeLabels.value))
+  const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
   return {
     ranking_priority: {
-      preset: DEFAULT_COMPILE_OPTIONS.ranking_priority.preset,
-      order: [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+      preset: rankingPriorityPreset.value,
+      order:
+        rankingOrder.length > 0
+          ? rankingOrder
+          : [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
     },
-    winner_policy: DEFAULT_COMPILE_OPTIONS.winner_policy,
-    tie_points: DEFAULT_COMPILE_OPTIONS.tie_points,
+    winner_policy: compileWinnerPolicy.value,
+    tie_points:
+      Number.isFinite(compileTiePoints.value) && compileTiePoints.value >= 0
+        ? compileTiePoints.value
+        : DEFAULT_COMPILE_OPTIONS.tie_points,
     duplicate_normalization: {
-      merge_policy: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.merge_policy,
-      poi_aggregation: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.poi_aggregation,
-      best_aggregation: DEFAULT_COMPILE_OPTIONS.duplicate_normalization.best_aggregation,
+      merge_policy: compileDuplicateMergePolicy.value,
+      poi_aggregation: compilePoiAggregation.value,
+      best_aggregation: compileBestAggregation.value,
     },
-    missing_data_policy: DEFAULT_COMPILE_OPTIONS.missing_data_policy,
-    include_labels: [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    missing_data_policy: overrides?.missing_data_policy ?? compileMissingDataPolicy.value,
+    include_labels:
+      includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
     diff_baseline: diffBaseline,
   }
 }
@@ -932,6 +1097,27 @@ function metricDeltaText(row: any, key: string) {
   return formatSignedDelta(row?.diff?.metrics?.[key]?.delta)
 }
 
+function compileSortValue(row: any, key: string): number | string {
+  if (key === 'team') return teamName(String(row?.id ?? ''))
+  const numeric = toFiniteNumber(row?.[key])
+  if (numeric !== null) return numeric
+  return String(row?.[key] ?? '')
+}
+
+function setCompileSort(key: string) {
+  if (compileSortKey.value === key) {
+    compileSortDirection.value = compileSortDirection.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  compileSortKey.value = key
+  compileSortDirection.value = key === 'ranking' ? 'asc' : 'desc'
+}
+
+function compileSortIndicator(key: string) {
+  if (compileSortKey.value !== key) return '↕'
+  return compileSortDirection.value === 'asc' ? '↑' : '↓'
+}
+
 function compileColumnLabel(key: string) {
   const map: Record<string, string> = {
     ranking: t('順位'),
@@ -964,11 +1150,69 @@ function teamName(id: string) {
   return teamsStore.teams.find((team) => team._id === id)?.name ?? id
 }
 
-function syncPublishDraft() {
-  drawPublishDraft.drawOpened = Boolean(selectedDraw.value?.drawOpened)
-  drawPublishDraft.allocationOpened = Boolean(selectedDraw.value?.allocationOpened)
-  drawPublishDraft.locked = Boolean(selectedDraw.value?.locked)
+function adjudicatorName(id: string) {
+  return adjudicatorsStore.adjudicators.find((item) => item._id === id)?.name ?? id
 }
+
+function venueName(id: string) {
+  return venuesStore.venues.find((item) => item._id === id)?.name ?? id
+}
+
+const venueOrderMap = computed(() => {
+  const map = new Map<string, number>()
+  venuesStore.venues.forEach((venue, index) => {
+    map.set(String(venue._id), index)
+  })
+  return map
+})
+
+function venuePriority(id?: string) {
+  if (!id) return Number.MAX_SAFE_INTEGER
+  return venueOrderMap.value.get(String(id)) ?? Number.MAX_SAFE_INTEGER - 1
+}
+
+const compiledTeamWinMap = computed(() => {
+  const map = new Map<string, number>()
+  const rows = Array.isArray(compiledStore.compiled?.compiled_team_results)
+    ? compiledStore.compiled.compiled_team_results
+    : []
+  rows.forEach((row: any) => {
+    const id = String(row?.id ?? '')
+    if (!id) return
+    map.set(id, toFiniteNumber(row?.win) ?? 0)
+  })
+  return map
+})
+
+function adjudicatorLabel(ids: string[]) {
+  if (!ids || ids.length === 0) return '—'
+  return ids.map((id) => adjudicatorName(String(id))).join(', ')
+}
+
+const publishPreviewRows = computed<DrawPreviewRow[]>(() => {
+  const allocation = Array.isArray(selectedDraw.value?.allocation) ? selectedDraw.value?.allocation : []
+  return allocation.map((row: any, index: number) => {
+    const govId = String(row?.teams?.gov ?? '')
+    const oppId = String(row?.teams?.opp ?? '')
+    const govWin = compiledTeamWinMap.value.get(govId) ?? 0
+    const oppWin = compiledTeamWinMap.value.get(oppId) ?? 0
+    const venueId = String(row?.venue ?? '')
+    return {
+      key: `${index}-${govId}-${oppId}-${venueId}`,
+      matchIndex: index,
+      venuePriority: venuePriority(venueId),
+      venueLabel: venueId ? venueName(venueId) : t('会場未定'),
+      govName: govId ? teamName(govId) : t('未選択'),
+      oppName: oppId ? teamName(oppId) : t('未選択'),
+      winLabel: `${govWin}-${oppWin}`,
+      winTotal: govWin + oppWin,
+      winGap: Math.abs(govWin - oppWin),
+      chairsLabel: adjudicatorLabel(Array.isArray(row?.chairs) ? row.chairs : []),
+      panelsLabel: adjudicatorLabel(Array.isArray(row?.panels) ? row.panels : []),
+      traineesLabel: adjudicatorLabel(Array.isArray(row?.trainees) ? row.trainees : []),
+    }
+  })
+})
 
 async function refresh() {
   if (!tournamentId.value) return
@@ -980,6 +1224,8 @@ async function refresh() {
       drawsStore.fetchDraws(tournamentId.value),
       submissionsStore.fetchSubmissions({ tournamentId: tournamentId.value }),
       teamsStore.fetchTeams(tournamentId.value),
+      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
+      venuesStore.fetchVenues(tournamentId.value),
       compiledStore.fetchLatest(tournamentId.value),
       refreshCompiledHistory(),
     ])
@@ -1007,7 +1253,6 @@ async function refresh() {
     } else {
       activeTask.value = 'draw'
     }
-    syncPublishDraft()
   } catch (err: any) {
     actionError.value = err?.response?.data?.errors?.[0]?.message ?? t('読み込みに失敗しました。')
   } finally {
@@ -1051,15 +1296,20 @@ function selectTask(task: HubTask) {
   })
 }
 
-async function runCompileWithSource(source: 'submissions' | 'raw') {
+async function runCompileWithSource(
+  source: 'submissions' | 'raw',
+  optionOverrides?: {
+    missing_data_policy?: CompileOptions['missing_data_policy']
+    include_labels?: CompileIncludeLabel[]
+  }
+) {
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
-  if (!canRunCompile.value) return
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
   compileSource.value = source
   if (!selectedRoundPublished.value) {
-    actionError.value = t('公開後に提出を回収します。先に公開/ロックで公開してください。')
+    actionError.value = t('公開後に提出を回収します。先に公開設定で公開してください。')
     return
   }
   if (source === 'submissions' && shouldBlockSubmissionCompile.value) {
@@ -1071,7 +1321,7 @@ async function runCompileWithSource(source: 'submissions' | 'raw') {
   const result = await compiledStore.runCompile(tournamentId.value, {
     source,
     rounds: effectiveCompileTargetRounds.value,
-    options: buildCompileOptions(),
+    options: buildCompileOptions(optionOverrides),
   })
   if (!result) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
@@ -1099,6 +1349,11 @@ function openForceCompileModal() {
   ) {
     return
   }
+  forceCompileMissingDataPolicy.value = compileMissingDataPolicy.value
+  forceCompileIncludeLabels.value =
+    compileIncludeLabels.value.length > 0
+      ? [...compileIncludeLabels.value]
+      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
   forceCompileModalOpen.value = true
 }
 
@@ -1107,7 +1362,10 @@ function closeForceCompileModal() {
 }
 
 async function confirmForcedCompile() {
-  await runCompileWithSource('raw')
+  await runCompileWithSource('raw', {
+    missing_data_policy: forceCompileMissingDataPolicy.value,
+    include_labels: forceCompileIncludeLabels.value,
+  })
 }
 
 async function refreshCompiledHistory() {
@@ -1120,7 +1378,9 @@ async function refreshCompiledHistory() {
   }
 }
 
-async function saveDrawPublication(): Promise<boolean> {
+async function saveDrawPublication(
+  nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean; locked: boolean }>
+): Promise<boolean> {
   if (!selectedDraw.value || selectedRound.value === null) return false
   publishMessage.value = ''
   actionError.value = ''
@@ -1131,9 +1391,9 @@ async function saveDrawPublication(): Promise<boolean> {
       round: selectedRound.value,
       allocation: selectedDraw.value.allocation,
       userDefinedData: selectedDraw.value.userDefinedData,
-      drawOpened: drawPublishDraft.drawOpened,
-      allocationOpened: drawPublishDraft.allocationOpened,
-      locked: drawPublishDraft.locked,
+      drawOpened: nextState.drawOpened ?? drawOpenedValue.value,
+      allocationOpened: nextState.allocationOpened ?? allocationOpenedValue.value,
+      locked: nextState.locked ?? lockedValue.value,
     })
     if (!saved) {
       actionError.value = drawsStore.error ?? t('公開設定の保存に失敗しました。')
@@ -1147,18 +1407,42 @@ async function saveDrawPublication(): Promise<boolean> {
   }
 }
 
-async function onPublishToggle(
-  key: 'drawOpened' | 'allocationOpened' | 'locked',
-  event: Event
-) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  const previous = drawPublishDraft[key]
-  drawPublishDraft[key] = target.checked
-  const saved = await saveDrawPublication()
-  if (!saved) {
-    drawPublishDraft[key] = previous
+async function saveRoundPublication(nextState: { motionOpened: boolean }): Promise<boolean> {
+  if (!selectedRoundData.value?._id) return false
+  publishMessage.value = ''
+  actionError.value = ''
+  publicationSaving.value = true
+  try {
+    const saved = await roundsStore.updateRound({
+      tournamentId: tournamentId.value,
+      roundId: String(selectedRoundData.value._id),
+      motionOpened: nextState.motionOpened,
+    })
+    if (!saved) {
+      actionError.value = roundsStore.error ?? t('公開設定の保存に失敗しました。')
+      return false
+    }
+    publishMessage.value = t('公開状態を更新しました。')
+    await roundsStore.fetchRounds(tournamentId.value)
+    return true
+  } finally {
+    publicationSaving.value = false
   }
+}
+
+async function onPublishToggle(
+  key: 'drawOpened' | 'allocationOpened',
+  checked: boolean
+) {
+  if (!selectedRoundHasDraw.value) return
+  const current = key === 'drawOpened' ? drawOpenedValue.value : allocationOpenedValue.value
+  if (current === checked) return
+  await saveDrawPublication({ [key]: checked })
+}
+
+async function onMotionPublishToggle(checked: boolean) {
+  if (motionOpenedValue.value === checked) return
+  await saveRoundPublication({ motionOpened: checked })
 }
 
 watch(
@@ -1201,9 +1485,16 @@ watch(
   }
 )
 
-watch(selectedDraw, () => {
-  syncPublishDraft()
-})
+watch(
+  compileColumns,
+  (columns) => {
+    if (!columns.includes(compileSortKey.value)) {
+      compileSortKey.value = columns.includes('ranking') ? 'ranking' : columns[0] ?? 'ranking'
+      compileSortDirection.value = compileSortKey.value === 'ranking' ? 'asc' : 'desc'
+    }
+  },
+  { immediate: true }
+)
 
 watch(
   compileTargetRounds,
@@ -1219,31 +1510,25 @@ watch(
 )
 
 watch(
-  baselineCompiledOptions,
-  (options) => {
-    if (compileDiffBaselineMode.value !== 'compiled') return
-    if (options.length === 0) {
-      compileDiffBaselineCompiledId.value = ''
-      return
-    }
-    const exists = options.some((option) => option.compiledId === compileDiffBaselineCompiledId.value)
-    if (!exists) {
-      compileDiffBaselineCompiledId.value = options[0].compiledId
-    }
+  selectedRound,
+  () => {
+    applyCompileDraftFromRound()
   },
   { immediate: true }
 )
 
 watch(
-  compileDiffBaselineMode,
-  (mode) => {
-    if (mode !== 'compiled') {
+  baselineCompiledOptions,
+  (options) => {
+    const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
+    if (!selectedBaselineId) return
+    if (options.length === 0) {
       compileDiffBaselineCompiledId.value = ''
       return
     }
-    const first = baselineCompiledOptions.value[0]
-    if (first && !compileDiffBaselineCompiledId.value) {
-      compileDiffBaselineCompiledId.value = first.compiledId
+    const exists = options.some((option) => option.compiledId === selectedBaselineId)
+    if (!exists) {
+      compileDiffBaselineCompiledId.value = ''
     }
   },
   { immediate: true }
@@ -1264,6 +1549,15 @@ watch(
 .section-header {
   align-items: center;
   gap: var(--space-2);
+}
+
+.page-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(1.95rem, 2.2vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-weight: 800;
 }
 
 .round-bar-head {
@@ -1476,6 +1770,10 @@ watch(
   border: 1px solid var(--color-border);
 }
 
+.step-content {
+  gap: var(--space-2);
+}
+
 .step-title-row {
   align-items: center;
   justify-content: space-between;
@@ -1507,31 +1805,26 @@ watch(
   gap: var(--space-2);
 }
 
-.step-inline-frame {
-  width: 100%;
-  min-height: 580px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.step-inline-frame-submissions {
-  min-height: 680px;
-}
-
-.compile-diff-controls {
-  align-items: flex-end;
-  flex-wrap: wrap;
+.submission-overview-grid {
+  display: grid;
   gap: var(--space-2);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.compile-diff-field {
-  min-width: 180px;
+.submission-overview-card {
   gap: 4px;
 }
 
-.compile-diff-field.wide {
-  flex: 1 1 280px;
+.step-inline-panel {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.step-inline-submissions {
+  width: 100%;
 }
 
 .compile-result-panel {
@@ -1540,10 +1833,24 @@ watch(
 }
 
 .compile-result-head {
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.compile-result-baseline-select {
+  margin-left: auto;
+  width: min(340px, 100%);
+}
+
+.compile-result-baseline-select :deep(.compiled-snapshot-select) {
+  min-width: 0;
+}
+
+.compile-result-baseline-select :deep(select) {
+  min-height: 34px;
+  font-size: 12px;
 }
 
 .diff-legend {
@@ -1612,81 +1919,65 @@ watch(
   color: var(--color-text);
 }
 
+.compile-option-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.compile-option-panel h5 {
+  margin: 0;
+}
+
 .publish-switch-grid {
   display: grid;
   gap: var(--space-2);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: 1fr;
+  align-items: stretch;
 }
 
 .publish-switch-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  min-height: 88px;
   padding: var(--space-2);
-  display: grid;
-  grid-template-rows: auto 1fr;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   gap: var(--space-2);
 }
 
 .publish-switch-label {
   color: var(--color-text);
-  font-size: 14px;
-  font-weight: 700;
-  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
   text-align: left;
 }
 
-.toggle-switch {
-  position: relative;
-  width: 54px;
-  height: 30px;
-  display: inline-flex;
+.publish-switch-toggle {
+  align-self: center;
+}
+
+.publish-switch-inline {
   align-items: center;
-  justify-self: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
-.toggle-switch input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  margin: 0;
+.publish-switch-inline-compact {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--color-surface-soft);
 }
 
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: #cbd5e1;
-  transition: background 0.2s ease;
+.publish-preview-section {
+  gap: var(--space-2);
 }
 
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #fff;
-  top: 3px;
-  left: 3px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
-  transition: transform 0.2s ease;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background: var(--color-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(24px);
-}
-
-.toggle-switch input:focus-visible + .toggle-slider {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
+.preview-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .modal-backdrop {
@@ -1701,9 +1992,45 @@ watch(
 }
 
 .modal {
-  width: min(560px, 100%);
+  width: min(680px, 100%);
   max-height: calc(100vh - 80px);
   overflow: auto;
+}
+
+.force-warning-banner {
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-md);
+  background: #fff1f2;
+  color: #9f1239;
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.force-warning-banner p {
+  margin: 0;
+}
+
+.force-warning-list .list-item {
+  border-color: #fecdd3;
+  background: #fff;
+}
+
+.force-option-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.force-option-panel h5 {
+  margin: 0;
+}
+
+.force-option-field {
+  gap: 4px;
+}
+
+.force-include-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .modal-actions {
@@ -1743,12 +2070,16 @@ watch(
     display: none;
   }
 
-  .step-inline-frame {
-    min-height: 440px;
+  .step-inline-panel {
+    padding: var(--space-2);
   }
 
-  .step-inline-frame-submissions {
-    min-height: 520px;
+  .submission-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .publish-switch-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

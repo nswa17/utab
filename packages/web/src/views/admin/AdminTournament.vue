@@ -47,11 +47,18 @@
 
     <nav class="subnav">
       <RouterLink
-        :to="setupPath"
+        :to="setupOverviewPath"
         class="subnav-link"
-        :class="{ active: isSetupActive }"
+        :class="{ active: isSetupOverviewActive }"
       >
-        {{ $t(setupLabel) }}
+        {{ $t(setupOverviewLabel) }}
+      </RouterLink>
+      <RouterLink
+        :to="setupDataPath"
+        class="subnav-link"
+        :class="{ active: isSetupDataActive }"
+      >
+        {{ $t(setupDataLabel) }}
       </RouterLink>
       <RouterLink
         :to="operationsPath"
@@ -119,10 +126,16 @@ const duplicateFeedbackCount = ref(0)
 const hasDuplicateSubmissions = computed(
   () => duplicateBallotCount.value > 0 || duplicateFeedbackCount.value > 0
 )
-const isSetupActive = computed(() => {
+const isSetupRoute = computed(() => {
   const base = `/admin/${tournamentId.value}/`
   return route.path.startsWith(`${base}setup`) || route.path.startsWith(`${base}home`)
 })
+const isSetupDataActive = computed(
+  () => isSetupRoute.value && String(route.query.section ?? '') === 'data'
+)
+const isSetupOverviewActive = computed(
+  () => isSetupRoute.value && String(route.query.section ?? '') !== 'data'
+)
 const isOperationsActive = computed(() => {
   const base = `/admin/${tournamentId.value}/`
   return (
@@ -135,9 +148,14 @@ const isReportsActive = computed(() => {
   const base = `/admin/${tournamentId.value}/`
   return route.path.startsWith(`${base}reports`) || route.path.startsWith(`${base}compiled`)
 })
-const setupPath = computed(() =>
+const setupBasePath = computed(() =>
   adminUiV2Enabled.value ? `/admin/${tournamentId.value}/setup` : `/admin/${tournamentId.value}/home`
 )
+const setupOverviewPath = computed(() => setupBasePath.value)
+const setupDataPath = computed(() => ({
+  path: setupBasePath.value,
+  query: { section: 'data' },
+}))
 const operationsPath = computed(() =>
   adminUiV2Enabled.value
     ? `/admin/${tournamentId.value}/operations`
@@ -148,12 +166,13 @@ const reportsPath = computed(() =>
     ? `/admin/${tournamentId.value}/reports`
     : `/admin/${tournamentId.value}/compiled`
 )
-const setupLabel = computed(() => (adminUiV2Enabled.value ? '大会セットアップ' : '大会設定'))
+const setupOverviewLabel = computed(() => '大会設定')
+const setupDataLabel = computed(() => '大会データ管理')
 const operationsLabel = computed(() =>
   adminUiV2Enabled.value ? 'ラウンド運営' : 'ラウンド管理'
 )
 const reportsLabel = computed(() =>
-  adminUiV2Enabled.value ? '結果確定・レポート' : 'レポート生成'
+  adminUiV2Enabled.value ? '大会結果レポート' : 'レポート生成'
 )
 const isLegacyPrimaryRoute = computed(() => {
   const base = `/admin/${tournamentId.value}/`
@@ -319,23 +338,24 @@ watch(
   border: none;
   border-right: 1px solid var(--color-border);
   white-space: nowrap;
-  color: var(--color-muted);
+  color: var(--color-text);
   background: var(--color-surface);
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   font: inherit;
+  text-decoration: none;
 }
 
 .subnav-link:hover {
   background: #f8fafc;
-  color: var(--color-primary);
+  color: var(--color-text);
 }
 
-.subnav-link.router-link-active,
 .subnav-link.active {
   background: var(--color-secondary);
-  color: var(--color-primary);
+  color: var(--color-text);
+  font-weight: 700;
 }
 
 .subnav-link:last-child {

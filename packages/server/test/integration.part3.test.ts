@@ -45,7 +45,7 @@ async function waitForResult<T>(
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', launchTimeout: 60000 },
+    instance: { ip: '127.0.0.1', launchTimeout: 600000 },
   })
 
   process.env.NODE_ENV = 'test'
@@ -1062,4 +1062,3 @@ describe('Server integration', () => {
   })
 
 })
-

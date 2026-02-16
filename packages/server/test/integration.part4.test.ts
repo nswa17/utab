@@ -45,7 +45,7 @@ async function waitForResult<T>(
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', launchTimeout: 60000 },
+    instance: { ip: '127.0.0.1', launchTimeout: 600000 },
   })
 
   process.env.NODE_ENV = 'test'
@@ -868,6 +868,53 @@ describe('Server integration', () => {
     expect('createdBy' in forcedPublic.body.data[0]).toBe(false)
   })
 
+  it('keeps adjudicator-only draw publication visible in forced public mode', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'draw-adj-only-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'draw-adj-only-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Draw Adj Only Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const upsert = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      drawOpened: false,
+      allocationOpened: true,
+      locked: true,
+      allocation: [
+        {
+          venue: 'Room B',
+          teams: { gov: 'team-a', opp: 'team-b' },
+          chairs: ['chair-1'],
+          panels: ['panel-1'],
+          trainees: ['trainee-1'],
+        },
+      ],
+    })
+    expect(upsert.status).toBe(201)
+
+    const forcedPublic = await organizer.get(`/api/draws?tournamentId=${tournamentId}&public=1`)
+    expect(forcedPublic.status).toBe(200)
+    expect(forcedPublic.body.data[0].drawOpened).toBe(false)
+    expect(forcedPublic.body.data[0].allocationOpened).toBe(true)
+    expect(forcedPublic.body.data[0].allocation).toHaveLength(1)
+    expect(forcedPublic.body.data[0].allocation[0].teams).toEqual({ gov: '', opp: '' })
+    expect(forcedPublic.body.data[0].allocation[0].chairs).toEqual(['chair-1'])
+    expect(forcedPublic.body.data[0].allocation[0].panels).toEqual(['panel-1'])
+    expect(forcedPublic.body.data[0].allocation[0].trainees).toEqual(['trainee-1'])
+    expect('locked' in forcedPublic.body.data[0]).toBe(false)
+  })
+
   it('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
     const statuses: number[] = []
     const agent = request.agent(app)
@@ -881,4 +928,3 @@ describe('Server integration', () => {
     expect(statuses.every((status) => status === 401)).toBe(true)
   })
 })
-

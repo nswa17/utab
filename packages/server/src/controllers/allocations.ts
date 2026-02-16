@@ -639,7 +639,7 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       round: number
       options?: Record<string, any>
       rounds?: number[]
-      snapshotId: string
+      snapshotId?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
 
@@ -842,7 +842,7 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
       allocation: any[]
       options?: Record<string, any>
       rounds?: number[]
-      snapshotId: string
+      snapshotId?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
     if (!Array.isArray(allocation)) {
@@ -940,7 +940,7 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
       allocation: any[]
       options?: Record<string, any>
       rounds?: number[]
-      snapshotId: string
+      snapshotId?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
     if (!Array.isArray(allocation)) {
@@ -1004,7 +1004,7 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       round: number
       options?: Record<string, any>
       rounds?: number[]
-      snapshotId: string
+      snapshotId?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
 

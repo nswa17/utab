@@ -1,6 +1,6 @@
 <template>
   <section class="stack">
-    <div class="row section-header">
+    <div v-if="!isEmbeddedRoute" class="row section-header">
       <div class="stack tight">
         <h4>{{ $t('対戦表設定') }}</h4>
         <span class="muted small">{{ roundHeading }}</span>
@@ -49,23 +49,36 @@
       </div>
     </div>
 
-    <section class="card stack allocation-board">
+    <section :class="['stack', 'allocation-board', { card: !isEmbeddedRoute }]">
       <LoadingState v-if="sectionLoading" />
       <template v-else>
         <section class="stack board-block">
-          <h4>{{ $t('対戦表') }}</h4>
+          <div class="row board-head">
+            <h4>{{ $t('対戦表') }}</h4>
+            <CompiledSnapshotSelect
+              v-if="detailSnapshotSelectOptions.length > 0"
+              v-model="selectedDetailSnapshotId"
+              class="detail-snapshot-select"
+              :label="$t('参照集計結果')"
+              :options="detailSnapshotSelectOptions"
+            />
+            <span v-else class="muted small">{{ $t('参照可能な集計結果がありません。') }}</span>
+          </div>
+          <p v-if="detailSnapshotLabel" class="muted tiny">
+            {{ $t('警告と詳細は次の集計を参照: {label}', { label: detailSnapshotLabel }) }}
+          </p>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <div v-else class="allocation-table-wrap">
             <table class="allocation-table">
               <thead>
                 <tr>
                   <th class="match-col"></th>
-                  <th>{{ $t('会場') }}</th>
-                  <th>{{ govLabel }}</th>
-                  <th>{{ oppLabel }}</th>
-                  <th>{{ $t('チェア') }}</th>
-                  <th>{{ $t('パネル') }}</th>
-                  <th>{{ $t('トレーニー') }}</th>
+                  <th class="venue-col">{{ $t('会場') }}</th>
+                  <th class="team-col">{{ govLabel }}</th>
+                  <th class="team-col">{{ oppLabel }}</th>
+                  <th class="adjudicator-col">{{ $t('チェア') }}</th>
+                  <th class="adjudicator-col">{{ $t('パネル') }}</th>
+                  <th class="adjudicator-col">{{ $t('トレーニー') }}</th>
                   <th>{{ $t('備考') }}</th>
                   <th class="delete-col"></th>
                 </tr>
@@ -74,16 +87,17 @@
                 <template v-for="(row, index) in allocation" :key="`row-${index}`">
                   <tr>
                     <td class="match-col">{{ index + 1 }}</td>
-                    <td>
+                    <td class="venue-col">
                       <div
-                        class="drop-zone compact"
+                        class="drop-zone compact single-line"
                         :class="{ active: dragKind === 'venue' }"
                         @dragover.prevent
                         @drop="dropVenue(row)"
                       >
                         <span
                           v-if="row.venue"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="venueName(row.venue)"
                           draggable="true"
                           @dragstart="onDragStart('venue', row.venue)"
                           @dragend="onDragEnd"
@@ -94,16 +108,17 @@
                         <span v-else class="muted small">{{ $t('ここに会場をドロップ') }}</span>
                       </div>
                     </td>
-                    <td>
+                    <td class="team-col">
                       <div
-                        class="drop-zone compact"
+                        class="drop-zone compact single-line"
                         :class="{ active: dragKind === 'team' }"
                         @dragover.prevent
                         @drop="dropTeam(row, 'gov')"
                       >
                         <span
                           v-if="row.teams.gov"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="teamName(row.teams.gov)"
                           draggable="true"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
@@ -114,16 +129,17 @@
                         <span v-else class="muted small">{{ $t('ここにチームをドロップ') }}</span>
                       </div>
                     </td>
-                    <td>
+                    <td class="team-col">
                       <div
-                        class="drop-zone compact"
+                        class="drop-zone compact single-line"
                         :class="{ active: dragKind === 'team' }"
                         @dragover.prevent
                         @drop="dropTeam(row, 'opp')"
                       >
                         <span
                           v-if="row.teams.opp"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="teamName(row.teams.opp)"
                           draggable="true"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
@@ -134,9 +150,9 @@
                         <span v-else class="muted small">{{ $t('ここにチームをドロップ') }}</span>
                       </div>
                     </td>
-                    <td>
+                    <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact"
+                        class="drop-zone list compact multi-line"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'chairs')"
@@ -144,7 +160,8 @@
                         <span
                           v-for="adjId in row.chairs"
                           :key="`chair-${index}-${adjId}`"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="adjudicatorName(adjId)"
                           draggable="true"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
@@ -157,9 +174,9 @@
                         }}</span>
                       </div>
                     </td>
-                    <td>
+                    <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact"
+                        class="drop-zone list compact multi-line"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'panels')"
@@ -167,7 +184,8 @@
                         <span
                           v-for="adjId in row.panels"
                           :key="`panel-${index}-${adjId}`"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="adjudicatorName(adjId)"
                           draggable="true"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
@@ -180,9 +198,9 @@
                         }}</span>
                       </div>
                     </td>
-                    <td>
+                    <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact"
+                        class="drop-zone list compact multi-line"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'trainees')"
@@ -190,7 +208,8 @@
                         <span
                           v-for="adjId in row.trainees"
                           :key="`trainee-${index}-${adjId}`"
-                          class="pill draggable"
+                          class="pill draggable truncate-pill"
+                          :title="adjudicatorName(adjId)"
                           draggable="true"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
@@ -262,7 +281,7 @@
             <div class="stack">
               <span class="muted">{{ $t('チーム') }} ({{ unassignedTeams.length }})</span>
               <div
-                class="drop-zone list compact"
+                class="drop-zone list compact multi-line"
                 :class="{ active: dragKind === 'team' }"
                 @dragover.prevent
                 @drop="dropToWaiting('team')"
@@ -273,7 +292,8 @@
                 <span
                   v-for="team in unassignedTeams"
                   :key="team._id"
-                  class="pill draggable"
+                  class="pill draggable truncate-pill"
+                  :title="team.name"
                   draggable="true"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
@@ -286,7 +306,7 @@
             <div class="stack">
               <span class="muted">{{ $t('ジャッジ') }} ({{ unassignedAdjudicators.length }})</span>
               <div
-                class="drop-zone list compact"
+                class="drop-zone list compact multi-line"
                 :class="{ active: dragKind === 'adjudicator' }"
                 @dragover.prevent
                 @drop="dropToWaiting('adjudicator')"
@@ -297,7 +317,8 @@
                 <span
                   v-for="adj in unassignedAdjudicators"
                   :key="adj._id"
-                  class="pill draggable"
+                  class="pill draggable truncate-pill"
+                  :title="adj.name"
                   draggable="true"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
@@ -310,7 +331,7 @@
             <div class="stack">
               <span class="muted">{{ $t('会場') }} ({{ unassignedVenues.length }})</span>
               <div
-                class="drop-zone list compact"
+                class="drop-zone list compact multi-line"
                 :class="{ active: dragKind === 'venue' }"
                 @dragover.prevent
                 @drop="dropToWaiting('venue')"
@@ -321,7 +342,8 @@
                 <span
                   v-for="venue in unassignedVenues"
                   :key="venue._id"
-                  class="pill draggable"
+                  class="pill draggable truncate-pill"
+                  :title="venue.name"
                   draggable="true"
                   @dragstart="onDragStart('venue', venue._id)"
                   @dragend="onDragEnd"
@@ -336,67 +358,9 @@
 
         <section class="stack board-block">
           <div class="row preview-head">
-            <h4>{{ $t('公開前プレビュー') }}</h4>
+            <h4>{{ $t('対戦表') }}</h4>
           </div>
-          <div class="card stack soft table-wrap">
-            <div v-if="previewRows.length === 0" class="muted">{{ $t('有効なマッチがありません。') }}</div>
-            <div v-else class="preview-grid">
-              <section class="stack preview-lane-card">
-                <strong class="small">{{ $t('公開順') }}</strong>
-                <table class="draw-preview-table">
-                  <thead>
-                    <tr>
-                      <th>{{ $t('会場') }}</th>
-                      <th>{{ govLabel }}</th>
-                      <th>{{ oppLabel }}</th>
-                      <th>{{ $t('Win') }}</th>
-                      <th>{{ $t('チェア') }}</th>
-                      <th>{{ $t('パネル') }}</th>
-                      <th>{{ $t('トレーニー') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="item in previewRowsByVenue" :key="`preview-venue-${item.key}`">
-                      <td>{{ item.venueLabel }}</td>
-                      <td>{{ item.govName }}</td>
-                      <td>{{ item.oppName }}</td>
-                      <td>{{ item.winLabel }}</td>
-                      <td>{{ item.chairsLabel }}</td>
-                      <td>{{ item.panelsLabel }}</td>
-                      <td>{{ item.traineesLabel }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-              <section class="stack preview-lane-card">
-                <strong class="small">{{ $t('Win順') }}</strong>
-                <table class="draw-preview-table">
-                  <thead>
-                    <tr>
-                      <th>{{ $t('会場') }}</th>
-                      <th>{{ govLabel }}</th>
-                      <th>{{ oppLabel }}</th>
-                      <th>{{ $t('Win') }}</th>
-                      <th>{{ $t('チェア') }}</th>
-                      <th>{{ $t('パネル') }}</th>
-                      <th>{{ $t('トレーニー') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="item in previewRowsByWin" :key="`preview-win-${item.key}`">
-                      <td>{{ item.venueLabel }}</td>
-                      <td>{{ item.govName }}</td>
-                      <td>{{ item.oppName }}</td>
-                      <td>{{ item.winLabel }}</td>
-                      <td>{{ item.chairsLabel }}</td>
-                      <td>{{ item.panelsLabel }}</td>
-                      <td>{{ item.traineesLabel }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            </div>
-          </div>
+          <DrawPreviewTable :rows="previewRows" :gov-label="govLabel" :opp-label="oppLabel" />
         </section>
 
         <div class="row allocation-toolbar">
@@ -450,72 +414,26 @@
       </template>
     </section>
 
-    <div
-      v-if="showAdjudicatorImportModal"
-      class="modal-backdrop"
-      role="presentation"
-      @click.self="closeAdjudicatorImportModal"
-    >
-      <section class="modal card stack auto-modal import-modal" role="dialog" aria-modal="true">
-        <div class="row auto-generate-header">
-          <div class="row auto-label">
-            <strong>{{ $t('ジャッジ組み合わせ取込') }}</strong>
-            <span class="help-tip" :title="$t('CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。')"
-              >?</span
-            >
-          </div>
-          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">
-            {{ $t('閉じる') }}
-          </Button>
-        </div>
-        <div class="grid">
-          <label class="stack">
-            <span class="option-title">{{ $t('取り込み方式') }}</span>
-            <select v-model="adjudicatorImportMode">
-              <option value="replace">{{ $t('置換') }}</option>
-              <option value="append">{{ $t('追記') }}</option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">{{ $t('CSV/TSVファイル') }}</span>
-            <input
-              class="csv-file-input"
-              type="file"
-              accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
-              @change="handleAdjudicatorImportFile"
-            />
-          </label>
-        </div>
-        <label class="stack">
-          <span class="option-title">{{ $t('取り込みデータ') }}</span>
-          <textarea
-            v-model="adjudicatorImportText"
-            class="import-textarea"
-            rows="8"
-            :placeholder="$t('例: match,chairs,panels,trainees')"
-          ></textarea>
-        </label>
-        <p class="muted small">
-          {{
-            $t(
-              'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）'
-            )
-          }}
-        </p>
-        <pre class="import-example">match,chairs,panels,trainees
-1,Judge A,Judge B|Judge C,
-2,Judge D,,Judge E</pre>
-        <p v-if="adjudicatorImportError" class="error">{{ adjudicatorImportError }}</p>
-        <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeAdjudicatorImportModal">{{
-            $t('取消')
-          }}</Button>
-          <Button size="sm" @click="applyAdjudicatorImport" :disabled="locked">
-            {{ $t('取り込み') }}
-          </Button>
-        </div>
-      </section>
-    </div>
+    <ImportTextModal
+      :open="showAdjudicatorImportModal"
+      v-model:text="adjudicatorImportText"
+      v-model:mode="adjudicatorImportMode"
+      :title="$t('ジャッジ組み合わせ取込')"
+      :help-text="$t('CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。')"
+      :mode-options="adjudicatorImportModeOptions"
+      :placeholder="$t('例: match,chairs,panels,trainees')"
+      :description="
+        $t(
+          'フォーマット: ① match,chairs,panels,trainees（matchは1始まり） ② gov,opp,chairs,panels,trainees（チーム名/ID指定）'
+        )
+      "
+      :example="'match,chairs,panels,trainees\n1,Judge A,Judge B|Judge C,\n2,Judge D,,Judge E'"
+      :error="adjudicatorImportError"
+      :disabled="locked"
+      @file-change="handleAdjudicatorImportFile"
+      @close="closeAdjudicatorImportModal"
+      @submit="applyAdjudicatorImport"
+    />
 
     <div
       v-if="showAutoGenerateModal"
@@ -542,346 +460,382 @@
             {{ $t('閉じる') }}
           </Button>
         </div>
-        <div class="grid">
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('対象') }}
-              <span class="help-tip" :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
-                >?</span
-              >
-            </span>
-            <select v-model="requestScope">
-              <option value="all">{{ $t('全体') }}</option>
-              <option value="teams">{{ $t('チーム') }}</option>
-              <option value="adjudicators">{{ $t('ジャッジ') }}</option>
-              <option value="venues">{{ $t('会場') }}</option>
-            </select>
-          </label>
-          <label class="row">
-            <input v-model="considerAllRounds" type="checkbox" />
-            <span class="option-title">
-              {{ $t('過去ラウンドをすべて考慮') }}
-              <span class="help-tip" :title="$t('過去ラウンドの履歴を使って重複対戦や偏りを抑えます。')"
-                >?</span
-              >
-            </span>
-          </label>
-          <label class="stack" v-if="!considerAllRounds">
-            <span class="option-title">
-              {{ $t('対象ラウンド') }}
-              <span class="help-tip" :title="$t('考慮対象にする過去ラウンドを個別に選択します。')"
-                >?</span
-              >
-            </span>
-            <select v-model="considerRounds" multiple>
-              <option v-for="r in priorRounds" :key="r.round" :value="r.round">
-                {{ r.name ?? $t('ラウンド {round}', { round: r.round }) }}
-              </option>
-            </select>
-          </label>
-        </div>
-        <div class="grid">
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('チームアルゴリズム') }}
-              <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamAlgorithm">
-              <option value="standard">{{ $t('標準') }}</option>
-              <option value="break">{{ $t('ブレイク') }}</option>
-              <option value="powerpair">{{ $t('Power Pair') }}</option>
-              <option value="strict">{{ $t('厳密') }}</option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('ジャッジアルゴリズム') }}
-              <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')">?</span>
-            </span>
-            <select v-model="autoOptions.adjudicatorAlgorithm">
-              <option value="standard">{{ $t('標準') }}</option>
-              <option value="traditional">{{ $t('伝統的') }}</option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('会場シャッフル') }}
-              <span class="help-tip" :title="$t('会場をランダムに割り当てる場合に有効にします。')"
-                >?</span
-              >
-            </span>
-            <input v-model="autoOptions.shuffleVenue" type="checkbox" />
-          </label>
-        </div>
-        <div class="grid" v-if="autoOptions.teamAlgorithm === 'standard'">
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('チーム方式') }}
-              <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamMethod">
-              <option v-for="option in teamMethodOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <div class="stack">
-            <span class="option-title">
-              {{ $t('チームフィルタ') }}
-              <span class="help-tip" :title="$t('適用する制約を複数選択できます。')">?</span>
-            </span>
-            <div class="checklist">
-              <label v-for="option in teamFilterOptions" :key="option.value" class="row">
-                <input v-model="autoOptions.teamFilters" type="checkbox" :value="option.value" />
-                <span>{{ option.label }}</span>
+        <div class="stack auto-generate-layout">
+          <section class="card soft stack auto-group">
+            <h5 class="auto-group-title">{{ $t('基本設定') }}</h5>
+            <div class="grid">
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('対象') }}
+                  <span class="help-tip" :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
+                    >?</span
+                  >
+                </span>
+                <select v-model="requestScope">
+                  <option value="all">{{ $t('全体') }}</option>
+                  <option value="teams">{{ $t('チーム') }}</option>
+                  <option value="adjudicators">{{ $t('ジャッジ') }}</option>
+                  <option value="venues">{{ $t('会場') }}</option>
+                </select>
+                <p class="muted tiny option-help-text">{{ requestScopeDescription }}</p>
               </label>
+              <CompiledSnapshotSelect
+                v-if="autoSnapshotSelectOptions.length > 0"
+                v-model="selectedAutoSnapshotId"
+                :label="$t('参照集計結果')"
+                :options="autoSnapshotSelectOptions"
+              />
+              <p v-else class="muted small">
+                {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
+              </p>
             </div>
-          </div>
-        </div>
-        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'powerpair'">
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('奇数ブラケット処理') }}
-              <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamPowerpairOddBracket">
-              <option
-                v-for="option in teamPowerpairOddBracketOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('ペアリング方式') }}
-              <span class="help-tip" :title="$t('パワーペアのブラケット内ペアリング方式です。')"
-                >?</span
-              >
-            </span>
-            <select v-model="autoOptions.teamPowerpairPairingMethod">
-              <option
-                v-for="option in teamPowerpairPairingOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('衝突回避方式') }}
-              <span class="help-tip" :title="$t('パワーペアで使う衝突回避方式です。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamPowerpairAvoidConflicts">
-              <option
-                v-for="option in teamPowerpairConflictOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
-            <span class="option-title">
-              {{ $t('機関衝突重み') }}
-              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
-            </span>
-            <input
-              v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
-              type="number"
-              min="0"
-              step="0.1"
-            />
-          </label>
-          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
-            <span class="option-title">
-              {{ $t('過去対戦重み') }}
-              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
-            </span>
-            <input
-              v-model.number="autoOptions.teamPowerpairConflictPastOpponentWeight"
-              type="number"
-              min="0"
-              step="0.1"
-            />
-          </label>
-          <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
-            <span class="option-title">
-              {{ $t('最大スワップ試行') }}
-              <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
-            </span>
-            <input
-              v-model.number="autoOptions.teamPowerpairMaxSwapIterations"
-              type="number"
-              min="0"
-              step="1"
-            />
-          </label>
-        </div>
-        <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
-          <p class="muted">
-            {{
-              $t(
-                'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。'
-              )
-            }}
-          </p>
-        </div>
-        <div class="grid" v-else>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('ペアリング方式') }}
-              <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamStrictPairingMethod">
-              <option
-                v-for="option in teamStrictPairingOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('プルアップ方式') }}
-              <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamStrictPullupMethod">
-              <option
-                v-for="option in teamStrictPullupOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('ポジション方式') }}
-              <span class="help-tip" :title="$t('サイド配置の方法を指定します。')">?</span>
-            </span>
-            <select v-model="autoOptions.teamStrictPositionMethod">
-              <option
-                v-for="option in teamStrictPositionOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="row">
-            <input v-model="autoOptions.teamStrictAvoidConflict" type="checkbox" />
-            <span class="option-title">
-              {{ $t('衝突回避') }}
-              <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
-            </span>
-          </label>
-          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
-            <span class="option-title">
-              {{ $t('機関衝突重み') }}
-              <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
-            </span>
-            <input
-              v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
-              type="number"
-              min="0"
-              step="0.1"
-            />
-          </label>
-          <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
-            <span class="option-title">
-              {{ $t('過去対戦重み') }}
-              <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
-            </span>
-            <input
-              v-model.number="autoOptions.teamStrictConflictPastOpponentWeight"
-              type="number"
-              min="0"
-              step="0.1"
-            />
-          </label>
-        </div>
-        <div class="grid" v-if="autoOptions.adjudicatorAlgorithm === 'standard'">
-          <div class="stack">
-            <span class="option-title">
-              {{ $t('ジャッジフィルタ') }}
-              <span class="help-tip" :title="$t('ジャッジ割り当て時に適用する制約を選択します。')">?</span>
-            </span>
-            <div class="checklist">
-              <label v-for="option in adjudicatorFilterOptions" :key="option.value" class="row">
+          </section>
+
+          <section class="card soft stack auto-group">
+            <h5 class="auto-group-title">{{ $t('生成エンジン') }}</h5>
+            <div class="grid">
+              <label class="stack" v-if="scopeIncludesTeams">
+                <span class="option-title">
+                  {{ $t('チームアルゴリズム') }}
+                  <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamAlgorithm">
+                  <option value="standard">{{ $t('標準') }}</option>
+                  <option value="break">{{ $t('ブレイク') }}</option>
+                  <option value="powerpair">{{ $t('Power Pair') }}</option>
+                  <option value="strict">{{ $t('厳密') }}</option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamAlgorithmDescription }}</p>
+              </label>
+              <label class="stack" v-if="scopeIncludesAdjudicators">
+                <span class="option-title">
+                  {{ $t('ジャッジアルゴリズム') }}
+                  <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')">?</span>
+                </span>
+                <select v-model="autoOptions.adjudicatorAlgorithm">
+                  <option value="standard">{{ $t('標準') }}</option>
+                  <option value="traditional">{{ $t('伝統的') }}</option>
+                </select>
+                <p class="muted tiny option-help-text">{{ adjudicatorAlgorithmDescription }}</p>
+              </label>
+              <label class="row" v-if="scopeIncludesVenues">
+                <input v-model="autoOptions.shuffleVenue" type="checkbox" />
+                <span class="option-title">
+                  {{ $t('会場シャッフル') }}
+                  <span class="help-tip" :title="$t('会場をランダムに割り当てる場合に有効にします。')"
+                    >?</span
+                  >
+                </span>
+              </label>
+              <p v-if="scopeIncludesVenues" class="muted tiny option-help-text">
+                {{ venueShuffleDescription }}
+              </p>
+            </div>
+          </section>
+
+          <section v-if="scopeIncludesTeams" class="card soft stack auto-group">
+            <h5 class="auto-group-title">{{ $t('チーム生成詳細') }}</h5>
+            <div class="grid" v-if="autoOptions.teamAlgorithm === 'standard'">
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('チーム方式') }}
+                  <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamMethod">
+                  <option v-for="option in teamMethodOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamMethodDescription }}</p>
+              </label>
+              <div class="stack">
+                <span class="option-title">
+                  {{ $t('チームフィルタ') }}
+                  <span class="help-tip" :title="$t('適用する制約を複数選択できます。')">?</span>
+                </span>
+                <div class="checklist">
+                  <div v-for="option in teamFilterOptions" :key="option.value" class="stack checklist-option">
+                    <label class="row">
+                      <input v-model="autoOptions.teamFilters" type="checkbox" :value="option.value" />
+                      <span>{{ option.label }}</span>
+                    </label>
+                    <span class="muted tiny option-inline-help">{{ option.description }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'powerpair'">
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('奇数ブラケット処理') }}
+                  <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamPowerpairOddBracket">
+                  <option
+                    v-for="option in teamPowerpairOddBracketOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamPowerpairOddBracketDescription }}</p>
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('ペアリング方式') }}
+                  <span class="help-tip" :title="$t('パワーペアのブラケット内ペアリング方式です。')"
+                    >?</span
+                  >
+                </span>
+                <select v-model="autoOptions.teamPowerpairPairingMethod">
+                  <option
+                    v-for="option in teamPowerpairPairingOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamPowerpairPairingDescription }}</p>
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('衝突回避方式') }}
+                  <span class="help-tip" :title="$t('パワーペアで使う衝突回避方式です。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamPowerpairAvoidConflicts">
+                  <option
+                    v-for="option in teamPowerpairConflictOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamPowerpairConflictDescription }}</p>
+              </label>
+              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+                <span class="option-title">
+                  {{ $t('機関衝突重み') }}
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                </span>
                 <input
-                  v-model="autoOptions.adjudicatorFilters"
-                  type="checkbox"
-                  :value="option.value"
+                  v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
+                  type="number"
+                  min="0"
+                  step="0.1"
                 />
-                <span>{{ option.label }}</span>
+              </label>
+              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+                <span class="option-title">
+                  {{ $t('過去対戦重み') }}
+                  <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+                </span>
+                <input
+                  v-model.number="autoOptions.teamPowerpairConflictPastOpponentWeight"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                />
+              </label>
+              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+                <span class="option-title">
+                  {{ $t('最大スワップ試行') }}
+                  <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
+                </span>
+                <input
+                  v-model.number="autoOptions.teamPowerpairMaxSwapIterations"
+                  type="number"
+                  min="0"
+                  step="1"
+                />
               </label>
             </div>
-          </div>
-        </div>
-        <div class="grid" v-else>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('割当方式') }}
-              <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')">?</span>
-            </span>
-            <select v-model="autoOptions.adjudicatorAssign">
-              <option
-                v-for="option in adjudicatorAssignOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <label class="row">
-            <input v-model="autoOptions.adjudicatorScatter" type="checkbox" />
-            <span class="option-title">
-              {{ $t('パネル分散') }}
-              <span class="help-tip" :title="$t('同系統のジャッジが偏らないように分散させます。')"
-                >?</span
-              >
-            </span>
-          </label>
-        </div>
-        <div class="grid">
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('チェア') }}
-              <span class="help-tip" :title="$t('1マッチあたりのチェア人数です。')">?</span>
-            </span>
-            <input v-model.number="autoOptions.chairs" type="number" min="1" />
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('パネル') }}
-              <span class="help-tip" :title="$t('1マッチあたりのパネル人数です。')">?</span>
-            </span>
-            <input v-model.number="autoOptions.panels" type="number" min="0" />
-          </label>
-          <label class="stack">
-            <span class="option-title">
-              {{ $t('トレーニー') }}
-              <span class="help-tip" :title="$t('1マッチあたりのトレーニー人数です。')">?</span>
-            </span>
-            <input v-model.number="autoOptions.trainees" type="number" min="0" />
-          </label>
+            <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
+              <p class="muted">
+                {{
+                  $t(
+                    'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。'
+                  )
+                }}
+              </p>
+            </div>
+            <div class="grid" v-else>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('ペアリング方式') }}
+                  <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamStrictPairingMethod">
+                  <option
+                    v-for="option in teamStrictPairingOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamStrictPairingDescription }}</p>
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('プルアップ方式') }}
+                  <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamStrictPullupMethod">
+                  <option
+                    v-for="option in teamStrictPullupOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamStrictPullupDescription }}</p>
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('ポジション方式') }}
+                  <span class="help-tip" :title="$t('サイド配置の方法を指定します。')">?</span>
+                </span>
+                <select v-model="autoOptions.teamStrictPositionMethod">
+                  <option
+                    v-for="option in teamStrictPositionOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ teamStrictPositionDescription }}</p>
+              </label>
+              <label class="row">
+                <input v-model="autoOptions.teamStrictAvoidConflict" type="checkbox" />
+                <span class="option-title">
+                  {{ $t('衝突回避') }}
+                  <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
+                </span>
+              </label>
+              <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+                <span class="option-title">
+                  {{ $t('機関衝突重み') }}
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                </span>
+                <input
+                  v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                />
+              </label>
+              <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
+                <span class="option-title">
+                  {{ $t('過去対戦重み') }}
+                  <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
+                </span>
+                <input
+                  v-model.number="autoOptions.teamStrictConflictPastOpponentWeight"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section v-if="scopeIncludesAdjudicators" class="card soft stack auto-group">
+            <h5 class="auto-group-title">{{ $t('ジャッジ生成詳細') }}</h5>
+            <div class="grid" v-if="autoOptions.adjudicatorAlgorithm === 'standard'">
+              <div class="stack">
+                <span class="option-title">
+                  {{ $t('ジャッジフィルタ') }}
+                  <span class="help-tip" :title="$t('ジャッジ割り当て時に適用する制約を選択します。')">?</span>
+                </span>
+                <div class="checklist">
+                  <div
+                    v-for="option in adjudicatorFilterOptions"
+                    :key="option.value"
+                    class="stack checklist-option"
+                  >
+                    <label class="row">
+                      <input
+                        v-model="autoOptions.adjudicatorFilters"
+                        type="checkbox"
+                        :value="option.value"
+                      />
+                      <span>{{ option.label }}</span>
+                    </label>
+                    <span class="muted tiny option-inline-help">{{ option.description }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="grid" v-else>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('割当方式') }}
+                  <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')">?</span>
+                </span>
+                <select v-model="autoOptions.adjudicatorAssign">
+                  <option
+                    v-for="option in adjudicatorAssignOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p class="muted tiny option-help-text">{{ adjudicatorAssignDescription }}</p>
+              </label>
+              <label class="row">
+                <input v-model="autoOptions.adjudicatorScatter" type="checkbox" />
+                <span class="option-title">
+                  {{ $t('パネル分散') }}
+                  <span class="help-tip" :title="$t('同系統のジャッジが偏らないように分散させます。')"
+                    >?</span
+                  >
+                </span>
+              </label>
+              <p class="muted tiny option-help-text">
+                {{
+                  autoOptions.adjudicatorScatter
+                    ? $t('有効時は同じ層のジャッジが一部屋に固まりすぎないよう、順に散らして配置します。')
+                    : $t('無効時は上位から順に該当部屋へ詰めて配置します。')
+                }}
+              </p>
+            </div>
+          </section>
+
+          <section v-if="scopeIncludesAdjudicators" class="card soft stack auto-group">
+            <h5 class="auto-group-title">{{ $t('人数設定') }}</h5>
+            <div class="grid">
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('チェア') }}
+                  <span class="help-tip" :title="$t('1マッチあたりのチェア人数です。')">?</span>
+                </span>
+                <input v-model.number="autoOptions.chairs" type="number" min="1" />
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('パネル') }}
+                  <span class="help-tip" :title="$t('1マッチあたりのパネル人数です。')">?</span>
+                </span>
+                <input v-model.number="autoOptions.panels" type="number" min="0" />
+              </label>
+              <label class="stack">
+                <span class="option-title">
+                  {{ $t('トレーニー') }}
+                  <span class="help-tip" :title="$t('1マッチあたりのトレーニー人数です。')">?</span>
+                </span>
+                <input v-model.number="autoOptions.trainees" type="number" min="0" />
+              </label>
+            </div>
+          </section>
         </div>
         <p v-if="requestError" class="error">{{ requestError }}</p>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="showAutoGenerateModal = false">{{
-            $t('取消')
-          }}</Button>
           <Button
             size="sm"
             :loading="requestLoading"
@@ -949,8 +903,12 @@ import { useStylesStore } from '@/stores/styles'
 import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
+import ImportTextModal from '@/components/common/ImportTextModal.vue'
+import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
+import type { DrawPreviewRow } from '@/types/draw-preview'
 import {
   applyAdjudicatorImportEntries,
   parseAdjudicatorImportText,
@@ -970,9 +928,33 @@ const speakersStore = useSpeakersStore()
 const tournamentStore = useTournamentStore()
 const stylesStore = useStylesStore()
 const { t } = useI18n({ useScope: 'global' })
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    embeddedRound?: number | null
+  }>(),
+  {
+    embedded: false,
+    embeddedRound: null,
+  }
+)
+
+function normalizeRoundValue(value: unknown): number | null {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
+}
+
 const tournamentId = computed(() => route.params.tournamentId as string)
-const round = computed(() => Number(route.params.round))
-const isEmbeddedRoute = computed(() => route.path.startsWith('/admin-embed/'))
+const round = computed(() => {
+  const fromProp = normalizeRoundValue(props.embeddedRound)
+  if (fromProp !== null) return fromProp
+  const fromParam = normalizeRoundValue(route.params.round)
+  if (fromParam !== null) return fromParam
+  return normalizeRoundValue(route.query.round) ?? 1
+})
+const isEmbeddedRoute = computed(
+  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+)
 
 const allocation = ref<DrawAllocationRow[]>([])
 const drawOpened = ref(false)
@@ -983,18 +965,25 @@ const formError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
 const requestScope = ref<'all' | 'teams' | 'adjudicators' | 'venues'>('all')
-const considerAllRounds = ref(true)
-const considerRounds = ref<number[]>([])
 const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
 const generatedUserDefinedData = ref<Record<string, any> | null>(null)
 const showAutoGenerateModal = ref(false)
 const showAdjudicatorImportModal = ref(false)
 const showDeleteDrawModal = ref(false)
+const compiledHistory = ref<any[]>([])
+const selectedAutoSnapshotId = ref('')
+const selectedDetailSnapshotId = ref('')
 const adjudicatorImportText = ref('')
 const adjudicatorImportMode = ref<AdjudicatorImportMode>('replace')
 const adjudicatorImportError = ref<string | null>(null)
 const adjudicatorImportInfo = ref<string | null>(null)
+const adjudicatorImportModeOptions = computed<Array<{ value: AdjudicatorImportMode; label: string }>>(
+  () => [
+    { value: 'replace', label: t('置換') },
+    { value: 'append', label: t('追記') },
+  ]
+)
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
@@ -1030,70 +1019,210 @@ const autoOptions = ref({
 })
 
 const teamFilterOptions = computed(() => [
-  { value: 'by_strength', label: t('パワーペアリング') },
-  { value: 'by_side', label: t('サイド偏り回避') },
-  { value: 'by_past_opponent', label: t('過去対戦回避') },
-  { value: 'by_institution', label: t('同一機関回避') },
-  { value: 'by_random', label: t('ランダム') },
+  {
+    value: 'by_strength',
+    label: t('パワーペアリング'),
+    description: t('現在の勝ち数・得点が近いチームを優先して、実力の近い対戦に寄せます。'),
+  },
+  {
+    value: 'by_side',
+    label: t('サイド偏り回避'),
+    description: t('過去の政府/反対の偏りが小さくなる組み合わせを優先します。'),
+  },
+  {
+    value: 'by_past_opponent',
+    label: t('過去対戦回避'),
+    description: t('同じ相手との再戦を避ける方向に評価します。'),
+  },
+  {
+    value: 'by_institution',
+    label: t('同一機関回避'),
+    description: t('同じ所属機関どうしの対戦を避ける方向に評価します。'),
+  },
+  {
+    value: 'by_random',
+    label: t('ランダム'),
+    description: t('同点時の並びを固定シードでランダム化し、偏りを分散します。'),
+  },
 ])
 
 const teamMethodOptions = computed(() => [
-  { value: 'straight', label: t('ストレート') },
-  { value: 'original', label: t('オリジナル') },
-  { value: 'weighted', label: t('重み付け') },
+  {
+    value: 'straight',
+    label: t('ストレート'),
+    description: t('各フィルタを同じ重みで合算し、総合点で候補順を作ります。'),
+  },
+  {
+    value: 'original',
+    label: t('オリジナル'),
+    description: t('フィルタを上から順に適用して候補順を作る従来方式です。'),
+  },
+  {
+    value: 'weighted',
+    label: t('重み付け'),
+    description: t('上にあるフィルタほど強く効くように重みを下げながら合算します。'),
+  },
 ])
 
 const teamStrictPairingOptions = computed(() => [
-  { value: 'random', label: t('ランダム') },
-  { value: 'fold', label: t('フォールド') },
-  { value: 'slide', label: t('スライド') },
-  { value: 'sort', label: t('ソート') },
-  { value: 'adjusted', label: t('調整') },
+  { value: 'random', label: t('ランダム'), description: t('ブラケット内をランダム順で組みます。') },
+  {
+    value: 'fold',
+    label: t('フォールド'),
+    description: t('上位と下位を折り返して組み、実力差を均す定番方式です。'),
+  },
+  {
+    value: 'slide',
+    label: t('スライド'),
+    description: t('上位群と下位群を平行に並べて順番に組みます。'),
+  },
+  {
+    value: 'sort',
+    label: t('ソート'),
+    description: t('整列順をそのまま固定的に区切って組みます。'),
+  },
+  {
+    value: 'adjusted',
+    label: t('調整'),
+    description: t('候補全体を比較して、偏りが小さい組み方を選びます。'),
+  },
 ])
 
 const teamPowerpairOddBracketOptions = computed(() => [
-  { value: 'pullup_top', label: t('上位から') },
-  { value: 'pullup_bottom', label: t('下位から') },
-  { value: 'pullup_random', label: t('ランダム') },
+  {
+    value: 'pullup_top',
+    label: t('上位から'),
+    description: t('奇数ブラケットで不足する1チームを、下位ブラケット上位から繰り上げます。'),
+  },
+  {
+    value: 'pullup_bottom',
+    label: t('下位から'),
+    description: t('奇数ブラケットで不足する1チームを、下位ブラケット下位から繰り上げます。'),
+  },
+  {
+    value: 'pullup_random',
+    label: t('ランダム'),
+    description: t('奇数ブラケットの繰り上げ元をランダムに選びます。'),
+  },
 ])
 
 const teamPowerpairPairingOptions = computed(() => [
-  { value: 'slide', label: t('スライド') },
-  { value: 'fold', label: t('フォールド') },
-  { value: 'random', label: t('ランダム') },
+  {
+    value: 'slide',
+    label: t('スライド'),
+    description: t('ブラケットを前半/後半に分けて対応順に組みます。'),
+  },
+  {
+    value: 'fold',
+    label: t('フォールド'),
+    description: t('ブラケット内の上位と下位を折り返して組みます。'),
+  },
+  { value: 'random', label: t('ランダム'), description: t('ブラケット内をランダムに組みます。') },
 ])
 
 const teamPowerpairConflictOptions = computed(() => [
-  { value: 'one_up_one_down', label: t('one-up-one-down') },
-  { value: 'off', label: t('なし') },
+  {
+    value: 'one_up_one_down',
+    label: t('one-up-one-down'),
+    description: t('隣接マッチ間で1チームずつ交換し、衝突が減るなら採用します。'),
+  },
+  {
+    value: 'off',
+    label: t('なし'),
+    description: t('衝突最適化を行わず、初回ペアリング結果をそのまま使います。'),
+  },
 ])
 
 const teamStrictPullupOptions = computed(() => [
-  { value: 'fromtop', label: t('上位から') },
-  { value: 'frombottom', label: t('下位から') },
-  { value: 'random', label: t('ランダム') },
+  {
+    value: 'fromtop',
+    label: t('上位から'),
+    description: t('ブラケット間の人数調整で、下位ブラケット上位から繰り上げます。'),
+  },
+  {
+    value: 'frombottom',
+    label: t('下位から'),
+    description: t('ブラケット間の人数調整で、下位ブラケット下位から繰り上げます。'),
+  },
+  {
+    value: 'random',
+    label: t('ランダム'),
+    description: t('ブラケット間の繰り上げ対象をランダムに選びます。'),
+  },
 ])
 
 const teamStrictPositionOptions = computed(() => [
-  { value: 'random', label: t('ランダム') },
-  { value: 'adjusted', label: t('調整') },
+  {
+    value: 'random',
+    label: t('ランダム'),
+    description: t('政府/反対の配置をランダムに決めます。'),
+  },
+  {
+    value: 'adjusted',
+    label: t('調整'),
+    description: t('過去サイド履歴を見て、偏りが減る配置を選びます。'),
+  },
 ])
 
 const adjudicatorFilterOptions = computed(() => [
-  { value: 'by_bubble', label: t('バブル') },
-  { value: 'by_strength', label: t('強さ') },
-  { value: 'by_attendance', label: t('出席') },
-  { value: 'by_conflict', label: t('衝突') },
-  { value: 'by_institution', label: t('機関') },
-  { value: 'by_past', label: t('過去') },
-  { value: 'by_random', label: t('ランダム') },
+  {
+    value: 'by_bubble',
+    label: t('バブル'),
+    description: t('現行実装では優先度は変わりません（将来拡張用）。'),
+  },
+  {
+    value: 'by_strength',
+    label: t('強さ'),
+    description: t('ジャッジ評価（結果＋preev）が近い部屋を優先します。'),
+  },
+  {
+    value: 'by_attendance',
+    label: t('出席'),
+    description: t('担当回数の偏りを減らす方向に評価します。'),
+  },
+  {
+    value: 'by_conflict',
+    label: t('衝突'),
+    description: t('個別衝突に登録されたチームとの同席を避けます。'),
+  },
+  {
+    value: 'by_institution',
+    label: t('機関'),
+    description: t('同一機関の衝突が少ない部屋を優先します。'),
+  },
+  {
+    value: 'by_past',
+    label: t('過去'),
+    description: t('過去に担当したチームとの再担当を避けます。'),
+  },
+  {
+    value: 'by_random',
+    label: t('ランダム'),
+    description: t('同点時の並びを固定シードでランダム化し偏りを分散します。'),
+  },
 ])
 
 const adjudicatorAssignOptions = computed(() => [
-  { value: 'high_to_high', label: t('高→高') },
-  { value: 'high_to_slight', label: t('高→弱') },
-  { value: 'middle_to_high', label: t('中→高') },
-  { value: 'middle_to_slight', label: t('中→弱') },
+  {
+    value: 'high_to_high',
+    label: t('高→高'),
+    description: t('評価の高いジャッジを、強い部屋から順に当てる配り方です。'),
+  },
+  {
+    value: 'high_to_slight',
+    label: t('高→弱'),
+    description: t('評価の高いジャッジを、実力差が大きい部屋から優先して当てます。'),
+  },
+  {
+    value: 'middle_to_high',
+    label: t('中→高'),
+    description: t('まずパネルを広く配ってから、強い部屋を優先して残りを埋めます。'),
+  },
+  {
+    value: 'middle_to_slight',
+    label: t('中→弱'),
+    description: t('まずパネルを広く配ってから、実力差が大きい部屋を優先して埋めます。'),
+  },
 ])
 
 const isLoading = computed(
@@ -1129,6 +1258,183 @@ const priorRounds = computed(() =>
     .slice()
     .sort((a, b) => a.round - b.round)
 )
+const priorRoundNumbers = computed(() => priorRounds.value.map((item) => Number(item.round)))
+type CompiledSnapshotOption = {
+  compiledId: string
+  rounds: number[]
+  roundNames: string[]
+  createdAt?: string
+  payload: Record<string, any>
+}
+const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
+  compiledHistory.value
+    .map((item) => {
+      const payload = item?.payload && typeof item.payload === 'object' ? item.payload : item
+      const normalizedPayload =
+        payload && typeof payload === 'object' ? (payload as Record<string, any>) : {}
+      const roundsValue = Array.isArray(normalizedPayload?.rounds) ? normalizedPayload.rounds : []
+      const normalizedRounds = roundsValue
+        .map((entry: any) => Number(entry?.r ?? entry?.round ?? entry))
+        .filter((value: number) => Number.isFinite(value))
+      return {
+        compiledId: String(item?._id ?? normalizedPayload?._id ?? ''),
+        rounds: normalizedRounds,
+        roundNames: roundsValue
+          .map((entry: any) => String(entry?.name ?? '').trim())
+          .filter((value: string) => value.length > 0),
+        createdAt: item?.createdAt ? String(item.createdAt) : undefined,
+        payload: normalizedPayload,
+      }
+    })
+    .filter((item) => item.compiledId.length > 0)
+)
+const autoCompiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() => {
+  const priorSet = new Set(priorRoundNumbers.value)
+  return compiledSnapshotOptions.value
+    .map((item) => ({ ...item }))
+    .filter((item) => item.rounds.some((value) => priorSet.has(value)))
+})
+const detailSnapshotSelectOptions = computed(() =>
+  compiledSnapshotOptions.value.map((option) => ({
+    value: option.compiledId,
+    label: autoCompiledOptionLabel(option),
+  }))
+)
+const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
+  if (compiledSnapshotOptions.value.length === 0) return null
+  const selected = compiledSnapshotOptions.value.find(
+    (option) => option.compiledId === selectedDetailSnapshotId.value
+  )
+  return selected ?? compiledSnapshotOptions.value[0] ?? null
+})
+const selectedDetailPayload = computed<Record<string, any>>(() =>
+  selectedDetailSnapshot.value?.payload ?? {}
+)
+const detailSnapshotLabel = computed(() => {
+  if (!selectedDetailSnapshot.value) return ''
+  return autoCompiledOptionLabel(selectedDetailSnapshot.value)
+})
+const autoSnapshotSelectOptions = computed(() =>
+  autoCompiledSnapshotOptions.value.map((option) => ({
+    value: option.compiledId,
+    label: autoCompiledOptionLabel(option),
+  }))
+)
+const scopeIncludesTeams = computed(
+  () => requestScope.value === 'all' || requestScope.value === 'teams'
+)
+const scopeIncludesAdjudicators = computed(
+  () => requestScope.value === 'all' || requestScope.value === 'adjudicators'
+)
+const scopeIncludesVenues = computed(
+  () => requestScope.value === 'all' || requestScope.value === 'venues'
+)
+
+const requestScopeDescriptions = computed<Record<string, string>>(() => ({
+  all: t('チーム・ジャッジ・会場をまとめて作り直します。最初に全体を組むとき向けです。'),
+  teams: t('チームの組み合わせだけを作ります。既存のジャッジ・会場割当は維持します。'),
+  adjudicators: t('既存の対戦カードを使ってジャッジだけを割り当て直します。'),
+  venues: t('既存の対戦カードを使って会場だけを割り当て直します。'),
+}))
+const requestScopeDescription = computed(
+  () => requestScopeDescriptions.value[requestScope.value] ?? ''
+)
+
+const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
+  standard: t(
+    '標準: 各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'
+  ),
+  strict: t(
+    '厳密: 勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。'
+  ),
+  powerpair: t(
+    'Power Pair: 勝ち数ブラケット内で組みます。人数が奇数のブラケットは下位ブラケットから繰り上げて調整します。'
+  ),
+  break: t('ブレイク: ブレイク参加者シードを使い、1位対最下位の順で対戦を作ります。'),
+}))
+const teamAlgorithmDescription = computed(
+  () => teamAlgorithmDescriptions.value[autoOptions.value.teamAlgorithm] ?? ''
+)
+
+const adjudicatorAlgorithmDescriptions = computed<Record<string, string>>(() => ({
+  standard: t(
+    '標準: 対戦とジャッジの双方の希望順を作り、安定マッチングでチェア→パネル→トレーニーの順に割り当てます。'
+  ),
+  traditional: t(
+    '伝統的: 部屋とジャッジを並べて上から割り当てる方式です。割当戦略と分散オプションで配り方を変えます。'
+  ),
+}))
+const adjudicatorAlgorithmDescription = computed(
+  () => adjudicatorAlgorithmDescriptions.value[autoOptions.value.adjudicatorAlgorithm] ?? ''
+)
+
+const venueShuffleDescription = computed(() =>
+  autoOptions.value.shuffleVenue
+    ? t('会場をランダム順で割り当てます。固定順より会場偏りを避けたい場合に使います。')
+    : t('会場優先度と対戦順に沿って割り当てます。')
+)
+
+function selectedDescription(
+  options: Array<{ value: string; description: string }>,
+  selectedValue: string
+) {
+  return options.find((option) => option.value === selectedValue)?.description ?? ''
+}
+
+const teamMethodDescription = computed(() =>
+  selectedDescription(teamMethodOptions.value, autoOptions.value.teamMethod)
+)
+const teamPowerpairOddBracketDescription = computed(() =>
+  selectedDescription(teamPowerpairOddBracketOptions.value, autoOptions.value.teamPowerpairOddBracket)
+)
+const teamPowerpairPairingDescription = computed(() =>
+  selectedDescription(teamPowerpairPairingOptions.value, autoOptions.value.teamPowerpairPairingMethod)
+)
+const teamPowerpairConflictDescription = computed(() =>
+  selectedDescription(teamPowerpairConflictOptions.value, autoOptions.value.teamPowerpairAvoidConflicts)
+)
+const teamStrictPairingDescription = computed(() =>
+  selectedDescription(teamStrictPairingOptions.value, autoOptions.value.teamStrictPairingMethod)
+)
+const teamStrictPullupDescription = computed(() =>
+  selectedDescription(teamStrictPullupOptions.value, autoOptions.value.teamStrictPullupMethod)
+)
+const teamStrictPositionDescription = computed(() =>
+  selectedDescription(teamStrictPositionOptions.value, autoOptions.value.teamStrictPositionMethod)
+)
+const adjudicatorAssignDescription = computed(() =>
+  selectedDescription(adjudicatorAssignOptions.value, autoOptions.value.adjudicatorAssign)
+)
+
+function formatCompiledTimestamp(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function roundName(roundNumber: number) {
+  return (
+    roundsStore.rounds.find((item) => Number(item.round) === Number(roundNumber))?.name ??
+    t('ラウンド {round}', { round: roundNumber })
+  )
+}
+
+function autoCompiledOptionLabel(option: CompiledSnapshotOption) {
+  const roundLabel =
+    option.roundNames.length > 0
+      ? option.roundNames.join(', ')
+      : option.rounds.length > 0
+        ? option.rounds.map((roundNumber) => roundName(roundNumber)).join(', ')
+        : t('全ラウンド')
+  return `${t('日時')}: ${formatCompiledTimestamp(option.createdAt)} / ${t('考慮ラウンド')}: ${roundLabel}`
+}
 
 const allocationChanged = computed(() => allocationSnapshot() !== savedSnapshot.value)
 
@@ -1190,6 +1496,7 @@ async function refresh() {
       venues.fetchVenues(tournamentId.value),
       roundsStore.fetchRounds(tournamentId.value),
       compiledStore.fetchLatest(tournamentId.value),
+      refreshCompiledHistory(),
       institutions.fetchInstitutions(tournamentId.value),
       speakersStore.fetchSpeakers(tournamentId.value),
       tournamentStore.fetchTournaments(),
@@ -1201,6 +1508,16 @@ async function refresh() {
     ])
   } finally {
     sectionLoading.value = false
+  }
+}
+
+async function refreshCompiledHistory() {
+  if (!tournamentId.value) return
+  try {
+    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
+  } catch {
+    compiledHistory.value = []
   }
 }
 
@@ -1351,9 +1668,8 @@ async function requestAllocation() {
             scatter: autoOptions.value.adjudicatorScatter,
           }
         : { filters: autoOptions.value.adjudicatorFilters }
-    const roundList = considerAllRounds.value
-      ? priorRounds.value.map((item) => item.round)
-      : considerRounds.value
+    const snapshotId = String(selectedAutoSnapshotId.value ?? '').trim()
+    const roundList = snapshotId ? [] : priorRounds.value.map((item) => item.round)
     if (
       (requestScope.value === 'adjudicators' || requestScope.value === 'venues') &&
       allocation.value.length === 0
@@ -1363,13 +1679,12 @@ async function requestAllocation() {
       )
       return
     }
-    if (autoOptions.value.teamAlgorithm === 'break' && requestScope.value !== 'teams') {
+    if (
+      scopeIncludesTeams.value &&
+      autoOptions.value.teamAlgorithm === 'break' &&
+      requestScope.value !== 'teams'
+    ) {
       requestError.value = t('ブレイク生成は対象をチームに設定してください。')
-      return
-    }
-    const snapshotId = String(compiledStore.compiled?._id ?? '').trim()
-    if (!snapshotId) {
-      requestError.value = t('集計結果がありません。先に集計を実行してください。')
       return
     }
     const options = {
@@ -1388,9 +1703,9 @@ async function requestAllocation() {
     const basePayload: Record<string, any> = {
       tournamentId: tournamentId.value,
       round: round.value,
-      snapshotId,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
+      ...(snapshotId ? { snapshotId } : {}),
     }
 
     let endpoint = '/allocations'
@@ -1479,7 +1794,9 @@ function adjudicatorConflicts(adj: any) {
 }
 
 const compiledTeamMap = computed(() => {
-  const results = compiledStore.compiled?.compiled_team_results ?? []
+  const results = Array.isArray(selectedDetailPayload.value?.compiled_team_results)
+    ? selectedDetailPayload.value.compiled_team_results
+    : []
   const map = new Map<string, any>()
   results.forEach((result: any) => {
     map.set(String(result.id), result)
@@ -1488,7 +1805,9 @@ const compiledTeamMap = computed(() => {
 })
 
 const compiledAdjMap = computed(() => {
-  const results = compiledStore.compiled?.compiled_adjudicator_results ?? []
+  const results = Array.isArray(selectedDetailPayload.value?.compiled_adjudicator_results)
+    ? selectedDetailPayload.value.compiled_adjudicator_results
+    : []
   const map = new Map<string, any>()
   results.forEach((result: any) => {
     map.set(String(result.id), result)
@@ -1496,29 +1815,12 @@ const compiledAdjMap = computed(() => {
   return map
 })
 
-type AllocationPreviewRow = {
-  key: string
-  matchIndex: number
-  venuePriority: number
-  venueLabel: string
-  govName: string
-  oppName: string
-  govWin: number
-  oppWin: number
-  winLabel: string
-  winTotal: number
-  winGap: number
-  chairsLabel: string
-  panelsLabel: string
-  traineesLabel: string
-}
-
 function adjudicatorListLabel(ids: string[]) {
   if (!ids || ids.length === 0) return '—'
   return ids.map((id) => adjudicatorNameById(id)).join(', ')
 }
 
-const previewRows = computed<AllocationPreviewRow[]>(() => {
+const previewRows = computed<DrawPreviewRow[]>(() => {
   return allocation.value.map((row, index) => {
     const govId = row.teams.gov
     const oppId = row.teams.opp
@@ -1538,8 +1840,6 @@ const previewRows = computed<AllocationPreviewRow[]>(() => {
       venueLabel,
       govName,
       oppName,
-      govWin: normalizedGovWin,
-      oppWin: normalizedOppWin,
       winLabel: `${normalizedGovWin}-${normalizedOppWin}`,
       winTotal: normalizedGovWin + normalizedOppWin,
       winGap: Math.abs(normalizedGovWin - normalizedOppWin),
@@ -1549,29 +1849,6 @@ const previewRows = computed<AllocationPreviewRow[]>(() => {
     }
   })
 })
-
-const previewRowsByVenue = computed<AllocationPreviewRow[]>(() =>
-  previewRows.value
-    .slice()
-    .sort((left, right) => {
-      if (left.venuePriority !== right.venuePriority) return left.venuePriority - right.venuePriority
-      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
-      if (venueCompare !== 0) return venueCompare
-      return left.matchIndex - right.matchIndex
-    })
-)
-
-const previewRowsByWin = computed<AllocationPreviewRow[]>(() =>
-  previewRows.value
-    .slice()
-    .sort((left, right) => {
-      if (left.winTotal !== right.winTotal) return right.winTotal - left.winTotal
-      if (left.winGap !== right.winGap) return left.winGap - right.winGap
-      const venueCompare = left.venueLabel.localeCompare(right.venueLabel, 'ja')
-      if (venueCompare !== 0) return venueCompare
-      return left.matchIndex - right.matchIndex
-    })
-)
 
 function teamNameById(id: string) {
   return teams.teams.find((team) => team._id === id)?.name ?? id
@@ -2245,10 +2522,30 @@ watch(
 )
 
 watch(
-  priorRounds,
-  (next) => {
-    if (!considerAllRounds.value && considerRounds.value.length === 0) {
-      considerRounds.value = next.map((item) => item.round)
+  autoCompiledSnapshotOptions,
+  (options) => {
+    if (options.length === 0) {
+      selectedAutoSnapshotId.value = ''
+      return
+    }
+    const exists = options.some((option) => option.compiledId === selectedAutoSnapshotId.value)
+    if (!exists) {
+      selectedAutoSnapshotId.value = options[0].compiledId
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  compiledSnapshotOptions,
+  (options) => {
+    if (options.length === 0) {
+      selectedDetailSnapshotId.value = ''
+      return
+    }
+    const exists = options.some((option) => option.compiledId === selectedDetailSnapshotId.value)
+    if (!exists) {
+      selectedDetailSnapshotId.value = options[0].compiledId
     }
   },
   { immediate: true }
@@ -2302,10 +2599,28 @@ watch(
 
 .auto-generate-header {
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .auto-label {
   gap: var(--space-2);
+}
+
+.auto-generate-layout {
+  gap: var(--space-2);
+}
+
+.auto-group {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.auto-group-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .option-title {
@@ -2365,8 +2680,10 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-family: inherit;
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
   color: var(--color-muted);
   user-select: none;
 }
@@ -2384,6 +2701,7 @@ watch(
   box-shadow: var(--shadow-card);
   padding: 8px 10px;
   color: var(--color-text);
+  font-family: inherit;
   font-size: 12px;
   line-height: 1.4;
   opacity: 0;
@@ -2408,53 +2726,23 @@ watch(
   background: var(--color-surface);
 }
 
+.board-head {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.detail-snapshot-select {
+  min-width: 300px;
+  max-width: 100%;
+}
+
 .preview-head {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
-}
-
-.table-wrap {
-  width: 100%;
-  overflow-x: auto;
-}
-
-.preview-grid {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-}
-
-.preview-lane-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
-  background: var(--color-surface);
-}
-
-.draw-preview-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.draw-preview-table th,
-.draw-preview-table td {
-  border-bottom: 1px solid var(--color-border);
-  padding: 8px;
-  text-align: left;
-  vertical-align: top;
-  white-space: nowrap;
-}
-
-.draw-preview-table th {
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.draw-preview-table tbody tr:last-child td {
-  border-bottom: none;
 }
 
 .allocation-table-wrap {
@@ -2465,13 +2753,14 @@ watch(
 .allocation-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .allocation-table th,
 .allocation-table td {
   border-bottom: 1px solid var(--color-border);
-  padding: 8px;
-  vertical-align: top;
+  padding: 6px;
+  vertical-align: middle;
   text-align: left;
 }
 
@@ -2485,6 +2774,21 @@ watch(
   width: 56px;
   text-align: center;
   font-weight: 700;
+}
+
+.venue-col {
+  width: 12%;
+  min-width: 140px;
+}
+
+.team-col {
+  width: 14%;
+  min-width: 170px;
+}
+
+.adjudicator-col {
+  width: 14%;
+  min-width: 170px;
 }
 
 .note-col {
@@ -2574,32 +2878,52 @@ watch(
 .pill {
   background: var(--color-surface-muted);
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 3px 8px;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.truncate-pill {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drop-zone {
-  min-height: 40px;
+  min-height: 34px;
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-2);
+  padding: 4px 6px;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 4px;
   align-items: center;
   background: var(--color-surface-muted);
 }
 
 .drop-zone.list {
-  min-height: 60px;
+  min-height: 52px;
 }
 
 .drop-zone.compact {
-  min-height: 36px;
+  min-height: 32px;
 }
 
 .drop-zone.list.compact {
-  min-height: 36px;
+  min-height: 44px;
+}
+
+.drop-zone.single-line {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.drop-zone.multi-line {
+  align-content: flex-start;
+  max-height: 56px;
+  overflow-y: auto;
 }
 
 .drop-zone.active {
@@ -2626,6 +2950,20 @@ watch(
   gap: var(--space-2);
   align-items: flex-start;
   font-size: 13px;
+}
+
+.option-help-text {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.checklist-option {
+  gap: 2px;
+}
+
+.option-inline-help {
+  margin-left: 22px;
+  line-height: 1.35;
 }
 
 .warning-kind {
@@ -2770,48 +3108,8 @@ watch(
   gap: var(--space-3);
 }
 
-.import-modal {
-  width: min(860px, 100%);
-}
-
 .import-info {
   margin-top: -4px;
-}
-
-.import-textarea {
-  min-height: 180px;
-  resize: vertical;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace);
-}
-
-.import-example {
-  margin: 0;
-  white-space: pre-wrap;
-  padding: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-surface-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.csv-file-input {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 6px 8px;
-  background: var(--color-surface);
-}
-
-.csv-file-input::file-selector-button {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font: inherit;
-  cursor: pointer;
-  padding: 4px 10px;
-  margin-right: 10px;
 }
 
 .modal-actions {

@@ -9,9 +9,9 @@ function load(path: string) {
 describe('AdminTournamentCompiled V2', () => {
   it('provides a snapshot selector in the report workflow', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('表示スナップショット')
+    expect(source).toContain('過去の集計結果')
     expect(source).toContain('selectedCompiledId')
-    expect(source).toContain('selectedCompiledLabel')
+    expect(source).toContain('snapshotSelectOptions')
   })
 
   it('keeps recomputation options inside a collapsible advanced panel', () => {

@@ -1,6 +1,6 @@
 <template>
   <section class="stack">
-    <div class="row section-header">
+    <div v-if="!isEmbeddedRoute" class="row section-header">
       <div class="stack tight">
         <h4>{{ $t('ラウンド {round} 生結果', { round }) }}</h4>
       </div>
@@ -134,9 +134,33 @@ const speakers = useSpeakersStore()
 const draws = useDrawsStore()
 const venues = useVenuesStore()
 const { t } = useI18n({ useScope: 'global' })
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    embeddedRound?: number | null
+  }>(),
+  {
+    embedded: false,
+    embeddedRound: null,
+  }
+)
+
+function normalizeRoundValue(value: unknown): number | null {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
+}
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const round = computed(() => Number(route.params.round))
+const round = computed(() => {
+  const fromProp = normalizeRoundValue(props.embeddedRound)
+  if (fromProp !== null) return fromProp
+  const fromParam = normalizeRoundValue(route.params.round)
+  if (fromParam !== null) return fromParam
+  return normalizeRoundValue(route.query.round) ?? 1
+})
+const isEmbeddedRoute = computed(
+  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+)
 const activeLabel = ref<'teams' | 'speakers' | 'adjudicators'>('teams')
 const newPayload = ref('')
 const sortBySender = ref(true)
@@ -401,12 +425,19 @@ function downloadCsv() {
   URL.revokeObjectURL(url)
 }
 
-onMounted(() => {
-  refresh()
+watch([activeLabel, round], () => {
   buildDefaultPayload()
 })
 
-watch([activeLabel, round], () => {
+watch(
+  [tournamentId, round],
+  () => {
+    refresh()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
   buildDefaultPayload()
 })
 </script>

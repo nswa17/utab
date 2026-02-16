@@ -1,7 +1,15 @@
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  normalizeCompileOptions,
+  type CompileOptions,
+  type CompileOptionsInput,
+} from '@/types/compiled'
+
 type EvaluatorInTeam = 'team' | 'speaker'
 type BreakSource = 'submissions' | 'raw'
 type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
 type BreakSeeding = 'high_low'
+type CompileSource = 'submissions' | 'raw'
 
 export type RoundDefaults = {
   userDefinedData: {
@@ -21,6 +29,11 @@ export type RoundDefaults = {
     cutoff_tie_policy: BreakCutoffTiePolicy
     seeding: BreakSeeding
   }
+  compile: {
+    source: CompileSource
+    source_rounds: number[]
+    options: CompileOptions
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -37,6 +50,17 @@ function asPositiveInt(value: unknown, fallback: number): number {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1) return fallback
   return parsed
+}
+
+function asRoundList(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item >= 1)
+    )
+  ).sort((left, right) => left - right)
 }
 
 export function defaultRoundDefaults(): RoundDefaults {
@@ -58,6 +82,11 @@ export function defaultRoundDefaults(): RoundDefaults {
       cutoff_tie_policy: 'manual',
       seeding: 'high_low',
     },
+    compile: {
+      source: 'submissions',
+      source_rounds: [],
+      options: normalizeCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
+    },
   }
 }
 
@@ -66,6 +95,11 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
   const source = asRecord(input)
   const userDefinedSource = asRecord(source.userDefinedData)
   const breakSource = asRecord(source.break)
+  const compileSource = asRecord(source.compile)
+  const compileOptionsSource =
+    compileSource.options && typeof compileSource.options === 'object'
+      ? (compileSource.options as CompileOptionsInput)
+      : (compileSource as CompileOptionsInput)
   return {
     userDefinedData: {
       evaluate_from_adjudicators: asBoolean(
@@ -108,6 +142,11 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
           : fallback.break.cutoff_tie_policy,
       seeding: breakSource.seeding === 'high_low' ? 'high_low' : fallback.break.seeding,
     },
+    compile: {
+      source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
+      source_rounds: asRoundList(compileSource.source_rounds),
+      options: normalizeCompileOptions(compileOptionsSource, fallback.compile.options),
+    },
   }
 }
 
@@ -128,6 +167,11 @@ export function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults) {
       cutoff_tie_policy: normalized.break.cutoff_tie_policy,
       seeding: normalized.break.seeding,
       participants: [],
+    },
+    compile: {
+      source: normalized.compile.source,
+      source_rounds: [...normalized.compile.source_rounds],
+      options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
     },
   }
 }

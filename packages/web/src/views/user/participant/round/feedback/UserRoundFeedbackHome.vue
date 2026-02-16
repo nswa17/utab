@@ -335,6 +335,20 @@ watch([tournamentId, round], () => {
   teams.fetchTeams(tournamentId.value)
   speakersStore.fetchSpeakers(tournamentId.value)
 })
+
+watch(
+  [() => route.query.team, () => teams.teams, participant, actorMode],
+  () => {
+    if (participant.value !== 'adjudicator' || actorMode.value !== 'team') return
+    if (typeof route.query.team !== 'string') return
+    if (!route.query.team) return
+    const exists = teams.teams.some((team) => team._id === route.query.team)
+    if (!exists) return
+    if (judgeFeedbackTeamIdentityId.value === route.query.team) return
+    judgeFeedbackTeamIdentityId.value = route.query.team
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>

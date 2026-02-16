@@ -1,11 +1,11 @@
 <template>
   <section class="stack">
     <div class="row section-header">
-      <h3>{{ $t('レポート生成') }}</h3>
+      <h3 class="page-title">{{ $t('大会結果レポート') }}</h3>
       <ReloadButton
         class="header-reload"
         @click="refresh"
-        :target="$t('レポート生成')"
+        :target="$t('大会結果レポート')"
         :disabled="isLoading"
         :loading="isLoading"
       />
@@ -20,19 +20,12 @@
           <h4>{{ $t('集計オプション') }}</h4>
         </div>
         <div v-if="baselineCompiledOptions.length > 0" class="row snapshot-selector-row">
-          <label class="stack compile-diff-field compile-diff-field-wide">
-            <span class="muted compile-label">{{ $t('表示スナップショット') }}</span>
-            <select v-model="selectedCompiledId">
-              <option
-                v-for="option in baselineCompiledOptions"
-                :key="option.compiledId"
-                :value="option.compiledId"
-              >
-                {{ baselineCompiledOptionLabel(option) }}
-              </option>
-            </select>
-          </label>
-          <span class="muted small">{{ $t('表示中: {label}', { label: selectedCompiledLabel }) }}</span>
+          <CompiledSnapshotSelect
+            v-model="selectedCompiledId"
+            class="compile-diff-field compile-diff-field-wide"
+            :label="$t('過去の集計結果')"
+            :options="snapshotSelectOptions"
+          />
           <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
         </div>
         <p v-else class="muted small">{{ $t('集計スナップショットはまだありません。') }}</p>
@@ -43,194 +36,30 @@
           </Button>
         </div>
         <div v-if="showRecomputeOptions" class="stack recompute-panel">
-          <div class="compile-grid">
-          <div class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('ソース') }}
-              <HelpTip :text="optionHelp('source')" />
-            </span>
-            <div class="row source-primary-row">
-              <strong>{{ isRawSourceSelected ? $t('生結果データ') : $t('提出データ') }}</strong>
-              <span class="muted small">{{
-                isRawSourceSelected ? $t('例外運用') : $t('通常運用')
-              }}</span>
-              <span v-if="isRawSourceSelected" class="raw-source-badge">{{ $t('例外モード') }}</span>
-            </div>
-            <p class="muted small source-help">
-              {{
-                $t(
-                  '通常運用は提出データを使用します。生結果データは、例外的な補正が必要な場合のみ利用してください。'
-                )
-              }}
-            </p>
-            <div class="row source-advanced-toggle">
-              <Button
-                variant="ghost"
-                size="sm"
-                @click="showAdvancedSourceOptions = !showAdvancedSourceOptions"
-              >
-                {{
-                  showAdvancedSourceOptions
-                    ? $t('高度な運用を閉じる')
-                    : $t('高度な運用を開く')
-                }}
-              </Button>
-            </div>
-            <template v-if="showAdvancedSourceOptions">
-              <select v-model="compileSource">
-                <option value="submissions">{{ $t('提出データ') }}</option>
-                <option value="raw">{{ $t('生結果データ') }}</option>
-              </select>
-              <p v-if="isRawSourceSelected" class="muted warning">
-                {{
-                  $t(
-                    '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
-                  )
-                }}
-              </p>
-            </template>
-          </div>
-          <div class="stack compile-field compile-field-wide">
-            <span class="muted compile-label">
-              {{ $t('ラウンド') }}
-              <HelpTip :text="optionHelp('rounds')" />
-            </span>
-            <div class="pill-group">
-              <label v-for="round in sortedRounds" :key="round.round" class="pill">
-                <input type="checkbox" :value="round.round" v-model="compileRounds" />
-                <span>
-                  {{ round.name ?? $t('ラウンド {round}', { round: round.round }) }}
-                </span>
-              </label>
-            </div>
-          </div>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('順位比較') }}
-              <HelpTip :text="optionHelp('ranking')" />
-            </span>
-            <select v-model="rankingPriorityPreset">
-              <option value="current">{{ $t('現行') }}</option>
-              <option value="custom">{{ $t('カスタム') }}</option>
-            </select>
-          </label>
-          <div v-if="rankingPriorityPreset === 'custom'" class="stack compile-field compile-field-wide">
-            <span class="muted">{{ $t('順位比較順（上から優先）') }}</span>
-            <div class="stack ranking-priority-list">
-              <div
-                v-for="(metric, index) in rankingPriorityOrder"
-                :key="metric"
-                class="row ranking-priority-item"
-              >
-                <span>{{ rankingMetricLabel(metric) }}</span>
-                <div class="inline">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    @click="moveRankingPriority(index, -1)"
-                    :disabled="index === 0"
-                  >
-                    {{ $t('上に移動') }}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    @click="moveRankingPriority(index, 1)"
-                    :disabled="index === rankingPriorityOrder.length - 1"
-                  >
-                    {{ $t('下に移動') }}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('勝敗判定') }}
-              <HelpTip :text="optionHelp('winner')" />
-            </span>
-            <select v-model="compileWinnerPolicy">
-              <option value="winner_id_then_score">
-                {{ $t('winnerId優先（未指定時はスコア推定）') }}
-              </option>
-              <option value="score_only">{{ $t('スコア推定のみ') }}</option>
-              <option value="draw_on_missing">{{ $t('未指定は引き分け') }}</option>
-            </select>
-          </label>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('引き分け時ポイント') }}
-              <HelpTip :text="optionHelp('tie')" />
-            </span>
-            <input v-model.number="compileTiePoints" type="number" min="0" step="0.5" />
-          </label>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('重複マージ') }}
-              <HelpTip :text="optionHelp('merge')" />
-            </span>
-            <select v-model="compileDuplicateMergePolicy">
-              <option value="latest">{{ $t('最新を採用') }}</option>
-              <option value="average">{{ $t('平均で統合') }}</option>
-              <option value="error">{{ $t('重複時はエラー') }}</option>
-            </select>
-          </label>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('POI集計') }}
-              <HelpTip :text="optionHelp('poi')" />
-            </span>
-            <select v-model="compilePoiAggregation">
-              <option value="average">{{ $t('平均') }}</option>
-              <option value="max">{{ $t('最大') }}</option>
-            </select>
-          </label>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('Best集計') }}
-              <HelpTip :text="optionHelp('best')" />
-            </span>
-            <select v-model="compileBestAggregation">
-              <option value="average">{{ $t('平均') }}</option>
-              <option value="max">{{ $t('最大') }}</option>
-            </select>
-          </label>
-          <label class="stack compile-field">
-            <span class="muted compile-label">
-              {{ $t('欠損データ') }}
-              <HelpTip :text="optionHelp('missing')" />
-            </span>
-            <select v-model="compileMissingDataPolicy">
-              <option value="warn">{{ $t('警告のみ') }}</option>
-              <option value="exclude">{{ $t('欠損を除外') }}</option>
-              <option value="error">{{ $t('エラー停止') }}</option>
-            </select>
-          </label>
-          <div class="stack compile-field compile-field-wide">
-            <span class="muted compile-label">
-              {{ $t('生成対象') }}
-              <HelpTip :text="optionHelp('include')" />
-            </span>
-            <div class="pill-group">
-              <label v-for="label in includeLabelOptions" :key="label" class="pill">
-                <input type="checkbox" :value="label" v-model="compileIncludeLabels" />
-                <span>{{ labelDisplay(label) }}</span>
-              </label>
-            </div>
-          </div>
+          <CompileOptionsEditor
+            v-model:source="compileSource"
+            v-model:source-rounds="compileRounds"
+            v-model:ranking-preset="rankingPriorityPreset"
+            v-model:ranking-order="rankingPriorityOrder"
+            v-model:winner-policy="compileWinnerPolicy"
+            v-model:tie-points="compileTiePoints"
+            v-model:merge-policy="compileDuplicateMergePolicy"
+            v-model:poi-aggregation="compilePoiAggregation"
+            v-model:best-aggregation="compileBestAggregation"
+            v-model:missing-data-policy="compileMissingDataPolicy"
+            v-model:include-labels="compileIncludeLabels"
+            :show-source-rounds="true"
+            :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
+            :disabled="isLoading"
+          />
+          <p v-if="isRawSourceSelected" class="muted warning">
+            {{
+              $t(
+                '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
+              )
+            }}
+          </p>
         </div>
-        <div class="stack compile-summary">
-          <span class="muted">{{ $t('設定サマリー') }}</span>
-          <ul class="compile-summary-list">
-            <li v-for="line in compileSummaryLines" :key="line">{{ line }}</li>
-          </ul>
-        </div>
-        <p
-          v-if="compileDiffBaselineMode === 'compiled' && !compileDiffBaselineCompiledId.trim()"
-          class="muted warning"
-        >
-          {{ $t('過去の集計結果を選ぶ場合は比較対象を選択してください。') }}
-        </p>
         <div v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary">
           <div class="row submission-summary-header">
             <h5>{{ $t('提出状況サマリー') }}</h5>
@@ -342,7 +171,6 @@
             </RouterLink>
           </div>
         </div>
-        </div>
       </section>
 
       <template v-if="compiled">
@@ -352,34 +180,6 @@
         <div v-if="showCategoryTabs" class="stack compile-category-inline">
           <div class="row compile-category-row">
             <h4>{{ $t('集計区分') }}</h4>
-            <div class="row compile-diff-controls">
-              <label class="stack compile-diff-field">
-                <span class="muted compile-label">
-                  {{ $t('差分比較') }}
-                  <HelpTip :text="optionHelp('diff')" />
-                </span>
-                <select v-model="compileDiffBaselineMode">
-                  <option value="latest">{{ $t('最新集計') }}</option>
-                  <option value="compiled">{{ $t('過去の集計結果を選択') }}</option>
-                </select>
-              </label>
-              <label
-                v-if="compileDiffBaselineMode === 'compiled'"
-                class="stack compile-diff-field compile-diff-field-wide"
-              >
-                <span class="muted">{{ $t('比較対象') }}</span>
-                <select v-model="compileDiffBaselineCompiledId">
-                  <option value="">{{ $t('選択してください') }}</option>
-                  <option
-                    v-for="option in baselineCompiledOptions"
-                    :key="option.compiledId"
-                    :value="option.compiledId"
-                  >
-                    {{ baselineCompiledOptionLabel(option) }}
-                  </option>
-                </select>
-              </label>
-            </div>
           </div>
           <div class="label-tabs">
             <button
@@ -396,12 +196,27 @@
         </div>
 
         <section class="card stack">
-          <div class="row">
+          <div class="row result-list-head">
             <h4>{{ $t('一覧') }}</h4>
-            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
-            <Button variant="secondary" size="sm" @click="downloadCsv">
-              {{ $t('CSVダウンロード') }}
-            </Button>
+            <div class="row result-list-actions">
+              <label class="stack compile-diff-field">
+                <span class="muted compile-label">
+                  {{ $t('差分比較') }}
+                  <HelpTip :text="optionHelp('diff')" />
+                </span>
+                <select v-model="compileDiffBaselineSelection">
+                  <option value="latest">{{ $t('最新集計') }}</option>
+                  <option
+                    v-for="option in baselineCompiledOptions"
+                    :key="option.compiledId"
+                    :value="option.compiledId"
+                  >
+                    {{ baselineCompiledOptionLabel(option) }}
+                  </option>
+                </select>
+              </label>
+              <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
+            </div>
           </div>
           <div v-if="showDiffLegend" class="row diff-legend">
             <span class="diff-legend-item">
@@ -423,11 +238,18 @@
           <Table v-else hover striped sticky-header>
             <thead>
               <tr>
-                <th v-for="key in tableColumns" :key="key">{{ columnLabel(key) }}</th>
+                <th v-for="key in tableColumns" :key="key">
+                  <SortHeaderButton
+                    compact
+                    :label="columnLabel(key)"
+                    :indicator="resultSortIndicator(key)"
+                    @click="setResultSort(key)"
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in activeResults" :key="row.id">
+              <tr v-for="row in sortedActiveResults" :key="row.id">
                 <td v-for="key in tableColumns" :key="key">
                   <span v-if="key === 'id'">{{ entityName(row.id) }}</span>
                   <span v-else-if="key === 'ranking'" class="diff-value">
@@ -457,6 +279,16 @@
               </tr>
             </tbody>
           </Table>
+          <div class="row section-download-row">
+            <Button
+              variant="secondary"
+              class="section-download-button"
+              :disabled="activeResults.length === 0"
+              @click="downloadCsv"
+            >
+              {{ $t('CSVダウンロード') }}
+            </Button>
+          </div>
         </section>
 
         <section class="card stack">
@@ -554,18 +386,20 @@
               <Button variant="secondary" size="sm" @click="copyAwardText">
                 {{ $t('コピー') }}
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                @click="downloadAwardCsv"
-                :disabled="awardExportRows.length === 0"
-              >
-                {{ $t('受賞者CSV') }}
-              </Button>
             </div>
           </div>
           <p v-if="awardCopyCopied" class="muted">{{ $t('コピーしました。') }}</p>
           <pre class="award-copy-text">{{ awardCopyText }}</pre>
+          <div class="row section-download-row">
+            <Button
+              variant="secondary"
+              class="section-download-button"
+              :disabled="awardExportRows.length === 0"
+              @click="downloadAwardCsv"
+            >
+              {{ $t('受賞者CSV') }}
+            </Button>
+          </div>
         </section>
       </template>
     </div>
@@ -607,6 +441,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useTournamentStore } from '@/stores/tournament'
 import { useCompiledStore } from '@/stores/compiled'
 import { useTeamsStore } from '@/stores/teams'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
@@ -620,6 +455,9 @@ import Button from '@/components/common/Button.vue'
 import Table from '@/components/common/Table.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
+import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
+import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import Slides from '@/components/slides/Slides.vue'
 import ScoreChange from '@/components/mstat/ScoreChange.vue'
 import ScoreRange from '@/components/mstat/ScoreRange.vue'
@@ -632,10 +470,12 @@ import TeamPerformance from '@/components/mstat/TeamPerformance.vue'
 import { api } from '@/utils/api'
 import {
   DEFAULT_COMPILE_OPTIONS,
+  normalizeCompileOptions,
   type CompileIncludeLabel,
   type CompileOptions,
   type CompileRankingMetric,
 } from '@/types/compiled'
+import { normalizeRoundDefaults } from '@/utils/round-defaults'
 import {
   formatSignedDelta,
   rankingTrendSymbol,
@@ -655,6 +495,7 @@ import {
 } from '@/utils/certificate-export'
 
 const route = useRoute()
+const tournamentStore = useTournamentStore()
 const compiledStore = useCompiledStore()
 const teams = useTeamsStore()
 const adjudicators = useAdjudicatorsStore()
@@ -669,6 +510,7 @@ const tournamentId = computed(() => route.params.tournamentId as string)
 const isLoading = computed(
   () =>
     compiledStore.loading ||
+    tournamentStore.loading ||
     teams.loading ||
     adjudicators.loading ||
     rounds.loading ||
@@ -686,11 +528,13 @@ const awardCopyLimit = ref(3)
 const awardCopyCopied = ref(false)
 const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>('teams')
 const compileSource = ref<'submissions' | 'raw'>('submissions')
-const showAdvancedSourceOptions = ref(false)
 const showRecomputeOptions = ref(false)
 const rawCompileConfirmOpen = ref(false)
 const compileRounds = ref<number[]>([])
 const compileExecuted = ref(false)
+const resultSortKey = ref('ranking')
+const resultSortDirection = ref<'asc' | 'desc'>('asc')
+const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
   DEFAULT_COMPILE_OPTIONS.ranking_priority.preset
 )
@@ -714,12 +558,13 @@ const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
 const compileIncludeLabels = ref<CompileIncludeLabel[]>([...DEFAULT_COMPILE_OPTIONS.include_labels])
-const compileDiffBaselineMode = ref<'latest' | 'compiled'>(
-  DEFAULT_COMPILE_OPTIONS.diff_baseline.mode
+const defaultDiffBaseline = DEFAULT_COMPILE_OPTIONS.diff_baseline
+const compileDiffBaselineSelection = ref<string>(
+  defaultDiffBaseline.mode === 'compiled' ? String(defaultDiffBaseline.compiled_id) : 'latest'
 )
-const compileDiffBaselineCompiledId = ref('')
 const compiledHistory = ref<any[]>([])
 const selectedCompiledId = ref('')
+const compileDefaultsHydrated = ref(false)
 
 const compiled = computed<Record<string, any> | null>(() => compiledStore.compiled)
 const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
@@ -795,13 +640,6 @@ const availableLabels = computed(() => {
   return labels.length > 0 ? labels : ['teams']
 })
 const showCategoryTabs = computed(() => Boolean(compiled.value) && compileExecuted.value)
-const includeLabelOptions: CompileIncludeLabel[] = [
-  'teams',
-  'speakers',
-  'adjudicators',
-  'poi',
-  'best',
-]
 const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   compiledHistory.value
     .map((item) => {
@@ -821,16 +659,22 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const selectedCompiledLabel = computed(() => {
-  const selected = baselineCompiledOptions.value.find(
-    (item) => item.compiledId === selectedCompiledId.value
-  )
-  if (!selected) return t('未選択')
-  return baselineCompiledOptionLabel(selected)
-})
+const snapshotSelectOptions = computed(() =>
+  baselineCompiledOptions.value.map((option) => ({
+    value: option.compiledId,
+    label: baselineCompiledOptionLabel(option),
+  }))
+)
+const selectedDiffBaselineCompiledId = computed(() =>
+  compileDiffBaselineSelection.value === 'latest'
+    ? ''
+    : String(compileDiffBaselineSelection.value).trim()
+)
 const canRunCompile = computed(() => {
-  if (compileDiffBaselineMode.value !== 'compiled') return true
-  return compileDiffBaselineCompiledId.value.trim().length > 0
+  if (!selectedDiffBaselineCompiledId.value) return true
+  return baselineCompiledOptions.value.some(
+    (option) => option.compiledId === selectedDiffBaselineCompiledId.value
+  )
 })
 const isRawSourceSelected = computed(() => compileSource.value === 'raw')
 const displayedCompileSource = computed<'submissions' | 'raw'>(() =>
@@ -864,61 +708,10 @@ const compileOptionsPayload = computed<CompileOptions>(() => {
     missing_data_policy: compileMissingDataPolicy.value,
     include_labels:
       includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
-    diff_baseline:
-      compileDiffBaselineMode.value === 'compiled' && compileDiffBaselineCompiledId.value.trim()
-        ? { mode: 'compiled', compiled_id: compileDiffBaselineCompiledId.value.trim() }
-        : { mode: 'latest' },
+    diff_baseline: selectedDiffBaselineCompiledId.value
+      ? { mode: 'compiled', compiled_id: selectedDiffBaselineCompiledId.value }
+      : { mode: 'latest' },
   }
-})
-const compileSummaryLines = computed(() => {
-  const rankingSummary =
-    rankingPriorityPreset.value === 'custom'
-      ? rankingPriorityOrder.value.map((metric) => rankingMetricLabel(metric)).join(' > ')
-      : t('現行')
-  const selectedBaseline = baselineCompiledOptions.value.find(
-    (item) => item.compiledId === compileDiffBaselineCompiledId.value.trim()
-  )
-  const diffSummary =
-    compileDiffBaselineMode.value === 'compiled'
-      ? selectedBaseline
-        ? baselineCompiledOptionLabel(selectedBaseline)
-        : t('未設定')
-      : t('最新集計')
-  return [
-    t('ソースサマリー: {value}', {
-      value: isRawSourceSelected.value ? t('生結果データ（例外モード）') : t('提出データ（通常運用）'),
-    }),
-    t('順位比較サマリー: {value}', { value: rankingSummary }),
-    t('勝敗判定サマリー: {policy} / {points}', {
-      policy:
-        compileWinnerPolicy.value === 'winner_id_then_score'
-          ? t('winnerId優先（未指定時はスコア推定）')
-          : compileWinnerPolicy.value === 'score_only'
-            ? t('スコア推定のみ')
-            : t('未指定は引き分け'),
-      points: `${t('引き分け時ポイント')}: ${compileTiePoints.value}`,
-    }),
-    t('重複サマリー: {merge} / POI {poi} / Best {best}', {
-      merge:
-        compileDuplicateMergePolicy.value === 'latest'
-          ? t('最新を採用')
-          : compileDuplicateMergePolicy.value === 'average'
-            ? t('平均で統合')
-            : t('重複時はエラー'),
-      poi: compilePoiAggregation.value === 'max' ? t('最大') : t('平均'),
-      best: compileBestAggregation.value === 'max' ? t('最大') : t('平均'),
-    }),
-    t('欠損サマリー: {policy} / {labels}', {
-      policy:
-        compileMissingDataPolicy.value === 'warn'
-          ? t('警告のみ')
-          : compileMissingDataPolicy.value === 'exclude'
-            ? t('欠損を除外')
-            : t('エラー停止'),
-      labels: compileIncludeLabels.value.map((label) => labelDisplay(label)).join(', '),
-    }),
-    t('差分サマリー: {value}', { value: diffSummary }),
-  ]
 })
 const compileWarnings = computed<string[]>(() =>
   Array.isArray(compiled.value?.compile_warnings) ? compiled.value.compile_warnings : []
@@ -937,9 +730,9 @@ const diffBaselineLabel = computed(() => {
     if (selected) {
       return t('選択した過去集計: {label}', { label: baselineCompiledOptionLabel(selected) })
     }
-    return t('選択した過去集計（ID: {id}）', { id: baselineId })
+    return t('選択した過去集計')
   }
-  return t('最新集計（ID: {id}）', { id: baselineId })
+  return t('最新集計')
 })
 
 function mapInstitutions(values: any): string[] {
@@ -990,6 +783,27 @@ const activeResults = computed<any[]>(() => {
     }
     return base
   })
+})
+const sortedActiveResults = computed<any[]>(() => {
+  const key = resultSortKey.value
+  const direction = resultSortDirection.value === 'asc' ? 1 : -1
+  return activeResults.value
+    .map((row, index) => ({ row, index }))
+    .sort((leftEntry, rightEntry) => {
+      const left = resultSortValue(leftEntry.row, key)
+      const right = resultSortValue(rightEntry.row, key)
+      const numericLeft = typeof left === 'number' ? left : null
+      const numericRight = typeof right === 'number' ? right : null
+      if (numericLeft !== null && numericRight !== null) {
+        const delta = numericLeft - numericRight
+        if (delta !== 0) return direction * delta
+        return leftEntry.index - rightEntry.index
+      }
+      const diff = sortCollator.compare(String(left ?? ''), String(right ?? ''))
+      if (diff !== 0) return direction * diff
+      return leftEntry.index - rightEntry.index
+    })
+    .map((entry) => entry.row)
 })
 const showDiffLegend = computed(() =>
   activeResults.value.some((row: any) => row?.diff?.ranking) || compileDiffMeta.value !== null
@@ -1223,7 +1037,6 @@ function formatCompiledTimestamp(value?: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return t('日時不明')
   return new Intl.DateTimeFormat('ja-JP', {
-    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -1238,7 +1051,32 @@ function baselineCompiledOptionLabel(option: BaselineCompiledOption) {
       : option.rounds.length > 0
         ? option.rounds.map((roundNumber) => roundName(roundNumber)).join(', ')
         : t('全ラウンド')
-  return `${formatCompiledTimestamp(option.createdAt)} / ${roundLabel} / ID: ${option.compiledId}`
+  return `${t('集計ラウンド')}: ${roundLabel} (${formatCompiledTimestamp(option.createdAt)})`
+}
+
+function applyCompileDefaultsFromTournament() {
+  if (!tournamentId.value) return
+  const tournament = tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
+  if (!tournament) return
+  const normalizedDefaults = normalizeRoundDefaults(tournament.user_defined_data?.round_defaults)
+  const compileDefaults = normalizedDefaults.compile
+  const normalizedOptions = normalizeCompileOptions(compileDefaults.options, compileDefaults.options)
+  compileSource.value = compileDefaults.source === 'raw' ? 'raw' : 'submissions'
+  rankingPriorityPreset.value = normalizedOptions.ranking_priority.preset
+  rankingPriorityOrder.value = [...normalizedOptions.ranking_priority.order]
+  compileWinnerPolicy.value = normalizedOptions.winner_policy
+  compileTiePoints.value = normalizedOptions.tie_points
+  compileDuplicateMergePolicy.value = normalizedOptions.duplicate_normalization.merge_policy
+  compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
+  compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
+  compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
+  compileIncludeLabels.value =
+    normalizedOptions.include_labels.length > 0
+      ? [...normalizedOptions.include_labels]
+      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
+  const availableRounds = new Set(sortedRounds.value.map((round) => Number(round.round)))
+  compileRounds.value = compileDefaults.source_rounds.filter((roundNumber) => availableRounds.has(roundNumber))
+  compileDiffBaselineSelection.value = 'latest'
 }
 
 function resolveCompiledDocId(doc: any): string {
@@ -1545,7 +1383,7 @@ function optionHelp(key: string) {
     best: t('Best Speakerの重複値を平均か最大でまとめます。'),
     missing: t('必要データが欠けていた場合に、警告で続行するか、除外するか、エラー停止するかを選びます。'),
     include: t('生成するランキングの種類を選びます。'),
-    diff: t('差分比較の基準です。最新集計か、過去集計を選んで比較できます。'),
+    diff: t('差分比較の基準です。最新集計、または具体的な過去集計を選んで比較できます。'),
   }
   return map[key] ?? ''
 }
@@ -1579,6 +1417,32 @@ function rankingDeltaText(row: any) {
 
 function metricDeltaText(row: any, key: string) {
   return formatSignedDelta(row?.diff?.metrics?.[key]?.delta)
+}
+
+function resultSortValue(row: any, key: string): number | string {
+  if (key === 'id') return entityName(String(row?.id ?? ''))
+  if (key === 'comments' || key === 'judged_teams') return formatList(row?.[key])
+  if (key === 'institutions' || key === 'teams') {
+    if (Array.isArray(row?.[key])) return row[key].map((item: any) => String(item)).join(', ')
+    return String(row?.[key] ?? '')
+  }
+  const numeric = toFiniteNumber(row?.[key])
+  if (numeric !== null) return numeric
+  return String(row?.[key] ?? '')
+}
+
+function setResultSort(key: string) {
+  if (resultSortKey.value === key) {
+    resultSortDirection.value = resultSortDirection.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  resultSortKey.value = key
+  resultSortDirection.value = key === 'ranking' ? 'asc' : 'desc'
+}
+
+function resultSortIndicator(key: string) {
+  if (resultSortKey.value !== key) return '↕'
+  return resultSortDirection.value === 'asc' ? '↑' : '↓'
 }
 
 function formatCsvValue(value: unknown) {
@@ -1643,28 +1507,6 @@ function labelDisplay(label: string) {
     best: t('ベストスピーカー'),
   }
   return map[label] ?? label
-}
-
-function rankingMetricLabel(metric: CompileRankingMetric) {
-  const map: Record<CompileRankingMetric, string> = {
-    win: t('勝利数'),
-    sum: t('合計'),
-    margin: t('マージン'),
-    vote: t('票'),
-    average: t('平均'),
-    sd: t('標準偏差'),
-  }
-  return map[metric]
-}
-
-function moveRankingPriority(index: number, direction: -1 | 1) {
-  const nextIndex = index + direction
-  if (nextIndex < 0 || nextIndex >= rankingPriorityOrder.value.length) return
-  const list = [...rankingPriorityOrder.value]
-  const tmp = list[index]
-  list[index] = list[nextIndex]
-  list[nextIndex] = tmp
-  rankingPriorityOrder.value = list
 }
 
 function setActiveLabel(label: string) {
@@ -1829,6 +1671,7 @@ async function refresh() {
   if (!tournamentId.value) return
   await Promise.all([
     compiledStore.fetchLatest(tournamentId.value),
+    tournamentStore.fetchTournaments(),
     teams.fetchTeams(tournamentId.value),
     adjudicators.fetchAdjudicators(tournamentId.value),
     rounds.fetchRounds(tournamentId.value),
@@ -1837,6 +1680,10 @@ async function refresh() {
     draws.fetchDraws(tournamentId.value),
     submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
   ])
+  if (!compileDefaultsHydrated.value) {
+    applyCompileDefaultsFromTournament()
+    compileDefaultsHydrated.value = true
+  }
   await refreshCompiledHistory()
   const currentCompiledId = String(compiledStore.compiled?._id ?? '').trim()
   if (currentCompiledId) {
@@ -1922,17 +1769,23 @@ watch(availableLabels, (labels) => {
 })
 
 watch(
+  tableColumns,
+  (columns) => {
+    if (!columns.includes(resultSortKey.value)) {
+      resultSortKey.value = columns.includes('ranking') ? 'ranking' : columns[0] ?? 'ranking'
+      resultSortDirection.value = resultSortKey.value === 'ranking' ? 'asc' : 'desc'
+    }
+  },
+  { immediate: true }
+)
+
+watch(
   selectedCompiledId,
   (nextId) => {
     if (!nextId) return
     applyCompiledSnapshot(nextId)
   }
 )
-
-watch(showAdvancedSourceOptions, (open) => {
-  if (open) return
-  compileSource.value = 'submissions'
-})
 
 watch(
   baselineCompiledOptions,
@@ -1950,16 +1803,21 @@ watch(
 )
 
 watch(
-  [compileDiffBaselineMode, baselineCompiledOptions],
-  ([mode, options]) => {
-    if (mode !== 'compiled') return
-    if (options.length === 0) {
-      compileDiffBaselineCompiledId.value = ''
+  baselineCompiledOptions,
+  (options) => {
+    if (compileDiffBaselineSelection.value === 'latest') return
+    const current = String(compileDiffBaselineSelection.value).trim()
+    if (!current) {
+      compileDiffBaselineSelection.value = 'latest'
       return
     }
-    const exists = options.some((option) => option.compiledId === compileDiffBaselineCompiledId.value)
+    if (options.length === 0) {
+      compileDiffBaselineSelection.value = 'latest'
+      return
+    }
+    const exists = options.some((option) => option.compiledId === current)
     if (!exists) {
-      compileDiffBaselineCompiledId.value = options[0].compiledId
+      compileDiffBaselineSelection.value = 'latest'
     }
   },
   { immediate: true }
@@ -1967,6 +1825,7 @@ watch(
 
 watch(tournamentId, () => {
   compileExecuted.value = false
+  compileDefaultsHydrated.value = false
   refresh()
 })
 
@@ -2047,6 +1906,17 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .section-header {
   align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(1.95rem, 2.2vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-weight: 800;
 }
 
 .header-reload {
@@ -2265,7 +2135,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .compile-category-row {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
@@ -2283,6 +2153,29 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .compile-diff-field-wide {
   min-width: min(460px, 100%);
+}
+
+.result-list-head {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.result-list-actions {
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.section-download-row {
+  justify-content: flex-end;
+}
+
+.section-download-button {
+  width: 100%;
+  justify-content: center;
 }
 
 .diff-legend {

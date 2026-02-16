@@ -6,6 +6,12 @@ import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  normalizeCompileOptions,
+  type CompileOptionsInput,
+  type CompileOptions,
+} from '../types/compiled-options.js'
 import { buildCompiledPayload } from './compiled.js'
 import {
   normalizeBreakConfig,
@@ -33,11 +39,27 @@ type RoundDefaults = {
     cutoff_tie_policy: BreakCutoffTiePolicy
     seeding: BreakSeeding
   }
+  compile: {
+    source: 'submissions' | 'raw'
+    source_rounds: number[]
+    options: CompileOptions
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function asRoundList(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item >= 1)
+    )
+  ).sort((left, right) => left - right)
 }
 
 function defaultRoundDefaults(): RoundDefaults {
@@ -59,6 +81,11 @@ function defaultRoundDefaults(): RoundDefaults {
       cutoff_tie_policy: 'manual',
       seeding: 'high_low',
     },
+    compile: {
+      source: 'submissions',
+      source_rounds: [],
+      options: normalizeCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
+    },
   }
 }
 
@@ -67,6 +94,11 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
   const source = asRecord(input)
   const userDefinedSource = asRecord(source.userDefinedData)
   const breakSource = asRecord(source.break)
+  const compileSource = asRecord(source.compile)
+  const compileOptionsSource =
+    compileSource.options && typeof compileSource.options === 'object'
+      ? compileSource.options
+      : compileSource
   return {
     userDefinedData: {
       evaluate_from_adjudicators:
@@ -109,6 +141,14 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
           : fallback.break.cutoff_tie_policy,
       seeding: breakSource.seeding === 'high_low' ? 'high_low' : fallback.break.seeding,
     },
+    compile: {
+      source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
+      source_rounds: asRoundList(compileSource.source_rounds),
+      options: normalizeCompileOptions(
+        compileOptionsSource as CompileOptionsInput,
+        fallback.compile.options
+      ),
+    },
   }
 }
 
@@ -130,6 +170,13 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
       cutoff_tie_policy: defaults.break.cutoff_tie_policy,
       seeding: defaults.break.seeding,
       participants: [],
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(current, 'compile')) {
+    merged.compile = {
+      source: defaults.compile.source,
+      source_rounds: [...defaults.compile.source_rounds],
+      options: normalizeCompileOptions(defaults.compile.options, defaults.compile.options),
     }
   }
   return merged

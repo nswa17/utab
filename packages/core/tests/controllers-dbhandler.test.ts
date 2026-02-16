@@ -9,7 +9,7 @@ let uri = ''
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', launchTimeout: 60000 },
+    instance: { ip: '127.0.0.1', launchTimeout: 600000 },
   })
   uri = mongo.getUri()
 }, 120000)
