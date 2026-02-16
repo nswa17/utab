@@ -699,3 +699,25 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
     next(err)
   }
 }
+
+export const deleteSubmission: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { tournamentId } = req.query as { tournamentId?: string }
+
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureSubmissionId(res, id)) return
+
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const deleted = await SubmissionModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+    if (!deleted) {
+      notFound(res, 'Submission not found')
+      return
+    }
+
+    res.json({ data: deleted, errors: [] })
+  } catch (err) {
+    next(err)
+  }
+}

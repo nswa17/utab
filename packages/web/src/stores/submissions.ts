@@ -48,6 +48,11 @@ export interface UpdateSubmissionPayload {
   payload?: Record<string, unknown>
 }
 
+export interface DeleteSubmissionPayload {
+  tournamentId: string
+  submissionId: string
+}
+
 export const useSubmissionsStore = defineStore('submissions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -192,6 +197,26 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     }
   }
 
+  async function deleteSubmission(payload: DeleteSubmissionPayload) {
+    beginRequest()
+    error.value = null
+    try {
+      const res = await api.delete(`/submissions/${payload.submissionId}`, {
+        params: { tournamentId: payload.tournamentId },
+      })
+      const deleted = res.data?.data ?? null
+      if (deleted?._id) {
+        submissions.value = submissions.value.filter((item) => item._id !== deleted._id)
+      }
+      return deleted
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
+      return null
+    } finally {
+      endRequest()
+    }
+  }
+
   return {
     loading,
     error,
@@ -202,5 +227,6 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     submitBallot,
     submitFeedback,
     updateSubmission,
+    deleteSubmission,
   }
 })

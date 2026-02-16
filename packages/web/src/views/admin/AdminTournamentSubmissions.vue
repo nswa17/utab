@@ -319,17 +319,17 @@
                             size="sm"
                             :loading="editingSaving"
                             :disabled="editingSaving"
-                            @click="saveEdit(item)"
+                            @click="requestSaveEdit(item)"
                           >
                             {{ $t('更新を保存') }}
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="danger"
                             size="sm"
                             :disabled="editingSaving"
-                            @click="cancelEdit"
+                            @click="requestDeleteSubmission(item)"
                           >
-                            {{ $t('編集をキャンセル') }}
+                            {{ $t('評価を削除') }}
                           </Button>
                         </div>
                       </div>
@@ -459,17 +459,17 @@
                             size="sm"
                             :loading="editingSaving"
                             :disabled="editingSaving"
-                            @click="saveEdit(item)"
+                            @click="requestSaveEdit(item)"
                           >
                             {{ $t('更新を保存') }}
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="danger"
                             size="sm"
                             :disabled="editingSaving"
-                            @click="cancelEdit"
+                            @click="requestDeleteSubmission(item)"
                           >
-                            {{ $t('編集をキャンセル') }}
+                            {{ $t('評価を削除') }}
                           </Button>
                         </div>
                       </div>
@@ -698,17 +698,17 @@
                         size="sm"
                         :loading="editingSaving"
                         :disabled="editingSaving"
-                        @click="saveEdit(item)"
+                        @click="requestSaveEdit(item)"
                       >
                         {{ $t('更新を保存') }}
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="danger"
                         size="sm"
                         :disabled="editingSaving"
-                        @click="cancelEdit"
+                        @click="requestDeleteSubmission(item)"
                       >
-                        {{ $t('編集をキャンセル') }}
+                        {{ $t('評価を削除') }}
                       </Button>
                     </div>
                   </div>
@@ -838,17 +838,17 @@
                         size="sm"
                         :loading="editingSaving"
                         :disabled="editingSaving"
-                        @click="saveEdit(item)"
+                        @click="requestSaveEdit(item)"
                       >
                         {{ $t('更新を保存') }}
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="danger"
                         size="sm"
                         :disabled="editingSaving"
-                        @click="cancelEdit"
+                        @click="requestDeleteSubmission(item)"
                       >
-                        {{ $t('編集をキャンセル') }}
+                        {{ $t('評価を削除') }}
                       </Button>
                     </div>
                   </div>
@@ -860,6 +860,33 @@
         </tbody>
       </Table>
     </template>
+
+    <div
+      v-if="actionConfirm"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeActionConfirm"
+    >
+      <div class="modal card stack submission-confirm-modal" role="dialog" aria-modal="true">
+        <h4>{{ actionConfirm.title }}</h4>
+        <p class="muted">{{ actionConfirm.message }}</p>
+        <p v-if="actionConfirm.summary" class="muted small">{{ actionConfirm.summary }}</p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" :disabled="editingSaving" @click="closeActionConfirm">
+            {{ $t('キャンセル') }}
+          </Button>
+          <Button
+            :variant="actionConfirm.action === 'delete' ? 'danger' : 'primary'"
+            size="sm"
+            :loading="editingSaving"
+            :disabled="editingSaving"
+            @click="executeConfirmedAction"
+          >
+            {{ actionConfirm.confirmLabel }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -900,12 +927,14 @@ const props = withDefaults(
     embeddedRound?: number | null
     hideSummaryCards?: boolean
     splitByEvaluation?: boolean
+    splitActiveKey?: 'team' | 'judge' | null
   }>(),
   {
     embedded: false,
     embeddedRound: null,
     hideSummaryCards: false,
     splitByEvaluation: false,
+    splitActiveKey: null,
   }
 )
 
@@ -927,6 +956,7 @@ const contextRound = computed<number | null>(() => {
 const isRoundContext = computed(() => contextRound.value !== null)
 const hideSummaryCards = computed(() => props.hideSummaryCards)
 const splitByEvaluation = computed(() => props.splitByEvaluation)
+const splitActiveKey = computed(() => props.splitActiveKey)
 const typeFilter = ref<'all' | 'ballot' | 'feedback'>('all')
 const roundFilter = ref('')
 const searchQuery = ref('')
@@ -967,6 +997,16 @@ const editingFeedbackMatter = ref('')
 const editingFeedbackManner = ref('')
 const editingFeedbackComment = ref('')
 const editingFeedbackRole = ref('')
+type SubmissionAction = 'save' | 'delete'
+type SubmissionActionConfirm = {
+  action: SubmissionAction
+  submissionId: string
+  title: string
+  message: string
+  summary?: string
+  confirmLabel: string
+}
+const actionConfirm = ref<SubmissionActionConfirm | null>(null)
 const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
@@ -1137,7 +1177,11 @@ const splitTableGroups = computed<Array<{ key: SplitTableKey; label: string; ite
     { key: 'team', label: t('チーム評価') },
     { key: 'judge', label: t('ジャッジ評価') },
   ]
-  return sources.map((source) => {
+  const visibleSources =
+    splitByEvaluation.value && splitActiveKey.value
+      ? sources.filter((source) => source.key === splitActiveKey.value)
+      : sources
+  return visibleSources.map((source) => {
     const query = splitSearchQueries[source.key].trim().toLowerCase()
     const filtered = roundScopedItems.value.filter((item) => {
       if (evaluationKeyForSubmission(item) !== source.key) return false
@@ -1673,6 +1717,63 @@ function isEditing(id: string) {
   return editingSubmissionId.value === id
 }
 
+function submissionActionSummary(item: Submission) {
+  return `${t('ラウンド')} ${item.round} / ${typeLabel(item.type)} / ${submittedByLabel(item)}`
+}
+
+function requestSaveEdit(item: Submission) {
+  const submissionId = String(item._id ?? '')
+  if (!submissionId || !isEditing(submissionId) || editingSaving.value) return
+  actionConfirm.value = {
+    action: 'save',
+    submissionId,
+    title: t('更新内容を保存しますか？'),
+    message: t('現在の入力内容でこの評価を更新します。'),
+    summary: submissionActionSummary(item),
+    confirmLabel: t('更新を保存'),
+  }
+}
+
+function requestDeleteSubmission(item: Submission) {
+  const submissionId = String(item._id ?? '')
+  if (!submissionId || !isEditing(submissionId) || editingSaving.value) return
+  actionConfirm.value = {
+    action: 'delete',
+    submissionId,
+    title: t('この評価を削除しますか？'),
+    message: t('削除した評価は元に戻せません。'),
+    summary: submissionActionSummary(item),
+    confirmLabel: t('評価を削除'),
+  }
+}
+
+function closeActionConfirm() {
+  if (editingSaving.value) return
+  actionConfirm.value = null
+}
+
+async function executeConfirmedAction() {
+  if (editingSaving.value || !actionConfirm.value) return
+  const pending = actionConfirm.value
+  actionConfirm.value = null
+  const submissionId = pending.submissionId
+  const target = submissions.submissions.find((item) => String(item._id ?? '') === submissionId)
+  if (!target) {
+    if (editingSubmissionId.value === submissionId) {
+      cancelEdit()
+    }
+    const next = new Set(expandedIds.value)
+    next.delete(submissionId)
+    expandedIds.value = next
+    return
+  }
+  if (pending.action === 'save') {
+    await saveEdit(target)
+    return
+  }
+  await deleteCurrentSubmission(target)
+}
+
 function resetBallotEditor() {
   editingBallotBasePayload.value = {}
   editingBallotTeamAId.value = ''
@@ -2027,6 +2128,7 @@ function cancelEdit() {
   editingPayloadText.value = ''
   editingRound.value = 1
   editingSaving.value = false
+  actionConfirm.value = null
   resetBallotEditor()
   resetFeedbackEditor()
   editError.value = ''
@@ -2077,7 +2179,34 @@ async function saveEdit(item: Submission) {
       editError.value = submissions.error ?? t('提出データの更新に失敗しました。')
       return
     }
-    cancelEdit()
+    startEdit(updated as Submission)
+  } finally {
+    editingSaving.value = false
+  }
+}
+
+async function deleteCurrentSubmission(item: Submission) {
+  const submissionId = String(item._id ?? '')
+  if (!submissionId) return
+
+  editError.value = ''
+  editingSaving.value = true
+  try {
+    const deleted = await submissions.deleteSubmission({
+      tournamentId: tournamentId.value,
+      submissionId,
+    })
+    if (!deleted) {
+      editError.value = submissions.error ?? t('提出データの削除に失敗しました。')
+      return
+    }
+
+    const next = new Set(expandedIds.value)
+    next.delete(submissionId)
+    expandedIds.value = next
+    if (editingSubmissionId.value === submissionId) {
+      cancelEdit()
+    }
   } finally {
     editingSaving.value = false
   }
@@ -2347,6 +2476,37 @@ watch(
 
 .tight {
   gap: 4px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 40;
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+
+.submission-confirm-modal {
+  gap: var(--space-2);
+}
+
+.submission-confirm-modal h4 {
+  margin: 0;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .submission-editor textarea,

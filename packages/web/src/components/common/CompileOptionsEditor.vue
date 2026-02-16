@@ -66,13 +66,13 @@
         <Field :label="$t('勝敗判定')">
           <template #default="{ id, describedBy }">
             <select v-model="winnerPolicy" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="winner_id_then_score">{{ $t('winnerId優先（未指定時はスコア推定）') }}</option>
+              <option value="winner_id_then_score">{{ $t('勝者選択を優先（未選択時はスコア判定）') }}</option>
               <option value="score_only">{{ $t('スコア推定のみ') }}</option>
               <option value="draw_on_missing">{{ $t('未指定は引き分け') }}</option>
             </select>
           </template>
           <template #label-suffix>
-            <HelpTip :text="$t('Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。')" />
+            <HelpTip :text="$t('提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。')" />
           </template>
         </Field>
         <Field :label="$t('引き分け時ポイント')">

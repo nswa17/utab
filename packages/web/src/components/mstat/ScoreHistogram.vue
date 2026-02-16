@@ -11,6 +11,7 @@ const props = defineProps<{
   results: any[]
   score: string
   round?: { r: number } | number
+  roundName?: string
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
@@ -49,6 +50,10 @@ function render() {
   })
   const keys = Array.from(buckets.keys()).sort((a, b) => a - b)
   const data = keys.map((key) => buckets.get(key) ?? 0)
+  const roundLabel =
+    props.roundName ??
+    (roundValue.value !== undefined ? t('ラウンド {round}', { round: roundValue.value }) : '')
+  const titleText = roundValue.value !== undefined ? t('スコアヒストグラム（{round}）', { round: roundLabel }) : t('スコアヒストグラム')
 
   const styles = getComputedStyle(document.documentElement)
   const palette = [
@@ -60,7 +65,7 @@ function render() {
 
   Highcharts.chart(container.value, {
     chart: { type: 'column', backgroundColor: 'transparent' },
-    title: { text: t('スコアヒストグラム') },
+    title: { text: titleText },
     xAxis: { categories: keys.map((key) => key.toString()), title: { text: t('スコア') } },
     yAxis: { title: { text: t('件数') }, allowDecimals: false },
     colors: palette,
@@ -70,7 +75,7 @@ function render() {
 
 onMounted(render)
 watch(
-  () => [props.results, props.score, props.round, locale.value],
+  () => [props.results, props.score, props.round, props.roundName, locale.value],
   () => render(),
   { deep: true }
 )

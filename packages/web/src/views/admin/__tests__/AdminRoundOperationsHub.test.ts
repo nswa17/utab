@@ -24,9 +24,19 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('強制実行')
     expect(source).toContain('compileSource')
     expect(source).toContain('compileDiffBaselineCompiledId')
+    expect(source).toContain('CompiledDiffBaselineSelect')
+    expect(source).toContain('resolvePreviousCompiledId')
     expect(source).not.toContain('compileDiffBaselineMode')
     expect(source).toContain('compileRows')
     expect(source).toContain('buildCompileOptions')
+  })
+
+  it('updates compile diff indicators immediately when selecting a past baseline snapshot', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('applyClientBaselineDiff')
+    expect(source).toContain('selectedCompileDiffBaselineCompiled')
+    expect(source).toContain('selectedCompileDiffBaselineRows')
+    expect(source).toContain('compileDiffBaselineCompiledId')
   })
 
   it('stores selected task per round and defaults to first incomplete step', () => {
@@ -44,7 +54,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('selectedRoundHasDraw')
     expect(source).toContain('selectedRoundBallotGapWarning')
     expect(source).toContain('snapshotIncludesSelectedRound')
-    expect(source).toContain('未提出のチーム評価があります（提出 {submitted}/{expected}）。提出一覧を確認してください。')
+    expect(source).toContain('未提出のチーム評価があります（提出 {submitted}/{expected}）。提出状況タブを確認してください。')
   })
 
   it('reads compiled rounds using r-or-round fallback for status chips', () => {
@@ -63,5 +73,18 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).not.toContain('openRawResultPage')
     expect(source).not.toContain('openSubmissionsPage')
     expect(source).not.toContain('openReportsPage')
+  })
+
+  it('shows submission speed detail and evaluation toggle under submissions task', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    const submissionsView = load('src/views/admin/AdminTournamentSubmissions.vue')
+    expect(source).toContain('提出スピード詳細')
+    expect(source).toContain('selectedRoundSubmissionSpeed')
+    expect(source).toContain('selectedRoundSubmissionDelayRows')
+    expect(source).toContain("submissionEvaluationTab === 'team'")
+    expect(source).toContain("submissionEvaluationTab === 'judge'")
+    expect(source).toContain(':split-active-key="submissionEvaluationTab"')
+    expect(source).toContain("提出者情報不足: Ballot {ballot} / Feedback {feedback}")
+    expect(submissionsView).toContain('splitActiveKey')
   })
 })

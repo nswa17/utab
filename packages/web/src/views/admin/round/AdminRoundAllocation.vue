@@ -1027,7 +1027,7 @@ const teamFilterOptions = computed(() => [
   {
     value: 'by_institution',
     label: t('同一機関回避'),
-    description: t('同じ所属機関どうしの対戦を避ける方向に評価します。'),
+    description: t('同じコンフリクトグループどうしの対戦を避ける方向に評価します。'),
   },
   {
     value: 'by_random',
@@ -2026,7 +2026,7 @@ const detailRows = computed(() => {
       { label: t('合計'), value: result?.sum ?? '—' },
       { label: t('マージン'), value: result?.margin ?? '—' },
       {
-        label: t('所属機関'),
+        label: t('コンフリクトグループ'),
         value: institutionsList.length ? institutionsList.join(', ') : '—',
       },
       {
@@ -2056,7 +2056,7 @@ const detailRows = computed(() => {
       { label: t('順位'), value: result?.ranking ?? '—' },
       { label: t('平均'), value: result?.average ?? '—' },
       {
-        label: t('所属機関'),
+        label: t('コンフリクトグループ'),
         value: institutionsList.length ? institutionsList.join(', ') : '—',
       },
       {

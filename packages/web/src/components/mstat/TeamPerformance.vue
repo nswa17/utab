@@ -1,5 +1,8 @@
 <template>
-  <div ref="container" class="chart" />
+  <div class="team-performance-grid">
+    <div ref="winContainer" class="chart" />
+    <div ref="pointContainer" class="chart" />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -11,14 +14,60 @@ const props = defineProps<{
   results: any[]
 }>()
 
-const container = ref<HTMLDivElement | null>(null)
+type TeamPerformanceRow = {
+  name: string
+  win: number
+  sum: number
+}
+
+const winContainer = ref<HTMLDivElement | null>(null)
+const pointContainer = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
+const sortCollator = new Intl.Collator(['ja', 'en'], { sensitivity: 'base', numeric: true })
 
-function render() {
-  if (!container.value) return
-  const categories = props.results.map((result) => result.name ?? result.id ?? t('チーム'))
-  const data = props.results.map((result) => (typeof result.win === 'number' ? result.win : 0))
+function toFiniteNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function buildRows(): TeamPerformanceRow[] {
+  return props.results.map((result) => ({
+    name: String(result.name ?? result.id ?? t('チーム')),
+    win: toFiniteNumber(result.win),
+    sum: toFiniteNumber(result.sum),
+  }))
+}
+
+function sortRows(rows: TeamPerformanceRow[], metric: 'win' | 'sum'): TeamPerformanceRow[] {
+  return rows.slice().sort((left, right) => {
+    const primary = right[metric] - left[metric]
+    if (primary !== 0) return primary
+    if (metric === 'win') {
+      const secondary = right.sum - left.sum
+      if (secondary !== 0) return secondary
+    } else {
+      const secondary = right.win - left.win
+      if (secondary !== 0) return secondary
+    }
+    return sortCollator.compare(left.name, right.name)
+  })
+}
+
+function renderChart(
+  container: HTMLDivElement | null,
+  config: {
+    title: string
+    yAxisLabel: string
+    seriesName: string
+    rows: TeamPerformanceRow[]
+    metric: 'win' | 'sum'
+  }
+) {
+  if (!container) return
+  const categories = config.rows.map((row) => row.name)
+  const data = config.rows.map((row) => row[config.metric])
 
   const styles = getComputedStyle(document.documentElement)
   const palette = [
@@ -28,13 +77,36 @@ function render() {
     styles.getPropertyValue('--color-danger').trim() || '#ef4444',
   ]
 
-  Highcharts.chart(container.value, {
-    chart: { type: 'column', backgroundColor: 'transparent' },
-    title: { text: t('チームの成績') },
+  Highcharts.chart(container, {
+    chart: { type: 'bar', backgroundColor: 'transparent' },
+    title: { text: config.title },
     xAxis: { categories },
-    yAxis: { title: { text: t('勝利数') }, allowDecimals: false },
+    yAxis: {
+      title: { text: config.yAxisLabel },
+      allowDecimals: config.metric === 'win' ? false : true,
+    },
     colors: palette,
-    series: [{ name: t('勝利数'), data, type: 'column' }],
+    legend: { enabled: false },
+    series: [{ name: config.seriesName, data, type: 'bar' }],
+    credits: { enabled: false },
+  })
+}
+
+function render() {
+  const rows = buildRows()
+  renderChart(winContainer.value, {
+    title: t('チーム成績（勝利数）'),
+    yAxisLabel: t('勝利数'),
+    seriesName: t('勝利数'),
+    rows: sortRows(rows, 'win'),
+    metric: 'win',
+  })
+  renderChart(pointContainer.value, {
+    title: t('チーム成績（得点）'),
+    yAxisLabel: t('得点'),
+    seriesName: t('得点'),
+    rows: sortRows(rows, 'sum'),
+    metric: 'sum',
   })
 }
 
@@ -47,8 +119,20 @@ watch(
 </script>
 
 <style scoped>
+.team-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
 .chart {
   width: 100%;
-  min-height: 260px;
+  min-height: 320px;
+}
+
+@media (max-width: 980px) {
+  .team-performance-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

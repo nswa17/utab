@@ -725,6 +725,57 @@ describe('Server integration', () => {
     expect(listAfter.body.data[0].payload.winnerId).toBe('team-b')
   })
 
+  it('deletes submissions via admin submission API', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-delete', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-delete', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Delete Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const createBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
+      submittedEntityId: 'judge-a',
+      comment: 'delete target',
+    })
+    expect(createBallot.status).toBe(201)
+
+    const listBefore = await organizer.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listBefore.status).toBe(200)
+    expect(listBefore.body.data.length).toBe(1)
+    const submissionId = listBefore.body.data[0]._id as string
+
+    const deleteRes = await organizer.delete(`/api/submissions/${submissionId}?tournamentId=${tournamentId}`)
+    expect(deleteRes.status).toBe(200)
+    expect(deleteRes.body.data._id).toBe(submissionId)
+
+    const listAfter = await organizer.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listAfter.status).toBe(200)
+    expect(listAfter.body.data.length).toBe(0)
+
+    const deleteAgain = await organizer.delete(`/api/submissions/${submissionId}?tournamentId=${tournamentId}`)
+    expect(deleteAgain.status).toBe(404)
+  })
+
   it('derives scores from matter/manner on admin ballot updates', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
