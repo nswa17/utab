@@ -35,8 +35,6 @@ declare module 'vue' {
     ScoreHistogram: typeof import('./components/mstat/ScoreHistogram.vue')['default']
     ScoreRange: typeof import('./components/mstat/ScoreRange.vue')['default']
     Section: typeof import('./components/common/Section.vue')['default']
-    SideHeatmap: typeof import('./components/mstat/SideHeatmap.vue')['default']
-    SideMarginHeatmap: typeof import('./components/mstat/SideMarginHeatmap.vue')['default']
     SidePieChart: typeof import('./components/mstat/SidePieChart.vue')['default']
     SideScatter: typeof import('./components/mstat/SideScatter.vue')['default']
     Slides: typeof import('./components/slides/Slides.vue')['default']

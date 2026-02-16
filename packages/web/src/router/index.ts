@@ -44,6 +44,13 @@ export function createAppRouter(options: RouterOptions = {}): Router {
   const useStubComponents = options.stubComponents ?? false
   const routeComponent = (component: unknown) =>
     (useStubComponents ? StubRouteComponent : component) as any
+  const redirectToOperationsSubmissions = (to: any) => ({
+    path: `/admin/${String(to.params.tournamentId ?? '')}/operations`,
+    query: {
+      ...to.query,
+      task: 'submissions',
+    },
+  })
   const adminChildren = adminUiV2
     ? [
         {
@@ -69,7 +76,7 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             query: to.query,
           }),
         },
-        { path: 'submissions', component: routeComponent(AdminTournamentSubmissions) },
+        { path: 'submissions', redirect: redirectToOperationsSubmissions },
         { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
         {
           path: 'compiled',
@@ -91,7 +98,7 @@ export function createAppRouter(options: RouterOptions = {}): Router {
         { path: 'setup', component: routeComponent(AdminTournamentHome) },
         { path: 'rounds', component: routeComponent(AdminRoundOperationsHub) },
         { path: 'operations', component: routeComponent(AdminRoundOperationsHub) },
-        { path: 'submissions', component: routeComponent(AdminTournamentSubmissions) },
+        { path: 'submissions', redirect: redirectToOperationsSubmissions },
         { path: 'compiled', component: routeComponent(AdminTournamentCompiled) },
         { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
       ]
@@ -142,7 +149,7 @@ export function createAppRouter(options: RouterOptions = {}): Router {
               { path: 'result', component: routeComponent(AdminRoundResult) },
             ],
           },
-          { path: 'results', redirect: 'submissions' },
+          { path: 'results', redirect: redirectToOperationsSubmissions },
         ],
       },
       { path: '/user', component: routeComponent(UserHome) },

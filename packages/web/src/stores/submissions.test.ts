@@ -6,6 +6,7 @@ vi.mock('@/utils/api', () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
@@ -16,6 +17,7 @@ type MockedApi = {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
   patch: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
 }
 
 const mockedApi = api as unknown as MockedApi
@@ -26,6 +28,7 @@ describe('submissions store', () => {
     mockedApi.get.mockReset()
     mockedApi.post.mockReset()
     mockedApi.patch.mockReset()
+    mockedApi.delete.mockReset()
   })
 
   it('handles timeout-like cancellation errors on ballot submission', async () => {
@@ -189,6 +192,35 @@ describe('submissions store', () => {
     })
     expect(result).toEqual(updated)
     expect(store.submissions[0].payload.comment).toBe('new')
+    expect(store.error).toBeNull()
+  })
+
+  it('deletes submission by id', async () => {
+    const store = useSubmissionsStore()
+    store.submissions = [
+      { _id: 'submission-1', type: 'ballot', round: 1, payload: { comment: 'old' } } as any,
+      { _id: 'submission-2', type: 'feedback', round: 1, payload: { comment: 'keep' } } as any,
+    ]
+    const deleted = {
+      _id: 'submission-1',
+      type: 'ballot',
+      round: 1,
+      payload: { comment: 'old' },
+    }
+    mockedApi.delete.mockResolvedValueOnce({ data: { data: deleted } })
+
+    const result = await store.deleteSubmission({
+      tournamentId: 'tournament-1',
+      submissionId: 'submission-1',
+    })
+
+    expect(mockedApi.delete).toHaveBeenCalledWith('/submissions/submission-1', {
+      params: { tournamentId: 'tournament-1' },
+    })
+    expect(result).toEqual(deleted)
+    expect(store.submissions).toEqual([
+      { _id: 'submission-2', type: 'feedback', round: 1, payload: { comment: 'keep' } },
+    ])
     expect(store.error).toBeNull()
   })
 })

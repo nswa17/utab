@@ -1330,8 +1330,8 @@ function openRoundPage(roundNumber: number, type: 'allocation' | 'submissions') 
     return
   }
   router.push({
-    path: `/admin/${tournamentId.value}/submissions`,
-    query: { round: String(roundNumber), context: 'round' },
+    path: `/admin/${tournamentId.value}/operations`,
+    query: { round: String(roundNumber), task: 'submissions', context: 'round' },
   })
 }
 

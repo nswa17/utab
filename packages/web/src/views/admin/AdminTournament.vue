@@ -140,8 +140,7 @@ const isOperationsActive = computed(() => {
   const base = `/admin/${tournamentId.value}/`
   return (
     route.path.startsWith(`${base}operations`) ||
-    route.path.startsWith(`${base}rounds`) ||
-    route.path.startsWith(`${base}submissions`)
+    route.path.startsWith(`${base}rounds`)
   )
 })
 const isReportsActive = computed(() => {

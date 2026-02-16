@@ -28,6 +28,15 @@
 - Rounds: 作成UIは表示されず、`大会セットアップ` への導線と既存ラウンドの上書き編集に集中している。
 - Submissions: filter/search and JSON collapse expand/collapse via keyboard; chart toggle accessible.
 - Compiled results: CSV download button reachable; warning texts readable and contrast-compliant.
+- Compiled results (UX v3): 上段は `既存レポートの選択` / `新規レポート生成` / `提出状況サマリー` の3枠に分かれ、提出状況テーブル行から `提出状況` タブへ遷移できる。
+- Compiled results (UX v3): `entityごとの順位一覧 / 公平性 / 発表準備` の3タブが切り替わり、既定タブが `entityごとの順位一覧` である。
+- Compiled results (UX v3): `entityごとの順位一覧` で `集計区分` の小枠セグメントが表示され、選択中区分の順位テーブルが直下に表示される。
+- Compiled results (UX v3): 差分比較セレクトの候補ラベルが `Round 1, Round 2 (月/日 時刻)` 形式で表示され、既定値が一個前の集計になっている。
+- Compiled results (UX v3): `発表準備サマリ` と `発表境界` が表示されず、発表準備はスライド/表彰出力に集中している。
+- Compiled results (UX v3): `分析` は独立タブではなく `公平性` タブ内（分析統合セクション）で表示される。
+- Compiled results (UX v3): `提出スピード` カードに `正常/注意/要介入` の状態と `中央値/P90/遅延率` が表示される。
+- Compiled results (UX v3): `ジャッジ偏差 (Strictness)` は z-score 数値と0中心の偏差バーが一致し、厳しめ/甘めの判定が視覚的に読める。
+- Compiled results (UX v3): `分析` タブは初回表示時のみ遅延描画し、データ不足時は `EmptyState` が出る。
 
 ## Compile Regression (Phase 4)
 - Compiled results: 表示スナップショットを切り替えたとき、一覧/差分/CSVの対象が同じsnapshotに揃う。
@@ -50,6 +59,11 @@
 - Ballot validation smoke:
   - `allow_low_tie_win=true` で非同点スコア時は勝者未選択の送信がブロックされる。
   - `no_speaker_score=true` のラウンドで送信不能にならない。
+
+## Telemetry Regression
+- ブラウザで `window.addEventListener('utab:admin-report-metric', handler)` を設定し、レポート操作時にイベントが流れることを確認する。
+- タブ切替で `metric=tab_leave` に `dwellMs` が含まれ、直後に `metric=tab_enter` が同一操作で発火する。
+- `再計算`・CSV出力・表彰コピーで `metric=cta_click` が発火し、完了後に `metric=export_complete` が発火する。
 
 ## Smoke Scenarios (User)
 - Tournament list search/filter accessible; card/table layout remains readable in both languages.

@@ -4,7 +4,7 @@
       {{ $t('大会の基本情報と公開設定を管理します。') }}
     </p>
     <p v-else class="muted small">
-      {{ $t('チーム・ジャッジ・スピーカー・所属機関・会場を管理します。') }}
+      {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
     </p>
 
     <LoadingState v-if="isSectionLoading" />
@@ -60,12 +60,12 @@
             </label>
             <input
               v-model="tournamentForm.accessPassword"
+              :class="{ 'is-disabled': !tournamentForm.accessRequired }"
               :aria-label="$t('大会パスワード')"
               type="text"
               autocomplete="new-password"
               :disabled="!tournamentForm.accessRequired"
             />
-            <p class="muted small">{{ accessPasswordHelpText }}</p>
           </article>
         </div>
         <article class="overview-setting-card notice-setting-card stack">
@@ -388,21 +388,42 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field
-                class="team-institution-field"
-                :label="$t('所属機関')"
-                v-slot="{ id, describedBy }"
-              >
-                <select v-model="teamForm.institutionId" :id="id" :aria-describedby="describedBy">
-                  <option value="">{{ $t('未選択') }}</option>
-                  <option
-                    v-for="inst in institutions.institutions"
-                    :key="inst._id"
-                    :value="inst._id"
-                  >
-                    {{ inst.name }}
-                  </option>
-                </select>
+              <Field class="full" :label="$t('コンフリクトグループ')">
+                <div class="stack relation-group">
+                  <input
+                    v-model="teamInstitutionSearch"
+                    type="text"
+                    :placeholder="$t('コンフリクトグループ名で検索')"
+                  />
+                  <div class="relation-picker">
+                    <template v-if="groupedTeamInstitutionOptions.length > 0">
+                      <div
+                        v-for="group in groupedTeamInstitutionOptions"
+                        :key="`team-inst-${group.category}`"
+                        class="relation-subgroup"
+                      >
+                        <p class="muted small relation-subgroup-header">
+                          <span class="relation-subgroup-title">{{ group.label }}</span>
+                          <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                        </p>
+                        <label
+                          v-for="inst in group.items"
+                          :key="inst._id"
+                          class="row small relation-item"
+                        >
+                          <input v-model="teamInstitutionIds" type="checkbox" :value="inst._id" />
+                          <span>{{ inst.name }}</span>
+                        </label>
+                      </div>
+                    </template>
+                    <p v-else class="muted small relation-empty">
+                      {{ $t('該当するコンフリクトグループがありません。') }}
+                    </p>
+                  </div>
+                  <p class="muted small">
+                    {{ $t('選択済み: {count}件', { count: teamInstitutionIds.length }) }}
+                  </p>
+                </div>
               </Field>
               <Field
                 class="full"
@@ -458,7 +479,7 @@
               v-model="teamSearch"
               :id="id"
               :aria-describedby="describedBy"
-              :placeholder="$t('名前/所属/スピーカーで検索')"
+              :placeholder="$t('名前/コンフリクトグループ/スピーカーで検索')"
             />
           </Field>
           <p v-if="teams.error" class="error">{{ teams.error }}</p>
@@ -467,7 +488,7 @@
               <div class="entity-primary">
                 <strong>{{ team.name }}</strong>
                 <span class="muted small entity-inline-meta">
-                  {{ institutionLabel(team.institution) || $t('所属機関なし') }}
+                  {{ teamInstitutionLabel(team) || $t('コンフリクトグループなし') }}
                 </span>
               </div>
               <div class="muted entity-secondary">{{ team.speakers?.map((s) => s.name).join(', ') }}</div>
@@ -547,21 +568,36 @@
                 </label>
               </div>
               <div class="stack full relation-group">
-                <span class="field-label">{{ $t('所属機関') }}</span>
+                <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
                 <input
                   v-model="adjudicatorInstitutionSearch"
                   type="text"
                   :placeholder="$t('コンフリクトグループ名で検索')"
                 />
                 <div class="relation-picker">
-                  <label
-                    v-for="inst in filteredAdjudicatorInstitutionOptions"
-                    :key="inst._id"
-                    class="row small relation-item"
-                  >
-                    <input v-model="adjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
-                    <span>{{ inst.name }}</span>
-                  </label>
+                  <template v-if="groupedAdjudicatorInstitutionOptions.length > 0">
+                    <div
+                      v-for="group in groupedAdjudicatorInstitutionOptions"
+                      :key="group.category"
+                      class="relation-subgroup"
+                    >
+                      <p class="muted small relation-subgroup-header">
+                        <span class="relation-subgroup-title">{{ group.label }}</span>
+                        <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                      </p>
+                      <label
+                        v-for="inst in group.items"
+                        :key="inst._id"
+                        class="row small relation-item"
+                      >
+                        <input v-model="adjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                        <span>{{ inst.name }}</span>
+                      </label>
+                    </div>
+                  </template>
+                  <p v-else class="muted small relation-empty">
+                    {{ $t('該当するコンフリクトグループがありません。') }}
+                  </p>
                 </div>
                 <p class="muted small">
                   {{ $t('選択済み: {count}件', { count: adjudicatorInstitutionIds.length }) }}
@@ -992,13 +1028,42 @@
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
-          <Field :label="$t('所属機関')" v-slot="{ id, describedBy }">
-            <select v-model="entityForm.institutionId" :id="id" :aria-describedby="describedBy">
-              <option value="">{{ $t('未選択') }}</option>
-              <option v-for="inst in institutions.institutions" :key="inst._id" :value="inst._id">
-                {{ inst.name }}
-              </option>
-            </select>
+          <Field class="full" :label="$t('コンフリクトグループ')">
+            <div class="stack relation-group">
+              <input
+                v-model="editTeamInstitutionSearch"
+                type="text"
+                :placeholder="$t('コンフリクトグループ名で検索')"
+              />
+              <div class="relation-picker">
+                <template v-if="groupedEditTeamInstitutionOptions.length > 0">
+                  <div
+                    v-for="group in groupedEditTeamInstitutionOptions"
+                    :key="`edit-team-inst-${group.category}`"
+                    class="relation-subgroup"
+                  >
+                    <p class="muted small relation-subgroup-header">
+                      <span class="relation-subgroup-title">{{ group.label }}</span>
+                      <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                    </p>
+                    <label
+                      v-for="inst in group.items"
+                      :key="inst._id"
+                      class="row small relation-item"
+                    >
+                      <input v-model="editTeamInstitutionIds" type="checkbox" :value="inst._id" />
+                      <span>{{ inst.name }}</span>
+                    </label>
+                  </div>
+                </template>
+                <p v-else class="muted small relation-empty">
+                  {{ $t('該当するコンフリクトグループがありません。') }}
+                </p>
+              </div>
+              <p class="muted small">
+                {{ $t('選択済み: {count}件', { count: editTeamInstitutionIds.length }) }}
+              </p>
+            </div>
           </Field>
           <Field class="full" :label="$t('既存スピーカーから選択')" v-slot="{ id, describedBy }">
             <div class="stack relation-group">
@@ -1072,21 +1137,36 @@
             </label>
           </div>
           <div class="stack full relation-group">
-            <span class="field-label">{{ $t('所属機関') }}</span>
+            <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
             <input
               v-model="editAdjudicatorInstitutionSearch"
               type="text"
               :placeholder="$t('コンフリクトグループ名で検索')"
             />
             <div class="relation-picker">
-              <label
-                v-for="inst in filteredEditAdjudicatorInstitutionOptions"
-                :key="inst._id"
-                class="row small relation-item"
-              >
-                <input v-model="editAdjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
-                <span>{{ inst.name }}</span>
-              </label>
+              <template v-if="groupedEditAdjudicatorInstitutionOptions.length > 0">
+                <div
+                  v-for="group in groupedEditAdjudicatorInstitutionOptions"
+                  :key="group.category"
+                  class="relation-subgroup"
+                >
+                  <p class="muted small relation-subgroup-header">
+                    <span class="relation-subgroup-title">{{ group.label }}</span>
+                    <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                  </p>
+                  <label
+                    v-for="inst in group.items"
+                    :key="inst._id"
+                    class="row small relation-item"
+                  >
+                    <input v-model="editAdjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                    <span>{{ inst.name }}</span>
+                  </label>
+                </div>
+              </template>
+              <p v-else class="muted small relation-empty">
+                {{ $t('該当するコンフリクトグループがありません。') }}
+              </p>
             </div>
             <p class="muted small">
               {{ $t('選択済み: {count}件', { count: editAdjudicatorInstitutionIds.length }) }}
@@ -1226,6 +1306,7 @@ import { useVenuesStore } from '@/stores/venues'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useInstitutionsStore } from '@/stores/institutions'
 import { useSubmissionsStore } from '@/stores/submissions'
+import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
 import {
   buildRoundUserDefinedFromDefaults,
@@ -1290,7 +1371,7 @@ const tournamentForm = reactive({
   style: 1,
   hidden: false,
   accessRequired: false,
-  accessPassword: DEFAULT_TOURNAMENT_ACCESS_PASSWORD,
+  accessPassword: '',
   infoText: '',
 })
 const roundDefaultsForm = reactive(defaultRoundDefaults())
@@ -1333,7 +1414,6 @@ const isTournamentPublic = computed({
     tournamentForm.hidden = !value
   },
 })
-const accessPasswordConfigured = ref(false)
 const isApplyingTournamentForm = ref(false)
 const isSavingTournamentAutosave = ref(false)
 const pendingTournamentAutosave = ref(false)
@@ -1348,8 +1428,9 @@ let noticeSavedTimer: number | null = null
 
 const teamForm = reactive({
   name: '',
-  institutionId: '',
 })
+const teamInstitutionIds = ref<string[]>([])
+const teamInstitutionSearch = ref('')
 const teamSpeakerSearch = ref('')
 const teamSelectedSpeakerIds = ref<string[]>([])
 
@@ -1376,6 +1457,13 @@ const institutionCategoryOptions = [
   { value: 'region', label: 'region' },
   { value: 'league', label: 'league' },
 ] as const
+type InstitutionCategory = (typeof institutionCategoryOptions)[number]['value']
+type InstitutionOptionGroup = {
+  category: InstitutionCategory
+  label: string
+  items: Institution[]
+}
+const institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
@@ -1383,7 +1471,7 @@ const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
   { key: 'teams', label: t('チーム') },
   { key: 'adjudicators', label: t('ジャッジ') },
   { key: 'speakers', label: t('スピーカー') },
-  { key: 'institutions', label: t('所属機関') },
+  { key: 'institutions', label: t('コンフリクトグループ') },
   { key: 'venues', label: t('会場') },
 ])
 const showEntityImportModal = ref(false)
@@ -1398,7 +1486,7 @@ function entityTabLabel(type: EntityTabKey | null) {
     adjudicators: t('ジャッジ'),
     venues: t('会場'),
     speakers: t('スピーカー'),
-    institutions: t('所属機関'),
+    institutions: t('コンフリクトグループ'),
   }
   return map[type]
 }
@@ -1465,7 +1553,6 @@ type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institut
 const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
 const entityForm = reactive<any>({
   name: '',
-  institutionId: '',
   strength: 5,
   preev: 0,
   active: true,
@@ -1474,6 +1561,8 @@ const entityForm = reactive<any>({
 })
 const editTeamSpeakerSearch = ref('')
 const editTeamSelectedSpeakerIds = ref<string[]>([])
+const editTeamInstitutionIds = ref<string[]>([])
+const editTeamInstitutionSearch = ref('')
 const editAdjudicatorInstitutionIds = ref<string[]>([])
 const editAdjudicatorInstitutionSearch = ref('')
 const editAdjudicatorConflictIds = ref<string[]>([])
@@ -1488,7 +1577,7 @@ const deleteEntityPrompt = computed(() => {
   if (type === 'adjudicator') return t('ジャッジを削除しますか？')
   if (type === 'venue') return t('会場を削除しますか？')
   if (type === 'speaker') return t('スピーカーを削除しますか？')
-  return t('機関を削除しますか？')
+  return t('コンフリクトグループを削除しますか？')
 })
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
@@ -1514,7 +1603,7 @@ const filteredTeams = computed(() => {
             ?.map((s: any) => s.name)
             .join(', ')
             .toLowerCase() ?? ''
-        const institutionText = institutionLabel(team.institution).toLowerCase()
+        const institutionText = teamInstitutionLabel(team).toLowerCase()
         return (
           team.name?.toLowerCase().includes(q) ||
           institutionText.includes(q) ||
@@ -1587,6 +1676,32 @@ const filteredEditTeamSpeakerOptions = computed(() => {
   )
 })
 
+const filteredTeamInstitutionOptions = computed(() => {
+  const q = teamInstitutionSearch.value.trim().toLowerCase()
+  const list = q
+    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+    : institutions.institutions
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+const groupedTeamInstitutionOptions = computed(() =>
+  buildInstitutionOptionGroups(filteredTeamInstitutionOptions.value)
+)
+
+const filteredEditTeamInstitutionOptions = computed(() => {
+  const q = editTeamInstitutionSearch.value.trim().toLowerCase()
+  const list = q
+    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
+    : institutions.institutions
+  return list.slice().sort((a, b) =>
+    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
+  )
+})
+const groupedEditTeamInstitutionOptions = computed(() =>
+  buildInstitutionOptionGroups(filteredEditTeamInstitutionOptions.value)
+)
+
 const filteredAdjudicatorInstitutionOptions = computed(() => {
   const q = adjudicatorInstitutionSearch.value.trim().toLowerCase()
   const list = q
@@ -1596,6 +1711,9 @@ const filteredAdjudicatorInstitutionOptions = computed(() => {
     naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
   )
 })
+const groupedAdjudicatorInstitutionOptions = computed(() =>
+  buildInstitutionOptionGroups(filteredAdjudicatorInstitutionOptions.value)
+)
 
 const filteredAdjudicatorConflictTeams = computed(() => {
   const q = adjudicatorConflictSearch.value.trim().toLowerCase()
@@ -1614,6 +1732,9 @@ const filteredEditAdjudicatorInstitutionOptions = computed(() => {
     naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
   )
 })
+const groupedEditAdjudicatorInstitutionOptions = computed(() =>
+  buildInstitutionOptionGroups(filteredEditAdjudicatorInstitutionOptions.value)
+)
 
 const filteredEditAdjudicatorConflictTeams = computed(() => {
   const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
@@ -1643,12 +1764,6 @@ const canSaveTournamentNotice = computed(() => {
   return next !== current
 })
 
-const accessPasswordHelpText = computed(() => {
-  if (tournamentForm.accessRequired) {
-    return t('空欄にすると大会パスワード設定を解除し、初期値に戻します。')
-  }
-  return t('スイッチをオンにすると編集できます。未設定時の初期値は "password" です。')
-})
 const tournamentAutosaveText = computed(() => {
   if (tournamentAutosaveStatus.value === 'saving') return t('大会設定を保存中...')
   if (tournamentAutosaveStatus.value === 'saved') return t('大会設定を自動保存しました。')
@@ -1739,7 +1854,7 @@ function entityTypeLabel(type: string) {
     adjudicator: t('ジャッジ'),
     venue: t('会場'),
     speaker: t('スピーカー'),
-    institution: t('所属機関'),
+    institution: t('コンフリクトグループ'),
   }
   return map[type] ?? type
 }
@@ -1749,15 +1864,9 @@ function applyAccessForm(authValue: unknown) {
   const access =
     auth.access && typeof auth.access === 'object' ? (auth.access as Record<string, any>) : {}
   const required = access.required === true
-  const savedAccessPassword =
-    typeof access.password === 'string' ? String(access.password).trim() : ''
-  const hasPassword = access.hasPassword === true || savedAccessPassword.length > 0
-  accessPasswordConfigured.value = required && hasPassword
+  const savedAccessPassword = typeof access.password === 'string' ? String(access.password) : ''
   tournamentForm.accessRequired = required
-  tournamentForm.accessPassword =
-    required && savedAccessPassword.length > 0
-      ? savedAccessPassword
-      : DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+  tournamentForm.accessPassword = required ? savedAccessPassword : ''
 }
 
 function applyTournamentForm() {
@@ -1824,8 +1933,14 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   if (!tournament.value) return false
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
-  const passwordInput = tournamentForm.accessPassword.trim()
-  const nextPassword = passwordInput || DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+  const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
+  const currentAccess =
+    tournament.value.auth?.access && typeof tournament.value.auth.access === 'object'
+      ? (tournament.value.auth.access as Record<string, any>)
+      : {}
+  const currentHasPassword =
+    currentAccess.hasPassword === true ||
+    (typeof currentAccess.password === 'string' && currentAccess.password.length > 0)
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const currentInfo = nextUserDefined.info && typeof nextUserDefined.info === 'object'
@@ -1841,7 +1956,12 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   const authPayload: Record<string, any> = {}
   authPayload.access = { required: tournamentForm.accessRequired }
   if (tournamentForm.accessRequired) {
-    authPayload.access.password = nextPassword
+    if (passwordInput.length > 0) {
+      authPayload.access.password = passwordInput
+    } else if (!currentHasPassword) {
+      // Keep compatibility with server-side validation that requires a password when enabling access.
+      authPayload.access.password = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+    }
   } else {
     authPayload.access.password = null
   }
@@ -2206,6 +2326,17 @@ function resolveInstitutionName(id: string) {
   return institutions.institutions.find((inst) => inst._id === id)?.name ?? ''
 }
 
+function resolveInstitutionNames(ids: string[]) {
+  return Array.from(
+    new Set(
+      ids
+        .map((id) => resolveInstitutionName(String(id ?? '').trim()))
+        .map((name) => String(name ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
 function institutionLabel(value?: string) {
   if (!value) return ''
   const token = String(value)
@@ -2224,7 +2355,67 @@ function resolveInstitutionId(value?: string) {
   return matched?._id ?? ''
 }
 
-type InstitutionCategory = (typeof institutionCategoryOptions)[number]['value']
+function resolveTeamInstitutionIds(entity: any): string[] {
+  const idsFromDetails: string[] = Array.isArray(entity?.details)
+    ? entity.details.flatMap((detail: any) =>
+        (detail?.institutions ?? []).map((id: any) => String(id ?? '').trim())
+      )
+    : []
+  const detailIds = Array.from(new Set(idsFromDetails.filter(Boolean)))
+  if (detailIds.length > 0) return detailIds
+
+  const legacyId = resolveInstitutionId(entity?.institution)
+  return legacyId ? [legacyId] : []
+}
+
+function teamInstitutionLabel(entity: any) {
+  const detailNames = resolveInstitutionNames(resolveTeamInstitutionIds(entity))
+  if (detailNames.length > 0) return detailNames.join(', ')
+  return institutionLabel(entity?.institution)
+}
+
+function buildTeamDetailsPayload(options: {
+  selectedInstitutionIds: string[]
+  selectedSpeakerIds: string[]
+  roundNumbers: number[]
+  existingDetails?: unknown
+}) {
+  const existingList = Array.isArray(options.existingDetails)
+    ? options.existingDetails
+        .map((detail: any) => ({
+          r: Number(detail?.r),
+          available: typeof detail?.available === 'boolean' ? detail.available : true,
+        }))
+        .filter((detail: { r: number }) => Number.isFinite(detail.r) && detail.r >= 1)
+    : []
+
+  const roundSet = new Set<number>(options.roundNumbers.map((value) => Number(value)).filter((value) => value >= 1))
+  existingList.forEach((detail) => {
+    roundSet.add(detail.r)
+  })
+  const rounds = Array.from(roundSet).sort((left, right) => left - right)
+
+  if (
+    rounds.length === 0 ||
+    (options.selectedInstitutionIds.length === 0 &&
+      options.selectedSpeakerIds.length === 0 &&
+      existingList.length === 0)
+  ) {
+    return undefined
+  }
+
+  const availableByRound = new Map<number, boolean>()
+  existingList.forEach((detail) => {
+    availableByRound.set(detail.r, detail.available)
+  })
+
+  return rounds.map((roundNumber) => ({
+    r: roundNumber,
+    available: availableByRound.get(roundNumber) ?? true,
+    institutions: options.selectedInstitutionIds.slice(),
+    speakers: options.selectedSpeakerIds.slice(),
+  }))
+}
 
 function normalizeInstitutionCategory(value?: string): InstitutionCategory {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -2234,6 +2425,28 @@ function normalizeInstitutionCategory(value?: string): InstitutionCategory {
 
 function institutionCategoryLabel(value?: string) {
   return normalizeInstitutionCategory(value)
+}
+
+function institutionCategorySectionLabel(value: InstitutionCategory) {
+  return value
+}
+
+function buildInstitutionOptionGroups(list: Institution[]): InstitutionOptionGroup[] {
+  const grouped: Record<InstitutionCategory, Institution[]> = {
+    institution: [],
+    region: [],
+    league: [],
+  }
+  for (const inst of list) {
+    grouped[normalizeInstitutionCategory(inst.category)].push(inst)
+  }
+  return institutionCategoryOrder
+    .map((category) => ({
+      category,
+      label: institutionCategorySectionLabel(category),
+      items: grouped[category],
+    }))
+    .filter((group) => group.items.length > 0)
 }
 
 function institutionPriorityValue(value?: number) {
@@ -2281,26 +2494,22 @@ async function handleCreateTeam() {
   const speakersList = Array.from(new Set(selectedNames)).map((name) => ({
     name,
   }))
-  const institutionName = resolveInstitutionName(teamForm.institutionId)
-  const targetRounds = managedRoundNumbers.value
-  const details =
-    targetRounds.length > 0 && (teamSelectedSpeakerIds.value.length > 0 || teamForm.institutionId)
-      ? targetRounds.map((roundNumber) => ({
-          r: roundNumber,
-          available: true,
-          institutions: teamForm.institutionId ? [teamForm.institutionId] : [],
-          speakers: teamSelectedSpeakerIds.value.slice(),
-        }))
-      : undefined
+  const institutionNames = resolveInstitutionNames(teamInstitutionIds.value)
+  const details = buildTeamDetailsPayload({
+    selectedInstitutionIds: teamInstitutionIds.value,
+    selectedSpeakerIds: teamSelectedSpeakerIds.value,
+    roundNumbers: managedRoundNumbers.value,
+  })
   await teams.createTeam({
     tournamentId: tournamentId.value,
     name: teamForm.name,
-    institution: institutionName || undefined,
+    institution: institutionNames[0] || undefined,
     speakers: speakersList,
     details,
   })
   teamForm.name = ''
-  teamForm.institutionId = ''
+  teamInstitutionIds.value = []
+  teamInstitutionSearch.value = ''
   teamSelectedSpeakerIds.value = []
   teamSpeakerSearch.value = ''
 }
@@ -2459,7 +2668,6 @@ function removeInstitution(id: string) {
 function startEditEntity(type: string, entity: any) {
   editingEntity.value = { type, id: entity._id }
   entityForm.name = entity.name ?? ''
-  entityForm.institutionId = resolveInstitutionId(entity.institution)
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.active = entity.active ?? true
@@ -2473,6 +2681,8 @@ function startEditEntity(type: string, entity: any) {
   }
   editTeamSelectedSpeakerIds.value = type === 'team' ? resolveTeamSpeakerIds(entity) : []
   editTeamSpeakerSearch.value = ''
+  editTeamInstitutionIds.value = type === 'team' ? resolveTeamInstitutionIds(entity) : []
+  editTeamInstitutionSearch.value = ''
   editAdjudicatorInstitutionIds.value =
     type === 'adjudicator' ? resolveAdjudicatorInstitutionIds(entity) : []
   editAdjudicatorInstitutionSearch.value = ''
@@ -2488,6 +2698,8 @@ function cancelEditEntity() {
   detailRows.value = []
   editTeamSelectedSpeakerIds.value = []
   editTeamSpeakerSearch.value = ''
+  editTeamInstitutionIds.value = []
+  editTeamInstitutionSearch.value = ''
   editAdjudicatorInstitutionIds.value = []
   editAdjudicatorInstitutionSearch.value = ''
   editAdjudicatorConflictIds.value = []
@@ -2502,13 +2714,21 @@ async function saveEntityEdit() {
   if (editingEntity.value.type === 'team') {
     const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
     const speakersList = Array.from(new Set(selectedNames)).map((name: string) => ({ name }))
-    const institutionName = resolveInstitutionName(entityForm.institutionId)
+    const institutionNames = resolveInstitutionNames(editTeamInstitutionIds.value)
+    const existingTeam = teams.teams.find((item) => item._id === id)
+    const details = buildTeamDetailsPayload({
+      selectedInstitutionIds: editTeamInstitutionIds.value,
+      selectedSpeakerIds: editTeamSelectedSpeakerIds.value,
+      roundNumbers: managedRoundNumbers.value,
+      existingDetails: existingTeam?.details,
+    })
     await teams.updateTeam({
       tournamentId: tournamentId.value,
       teamId: id,
       name: entityForm.name,
-      institution: institutionName || undefined,
+      institution: institutionNames[0] || undefined,
       speakers: speakersList,
+      details,
     })
   } else if (editingEntity.value.type === 'adjudicator') {
     const targetRounds = managedRoundNumbers.value.length > 0 ? managedRoundNumbers.value : [1]
@@ -2857,36 +3077,6 @@ watch(
 )
 
 watch(
-  () => tournamentForm.accessRequired,
-  (required) => {
-    if (isApplyingTournamentForm.value) return
-    if (!required) {
-      accessPasswordConfigured.value = false
-      if (tournamentForm.accessPassword !== DEFAULT_TOURNAMENT_ACCESS_PASSWORD) {
-        tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
-      }
-      return
-    }
-    accessPasswordConfigured.value = true
-    if (!tournamentForm.accessPassword.trim()) {
-      tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
-    }
-  }
-)
-
-watch(
-  () => tournamentForm.accessPassword,
-  (password) => {
-    if (isApplyingTournamentForm.value) return
-    if (!tournamentForm.accessRequired) return
-    if (String(password).trim().length > 0) return
-    tournamentForm.accessRequired = false
-    accessPasswordConfigured.value = false
-    tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
-  }
-)
-
-watch(
   () => [
     tournamentForm.style,
     tournamentForm.hidden,
@@ -3027,6 +3217,15 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .password-setting-card input {
   width: 100%;
   min-height: 44px;
+}
+
+.password-setting-card input:disabled,
+.password-setting-card input.is-disabled {
+  background: var(--color-surface-muted);
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .password-setting-card .muted.small {
@@ -3381,6 +3580,34 @@ textarea {
 
 .relation-item {
   padding: 2px 0;
+}
+
+.relation-subgroup {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-1);
+}
+
+.relation-subgroup:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.relation-subgroup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+}
+
+.relation-subgroup-title {
+  font-weight: 600;
+}
+
+.relation-empty {
+  margin: 0;
+  padding: var(--space-1) 0;
 }
 
 .tight {

@@ -13,3 +13,7 @@ export function isAdminUiV2Enabled(): boolean {
 export function isLegacyAdminReadOnlyEnabled(): boolean {
   return parseBooleanFlag(import.meta.env.VITE_ADMIN_UI_LEGACY_READONLY, false)
 }
+
+export function isAdminReportsUxV3Enabled(): boolean {
+  return parseBooleanFlag(import.meta.env.VITE_ADMIN_REPORTS_UX_V3, true)
+}

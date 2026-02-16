@@ -103,6 +103,12 @@ const en = {
   'このラウンドはスピーカースコアを入力しません。': 'No speaker scores for this round.',
   'この役割はログインが必要です。': 'Login is required for this role.',
   'この結果を削除しますか？': 'Delete this result?',
+  'この評価を削除しますか？': 'Delete this evaluation?',
+  '削除した評価は元に戻せません。': 'Deleted evaluations cannot be restored.',
+  '更新内容を保存しますか？': 'Save these updates?',
+  '現在の入力内容でこの評価を更新します。': 'This updates the evaluation with the current inputs.',
+  '提出データの更新に失敗しました。': 'Failed to update submission data.',
+  '提出データの削除に失敗しました。': 'Failed to delete submission data.',
   すべて: 'All',
   なし: 'None',
   はい: 'Yes',
@@ -115,12 +121,52 @@ const en = {
   大会データ管理: 'Tournament data management',
   'チーム・ジャッジ・会場・所属機関を管理します。':
     'Manage teams, adjudicators, venues, and institutions.',
+  'チーム・ジャッジ・会場・コンフリクトグループを管理します。':
+    'Manage teams, adjudicators, venues, and conflict groups.',
   'チーム・ジャッジ・スピーカー・所属機関・会場を管理します。':
     'Manage teams, adjudicators, speakers, institutions, and venues.',
+  'チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。':
+    'Manage teams, adjudicators, speakers, conflict groups, and venues.',
   大会セットアップ: 'Tournament setup',
   ラウンド運営: 'Round operations',
   '結果確定・レポート': 'Finalize & reports',
   大会結果レポート: 'Tournament results report',
+  レポート概要: 'Report overview',
+  'ソース: {source} / ラウンド数: {count}': 'Source: {source} / Rounds: {count}',
+  '順位変動あり: {count}件': 'Ranking changes: {count}',
+  'Top{count} 入替件数': 'Top{count} entry swaps',
+  '要確認: {count}件': 'Review required: {count}',
+  '要確認リスク件数': 'Review-required risks',
+  '急変チーム件数: {count}': 'Abrupt-change teams: {count}',
+  '候補 {count} 件': 'Candidates: {count}',
+  'リスクスコア: {score}': 'Risk score: {score}',
+  '表彰枠 {rank} 位の境界を表示しています。': 'Showing the award cutoff at rank {rank}.',
+  '境界差分: {gap}': 'Boundary gap: {gap}',
+  '同順位件数: {count}': 'Same-rank count: {count}',
+  'Bubble Pressure: {level}（スコア {score}）':
+    'Bubble Pressure: {level} (score {score})',
+  'Gov勝率 {gov}% / Opp勝率 {opp}%': 'Gov win rate {gov}% / Opp win rate {opp}%',
+  '出場差分: {gap}%': 'Exposure gap: {gap}%',
+  '再戦ペア {pairs} / 追加再戦 {extra}': 'Repeat pairs {pairs} / Extra repeats {extra}',
+  '最大再戦回数: {max}': 'Max repeat count: {max}',
+  '担当平均 {avg} / ばらつき {spread}': 'Average assignments {avg} / Spread {spread}',
+  '最小 {min} / 最大 {max}': 'Min {min} / Max {max}',
+  '偏差outlier {count}名': 'Strictness outliers: {count}',
+  '中央値 {median}分 / P90 {p90}分': 'Median {median} min / P90 {p90} min',
+  '遅延率 {rate}%（{rounds}ラウンド）': 'Delay rate {rate}% ({rounds} rounds)',
+  '遅延率 {rate}%': 'Delay rate {rate}%',
+  提出スピード詳細: 'Submission speed details',
+  '提出時刻データがありません。': 'No submission timestamp data.',
+  遅延上位提出者: 'Top delayed submitters',
+  '30分超の提出のみ表示': 'Only submissions over 30 minutes are shown.',
+  '遅延提出は検出されませんでした。': 'No delayed submissions were detected.',
+  要介入: 'Intervention needed',
+  注意: 'Warn',
+  正常: 'OK',
+  種別: 'Type',
+  '経過(分)': 'Elapsed (min)',
+  提出時刻: 'Submitted at',
+  日時不明: 'Unknown datetime',
   ラウンドデフォルト設定: 'Round defaults',
   '新規ラウンド作成時に適用される標準設定です。':
     'Default settings applied when creating a new round.',
@@ -189,8 +235,8 @@ const en = {
   '旧導線は読み取り専用です。新画面で操作してください。':
     'Legacy flow is read-only. Use the new flow for operations.',
   提出データ一本化ガイド: 'Submission-first migration guide',
-  '提出一覧で不足提出を解消し、重複提出を整理します。':
-    'Resolve missing submissions and clean duplicate submissions in the submissions page.',
+  'ラウンド運営の提出状況タブで不足提出を解消し、重複提出を整理します。':
+    'Resolve missing and duplicate submissions in the submissions tab of round operations.',
   '生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。':
     'If raw-result corrections are needed, reflect them in submission edits and recompile.',
   '提出データソースに戻して再計算し、確定snapshotを選択して出力します。':
@@ -268,10 +314,10 @@ const en = {
   '対戦生成に失敗しました。': 'Failed to generate draw.',
   '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
   '読み込みに失敗しました。': 'Failed to load data.',
-  '未提出のチーム評価があります（提出 {submitted}/{expected}）。提出一覧を確認してください。':
-    'Some ballots are still missing (submitted {submitted}/{expected}). Check submissions.',
-  '提出者情報が不足したチーム評価が {count} 件あります。提出一覧で提出者を補完してください。':
-    '{count} ballots have missing submitter information. Fix submitter data in submissions.',
+  '未提出のチーム評価があります（提出 {submitted}/{expected}）。提出状況タブを確認してください。':
+    'Some ballots are still missing (submitted {submitted}/{expected}). Check the submissions tab.',
+  '提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。':
+    '{count} ballots have missing submitter information. Fill submitter IDs in the submissions tab.',
   '提出者情報不足: {count}': 'Missing submitter info: {count}',
   '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
     'Cannot run compile because selected round ballots are incomplete.',
@@ -504,6 +550,7 @@ const en = {
   '利用不可 (出欠/利用設定)': 'Unavailable (attendance/settings)',
   利用可: 'Available',
   削除: 'Delete',
+  評価を削除: 'Delete evaluation',
   割り当て: 'Allocation',
   割り当てられたジャッジがいません: 'No adjudicators assigned',
   割り当て公開: 'Allocation open',
@@ -574,8 +621,6 @@ const en = {
   大会パスワード必須: 'Require tournament password',
   '大会パスワードを入力してください。': 'Enter the tournament password.',
   '空欄なら現在のパスワードを維持します。': 'Leave blank to keep the current password.',
-  '空欄にすると大会パスワード設定を解除し、初期値に戻します。':
-    'Clearing this field disables tournament password and resets to the default value.',
   'スイッチをオンにすると編集できます。未設定時の初期値は "password" です。':
     'Turn the switch on to edit. The default value is "password" when not configured.',
   '大会ホームでパスワードを入力してください。':
@@ -644,6 +689,8 @@ const en = {
   所属機関: 'Institution',
   '所属機関: {names}': 'Institution: {names}',
   所属機関なし: 'No institution',
+  'コンフリクトグループ: {names}': 'Conflict group: {names}',
+  コンフリクトグループなし: 'No conflict group',
   手動でチームを選択: 'Select teams manually',
   担当チーム: 'Judged teams',
   担当数: 'Times judged',
@@ -732,8 +779,12 @@ const en = {
   機関: 'Institution',
   コンフリクトグループ: 'Conflict group',
   '機関を削除しますか？': 'Delete this institution?',
+  'コンフリクトグループを削除しますか？': 'Delete this conflict group?',
   機関名: 'Institution name',
   コンフリクトグループ名で検索: 'Search conflict group name',
+  '該当するコンフリクトグループがありません。': 'No matching conflict groups found.',
+  '同じコンフリクトグループどうしの対戦を避ける方向に評価します。':
+    'Prefer pairings that avoid teams in the same conflict group.',
   'institution / region / league から選択します。競合判定の粒度を揃えるために使います。':
     'Choose from institution / region / league to align conflict-detection granularity.',
   '機関衝突 (チーム/ジャッジ)': 'Institution conflict (team/judge)',
@@ -857,6 +908,13 @@ const en = {
   集計を実行: 'Run compile',
   集計区分: 'Compile category',
   集計オプション: 'Compile options',
+  既存レポートの選択: 'Select existing report',
+  表示するレポート: 'Report to display',
+  '現在表示: {snapshot}': 'Current display: {snapshot}',
+  '現在: {label} - {description}': 'Current: {label} - {description}',
+  新規レポート生成: 'Generate new report',
+  entityごとの順位一覧: 'Entity rankings',
+  カテゴリ別順位一覧: 'Category rankings',
   データソース: 'Data source',
   集計に使うデータ: 'Data used for compile',
   集計結果: 'Compiled results',
@@ -865,7 +923,9 @@ const en = {
   カスタム: 'Custom',
   '順位比較順（上から優先）': 'Ranking order (top = higher priority)',
   勝敗判定: 'Winner policy',
-  'winnerId優先（未指定時はスコア推定）': 'Winner ID first (infer by score when missing)',
+  'winnerId優先（未指定時はスコア推定）': 'Winner selection first (infer by score when missing)',
+  '勝者選択を優先（未選択時はスコア判定）':
+    'Prioritize selected winner (fallback to score inference)',
   スコア推定のみ: 'Infer by score only',
   未指定は引き分け: 'Treat missing winner as draw',
   引き分け時ポイント: 'Draw points',
@@ -882,6 +942,7 @@ const en = {
   生成対象: 'Output categories',
   差分比較: 'Diff baseline',
   最新集計: 'Latest compiled',
+  前回集計: 'Previous compile',
   過去の集計結果: 'Previous compile results',
   集計ラウンド: 'Compiled rounds',
   過去の集計結果を選択: 'Select previous compile',
@@ -912,7 +973,9 @@ const en = {
   '順位が同点のときにどの指標を先に比較するかを決めます。':
     'Defines which metric breaks ties first when ranks are tied.',
   'Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。':
-    'Chooses whether winnerId or scores are prioritized when determining winners from ballots.',
+    'Chooses whether selected winner input or score inference is prioritized when determining winners from ballots.',
+  '提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。':
+    'When the selected winner and score-based result conflict, choose which takes priority.',
   '引き分けを許可する設定のときに、各チームへ与える勝敗点です。':
     'Points assigned to each team when a draw is allowed.',
   '同じ提出者から複数提出がある場合の扱いです。':
@@ -928,6 +991,25 @@ const en = {
     'Sets the diff baseline. Compare with the latest compile or a selected previous compile.',
   '差分比較の基準です。最新集計、または具体的な過去集計を選んで比較できます。':
     'Sets the diff baseline. Compare with the latest compile or a specific previous compile.',
+  '差分比較の基準です。前回集計、または具体的な過去集計を選んで比較できます。':
+    'Sets the diff baseline. Compare with the previous compile or a specific previous compile.',
+  'この設定はレポート全体に適用されます。entityごとの順位一覧・公平性・発表準備の各表示で共通です。':
+    'These settings apply to the entire report and are shared across rankings, fairness, and announcements.',
+  'この設定はレポート全体に適用されます。カテゴリ別順位一覧・公平性・発表出力の各表示で共通です。':
+    'These settings apply to the entire report and are shared across category rankings, fairness, and announcement outputs.',
+  '集計区分ごとの順位と差分を確認': 'Check rankings and deltas by entity category.',
+  '偏り・割当と分析指標をまとめて確認': 'Review bias, allocations, and analytics together.',
+  'スライドと表彰出力を確認': 'Review slides and award exports.',
+  発表出力: 'Announcement outputs',
+  提出状況を確認: 'Check submission status',
+  公平性で詳細を見る: 'View details in fairness',
+  公平性データがありません: 'Fairness data is unavailable',
+  'チーム集計を含めて再計算すると公平性指標を表示できます。':
+    'Run compile with team results to display fairness indicators.',
+  '分析（公平性タブ統合）': 'Analytics (integrated in fairness)',
+  '分析は公平性タブで確認できます。': 'Analytics are available in the fairness tab.',
+  '分析が利用可能な集計区分で表示されます。':
+    'Displayed for categories where analytics are available.',
   'ヘルプ:ソース':
     'Choose submissions or raw results as the compile source. Submissions are normalized first.',
   'ヘルプ:ラウンド':
@@ -935,7 +1017,7 @@ const en = {
   'ヘルプ:順位比較':
     'Current keeps existing order. Custom lets you reorder metrics for ranking ties.',
   'ヘルプ:勝敗判定':
-    'Choose how winners are resolved from winnerId and scores. Missing winners can be treated as draws.',
+    'Choose how winners are resolved from selected winner input and score-based judgement. Missing winners can be treated as draws.',
   'ヘルプ:引き分けポイント':
     'Points assigned to each team on draws. Default is 0.5.',
   'ヘルプ:重複マージ':
@@ -949,7 +1031,7 @@ const en = {
   'ヘルプ:生成対象':
     'Choose which result labels to generate and display.',
   'ヘルプ:差分比較':
-    'Compare against latest compiled or a specified compiled ID to show ranking/metric deltas.',
+    'Compare against the previous compile or a specified compiled ID to show ranking/metric deltas.',
   改善: 'Improved',
   悪化: 'Worsened',
   変化なし: 'Unchanged',
@@ -962,6 +1044,14 @@ const en = {
   差分なし: 'No diff',
   提出状況サマリー: 'Submission status summary',
   コメントシートCSV: 'Comment sheet CSV',
+  提出状況タブへ: 'Open submissions tab',
+  '提出状況タブへ（{round}）': 'Open submissions tab ({round})',
+  '未提出 {count} 件。確定前に提出状況タブで回収してください。':
+    '{count} submissions are missing. Resolve them in the submissions tab before finalization.',
+  '重複 {count} 件。提出状況タブで重複提出の整理が必要です。':
+    '{count} duplicate submissions found. Clean them up in the submissions tab.',
+  '不明 {count} 件。提出状況タブで提出者IDを補完してください。':
+    '{count} submissions have unknown submitter IDs. Complete them in the submissions tab.',
   提出一覧を開く: 'Open submissions page',
   '提出 {submitted}/{expected} | 未提出 {missing} | 重複 {duplicates} | 不明 {unknown}':
     'Submitted {submitted}/{expected} | Missing {missing} | Duplicates {duplicates} | Unknown {unknown}',
@@ -974,6 +1064,8 @@ const en = {
   取消: 'Cancel',
   '名前/チーム': 'Name/Team',
   '名前/所属/スピーカーで検索': 'Search by name/institution/speaker',
+  '名前/コンフリクトグループ/スピーカーで検索':
+    'Search by name/conflict group/speaker',
   名前で検索: 'Search by name',
   大会名またはIDで検索: 'Search by tournament name or ID',
   表示形式: 'View mode',
@@ -1125,6 +1217,10 @@ const en = {
     'Please select a winner when the scores are not tied.',
   サイド別スコア: 'Scores by side',
   チームの成績: 'Team performance',
+  'チーム成績（勝利数）': 'Team performance (wins)',
+  'チーム成績（得点）': 'Team performance (points)',
+  得点: 'Points',
+  'スコアヒストグラム（{round}）': 'Score histogram ({round})',
   '{value} 点': '{value} pts',
   '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。':
     'Submission timed out. Check your connection and try again.',

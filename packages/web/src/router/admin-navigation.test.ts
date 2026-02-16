@@ -50,6 +50,11 @@ describe('admin navigation routes', () => {
     await router.push('/admin/tournament-1/compiled')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
 
+    await router.push('/admin/tournament-1/submissions?round=2')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
+    expect(router.currentRoute.value.query.task).toBe('submissions')
+    expect(router.currentRoute.value.query.round).toBe('2')
+
     await router.push('/admin/tournament-1/rounds/2/result')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/2/result')
   })
@@ -77,6 +82,11 @@ describe('admin navigation routes', () => {
 
     await router.push('/admin/tournament-1/reports')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+
+    await router.push('/admin/tournament-1/submissions?round=1')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
+    expect(router.currentRoute.value.query.task).toBe('submissions')
+    expect(router.currentRoute.value.query.round).toBe('1')
 
     await router.push('/admin/tournament-1/rounds/3/result')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/3/result')

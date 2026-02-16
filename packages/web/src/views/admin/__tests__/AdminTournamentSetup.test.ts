@@ -45,4 +45,13 @@ describe('Admin tournament setup integration', () => {
     expect(source).not.toContain('ラウンド詳細設定へ')
     expect(source).not.toContain('対戦表設定')
   })
+
+  it('groups adjudicator conflict groups by institution category', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('groupedAdjudicatorInstitutionOptions')
+    expect(source).toContain('groupedEditAdjudicatorInstitutionOptions')
+    expect(source).toContain('buildInstitutionOptionGroups')
+    expect(source).toContain('relation-subgroup')
+    expect(source).toContain("institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']")
+  })
 })

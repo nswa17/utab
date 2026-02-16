@@ -20,10 +20,11 @@
       <div class="grid">
         <label class="stack">
           <span class="field-label">{{ $t('勝者') }}</span>
-          <select v-model="winnerId">
+          <select v-model="winnerSelectionValue">
             <option value="">{{ $t('勝者を選択') }}</option>
             <option :value="selectedTeamA?._id">{{ teamAName }}</option>
             <option :value="selectedTeamB?._id">{{ teamBName }}</option>
+            <option v-if="allowLowTieWin" :value="DRAW_WINNER_OPTION_VALUE">{{ $t('引き分け') }}</option>
           </select>
           <span v-if="canSubmitDrawWithoutWinner" class="muted tiny">{{
             $t('未選択で引き分けとして送信できます。')
@@ -290,7 +291,9 @@ const { identityId } = useParticipantIdentity(tournamentId, participant)
 
 const teamAId = ref('')
 const teamBId = ref('')
+const DRAW_WINNER_OPTION_VALUE = '__draw__'
 const winnerId = ref('')
+const winnerDrawSelected = ref(false)
 const comment = ref('')
 const saved = ref(false)
 const submitError = ref('')
@@ -332,6 +335,19 @@ const speakerSelectionValid = computed(() => {
 const allowLowTieWin = computed(
   () => roundConfig.value?.userDefinedData?.allow_low_tie_win !== false
 )
+const effectiveWinnerId = computed(() => (winnerDrawSelected.value ? '' : winnerId.value))
+const winnerSelectionValue = computed({
+  get: () => (winnerDrawSelected.value ? DRAW_WINNER_OPTION_VALUE : winnerId.value),
+  set: (value: string) => {
+    if (value === DRAW_WINNER_OPTION_VALUE) {
+      winnerDrawSelected.value = true
+      winnerId.value = ''
+      return
+    }
+    winnerDrawSelected.value = false
+    winnerId.value = value
+  },
+})
 const totalScoreA = computed(() =>
   effectiveScoresA.value.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 )
@@ -341,9 +357,9 @@ const totalScoreB = computed(() =>
 const lowTieWarning = computed(() => {
   if (allowLowTieWin.value) return false
   if (noSpeakerScore.value) return false
-  if (!winnerId.value) return true
-  if (winnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
-  if (winnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
+  if (!effectiveWinnerId.value) return true
+  if (effectiveWinnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
+  if (effectiveWinnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
   return true
 })
 const decisiveScore = computed(() => {
@@ -354,22 +370,22 @@ const canSubmitDrawWithoutWinner = computed(
   () => allowLowTieWin.value && !decisiveScore.value
 )
 const winnerRequiredWarning = computed(
-  () => allowLowTieWin.value && decisiveScore.value && !winnerId.value
+  () => allowLowTieWin.value && decisiveScore.value && !effectiveWinnerId.value
 )
 const identityReady = computed(() => Boolean(identityId.value))
 
 const canSubmit = computed(() => {
   if (!selectedTeamA.value || !selectedTeamB.value) return false
-  if (!winnerId.value && !canSubmitDrawWithoutWinner.value) return false
+  if (!effectiveWinnerId.value && !canSubmitDrawWithoutWinner.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
   if (!allowLowTieWin.value && lowTieWarning.value) return false
   if (!identityReady.value) return false
   return true
 })
 const winnerName = computed(() => {
-  if (winnerId.value === teamAId.value) return teamAName.value
-  if (winnerId.value === teamBId.value) return teamBName.value
-  if (allowLowTieWin.value) return t('引き分け')
+  if (effectiveWinnerId.value === teamAId.value) return teamAName.value
+  if (effectiveWinnerId.value === teamBId.value) return teamBName.value
+  if (winnerDrawSelected.value) return t('引き分け')
   return t('未選択')
 })
 const confirmButtonLabel = computed(() =>
@@ -662,6 +678,7 @@ function normalizePrefillPayload(
 }
 
 function applyPrefillPayload(payload: PrefillBallotPayload) {
+  winnerDrawSelected.value = false
   winnerId.value = payload.winnerId ?? ''
   comment.value = payload.comment ?? ''
 
@@ -814,7 +831,7 @@ function validateBeforeSubmit() {
     submitError.value = t('参加者ホームでジャッジを選択してください。')
     return false
   }
-  if (!winnerId.value && !allowLowTieWin.value) {
+  if (!effectiveWinnerId.value && !allowLowTieWin.value) {
     submitError.value = t('勝者を選択してください。')
     return false
   }
@@ -874,7 +891,7 @@ async function submitConfirmed() {
     round: Number(round.value),
     teamAId: teamAId.value,
     teamBId: teamBId.value,
-    winnerId: winnerId.value || undefined,
+    winnerId: effectiveWinnerId.value || undefined,
     submittedEntityId: identityId.value || undefined,
     speakerIdsA: noSpeakerScore.value ? undefined : speakerIdsA.value,
     speakerIdsB: noSpeakerScore.value ? undefined : speakerIdsB.value,
@@ -913,9 +930,15 @@ watch([selectedTeamA, selectedTeamB, noSpeakerScore, useMatterManner, rolesA, ro
 })
 
 watch([teamAId, teamBId], () => {
+  if (winnerDrawSelected.value) return
   if (winnerId.value && winnerId.value !== teamAId.value && winnerId.value !== teamBId.value) {
     winnerId.value = ''
   }
+})
+
+watch(allowLowTieWin, (allowed) => {
+  if (allowed) return
+  winnerDrawSelected.value = false
 })
 
 watch(

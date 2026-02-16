@@ -167,7 +167,7 @@
                 <strong>{{ totalSubmittedCount(selectedRound) }} / {{ totalExpectedCount(selectedRound) }}</strong>
                 <span class="muted small">
                   {{
-                    $t('提出者情報不足: チーム評価 {ballot} / ジャッジフィードバック {feedback}', {
+                    $t('提出者情報不足: Ballot {ballot} / Feedback {feedback}', {
                       ballot: unknownSubmissionCount(selectedRound, 'ballot'),
                       feedback: unknownSubmissionCount(selectedRound, 'feedback'),
                     })
@@ -189,12 +189,86 @@
                 </span>
               </div>
             </div>
+            <section class="card soft stack submission-speed-panel">
+              <div class="row submission-speed-head">
+                <h5>{{ $t('提出スピード詳細') }}</h5>
+                <span
+                  v-if="selectedRoundSubmissionSpeed"
+                  class="speed-status-chip"
+                  :class="`speed-status-${selectedRoundSubmissionSpeed.status}`"
+                >
+                  {{ speedStatusLabel(selectedRoundSubmissionSpeed.status) }}
+                </span>
+              </div>
+              <p v-if="selectedRoundSubmissionSpeed" class="muted small">
+                {{
+                  $t('中央値 {median}分 / P90 {p90}分', {
+                    median: selectedRoundSubmissionSpeed.medianMinutes,
+                    p90: selectedRoundSubmissionSpeed.p90Minutes,
+                  })
+                }}
+              </p>
+              <p v-if="selectedRoundSubmissionSpeed" class="muted small">
+                {{ $t('遅延率 {rate}%', { rate: Math.round(selectedRoundSubmissionSpeed.delayedRate * 1000) / 10 }) }}
+              </p>
+              <p v-else class="muted small">{{ $t('提出時刻データがありません。') }}</p>
+              <section class="stack">
+                <div class="row submission-delay-head">
+                  <h5>{{ $t('遅延上位提出者') }}</h5>
+                  <p class="muted small">{{ $t('30分超の提出のみ表示') }}</p>
+                </div>
+                <Table v-if="selectedRoundSubmissionDelayRows.length > 0" hover striped>
+                  <thead>
+                    <tr>
+                      <th>{{ $t('提出者') }}</th>
+                      <th>{{ $t('種別') }}</th>
+                      <th>{{ $t('経過(分)') }}</th>
+                      <th>{{ $t('提出時刻') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in selectedRoundSubmissionDelayRows"
+                      :key="`delay-${row.round}-${row.id}-${row.createdAt}`"
+                    >
+                      <td>{{ row.id ? submissionEntityName(row.id) : '—' }}</td>
+                      <td>{{ submissionTypeLabel(row.type) }}</td>
+                      <td>{{ row.elapsedMinutes }}</td>
+                      <td>{{ formatSubmissionTimestamp(row.createdAt) }}</td>
+                    </tr>
+                  </tbody>
+                </Table>
+                <p v-else class="muted small">{{ $t('遅延提出は検出されませんでした。') }}</p>
+              </section>
+            </section>
             <p v-if="selectedRoundBallotGapWarning" class="muted warning">
               {{ selectedRoundBallotGapWarning }}
             </p>
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
+            <div class="submission-evaluation-tabs" role="tablist" :aria-label="$t('提出種別')">
+              <button
+                type="button"
+                class="submission-evaluation-tab"
+                :class="{ active: submissionEvaluationTab === 'team' }"
+                role="tab"
+                :aria-selected="submissionEvaluationTab === 'team'"
+                @click="setSubmissionEvaluationTab('team')"
+              >
+                {{ $t('チーム評価') }}
+              </button>
+              <button
+                type="button"
+                class="submission-evaluation-tab"
+                :class="{ active: submissionEvaluationTab === 'judge' }"
+                role="tab"
+                :aria-selected="submissionEvaluationTab === 'judge'"
+                @click="setSubmissionEvaluationTab('judge')"
+              >
+                {{ $t('ジャッジ評価') }}
+              </button>
+            </div>
             <AdminTournamentSubmissions
               v-if="selectedRound !== null"
               class="step-inline-submissions"
@@ -202,6 +276,7 @@
               :embedded-round="selectedRound"
               :hide-summary-cards="true"
               :split-by-evaluation="true"
+              :split-active-key="submissionEvaluationTab"
             />
           </section>
 
@@ -281,13 +356,12 @@
                   <strong>{{ $t('集計レポート') }}</strong>
                   <span class="muted small">{{ $t('差分基準: {baseline}', { baseline: compileDiffBaselineLabel }) }}</span>
                 </div>
-                <CompiledSnapshotSelect
-                  v-if="baselineCompiledOptions.length > 0"
+                <CompiledDiffBaselineSelect
+                  v-if="diffBaselineCompiledOptions.length > 0"
                   v-model="compileDiffBaselineCompiledId"
                   class="compile-result-baseline-select"
-                  :label="$t('過去の集計結果')"
-                  :options="compileDiffSnapshotOptions"
-                  :placeholder="$t('最新集計')"
+                  :label="$t('差分比較')"
+                  :options="diffBaselineCompiledOptions"
                 />
               </div>
               <div class="row diff-legend">
@@ -426,7 +500,7 @@ import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
-import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -435,6 +509,7 @@ import { useSubmissionsStore } from '@/stores/submissions'
 import { useTeamsStore } from '@/stores/teams'
 import { useCompiledStore } from '@/stores/compiled'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
+import { useSpeakersStore } from '@/stores/speakers'
 import { useVenuesStore } from '@/stores/venues'
 import { api } from '@/utils/api'
 import {
@@ -451,7 +526,13 @@ import {
   resolveRankingTrend,
   toFiniteNumber,
 } from '@/utils/diff-indicator'
+import { applyClientBaselineDiff } from '@/utils/compiled-diff'
 import { countSubmissionActors, resolveRoundOperationStatus, type RoundOperationStatus } from '@/stores/round-operations'
+import { buildSubmissionDelayRows, buildSubmissionSpeedRows } from '@/utils/insights'
+import {
+  formatCompiledSnapshotOptionLabel,
+  resolvePreviousCompiledId,
+} from '@/utils/compiled-snapshot'
 
 const route = useRoute()
 const router = useRouter()
@@ -463,6 +544,7 @@ const submissionsStore = useSubmissionsStore()
 const teamsStore = useTeamsStore()
 const compiledStore = useCompiledStore()
 const adjudicatorsStore = useAdjudicatorsStore()
+const speakersStore = useSpeakersStore()
 const venuesStore = useVenuesStore()
 
 const tournamentId = computed(() => String(route.params.tournamentId ?? ''))
@@ -516,6 +598,7 @@ const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>
 const forceCompileIncludeLabels = ref<CompileIncludeLabel[]>([
   ...DEFAULT_COMPILE_OPTIONS.include_labels,
 ])
+const submissionEvaluationTab = ref<'team' | 'judge'>('team')
 const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
 const isLoading = computed(
@@ -526,6 +609,7 @@ const isLoading = computed(
     submissionsStore.loading ||
     teamsStore.loading ||
     adjudicatorsStore.loading ||
+    speakersStore.loading ||
     venuesStore.loading ||
     compiledStore.loading
 )
@@ -537,6 +621,7 @@ const loadError = computed(
     submissionsStore.error ||
     teamsStore.error ||
     adjudicatorsStore.error ||
+    speakersStore.error ||
     venuesStore.error ||
     compiledStore.error ||
     ''
@@ -584,8 +669,22 @@ const compileTargetRoundsLabel = computed(() =>
 type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
-  roundNames: string[]
   createdAt?: string
+}
+function resolveCompiledDocId(doc: any): string {
+  const payload = doc?.payload && typeof doc.payload === 'object' ? doc.payload : doc
+  return String(doc?._id ?? payload?._id ?? '').trim()
+}
+
+function normalizeCompiledDoc(doc: any): Record<string, any> | null {
+  const payload = doc?.payload && typeof doc.payload === 'object' ? doc.payload : doc
+  if (!payload || typeof payload !== 'object') return null
+  const normalized = { ...(payload as Record<string, any>) }
+  const compiledId = resolveCompiledDocId(doc)
+  if (compiledId) normalized._id = compiledId
+  if (doc?.createdAt) normalized.createdAt = doc.createdAt
+  if (doc?.updatedAt) normalized.updatedAt = doc.updatedAt
+  return normalized
 }
 const compiledSnapshotRoundSet = computed(() => {
   const rounds = Array.isArray(compiledStore.compiled?.rounds) ? compiledStore.compiled.rounds : []
@@ -606,24 +705,37 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
       return {
         compiledId: String(item?._id ?? payload?._id ?? ''),
         rounds: normalizedRounds,
-        roundNames: roundsValue
-          .map((entry: any) => String(entry?.name ?? '').trim())
-          .filter((value: string) => value.length > 0),
         createdAt: item?.createdAt ? String(item.createdAt) : undefined,
       }
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const compileDiffSnapshotOptions = computed(() =>
-  baselineCompiledOptions.value.map((option) => ({
-    value: option.compiledId,
-    label: baselineCompiledOptionLabel(option),
-  }))
+const currentCompiledId = computed(() => String(compiledStore.compiled?._id ?? '').trim())
+const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
+  baselineCompiledOptions.value.filter((item) => item.compiledId !== currentCompiledId.value)
 )
-const compileRows = computed<any[]>(() => {
+const compileRowsBase = computed<any[]>(() => {
   return Array.isArray(compiledStore.compiled?.compiled_team_results)
     ? compiledStore.compiled!.compiled_team_results
     : []
+})
+const selectedCompileDiffBaselineCompiled = computed<Record<string, any> | null>(() => {
+  const baselineId = compileDiffBaselineCompiledId.value.trim()
+  if (!baselineId) return null
+  const matched = compiledHistory.value.find((item) => resolveCompiledDocId(item) === baselineId)
+  if (!matched) return null
+  return normalizeCompiledDoc(matched)
+})
+const selectedCompileDiffBaselineRows = computed<any[]>(() =>
+  Array.isArray(selectedCompileDiffBaselineCompiled.value?.compiled_team_results)
+    ? selectedCompileDiffBaselineCompiled.value!.compiled_team_results
+    : []
+)
+const compileRows = computed<any[]>(() => {
+  if (!compileDiffBaselineCompiledId.value.trim() || selectedCompileDiffBaselineRows.value.length === 0) {
+    return compileRowsBase.value
+  }
+  return applyClientBaselineDiff(compileRowsBase.value, selectedCompileDiffBaselineRows.value)
 })
 const compileColumns = computed(() => {
   const metricKeys = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
@@ -661,17 +773,31 @@ const compileDiffMeta = computed<any | null>(() =>
     : null
 )
 const compileDiffBaselineLabel = computed(() => {
+  const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
+  if (selectedBaselineId) {
+    const selected = diffBaselineCompiledOptions.value.find(
+      (item) => item.compiledId === selectedBaselineId
+    )
+    if (selected) {
+      return t('選択した過去集計: {label}', {
+        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
+      })
+    }
+    return t('選択した過去集計')
+  }
   const meta = compileDiffMeta.value
   if (!meta || meta.baseline_found !== true) return t('基準なし')
   const baselineId = String(meta.baseline_compiled_id ?? '')
   if (meta.baseline_mode === 'compiled') {
-    const selected = baselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
+    const selected = diffBaselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
     if (selected) {
-      return t('選択した過去集計: {label}', { label: baselineCompiledOptionLabel(selected) })
+      return t('選択した過去集計: {label}', {
+        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
+      })
     }
     return t('選択した過去集計')
   }
-  return t('最新集計')
+  return t('前回集計')
 })
 const snapshotIncludesSelectedRound = computed(() => {
   if (selectedRound.value === null) return false
@@ -701,6 +827,28 @@ function submissionsForRound(roundNumber: number, type?: 'ballot' | 'feedback') 
     return sameRound && sameType
   })
 }
+
+const selectedRoundSubmissions = computed(() => {
+  if (selectedRound.value === null) return []
+  return submissionsForRound(selectedRound.value)
+})
+
+const selectedRoundSubmissionSpeed = computed(() => {
+  if (selectedRound.value === null) return null
+  return (
+    buildSubmissionSpeedRows(selectedRoundSubmissions.value, { delayedMinutes: 30 }).find(
+      (row) => Number(row.round) === selectedRound.value
+    ) ?? null
+  )
+})
+
+const selectedRoundSubmissionDelayRows = computed(() => {
+  if (selectedRound.value === null) return []
+  return buildSubmissionDelayRows(selectedRoundSubmissions.value, {
+    delayedMinutes: 30,
+    topPerRound: 6,
+  }).filter((row) => Number(row.round) === selectedRound.value)
+})
 
 function unknownSubmissionCount(roundNumber: number, type?: 'ballot' | 'feedback') {
   return submissionsForRound(roundNumber, type).filter(
@@ -794,7 +942,7 @@ const selectedRoundBallotGap = computed(() => {
 const selectedRoundBallotGapWarning = computed(() => {
   if (!selectedRoundBallotGap.value.hasGap) return ''
   if (selectedRoundBallotGap.value.expected <= 0) return ''
-  return t('未提出のチーム評価があります（提出 {submitted}/{expected}）。提出一覧を確認してください。', {
+  return t('未提出のチーム評価があります（提出 {submitted}/{expected}）。提出状況タブを確認してください。', {
     submitted: selectedRoundBallotGap.value.submitted,
     expected: selectedRoundBallotGap.value.expected,
   })
@@ -802,7 +950,7 @@ const selectedRoundBallotGapWarning = computed(() => {
 
 const selectedRoundUnknownBallotWarning = computed(() => {
   if (selectedRoundBallotGap.value.unknown <= 0) return ''
-  return t('提出者情報が不足したチーム評価が {count} 件あります。提出一覧で提出者を補完してください。', {
+  return t('提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。', {
     count: selectedRoundBallotGap.value.unknown,
   })
 })
@@ -952,29 +1100,6 @@ function roundStatusLabel(status: RoundOperationStatus) {
   if (status === 'compiled') return t('集計済み')
   if (status === 'collecting') return t('回収中')
   return t('準備中')
-}
-
-function formatCompiledTimestamp(value?: string) {
-  if (!value) return t('日時不明')
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return t('日時不明')
-  return new Intl.DateTimeFormat('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function baselineCompiledOptionLabel(option: BaselineCompiledOption) {
-  const roundNames =
-    option.roundNames.length > 0
-      ? option.roundNames
-      : option.rounds.length > 0
-        ? option.rounds.map((roundNumber) => roundLabel(roundNumber))
-        : [t('全ラウンド')]
-  return `${t('日時')}: ${formatCompiledTimestamp(option.createdAt)} / ${t('考慮ラウンド')}: ${roundNames.join(', ')}`
 }
 
 const forceIncludeLabelOptions = computed<Array<{ value: CompileIncludeLabel; label: string }>>(() => [
@@ -1167,6 +1292,47 @@ function adjudicatorName(id: string) {
   return adjudicatorsStore.adjudicators.find((item) => item._id === id)?.name ?? id
 }
 
+function submissionEntityName(id: string) {
+  if (!id) return ''
+  const normalized = String(id).trim()
+  if (!normalized) return ''
+  const team = teamsStore.teams.find((item) => item._id === normalized)
+  if (team) return team.name
+  const adjudicator = adjudicatorsStore.adjudicators.find((item) => item._id === normalized)
+  if (adjudicator) return adjudicator.name
+  const speaker = speakersStore.speakers.find((item) => item._id === normalized)
+  if (speaker) return speaker.name
+  return normalized
+}
+
+function formatSubmissionTimestamp(value?: string) {
+  if (!value) return t('日時不明')
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t('日時不明')
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function submissionTypeLabel(type: 'ballot' | 'feedback' | 'unknown') {
+  if (type === 'ballot') return t('チーム評価')
+  if (type === 'feedback') return t('ジャッジ評価')
+  return t('不明')
+}
+
+function speedStatusLabel(status: 'ok' | 'warn' | 'danger') {
+  if (status === 'danger') return t('要介入')
+  if (status === 'warn') return t('注意')
+  return t('正常')
+}
+
+function setSubmissionEvaluationTab(value: 'team' | 'judge') {
+  submissionEvaluationTab.value = value
+}
+
 function venueName(id: string) {
   return venuesStore.venues.find((item) => item._id === id)?.name ?? id
 }
@@ -1238,10 +1404,15 @@ async function refresh() {
       submissionsStore.fetchSubmissions({ tournamentId: tournamentId.value }),
       teamsStore.fetchTeams(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
+      speakersStore.fetchSpeakers(tournamentId.value),
       venuesStore.fetchVenues(tournamentId.value),
       compiledStore.fetchLatest(tournamentId.value),
       refreshCompiledHistory(),
     ])
+    const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
+    if (!selectedBaselineId) {
+      applyDefaultCompileDiffBaseline()
+    }
     const queryRound = Number(route.query.round)
     const hasQueryRound = Number.isInteger(queryRound) && queryRound >= 1
     if (hasQueryRound && sortedRounds.value.some((item) => item.round === queryRound)) {
@@ -1342,6 +1513,7 @@ async function runCompileWithSource(
   }
   compileMessage.value = t('集計が完了しました。')
   await Promise.all([compiledStore.fetchLatest(tournamentId.value), refreshCompiledHistory()])
+  applyDefaultCompileDiffBaseline()
 }
 
 function onCompileRoundToggle(roundNumber: number, event: Event) {
@@ -1389,6 +1561,18 @@ async function refreshCompiledHistory() {
   } catch {
     compiledHistory.value = []
   }
+}
+
+function applyDefaultCompileDiffBaseline() {
+  const resolved = resolvePreviousCompiledId(
+    baselineCompiledOptions.value,
+    String(compiledStore.compiled?._id ?? '')
+  )
+  compileDiffBaselineCompiledId.value = diffBaselineCompiledOptions.value.some(
+    (option) => option.compiledId === resolved
+  )
+    ? resolved
+    : ''
 }
 
 async function saveDrawPublication(
@@ -1531,17 +1715,20 @@ watch(
 )
 
 watch(
-  baselineCompiledOptions,
+  diffBaselineCompiledOptions,
   (options) => {
     const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
-    if (!selectedBaselineId) return
     if (options.length === 0) {
       compileDiffBaselineCompiledId.value = ''
       return
     }
+    if (!selectedBaselineId) {
+      applyDefaultCompileDiffBaseline()
+      return
+    }
     const exists = options.some((option) => option.compiledId === selectedBaselineId)
     if (!exists) {
-      compileDiffBaselineCompiledId.value = ''
+      applyDefaultCompileDiffBaseline()
     }
   },
   { immediate: true }
@@ -1826,6 +2013,86 @@ watch(
 
 .submission-overview-card {
   gap: 4px;
+}
+
+.submission-speed-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.submission-speed-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.submission-speed-head h5 {
+  margin: 0;
+}
+
+.speed-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.speed-status-ok {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.speed-status-warn {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+
+.speed-status-danger {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+}
+
+.submission-delay-head {
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.submission-evaluation-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.submission-evaluation-tab {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submission-evaluation-tab:hover {
+  border-color: #bfdbfe;
+  color: var(--color-primary);
+}
+
+.submission-evaluation-tab.active {
+  background: var(--color-secondary);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .step-inline-panel {

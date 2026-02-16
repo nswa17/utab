@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   createBallotSubmission,
   createFeedbackSubmission,
+  deleteSubmission,
   listParticipantSubmissions,
   listSubmissions,
   updateSubmission,
@@ -141,6 +142,11 @@ const updateSchema = {
     }),
 }
 
+const deleteSchema = {
+  params: z.object({ id: z.string().min(1) }),
+  query: z.object({ tournamentId: z.string().min(1) }),
+}
+
 router.get('/', requireTournamentAdmin(), validateRequest(listSchema), listSubmissions)
 router.get(
   '/mine',
@@ -161,5 +167,6 @@ router.post(
   createFeedbackSubmission
 )
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateSubmission)
+router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteSubmission)
 
 export { router as submissionRouter }
