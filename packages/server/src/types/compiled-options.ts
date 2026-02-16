@@ -80,32 +80,35 @@ function dedupe<T>(values: T[]): T[] {
   return Array.from(new Set(values))
 }
 
-export function normalizeCompileOptions(input?: CompileOptionsInput): CompileOptions {
-  const rankingOrder = dedupe(input?.ranking_priority?.order ?? DEFAULT_COMPILE_OPTIONS.ranking_priority.order)
-  const includeLabels = dedupe(input?.include_labels ?? DEFAULT_COMPILE_OPTIONS.include_labels)
+export function normalizeCompileOptions(
+  input?: CompileOptionsInput,
+  fallback: CompileOptions = DEFAULT_COMPILE_OPTIONS
+): CompileOptions {
+  const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order)
+  const includeLabels = dedupe(input?.include_labels ?? fallback.include_labels)
   return {
     ranking_priority: {
-      preset: input?.ranking_priority?.preset ?? DEFAULT_COMPILE_OPTIONS.ranking_priority.preset,
-      order: rankingOrder.length > 0 ? rankingOrder : [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+      preset: input?.ranking_priority?.preset ?? fallback.ranking_priority.preset,
+      order: rankingOrder.length > 0 ? rankingOrder : [...fallback.ranking_priority.order],
     },
-    winner_policy: input?.winner_policy ?? DEFAULT_COMPILE_OPTIONS.winner_policy,
+    winner_policy: input?.winner_policy ?? fallback.winner_policy,
     tie_points:
       typeof input?.tie_points === 'number' && Number.isFinite(input.tie_points)
         ? input.tie_points
-        : DEFAULT_COMPILE_OPTIONS.tie_points,
+        : fallback.tie_points,
     duplicate_normalization: {
       merge_policy:
         input?.duplicate_normalization?.merge_policy ??
-        DEFAULT_COMPILE_OPTIONS.duplicate_normalization.merge_policy,
+        fallback.duplicate_normalization.merge_policy,
       poi_aggregation:
         input?.duplicate_normalization?.poi_aggregation ??
-        DEFAULT_COMPILE_OPTIONS.duplicate_normalization.poi_aggregation,
+        fallback.duplicate_normalization.poi_aggregation,
       best_aggregation:
         input?.duplicate_normalization?.best_aggregation ??
-        DEFAULT_COMPILE_OPTIONS.duplicate_normalization.best_aggregation,
+        fallback.duplicate_normalization.best_aggregation,
     },
-    missing_data_policy: input?.missing_data_policy ?? DEFAULT_COMPILE_OPTIONS.missing_data_policy,
-    include_labels: includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    missing_data_policy: input?.missing_data_policy ?? fallback.missing_data_policy,
+    include_labels: includeLabels.length > 0 ? includeLabels : [...fallback.include_labels],
     diff_baseline:
       input?.diff_baseline?.mode === 'compiled' && input.diff_baseline.compiled_id
         ? { mode: 'compiled', compiled_id: input.diff_baseline.compiled_id }

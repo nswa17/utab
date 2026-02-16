@@ -35,9 +35,36 @@
       </div>
     </div>
 
+    <div v-if="isPartiallyVisible" class="row visibility-banner" role="status" aria-live="polite">
+      <span class="visibility-banner-title">{{ $t('対戦表は一部のみ公開されています。') }}</span>
+      <div class="row visibility-chip-list">
+        <span class="visibility-chip" :class="teamAllocationVisible ? 'is-open' : 'is-closed'">
+          {{ $t('チーム') }}: {{ teamAllocationVisible ? $t('公開') : $t('非公開') }}
+        </span>
+        <span class="visibility-chip" :class="adjudicatorAllocationVisible ? 'is-open' : 'is-closed'">
+          {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible ? $t('公開') : $t('非公開') }}
+        </span>
+      </div>
+    </div>
+
     <LoadingState v-if="isLoading" />
     <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <div v-else-if="!draw || !teamAllocationVisible" class="muted">{{ $t('ドローは未公開です。') }}</div>
+    <div
+      v-else-if="!draw || !anyAllocationVisible"
+      class="row visibility-banner"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="visibility-banner-title">{{ $t('ドローは未公開です。') }}</span>
+      <div class="row visibility-chip-list">
+        <span class="visibility-chip" :class="teamAllocationVisible ? 'is-open' : 'is-closed'">
+          {{ $t('チーム') }}: {{ teamAllocationVisible ? $t('公開') : $t('非公開') }}
+        </span>
+        <span class="visibility-chip" :class="adjudicatorAllocationVisible ? 'is-open' : 'is-closed'">
+          {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible ? $t('公開') : $t('非公開') }}
+        </span>
+      </div>
+    </div>
 
     <div v-else class="stack">
       <div v-if="rows.length === 0" class="muted">{{ $t('ドローが登録されていません。') }}</div>
@@ -46,7 +73,7 @@
           <div class="row">
             <span class="muted">{{ venueName(row.venue) }}</span>
           </div>
-          <div class="match-sides">
+          <div v-if="teamAllocationVisible" class="match-sides">
             <div class="side-card gov-card">
               <span class="side-chip">{{ govLabel }}</span>
               <strong>{{ teamName(row.teams.gov) }}</strong>
@@ -71,6 +98,14 @@
               <span class="draw-adj-names">{{ adjudicatorNames(row.trainees) }}</span>
             </div>
           </div>
+          <div class="row draw-actions">
+            <Button variant="ghost" size="sm" :to="teamEvaluationPath(row)">
+              {{ $t('チーム評価') }}
+            </Button>
+            <Button v-if="judgeEvaluationEnabled()" variant="ghost" size="sm" :to="judgeEvaluationPath(row)">
+              {{ $t('ジャッジ評価') }}
+            </Button>
+          </div>
         </div>
       </template>
       <div v-else class="card table-wrap">
@@ -83,13 +118,13 @@
                   <span class="sort-indicator">{{ sortIndicator('venue') }}</span>
                 </button>
               </th>
-              <th>
+              <th v-if="teamAllocationVisible">
                 <button type="button" class="table-sort" @click="setTableSort('gov')">
                   {{ govLabel }}
                   <span class="sort-indicator">{{ sortIndicator('gov') }}</span>
                 </button>
               </th>
-              <th>
+              <th v-if="teamAllocationVisible">
                 <button type="button" class="table-sort" @click="setTableSort('opp')">
                   {{ oppLabel }}
                   <span class="sort-indicator">{{ sortIndicator('opp') }}</span>
@@ -98,16 +133,32 @@
               <th v-if="adjudicatorAllocationVisible">{{ $t('チェア') }}</th>
               <th v-if="adjudicatorAllocationVisible">{{ $t('パネル') }}</th>
               <th v-if="adjudicatorAllocationVisible">{{ $t('トレーニー') }}</th>
+              <th>{{ $t('操作') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, index) in tableRows" :key="`table-${index}`">
               <td>{{ venueName(row.venue) }}</td>
-              <td>{{ teamName(row.teams.gov) }}</td>
-              <td>{{ teamName(row.teams.opp) }}</td>
+              <td v-if="teamAllocationVisible">{{ teamName(row.teams.gov) }}</td>
+              <td v-if="teamAllocationVisible">{{ teamName(row.teams.opp) }}</td>
               <td v-if="adjudicatorAllocationVisible">{{ adjudicatorNames(row.chairs) }}</td>
               <td v-if="adjudicatorAllocationVisible">{{ adjudicatorNames(row.panels) }}</td>
               <td v-if="adjudicatorAllocationVisible">{{ adjudicatorNames(row.trainees) }}</td>
+              <td class="draw-actions-cell">
+                <div class="row draw-actions">
+                  <Button variant="ghost" size="sm" :to="teamEvaluationPath(row)">
+                    {{ $t('チーム評価') }}
+                  </Button>
+                  <Button
+                    v-if="judgeEvaluationEnabled()"
+                    variant="ghost"
+                    size="sm"
+                    :to="judgeEvaluationPath(row)"
+                  >
+                    {{ $t('ジャッジ評価') }}
+                  </Button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -129,6 +180,7 @@ import { useStylesStore } from '@/stores/styles'
 import { useRoundsStore } from '@/stores/rounds'
 import LoadingState from '@/components/common/LoadingState.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
+import Button from '@/components/common/Button.vue'
 import { getSideShortLabel } from '@/utils/side-labels'
 
 const route = useRoute()
@@ -163,9 +215,19 @@ const errorMessage = computed(
 )
 const draw = computed(() => draws.draws.find((item) => item.round === round.value))
 const roundConfig = computed(() => roundsStore.rounds.find((item) => item.round === round.value))
-const teamAllocationVisible = computed(() => roundConfig.value?.teamAllocationOpened !== false)
+const teamAllocationVisible = computed(() => {
+  if (typeof draw.value?.drawOpened === 'boolean') return draw.value.drawOpened
+  return roundConfig.value?.teamAllocationOpened !== false
+})
 const adjudicatorAllocationVisible = computed(
-  () => roundConfig.value?.adjudicatorAllocationOpened !== false
+  () => {
+    if (typeof draw.value?.allocationOpened === 'boolean') return draw.value.allocationOpened
+    return roundConfig.value?.adjudicatorAllocationOpened !== false
+  }
+)
+const anyAllocationVisible = computed(() => teamAllocationVisible.value || adjudicatorAllocationVisible.value)
+const isPartiallyVisible = computed(
+  () => anyAllocationVisible.value && teamAllocationVisible.value !== adjudicatorAllocationVisible.value
 )
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
@@ -178,8 +240,8 @@ const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対'
 
 function rowSortValue(row: any, key: 'venue' | 'gov' | 'opp') {
   if (key === 'venue') return venueName(row.venue)
-  if (key === 'gov') return teamName(row.teams.gov)
-  return teamName(row.teams.opp)
+  if (key === 'gov') return teamName(row?.teams?.gov)
+  return teamName(row?.teams?.opp)
 }
 
 const rows = computed(() => draw.value?.allocation ?? [])
@@ -214,7 +276,8 @@ function sortIndicator(key: 'venue' | 'gov' | 'opp') {
   return sortDirection.value === 'asc' ? '↑' : '↓'
 }
 
-function teamName(id: string) {
+function teamName(id?: string) {
+  if (!id) return '—'
   return teams.teams.find((team) => team._id === id)?.name ?? id
 }
 
@@ -228,6 +291,61 @@ function adjudicatorNames(ids: string[]) {
 function venueName(id?: string) {
   if (!id) return t('会場未定')
   return venues.venues.find((venue) => venue._id === id)?.name ?? id
+}
+
+function teamEvaluationPath(row: any) {
+  const teamA = String(row?.teams?.gov ?? '')
+  const teamB = String(row?.teams?.opp ?? '')
+  if (!teamA || !teamB) {
+    return `/user/${tournamentId.value}/speaker/rounds/${round.value}/ballot/home`
+  }
+  const submitterCandidates = Array.from(
+    new Set([...(row?.chairs ?? []), ...(row?.panels ?? []), ...(row?.trainees ?? [])])
+  ).filter(Boolean)
+  if (submitterCandidates.length === 1) {
+    const query = new URLSearchParams({
+      teamA,
+      teamB,
+      submitter: String(submitterCandidates[0]),
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${round.value}/ballot/entry?${query.toString()}`
+  }
+  const query = new URLSearchParams({
+    task: 'ballot',
+    round: String(round.value),
+    teamA,
+    teamB,
+  })
+  if (submitterCandidates.length > 0) {
+    query.set(
+      'submitters',
+      submitterCandidates.map((id: string) => encodeURIComponent(String(id))).join(',')
+    )
+  }
+  return `/user/${tournamentId.value}/speaker/home?${query.toString()}`
+}
+
+function judgeEvaluationPath(row: any) {
+  const teamGov = String(row?.teams?.gov ?? '')
+  const teamOpp = String(row?.teams?.opp ?? '')
+  const targetIds = Array.from(new Set([...(row?.chairs ?? []), ...(row?.panels ?? [])])).filter(Boolean)
+  if (!teamGov || !teamOpp || targetIds.length === 0) {
+    return `/user/${tournamentId.value}/adjudicator/home`
+  }
+  const query = new URLSearchParams({
+    actor: 'team',
+    task: 'feedback',
+    round: String(round.value),
+    teamGov,
+    teamOpp,
+    targets: targetIds.map((id: string) => encodeURIComponent(String(id))).join(','),
+  })
+  return `/user/${tournamentId.value}/adjudicator/home?${query.toString()}`
+}
+
+function judgeEvaluationEnabled() {
+  const userDefined = roundConfig.value?.userDefinedData ?? {}
+  return userDefined.evaluate_from_teams !== false || userDefined.evaluate_from_adjudicators !== false
 }
 
 async function refresh() {
@@ -295,6 +413,52 @@ onMounted(() => {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.visibility-banner {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  padding: 8px 10px;
+}
+
+.visibility-banner-title {
+  font-size: 12px;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.visibility-chip-list {
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.visibility-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.visibility-chip.is-open {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.visibility-chip.is-closed {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
 }
 
 .draw-table {
@@ -413,6 +577,26 @@ onMounted(() => {
 .draw-adj-names {
   font-weight: 600;
   color: var(--color-text);
+}
+
+.draw-actions {
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.card.stack > .draw-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.card.stack > .draw-actions :deep(.btn) {
+  width: 100%;
+  justify-content: center;
+}
+
+.draw-actions-cell {
+  min-width: 180px;
 }
 
 .error {

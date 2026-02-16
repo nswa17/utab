@@ -60,13 +60,19 @@ function sanitizeDrawAllocation(
   drawOpened: boolean,
   allocationOpened: boolean
 ): unknown[] {
-  if (!drawOpened || !Array.isArray(allocationValue)) return []
+  if ((!drawOpened && !allocationOpened) || !Array.isArray(allocationValue)) return []
 
   return allocationValue.map((rowValue) => {
     const row = asRecord(rowValue)
+    const teams = asRecord(row.teams)
     return {
       ...(hasOwn(row, 'venue') ? { venue: row.venue } : {}),
-      ...(hasOwn(row, 'teams') ? { teams: row.teams } : {}),
+      teams: drawOpened
+        ? {
+            gov: typeof teams.gov === 'string' ? String(teams.gov) : '',
+            opp: typeof teams.opp === 'string' ? String(teams.opp) : '',
+          }
+        : { gov: '', opp: '' },
       chairs: allocationOpened && Array.isArray(row.chairs) ? row.chairs : [],
       panels: allocationOpened && Array.isArray(row.panels) ? row.panels : [],
       trainees: allocationOpened && Array.isArray(row.trainees) ? row.trainees : [],

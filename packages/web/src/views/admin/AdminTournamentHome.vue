@@ -1,26 +1,5 @@
 <template>
   <section class="stack">
-    <div class="row section-row">
-      <h3>{{ activeSection === 'overview' ? $t('大会設定') : $t('大会データ管理') }}</h3>
-    </div>
-    <div class="row setup-section-switch">
-      <button
-        type="button"
-        class="setup-section-tab"
-        :class="{ active: activeSection === 'overview' }"
-        @click="setActiveSection('overview')"
-      >
-        {{ $t('大会設定') }}
-      </button>
-      <button
-        type="button"
-        class="setup-section-tab"
-        :class="{ active: activeSection === 'data' }"
-        @click="setActiveSection('data')"
-      >
-        {{ $t('大会データ管理') }}
-      </button>
-    </div>
     <p v-if="activeSection === 'overview'" class="muted small">
       {{ $t('大会の基本情報と公開設定を管理します。') }}
     </p>
@@ -33,7 +12,23 @@
     <template v-else-if="tournament && activeSection === 'overview'">
       <div class="card stack">
         <Field :label="$t('大会名')" required v-slot="{ id, describedBy }">
-          <input v-model="tournamentForm.name" :id="id" :aria-describedby="describedBy" type="text" />
+          <div class="row tournament-name-row">
+            <input
+              v-model="tournamentForm.name"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="text"
+              @keyup.enter="saveTournamentName"
+            />
+            <Button
+              size="sm"
+              class="tournament-name-submit"
+              :disabled="isLoading || !canSaveTournamentName"
+              @click="saveTournamentName"
+            >
+              {{ $t('更新') }}
+            </Button>
+          </div>
         </Field>
 
         <div class="overview-setting-grid">
@@ -51,10 +46,7 @@
             <h4>{{ $t('大会を公開') }}</h4>
             <label class="switch-control" :aria-label="$t('大会を公開')">
               <span class="switch-label">{{ $t('非公開') }}</span>
-              <span class="toggle-switch">
-                <input v-model="isTournamentPublic" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </span>
+              <ToggleSwitch v-model="isTournamentPublic" :aria-label="$t('大会を公開')" />
               <span class="switch-label">{{ $t('公開') }}</span>
             </label>
           </article>
@@ -63,17 +55,15 @@
             <h4>{{ $t('大会パスワード設定') }}</h4>
             <label class="switch-control" :aria-label="$t('大会パスワード設定')">
               <span class="switch-label">{{ $t('不要') }}</span>
-              <span class="toggle-switch">
-                <input v-model="tournamentForm.accessRequired" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </span>
+              <ToggleSwitch v-model="tournamentForm.accessRequired" :aria-label="$t('大会パスワード設定')" />
               <span class="switch-label">{{ $t('設定') }}</span>
             </label>
             <input
               v-model="tournamentForm.accessPassword"
               :aria-label="$t('大会パスワード')"
-              type="password"
+              type="text"
               autocomplete="new-password"
+              :disabled="!tournamentForm.accessRequired"
             />
             <p class="muted small">{{ accessPasswordHelpText }}</p>
           </article>
@@ -98,11 +88,17 @@
               </div>
             </div>
           </Field>
-          <div class="row">
-            <Button size="sm" @click="saveTournament" :disabled="isLoading">
-              {{ $t('重要なお知らせを更新') }}
+          <div class="row notice-actions">
+            <Button
+              size="sm"
+              :disabled="isLoading || isSavingNotice || !canSaveTournamentNotice"
+              @click="saveTournamentNotice"
+            >
+              {{ isSavingNotice ? $t('更新中...') : $t('重要なお知らせを更新') }}
             </Button>
+            <span v-if="noticeSaved" class="muted small">{{ $t('更新しました。') }}</span>
           </div>
+          <p v-if="noticeSaveError" class="error small">{{ noticeSaveError }}</p>
         </article>
       </div>
 
@@ -110,97 +106,6 @@
         <div class="row setup-rounds-head">
           <h4>{{ $t('新規ラウンド作成') }}</h4>
         </div>
-        <details class="round-defaults-collapse">
-          <summary class="row round-defaults-summary">
-            <strong>{{ $t('ラウンドデフォルト設定') }}</strong>
-            <span class="muted small">{{ $t('新規ラウンド作成時に適用される標準設定です。') }}</span>
-          </summary>
-          <div class="stack round-defaults-body">
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.evaluate_from_adjudicators" type="checkbox" />
-                <span>{{ $t('評価をジャッジから') }}</span>
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.evaluate_from_teams" type="checkbox" />
-                <span>{{ $t('評価をチームから') }}</span>
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.chairs_always_evaluated" type="checkbox" />
-                <span>{{ $t('チェアを常に評価') }}</span>
-              </label>
-              <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
-                <select
-                  v-model="roundDefaultsForm.userDefinedData.evaluator_in_team"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                >
-                  <option value="team">{{ $t('チーム') }}</option>
-                  <option value="speaker">{{ $t('スピーカー') }}</option>
-                </select>
-              </Field>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.no_speaker_score" type="checkbox" />
-                <span>{{ $t('スピーカースコア無し') }}</span>
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.score_by_matter_manner" type="checkbox" />
-                <span>{{ $t('Matter/Manner採点') }}</span>
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.poi" type="checkbox" />
-                <span>{{ $t('POI賞') }}</span>
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDefaultsForm.userDefinedData.best" type="checkbox" />
-                <span>{{ $t('Best Speaker賞') }}</span>
-              </label>
-            </div>
-
-            <section class="stack">
-              <h5 class="settings-group-title">{{ $t('ブレイク基本方針') }}</h5>
-              <div class="grid settings-options-grid">
-                <Field :label="$t('ソース')" v-slot="{ id, describedBy }">
-                  <select v-model="roundDefaultsForm.break.source" :id="id" :aria-describedby="describedBy">
-                    <option value="submissions">{{ $t('提出データ') }}</option>
-                    <option value="raw">{{ $t('Raw結果') }}</option>
-                  </select>
-                </Field>
-                <Field :label="$t('ブレイク人数')" v-slot="{ id, describedBy }">
-                  <input
-                    v-model.number="roundDefaultsForm.break.size"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                    type="number"
-                    min="1"
-                  />
-                </Field>
-                <Field :label="$t('境界同点の扱い')" v-slot="{ id, describedBy }">
-                  <select
-                    v-model="roundDefaultsForm.break.cutoff_tie_policy"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                  >
-                    <option value="manual">{{ $t('手動選抜') }}</option>
-                    <option value="include_all">{{ $t('同点は全員含める') }}</option>
-                    <option value="strict">{{ $t('人数を厳密適用') }}</option>
-                  </select>
-                </Field>
-                <Field :label="$t('シード方式')" v-slot="{ id, describedBy }">
-                  <select v-model="roundDefaultsForm.break.seeding" :id="id" :aria-describedby="describedBy">
-                    <option value="high_low">{{ $t('High-Low (1 vs N)') }}</option>
-                  </select>
-                </Field>
-              </div>
-            </section>
-
-            <div class="row">
-              <Button size="sm" @click="saveRoundDefaults" :disabled="isLoading">
-                {{ $t('ラウンドデフォルトを保存') }}
-              </Button>
-            </div>
-          </div>
-        </details>
         <form class="grid setup-round-form" @submit.prevent="createRoundFromSetup">
           <Field :label="$t('ラウンド番号')" required v-slot="{ id, describedBy }">
             <input
@@ -231,34 +136,85 @@
           </Field>
           <div class="row create-actions">
             <Button type="submit" :disabled="isLoading">{{ $t('追加') }}</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              :disabled="isLoading"
+              @click="showRoundDefaultsModal = true"
+            >
+              {{ $t('ラウンドデフォルト設定') }}
+            </Button>
           </div>
         </form>
         <p class="muted small">
           {{ $t('新規ラウンドは大会セットアップのラウンドデフォルトを継承します。') }}
         </p>
         <p v-if="setupRoundError" class="error">{{ setupRoundError }}</p>
+        <p class="muted small">{{ tournamentAutosaveText }}</p>
         <p v-if="sortedRounds.length === 0" class="muted small">{{ $t('ラウンドがまだありません。') }}</p>
         <div v-else class="stack setup-round-list">
           <div
             v-for="round in sortedRounds"
             :key="round._id"
-            class="row setup-round-item"
+            class="stack setup-round-item"
           >
             <div class="stack tight">
               <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
-              <span class="muted small">
-                {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
-              </span>
+              <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span>
             </div>
-            <details class="setup-round-details" @toggle="onSetupRoundDetailsToggle(round, $event)">
+
+            <section class="card soft stack setup-round-motion-panel">
+              <RoundMotionEditor
+                :tournament-id="tournamentId"
+                :round-id="String(round._id)"
+                :saved-motion="Array.isArray(round.motions) ? String(round.motions[0] ?? '') : ''"
+                :disabled="roundPublicationBusy"
+              >
+                <template #status>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.motionOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('モーション公開')"
+                      @update:model-value="(checked) => onSetupMotionOpenedChange(round, checked)"
+                    />
+                  </label>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.teamAllocationOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('チーム割り当て')"
+                      @update:model-value="(checked) => onSetupTeamAllocationChange(round, checked)"
+                    />
+                  </label>
+                  <label class="row publish-switch-inline publish-switch-inline-compact">
+                    <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
+                    <ToggleSwitch
+                      class="publish-switch-toggle"
+                      :model-value="Boolean(round.adjudicatorAllocationOpened)"
+                      :disabled="roundPublicationBusy"
+                      :aria-label="$t('ジャッジ割り当て')"
+                      @update:model-value="(checked) => onSetupAdjudicatorAllocationChange(round, checked)"
+                    />
+                  </label>
+                </template>
+              </RoundMotionEditor>
+            </section>
+
+            <details
+              class="setup-round-details"
+              :open="isSetupRoundDetailsOpen(round._id)"
+              @toggle="onSetupRoundDetailsToggle(round, $event)"
+            >
               <summary class="row setup-round-details-summary">
-                <span class="setup-round-toggle-icon" aria-hidden="true"></span>
-                <div class="stack tight setup-round-summary-text">
-                  <strong>{{ $t('ラウンド詳細設定') }}</strong>
-                  <span class="muted small">
-                    {{ $t('このラウンドの公開・採点・ブレイク設定を編集します。') }}
-                  </span>
-                </div>
+                <CollapseHeader
+                  :title="$t('ラウンド詳細設定')"
+                  :open="isSetupRoundDetailsOpen(round._id)"
+                />
               </summary>
               <div v-if="isSetupRoundDetailsOpen(round._id)" class="stack setup-round-details-body">
                 <section class="stack setup-round-basic-panel">
@@ -292,6 +248,47 @@
                         </select>
                       </Field>
                     </div>
+                    <section class="stack setup-round-config-group">
+                      <RoundOptionEditor
+                        v-model:evaluate-from-adjudicators="setupRoundEditForm.userDefinedData.evaluate_from_adjudicators"
+                        v-model:evaluate-from-teams="setupRoundEditForm.userDefinedData.evaluate_from_teams"
+                        v-model:chairs-always-evaluated="setupRoundEditForm.userDefinedData.chairs_always_evaluated"
+                        v-model:evaluator-in-team="setupRoundEditForm.userDefinedData.evaluator_in_team"
+                        v-model:no-speaker-score="setupRoundEditForm.userDefinedData.no_speaker_score"
+                        v-model:allow-low-tie-win="setupRoundEditForm.userDefinedData.allow_low_tie_win"
+                        v-model:score-by-matter-manner="setupRoundEditForm.userDefinedData.score_by_matter_manner"
+                        v-model:poi="setupRoundEditForm.userDefinedData.poi"
+                        v-model:best="setupRoundEditForm.userDefinedData.best"
+                        :disabled="isLoading"
+                      />
+                    </section>
+                    <section class="stack setup-round-config-group">
+                      <CompileOptionsEditor
+                        v-model:source="setupRoundEditForm.compile.source"
+                        v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
+                        v-model:ranking-preset="setupRoundEditForm.compile.options.ranking_priority.preset"
+                        v-model:ranking-order="setupRoundEditForm.compile.options.ranking_priority.order"
+                        v-model:winner-policy="setupRoundEditForm.compile.options.winner_policy"
+                        v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
+                        v-model:merge-policy="setupRoundEditForm.compile.options.duplicate_normalization.merge_policy"
+                        v-model:poi-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.poi_aggregation"
+                        v-model:best-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.best_aggregation"
+                        v-model:missing-data-policy="setupRoundEditForm.compile.options.missing_data_policy"
+                        v-model:include-labels="setupRoundEditForm.compile.options.include_labels"
+                        :show-source-rounds="true"
+                        :source-round-options="compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))"
+                        :disabled="isLoading"
+                      />
+                    </section>
+                    <section v-if="setupRoundEditForm.type === 'break'" class="stack setup-round-config-group">
+                      <BreakPolicyEditor
+                        v-model:source="setupRoundEditForm.break.source"
+                        v-model:size="setupRoundEditForm.break.size"
+                        v-model:cutoff-tie-policy="setupRoundEditForm.break.cutoff_tie_policy"
+                        v-model:seeding="setupRoundEditForm.break.seeding"
+                        :disabled="isLoading"
+                      />
+                    </section>
                     <div class="row setup-round-item-actions">
                       <Button size="sm" :disabled="isLoading" @click="saveEditRoundFromSetup(round)">
                         {{ $t('保存') }}
@@ -308,17 +305,7 @@
                     {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
                   </p>
                 </section>
-
-                <iframe
-                  class="setup-round-details-frame"
-                  :src="roundSettingsEmbedUrl(round.round)"
-                  :title="$t('ラウンド詳細設定')"
-                  loading="lazy"
-                />
               </div>
-              <p v-else class="muted small setup-round-details-placeholder">
-                {{ $t('展開すると詳細設定を読み込みます。') }}
-              </p>
             </details>
           </div>
         </div>
@@ -386,28 +373,7 @@
       <div class="card stack" v-show="activeEntityTab === 'teams'">
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
-          <div class="row entry-mode-row">
-            <span class="muted small">{{ $t('入力方式') }}</span>
-            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'manual' }"
-                @click="entityEntryMode = 'manual'"
-              >
-                {{ $t('手動入力') }}
-              </button>
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'csv' }"
-                @click="entityEntryMode = 'csv'"
-              >
-                {{ $t('CSV取り込み') }}
-              </button>
-            </div>
-          </div>
-          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
+          <section class="stack block-panel">
             <form class="grid team-form-grid" @submit.prevent="handleCreateTeam">
               <Field
                 class="team-name-field"
@@ -437,18 +403,6 @@
                     {{ inst.name }}
                   </option>
                 </select>
-              </Field>
-              <Field
-                class="full"
-                :label="$t('追加スピーカー（カンマ(,)区切り）')"
-                v-slot="{ id, describedBy }"
-              >
-                <input
-                  v-model="teamForm.speakers"
-                  type="text"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
               </Field>
               <Field
                 class="full"
@@ -484,21 +438,17 @@
               </Field>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="teams.loading">{{ $t('追加') }}</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="teams.loading"
+                  @click="openEntityImportModal('teams')"
+                >
+                  {{ $t('CSV取り込み') }}
+                </Button>
               </div>
             </form>
-          </section>
-          <section v-else class="stack block-panel">
-            <label class="stack">
-              <span class="muted small">{{
-                $t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
-              }}</span>
-              <input
-                class="csv-file-input"
-                type="file"
-                accept=".csv"
-                @change="handleCsvUpload('teams', $event)"
-              />
-            </label>
           </section>
         </section>
 
@@ -545,28 +495,7 @@
       <div class="card stack" v-show="activeEntityTab === 'adjudicators'">
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
-          <div class="row entry-mode-row">
-            <span class="muted small">{{ $t('入力方式') }}</span>
-            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'manual' }"
-                @click="entityEntryMode = 'manual'"
-              >
-                {{ $t('手動入力') }}
-              </button>
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'csv' }"
-                @click="entityEntryMode = 'csv'"
-              >
-                {{ $t('CSV取り込み') }}
-              </button>
-            </div>
-          </div>
-          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
+          <section class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateAdjudicator">
               <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
                 <input
@@ -576,31 +505,40 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="adjudicatorForm.strength"
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
+              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
+                <template #label-suffix>
+                  <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <input
+                    v-model.number="adjudicatorForm.strength"
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  />
+                </template>
               </Field>
               <Field
                 :label="$t('事前評価')"
                 :help="$t('推奨範囲: 0〜10')"
-                v-slot="{ id, describedBy }"
               >
-                <input
-                  v-model.number="adjudicatorForm.preev"
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
+                <template #label-suffix>
+                  <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <input
+                    v-model.number="adjudicatorForm.preev"
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  />
+                </template>
               </Field>
               <div class="availability-control">
                 <label class="row small">
@@ -613,7 +551,7 @@
                 <input
                   v-model="adjudicatorInstitutionSearch"
                   type="text"
-                  :placeholder="$t('機関名で検索')"
+                  :placeholder="$t('コンフリクトグループ名で検索')"
                 />
                 <div class="relation-picker">
                   <label
@@ -651,21 +589,17 @@
                 <Button type="submit" size="sm" :disabled="adjudicators.loading">{{
                   $t('追加')
                 }}</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="adjudicators.loading"
+                  @click="openEntityImportModal('adjudicators')"
+                >
+                  {{ $t('CSV取り込み') }}
+                </Button>
               </div>
             </form>
-          </section>
-          <section v-else class="stack block-panel">
-            <label class="stack">
-              <span class="muted small">{{
-                $t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
-              }}</span>
-              <input
-                class="csv-file-input"
-                type="file"
-                accept=".csv"
-                @change="handleCsvUpload('adjudicators', $event)"
-              />
-            </label>
           </section>
         </section>
 
@@ -716,28 +650,7 @@
       <div class="card stack" v-show="activeEntityTab === 'venues'">
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
-          <div class="row entry-mode-row">
-            <span class="muted small">{{ $t('入力方式') }}</span>
-            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'manual' }"
-                @click="entityEntryMode = 'manual'"
-              >
-                {{ $t('手動入力') }}
-              </button>
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'csv' }"
-                @click="entityEntryMode = 'csv'"
-              >
-                {{ $t('CSV取り込み') }}
-              </button>
-            </div>
-          </div>
-          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
+          <section class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateVenue">
               <Field :label="$t('会場名')" required v-slot="{ id, describedBy }">
                 <input
@@ -755,19 +668,17 @@
               </div>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="venues.loading">{{ $t('追加') }}</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="venues.loading"
+                  @click="openEntityImportModal('venues')"
+                >
+                  {{ $t('CSV取り込み') }}
+                </Button>
               </div>
             </form>
-          </section>
-          <section v-else class="stack block-panel">
-            <label class="stack">
-              <span class="muted small">{{ $t('CSV例: Room 101') }}</span>
-              <input
-                class="csv-file-input"
-                type="file"
-                accept=".csv"
-                @change="handleCsvUpload('venues', $event)"
-              />
-            </label>
           </section>
         </section>
 
@@ -810,28 +721,7 @@
       <div class="card stack" v-show="activeEntityTab === 'speakers'">
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
-          <div class="row entry-mode-row">
-            <span class="muted small">{{ $t('入力方式') }}</span>
-            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'manual' }"
-                @click="entityEntryMode = 'manual'"
-              >
-                {{ $t('手動入力') }}
-              </button>
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'csv' }"
-                @click="entityEntryMode = 'csv'"
-              >
-                {{ $t('CSV取り込み') }}
-              </button>
-            </div>
-          </div>
-          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
+          <section class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateSpeaker">
               <Field :label="$t('スピーカー名')" required v-slot="{ id, describedBy }">
                 <input
@@ -845,19 +735,17 @@
                 <Button type="submit" size="sm" :disabled="speakers.loading">{{
                   $t('追加')
                 }}</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="speakers.loading"
+                  @click="openEntityImportModal('speakers')"
+                >
+                  {{ $t('CSV取り込み') }}
+                </Button>
               </div>
             </form>
-          </section>
-          <section v-else class="stack block-panel">
-            <label class="stack">
-              <span class="muted small">{{ $t('CSV例: Speaker A') }}</span>
-              <input
-                class="csv-file-input"
-                type="file"
-                accept=".csv"
-                @change="handleCsvUpload('speakers', $event)"
-              />
-            </label>
           </section>
         </section>
 
@@ -904,30 +792,9 @@
       <div class="card stack" v-show="activeEntityTab === 'institutions'">
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
-          <div class="row entry-mode-row">
-            <span class="muted small">{{ $t('入力方式') }}</span>
-            <div class="entry-mode-switch" role="group" :aria-label="$t('入力方式')">
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'manual' }"
-                @click="entityEntryMode = 'manual'"
-              >
-                {{ $t('手動入力') }}
-              </button>
-              <button
-                type="button"
-                class="entry-mode-button"
-                :class="{ active: entityEntryMode === 'csv' }"
-                @click="entityEntryMode = 'csv'"
-              >
-                {{ $t('CSV取り込み') }}
-              </button>
-            </div>
-          </div>
-          <section v-if="entityEntryMode === 'manual'" class="stack block-panel">
+          <section class="stack block-panel">
             <form class="grid" @submit.prevent="handleCreateInstitution">
-              <Field :label="$t('機関名')" required v-slot="{ id, describedBy }">
+              <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="institutionForm.name"
                   type="text"
@@ -935,14 +802,21 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
-                <input
-                  v-model="institutionForm.category"
-                  type="text"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  :placeholder="$t('例: institution / region / league')"
-                />
+              <Field :label="$t('カテゴリ')">
+                <template #label-suffix>
+                  <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <select v-model="institutionForm.category" :id="id" :aria-describedby="describedBy">
+                    <option
+                      v-for="option in institutionCategoryOptions"
+                      :key="`institution-category-create-${option.value}`"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </template>
               </Field>
               <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
                 <input
@@ -958,19 +832,17 @@
                 <Button type="submit" size="sm" :disabled="institutions.loading">{{
                   $t('追加')
                 }}</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="institutions.loading"
+                  @click="openEntityImportModal('institutions')"
+                >
+                  {{ $t('CSV取り込み') }}
+                </Button>
               </div>
             </form>
-          </section>
-          <section v-else class="stack block-panel">
-            <label class="stack">
-              <span class="muted small">{{ $t('CSV例: Institution A,region,2') }}</span>
-              <input
-                class="csv-file-input"
-                type="file"
-                accept=".csv"
-                @change="handleCsvUpload('institutions', $event)"
-              />
-            </label>
           </section>
         </section>
 
@@ -980,7 +852,7 @@
               v-model="institutionSearch"
               :id="id"
               :aria-describedby="describedBy"
-              :placeholder="$t('機関名で検索')"
+              :placeholder="$t('コンフリクトグループ名で検索')"
             />
           </Field>
           <p v-if="institutions.error" class="error">{{ institutions.error }}</p>
@@ -1028,6 +900,84 @@
     </div>
 
     <div
+      v-if="showRoundDefaultsModal && activeSection === 'overview'"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="showRoundDefaultsModal = false"
+    >
+      <div class="modal card stack entity-edit-modal" role="dialog" aria-modal="true">
+        <div class="row">
+          <strong>{{ $t('ラウンドデフォルト設定') }}</strong>
+          <Button variant="ghost" size="sm" @click="showRoundDefaultsModal = false">{{
+            $t('閉じる')
+          }}</Button>
+        </div>
+        <section class="stack setup-round-config-group">
+          <RoundOptionEditor
+            v-model:evaluate-from-adjudicators="roundDefaultsForm.userDefinedData.evaluate_from_adjudicators"
+            v-model:evaluate-from-teams="roundDefaultsForm.userDefinedData.evaluate_from_teams"
+            v-model:chairs-always-evaluated="roundDefaultsForm.userDefinedData.chairs_always_evaluated"
+            v-model:evaluator-in-team="roundDefaultsForm.userDefinedData.evaluator_in_team"
+            v-model:no-speaker-score="roundDefaultsForm.userDefinedData.no_speaker_score"
+            v-model:allow-low-tie-win="roundDefaultsForm.userDefinedData.allow_low_tie_win"
+            v-model:score-by-matter-manner="roundDefaultsForm.userDefinedData.score_by_matter_manner"
+            v-model:poi="roundDefaultsForm.userDefinedData.poi"
+            v-model:best="roundDefaultsForm.userDefinedData.best"
+            :disabled="isLoading"
+          />
+        </section>
+        <section class="stack setup-round-config-group">
+          <CompileOptionsEditor
+            v-model:source="roundDefaultsForm.compile.source"
+            v-model:source-rounds="roundDefaultsForm.compile.source_rounds"
+            v-model:ranking-preset="roundDefaultsForm.compile.options.ranking_priority.preset"
+            v-model:ranking-order="roundDefaultsForm.compile.options.ranking_priority.order"
+            v-model:winner-policy="roundDefaultsForm.compile.options.winner_policy"
+            v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
+            v-model:merge-policy="roundDefaultsForm.compile.options.duplicate_normalization.merge_policy"
+            v-model:poi-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation"
+            v-model:best-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation"
+            v-model:missing-data-policy="roundDefaultsForm.compile.options.missing_data_policy"
+            v-model:include-labels="roundDefaultsForm.compile.options.include_labels"
+            :disabled="isLoading"
+          />
+        </section>
+        <section v-if="setupRoundForm.type === 'break'" class="stack setup-round-config-group">
+          <BreakPolicyEditor
+            v-model:source="roundDefaultsForm.break.source"
+            v-model:size="roundDefaultsForm.break.size"
+            v-model:cutoff-tie-policy="roundDefaultsForm.break.cutoff_tie_policy"
+            v-model:seeding="roundDefaultsForm.break.seeding"
+            :disabled="isLoading"
+          />
+        </section>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="showRoundDefaultsModal = false">{{
+            $t('取消')
+          }}</Button>
+          <Button size="sm" :disabled="isLoading" @click="saveRoundDefaults">
+            {{ $t('ラウンドデフォルトを保存') }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <ImportTextModal
+      :open="activeSection === 'data' && showEntityImportModal"
+      v-model:text="entityImportText"
+      :title="entityImportTitle"
+      :help-text="entityImportHelpText"
+      :placeholder="entityImportPlaceholder"
+      :description="entityImportDescription"
+      :example="entityImportExample"
+      :error="entityImportError"
+      :disabled="isLoading"
+      @file-change="handleEntityImportFile"
+      @close="closeEntityImportModal"
+      @submit="applyEntityImport"
+    />
+
+    <div
       v-if="activeSection === 'data' && editingEntity"
       class="modal-backdrop"
       role="presentation"
@@ -1049,18 +999,6 @@
                 {{ inst.name }}
               </option>
             </select>
-          </Field>
-          <Field
-            class="full"
-            :label="$t('追加スピーカー（カンマ(,)区切り）')"
-            v-slot="{ id, describedBy }"
-          >
-            <input
-              v-model="entityForm.speakers"
-              type="text"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
           </Field>
           <Field class="full" :label="$t('既存スピーカーから選択')" v-slot="{ id, describedBy }">
             <div class="stack relation-group">
@@ -1095,27 +1033,37 @@
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
-          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-            <input
-              v-model.number="entityForm.strength"
-              type="number"
-              min="0"
-              max="10"
-              step="0.1"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
+          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
+            <template #label-suffix>
+              <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <input
+                v-model.number="entityForm.strength"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+                :id="id"
+                :aria-describedby="describedBy"
+              />
+            </template>
           </Field>
-          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')" v-slot="{ id, describedBy }">
-            <input
-              v-model.number="entityForm.preev"
-              type="number"
-              min="0"
-              max="10"
-              step="0.1"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
+          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
+            <template #label-suffix>
+              <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <input
+                v-model.number="entityForm.preev"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+                :id="id"
+                :aria-describedby="describedBy"
+              />
+            </template>
           </Field>
           <div class="availability-control">
             <label class="row small">
@@ -1128,7 +1076,7 @@
             <input
               v-model="editAdjudicatorInstitutionSearch"
               type="text"
-              :placeholder="$t('機関名で検索')"
+              :placeholder="$t('コンフリクトグループ名で検索')"
             />
             <div class="relation-picker">
               <label
@@ -1175,17 +1123,24 @@
           </div>
         </div>
         <div class="grid" v-else-if="editingEntity.type === 'institution'">
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
+          <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
-          <Field :label="$t('カテゴリ')" v-slot="{ id, describedBy }">
-            <input
-              v-model="entityForm.category"
-              type="text"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('例: institution / region / league')"
-            />
+          <Field :label="$t('カテゴリ')">
+            <template #label-suffix>
+              <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+            </template>
+            <template #default="{ id, describedBy }">
+              <select v-model="entityForm.category" :id="id" :aria-describedby="describedBy">
+                <option
+                  v-for="option in institutionCategoryOptions"
+                  :key="`institution-category-edit-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </template>
           </Field>
           <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
             <input
@@ -1256,19 +1211,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { api } from '@/utils/api'
 import { useTournamentStore } from '@/stores/tournament'
 import { useStylesStore } from '@/stores/styles'
 import { useRoundsStore } from '@/stores/rounds'
+import { useDrawsStore } from '@/stores/draws'
 import { useTeamsStore } from '@/stores/teams'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useVenuesStore } from '@/stores/venues'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useInstitutionsStore } from '@/stores/institutions'
+import { useSubmissionsStore } from '@/stores/submissions'
 import { renderMarkdown } from '@/utils/markdown'
 import {
   buildRoundUserDefinedFromDefaults,
@@ -1276,20 +1233,30 @@ import {
   normalizeRoundDefaults,
   serializeRoundDefaults,
 } from '@/utils/round-defaults'
+import { normalizeCompileOptions } from '@/types/compiled'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import CollapseHeader from '@/components/common/CollapseHeader.vue'
+import HelpTip from '@/components/common/HelpTip.vue'
+import ImportTextModal from '@/components/common/ImportTextModal.vue'
+import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
+import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
+import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 
 const route = useRoute()
-const router = useRouter()
 const tournamentStore = useTournamentStore()
 const styles = useStylesStore()
 const rounds = useRoundsStore()
+const draws = useDrawsStore()
 const teams = useTeamsStore()
 const adjudicators = useAdjudicatorsStore()
 const venues = useVenuesStore()
 const speakers = useSpeakersStore()
 const institutions = useInstitutionsStore()
+const submissions = useSubmissionsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -1307,29 +1274,23 @@ const isLoading = computed(
     tournamentStore.loading ||
     styles.loading ||
     rounds.loading ||
+    draws.loading ||
     teams.loading ||
     adjudicators.loading ||
     venues.loading ||
     speakers.loading ||
-    institutions.loading
+    institutions.loading ||
+    submissions.loading
 )
-
-function setActiveSection(section: 'overview' | 'data') {
-  const query = { ...route.query } as Record<string, any>
-  if (section === 'data') {
-    query.section = 'data'
-  } else {
-    delete query.section
-  }
-  router.replace({ path: route.path, query })
-}
+const roundPublicationBusy = computed(() => rounds.loading || sectionLoading.value)
+const DEFAULT_TOURNAMENT_ACCESS_PASSWORD = 'password'
 
 const tournamentForm = reactive({
   name: '',
   style: 1,
   hidden: false,
   accessRequired: false,
-  accessPassword: '',
+  accessPassword: DEFAULT_TOURNAMENT_ACCESS_PASSWORD,
   infoText: '',
 })
 const roundDefaultsForm = reactive(defaultRoundDefaults())
@@ -1348,13 +1309,24 @@ const setupRoundEditForm = reactive<{
   round: number
   name: string
   type: 'standard' | 'break'
+  userDefinedData: ReturnType<typeof defaultRoundDefaults>['userDefinedData']
+  break: ReturnType<typeof defaultRoundDefaults>['break']
+  compile: ReturnType<typeof defaultRoundDefaults>['compile']
 }>({
   round: 1,
   name: '',
   type: 'standard',
+  userDefinedData: { ...defaultRoundDefaults().userDefinedData },
+  break: { ...defaultRoundDefaults().break },
+  compile: {
+    ...defaultRoundDefaults().compile,
+    source_rounds: [...defaultRoundDefaults().compile.source_rounds],
+    options: normalizeCompileOptions(defaultRoundDefaults().compile.options),
+  },
 })
 const setupRoundEditError = ref('')
 const setupRoundDetailsOpen = ref<Record<string, boolean>>({})
+const showRoundDefaultsModal = ref(false)
 const isTournamentPublic = computed({
   get: () => !tournamentForm.hidden,
   set: (value: boolean) => {
@@ -1362,11 +1334,21 @@ const isTournamentPublic = computed({
   },
 })
 const accessPasswordConfigured = ref(false)
+const isApplyingTournamentForm = ref(false)
+const isSavingTournamentAutosave = ref(false)
+const pendingTournamentAutosave = ref(false)
+const tournamentAutosaveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const tournamentAutosaveError = ref('')
+const isSavingNotice = ref(false)
+const noticeSaveError = ref('')
+const noticeSaved = ref(false)
+let tournamentAutosaveTimer: number | null = null
+let tournamentAutosaveStatusTimer: number | null = null
+let noticeSavedTimer: number | null = null
 
 const teamForm = reactive({
   name: '',
   institutionId: '',
-  speakers: '',
 })
 const teamSpeakerSearch = ref('')
 const teamSelectedSpeakerIds = ref<string[]>([])
@@ -1389,10 +1371,14 @@ const institutionForm = reactive({
   priority: 1,
 })
 
+const institutionCategoryOptions = [
+  { value: 'institution', label: 'institution' },
+  { value: 'region', label: 'region' },
+  { value: 'league', label: 'league' },
+] as const
+
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('teams')
-type EntityEntryMode = 'manual' | 'csv'
-const entityEntryMode = ref<EntityEntryMode>('manual')
 const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
   { key: 'teams', label: t('チーム') },
   { key: 'adjudicators', label: t('ジャッジ') },
@@ -1400,6 +1386,63 @@ const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
   { key: 'institutions', label: t('所属機関') },
   { key: 'venues', label: t('会場') },
 ])
+const showEntityImportModal = ref(false)
+const entityImportType = ref<EntityTabKey | null>(null)
+const entityImportText = ref('')
+const entityImportError = ref<string | null>(null)
+
+function entityTabLabel(type: EntityTabKey | null) {
+  if (!type) return ''
+  const map: Record<EntityTabKey, string> = {
+    teams: t('チーム'),
+    adjudicators: t('ジャッジ'),
+    venues: t('会場'),
+    speakers: t('スピーカー'),
+    institutions: t('所属機関'),
+  }
+  return map[type]
+}
+
+const entityImportTitle = computed(() => {
+  const label = entityTabLabel(entityImportType.value)
+  if (!label) return t('CSV取り込み')
+  return `${label} ${t('CSV取り込み')}`
+})
+
+const entityImportHelpText = computed(() =>
+  t('CSV/TSVを貼り付けるか、ファイルを選択して一括取り込みできます。')
+)
+
+const entityImportPlaceholder = computed(() => {
+  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'adjudicators') {
+    return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
+  }
+  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
+  if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
+  return ''
+})
+
+const entityImportDescription = computed(() => {
+  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'adjudicators') {
+    return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
+  }
+  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
+  if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
+  return ''
+})
+
+const entityImportExample = computed(() => {
+  if (entityImportType.value === 'teams') return 'Team A,Institution A,Speaker 1|Speaker 2'
+  if (entityImportType.value === 'adjudicators') return 'name,strength,preev,active,available,conflicts,available_r1'
+  if (entityImportType.value === 'venues') return 'Room 101'
+  if (entityImportType.value === 'speakers') return 'Speaker A'
+  if (entityImportType.value === 'institutions') return 'Institution A,region,2'
+  return ''
+})
 
 const teamSearch = ref('')
 const adjudicatorSearch = ref('')
@@ -1423,7 +1466,6 @@ const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(nul
 const entityForm = reactive<any>({
   name: '',
   institutionId: '',
-  speakers: '',
   strength: 5,
   preev: 0,
   active: true,
@@ -1590,13 +1632,30 @@ const visibleSpeakers = computed(() => filteredSpeakers.value.slice(0, speakerLi
 const visibleInstitutions = computed(() =>
   filteredInstitutions.value.slice(0, institutionLimit.value)
 )
-
+const canSaveTournamentName = computed(() => {
+  const next = tournamentForm.name.trim()
+  const current = String(tournament.value?.name ?? '').trim()
+  return next.length > 0 && next !== current
+})
+const canSaveTournamentNotice = computed(() => {
+  const next = String(tournamentForm.infoText ?? '')
+  const current = String(tournament.value?.user_defined_data?.info?.text ?? '')
+  return next !== current
+})
 
 const accessPasswordHelpText = computed(() => {
-  if (accessPasswordConfigured.value) {
-    return t('大会パスワードは表示・編集できます。空欄で保存すると解除されます。')
+  if (tournamentForm.accessRequired) {
+    return t('空欄にすると大会パスワード設定を解除し、初期値に戻します。')
   }
-  return t('大会パスワードを設定すると、参加者に入力を求められます。')
+  return t('スイッチをオンにすると編集できます。未設定時の初期値は "password" です。')
+})
+const tournamentAutosaveText = computed(() => {
+  if (tournamentAutosaveStatus.value === 'saving') return t('大会設定を保存中...')
+  if (tournamentAutosaveStatus.value === 'saved') return t('大会設定を自動保存しました。')
+  if (tournamentAutosaveStatus.value === 'error') {
+    return tournamentAutosaveError.value || t('大会設定の保存に失敗しました。')
+  }
+  return t('大会設定（重要なお知らせを除く）の変更は自動で保存されます。')
 })
 const infoPreviewHtml = computed(() => renderMarkdown(tournamentForm.infoText ?? ''))
 
@@ -1685,28 +1744,45 @@ function entityTypeLabel(type: string) {
   return map[type] ?? type
 }
 
+function applyAccessForm(authValue: unknown) {
+  const auth = authValue && typeof authValue === 'object' ? (authValue as Record<string, any>) : {}
+  const access =
+    auth.access && typeof auth.access === 'object' ? (auth.access as Record<string, any>) : {}
+  const required = access.required === true
+  const savedAccessPassword =
+    typeof access.password === 'string' ? String(access.password).trim() : ''
+  const hasPassword = access.hasPassword === true || savedAccessPassword.length > 0
+  accessPasswordConfigured.value = required && hasPassword
+  tournamentForm.accessRequired = required
+  tournamentForm.accessPassword =
+    required && savedAccessPassword.length > 0
+      ? savedAccessPassword
+      : DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+}
+
 function applyTournamentForm() {
   if (!tournament.value) return
+  isApplyingTournamentForm.value = true
   tournamentForm.name = tournament.value.name
   tournamentForm.style = tournament.value.style
   tournamentForm.hidden = Boolean(tournament.value.user_defined_data?.hidden)
-  tournamentForm.accessRequired = Boolean(tournament.value.auth?.access?.required)
-  const savedAccessPassword =
-    typeof tournament.value.auth?.access?.password === 'string'
-      ? String(tournament.value.auth.access.password)
-      : ''
-  accessPasswordConfigured.value = Boolean(
-    tournament.value.auth?.access?.hasPassword || savedAccessPassword
-  )
-  tournamentForm.accessPassword = savedAccessPassword
+  applyAccessForm(tournament.value.auth)
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
   applyRoundDefaultsForm()
+  void nextTick(() => {
+    isApplyingTournamentForm.value = false
+  })
 }
 
 function applyRoundDefaultsForm() {
   const normalized = normalizeRoundDefaults(tournament.value?.user_defined_data?.round_defaults)
   Object.assign(roundDefaultsForm.userDefinedData, normalized.userDefinedData)
   Object.assign(roundDefaultsForm.break, normalized.break)
+  Object.assign(roundDefaultsForm.compile, {
+    ...normalized.compile,
+    source_rounds: [...normalized.compile.source_rounds],
+    options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
+  })
 }
 
 async function refresh() {
@@ -1717,11 +1793,13 @@ async function refresh() {
       tournamentStore.fetchTournaments(),
       styles.fetchStyles(),
       rounds.fetchRounds(tournamentId.value),
+      draws.fetchDraws(tournamentId.value),
       teams.fetchTeams(tournamentId.value),
       adjudicators.fetchAdjudicators(tournamentId.value),
       venues.fetchVenues(tournamentId.value),
       speakers.fetchSpeakers(tournamentId.value),
       institutions.fetchInstitutions(tournamentId.value),
+      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
     ])
     applyTournamentForm()
   } finally {
@@ -1732,31 +1810,44 @@ async function refresh() {
 async function refreshEntities() {
   await Promise.all([
     rounds.fetchRounds(tournamentId.value),
+    draws.fetchDraws(tournamentId.value),
     teams.fetchTeams(tournamentId.value),
     adjudicators.fetchAdjudicators(tournamentId.value),
     venues.fetchVenues(tournamentId.value),
     speakers.fetchSpeakers(tournamentId.value),
     institutions.fetchInstitutions(tournamentId.value),
+    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
   ])
 }
 
-async function saveTournament() {
-  if (!tournament.value) return
+async function saveTournament(options: { includeName?: boolean; includeInfo?: boolean } = {}) {
+  if (!tournament.value) return false
+  const includeName = options.includeName ?? true
+  const includeInfo = options.includeInfo ?? false
   const passwordInput = tournamentForm.accessPassword.trim()
-  const info = {
-    text: tournamentForm.infoText,
-    time: new Date().toISOString(),
-  }
+  const nextPassword = passwordInput || DEFAULT_TOURNAMENT_ACCESS_PASSWORD
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
+  const currentInfo = nextUserDefined.info && typeof nextUserDefined.info === 'object'
+    ? { ...(nextUserDefined.info as Record<string, any>) }
+    : {}
+  const info = includeInfo
+    ? {
+        ...currentInfo,
+        text: tournamentForm.infoText,
+        time: new Date().toISOString(),
+      }
+    : currentInfo
   const authPayload: Record<string, any> = {}
   authPayload.access = { required: tournamentForm.accessRequired }
   if (tournamentForm.accessRequired) {
-    authPayload.access.password = passwordInput || null
+    authPayload.access.password = nextPassword
+  } else {
+    authPayload.access.password = null
   }
   const updated = await tournamentStore.updateTournament({
     tournamentId: tournament.value._id,
-    name: tournamentForm.name,
+    name: includeName ? tournamentForm.name : tournament.value.name,
     style: tournamentForm.style,
     auth: authPayload,
     user_defined_data: {
@@ -1766,12 +1857,72 @@ async function saveTournament() {
     },
   })
   if (updated) {
-    const savedAccessPassword =
-      typeof updated.auth?.access?.password === 'string' ? String(updated.auth.access.password) : ''
-    accessPasswordConfigured.value = Boolean(
-      updated.auth?.access?.hasPassword || savedAccessPassword
-    )
-    tournamentForm.accessPassword = savedAccessPassword
+    isApplyingTournamentForm.value = true
+    applyAccessForm(updated.auth)
+    void nextTick(() => {
+      isApplyingTournamentForm.value = false
+    })
+    tournamentAutosaveStatus.value = 'saved'
+    tournamentAutosaveError.value = ''
+    if (tournamentAutosaveStatusTimer) {
+      window.clearTimeout(tournamentAutosaveStatusTimer)
+    }
+    tournamentAutosaveStatusTimer = window.setTimeout(() => {
+      tournamentAutosaveStatus.value = 'idle'
+    }, 1200)
+    return true
+  }
+  tournamentAutosaveStatus.value = 'error'
+  tournamentAutosaveError.value = tournamentStore.error ?? t('大会設定の保存に失敗しました。')
+  return false
+}
+
+async function saveTournamentName() {
+  if (!canSaveTournamentName.value) return
+  await saveTournament({ includeName: true, includeInfo: false })
+}
+
+async function saveTournamentNotice() {
+  if (!canSaveTournamentNotice.value || isSavingNotice.value) return
+  noticeSaveError.value = ''
+  noticeSaved.value = false
+  isSavingNotice.value = true
+  const ok = await saveTournament({ includeName: false, includeInfo: true })
+  isSavingNotice.value = false
+  if (!ok) {
+    noticeSaveError.value = tournamentStore.error ?? t('重要なお知らせの更新に失敗しました。')
+    return
+  }
+  noticeSaved.value = true
+  if (noticeSavedTimer) {
+    window.clearTimeout(noticeSavedTimer)
+  }
+  noticeSavedTimer = window.setTimeout(() => {
+    noticeSaved.value = false
+  }, 1400)
+}
+
+function queueTournamentAutosave() {
+  if (isApplyingTournamentForm.value || !tournament.value) return
+  pendingTournamentAutosave.value = true
+  if (tournamentAutosaveTimer) {
+    window.clearTimeout(tournamentAutosaveTimer)
+  }
+  tournamentAutosaveTimer = window.setTimeout(() => {
+    void flushTournamentAutosave()
+  }, 500)
+}
+
+async function flushTournamentAutosave() {
+  if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value) return
+  if (isSavingTournamentAutosave.value) return
+  pendingTournamentAutosave.value = false
+  isSavingTournamentAutosave.value = true
+  tournamentAutosaveStatus.value = 'saving'
+  await saveTournament({ includeName: false, includeInfo: false })
+  isSavingTournamentAutosave.value = false
+  if (pendingTournamentAutosave.value) {
+    void flushTournamentAutosave()
   }
 }
 
@@ -1793,12 +1944,37 @@ function roundTypeLabel(round: any) {
   return isBreak ? t('ブレイク') : t('通常ラウンド')
 }
 
-function roundSettingsEmbedUrl(roundNumber: number) {
-  const params = new URLSearchParams({
-    embed: '1',
-    round: String(roundNumber),
+async function onSetupMotionOpenedChange(round: any, checked: boolean) {
+  const updated = await rounds.updateRound({
+    tournamentId: tournamentId.value,
+    roundId: String(round._id),
+    motionOpened: Boolean(checked),
   })
-  return `/admin-embed/${tournamentId.value}/rounds/settings?${params.toString()}`
+  if (updated?._id) {
+    await rounds.fetchRounds(tournamentId.value)
+  }
+}
+
+async function onSetupTeamAllocationChange(round: any, checked: boolean) {
+  const updated = await rounds.updateRound({
+    tournamentId: tournamentId.value,
+    roundId: String(round._id),
+    teamAllocationOpened: Boolean(checked),
+  })
+  if (updated?._id) {
+    await rounds.fetchRounds(tournamentId.value)
+  }
+}
+
+async function onSetupAdjudicatorAllocationChange(round: any, checked: boolean) {
+  const updated = await rounds.updateRound({
+    tournamentId: tournamentId.value,
+    roundId: String(round._id),
+    adjudicatorAllocationOpened: Boolean(checked),
+  })
+  if (updated?._id) {
+    await rounds.fetchRounds(tournamentId.value)
+  }
 }
 
 function isSetupRoundDetailsOpen(roundId: string) {
@@ -1810,10 +1986,7 @@ function onSetupRoundDetailsToggle(round: any, event: Event) {
   if (!roundId) return
   const details = event.target as HTMLDetailsElement | null
   const isOpen = Boolean(details?.open)
-  setupRoundDetailsOpen.value = {
-    ...setupRoundDetailsOpen.value,
-    [roundId]: isOpen,
-  }
+  setupRoundDetailsOpen.value = isOpen ? { [roundId]: true } : {}
   if (isOpen) {
     startEditRoundFromSetup(round)
   }
@@ -1843,6 +2016,31 @@ function normalizeBreakConfigForRoundEdit(input: unknown) {
     seeding: source.seeding === 'high_low' ? 'high_low' : breakDefaults.seeding,
     participants: Array.isArray(source.participants) ? source.participants : [],
   }
+}
+
+function compileSourceRoundOptions(targetRound: number): number[] {
+  return sortedRounds.value
+    .map((round) => Number(round.round))
+    .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound)
+    .sort((left, right) => left - right)
+}
+
+function compileSourceRoundSelectOptions(targetRound: number): Array<{ value: number; label: string }> {
+  return compileSourceRoundOptions(targetRound).map((roundNumber) => ({
+    value: roundNumber,
+    label: t('ラウンド {round}', { round: roundNumber }),
+  }))
+}
+
+function normalizeCompileSourceRoundsForRound(roundNumber: number, sourceRounds: unknown): number[] {
+  if (!Array.isArray(sourceRounds)) return []
+  return Array.from(
+    new Set(
+      sourceRounds
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
+    )
+  ).sort((left, right) => left - right)
 }
 
 async function createRoundFromSetup() {
@@ -1893,6 +2091,19 @@ function startEditRoundFromSetup(round: any) {
   setupRoundEditForm.round = Number(round?.round ?? 1)
   setupRoundEditForm.name = String(round?.name ?? '')
   setupRoundEditForm.type = roundTypeValue(round)
+  const userDefined = round?.userDefinedData ?? {}
+  const normalized = normalizeRoundDefaults({
+    userDefinedData: userDefined,
+    break: userDefined.break,
+    compile: userDefined.compile,
+  })
+  Object.assign(setupRoundEditForm.userDefinedData, normalized.userDefinedData)
+  Object.assign(setupRoundEditForm.break, normalized.break)
+  Object.assign(setupRoundEditForm.compile, {
+    ...normalized.compile,
+    source_rounds: [...normalized.compile.source_rounds],
+    options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
+  })
 }
 
 function cancelEditRoundFromSetup() {
@@ -1901,6 +2112,13 @@ function cancelEditRoundFromSetup() {
   setupRoundEditForm.round = setupSuggestedRoundNumber.value
   setupRoundEditForm.name = ''
   setupRoundEditForm.type = 'standard'
+  Object.assign(setupRoundEditForm.userDefinedData, defaultRoundDefaults().userDefinedData)
+  Object.assign(setupRoundEditForm.break, defaultRoundDefaults().break)
+  Object.assign(setupRoundEditForm.compile, {
+    ...defaultRoundDefaults().compile,
+    source_rounds: [...defaultRoundDefaults().compile.source_rounds],
+    options: normalizeCompileOptions(defaultRoundDefaults().compile.options),
+  })
 }
 
 async function saveEditRoundFromSetup(round: any) {
@@ -1927,11 +2145,38 @@ async function saveEditRoundFromSetup(round: any) {
       ? ({ ...(round.userDefinedData as Record<string, any>) } as Record<string, any>)
       : {}
   const normalizedBreak = normalizeBreakConfigForRoundEdit(currentUserDefined.break)
+  const breakSizeRaw = Number(setupRoundEditForm.break.size)
+  const breakSize = Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1
+    ? breakSizeRaw
+    : defaultRoundDefaults().break.size
+  const breakCutoffTiePolicy =
+    setupRoundEditForm.break.cutoff_tie_policy === 'include_all' ||
+    setupRoundEditForm.break.cutoff_tie_policy === 'strict'
+      ? setupRoundEditForm.break.cutoff_tie_policy
+      : 'manual'
+  const compileSourceRounds = normalizeCompileSourceRoundsForRound(
+    roundNumber,
+    setupRoundEditForm.compile.source_rounds
+  )
+  const compileOptions = normalizeCompileOptions(setupRoundEditForm.compile.options)
   const nextUserDefined: Record<string, any> = {
     ...currentUserDefined,
+    ...setupRoundEditForm.userDefinedData,
+    evaluator_in_team:
+      setupRoundEditForm.userDefinedData.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+    hidden: false,
     break: {
       ...normalizedBreak,
       enabled: setupRoundEditForm.type === 'break',
+      source: setupRoundEditForm.break.source === 'raw' ? 'raw' : 'submissions',
+      size: breakSize,
+      cutoff_tie_policy: breakCutoffTiePolicy,
+      seeding: 'high_low',
+    },
+    compile: {
+      source: setupRoundEditForm.compile.source === 'raw' ? 'raw' : 'submissions',
+      source_rounds: compileSourceRounds,
+      options: compileOptions,
     },
   }
 
@@ -1948,13 +2193,6 @@ async function saveEditRoundFromSetup(round: any) {
   }
 
   cancelEditRoundFromSetup()
-}
-
-function parseNameList(value: string) {
-  return value
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
 }
 
 function speakerNamesFromIds(ids: string[]) {
@@ -1986,9 +2224,16 @@ function resolveInstitutionId(value?: string) {
   return matched?._id ?? ''
 }
 
+type InstitutionCategory = (typeof institutionCategoryOptions)[number]['value']
+
+function normalizeInstitutionCategory(value?: string): InstitutionCategory {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'region' || normalized === 'league') return normalized
+  return 'institution'
+}
+
 function institutionCategoryLabel(value?: string) {
-  const normalized = String(value ?? '').trim()
-  return normalized || 'institution'
+  return normalizeInstitutionCategory(value)
 }
 
 function institutionPriorityValue(value?: number) {
@@ -2033,8 +2278,7 @@ function resolveAdjudicatorConflictIds(entity: any): string[] {
 async function handleCreateTeam() {
   if (!teamForm.name) return
   const selectedNames = speakerNamesFromIds(teamSelectedSpeakerIds.value)
-  const manualNames = parseNameList(teamForm.speakers)
-  const speakersList = Array.from(new Set([...selectedNames, ...manualNames])).map((name) => ({
+  const speakersList = Array.from(new Set(selectedNames)).map((name) => ({
     name,
   }))
   const institutionName = resolveInstitutionName(teamForm.institutionId)
@@ -2057,7 +2301,6 @@ async function handleCreateTeam() {
   })
   teamForm.name = ''
   teamForm.institutionId = ''
-  teamForm.speakers = ''
   teamSelectedSpeakerIds.value = []
   teamSpeakerSearch.value = ''
 }
@@ -2138,6 +2381,29 @@ async function handleCreateInstitution() {
   institutionForm.priority = 1
 }
 
+function openEntityImportModal(type: EntityTabKey) {
+  entityImportType.value = type
+  entityImportText.value = ''
+  entityImportError.value = null
+  showEntityImportModal.value = true
+}
+
+function closeEntityImportModal() {
+  showEntityImportModal.value = false
+  entityImportType.value = null
+  entityImportText.value = ''
+  entityImportError.value = null
+}
+
+async function handleEntityImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  entityImportError.value = null
+  entityImportText.value = await file.text()
+  input.value = ''
+}
+
 function openDeleteEntityModal(type: DeleteEntityType, id: string) {
   if (!id) return
   deleteEntityModal.value = { type, id }
@@ -2194,9 +2460,6 @@ function startEditEntity(type: string, entity: any) {
   editingEntity.value = { type, id: entity._id }
   entityForm.name = entity.name ?? ''
   entityForm.institutionId = resolveInstitutionId(entity.institution)
-  entityForm.speakers = Array.isArray(entity.speakers)
-    ? entity.speakers.map((s: any) => s.name).join(', ')
-    : ''
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.active = entity.active ?? true
@@ -2238,10 +2501,7 @@ async function saveEntityEdit() {
   const id = editingEntity.value.id
   if (editingEntity.value.type === 'team') {
     const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
-    const manualNames = parseNameList(entityForm.speakers)
-    const speakersList = Array.from(new Set([...selectedNames, ...manualNames])).map(
-      (name: string) => ({ name })
-    )
+    const speakersList = Array.from(new Set(selectedNames)).map((name: string) => ({ name }))
     const institutionName = resolveInstitutionName(entityForm.institutionId)
     await teams.updateTeam({
       tournamentId: tournamentId.value,
@@ -2407,173 +2667,179 @@ function findHeaderValue(headers: string[], row: string[], keyCandidates: string
   return ''
 }
 
-async function handleCsvUpload(type: string, event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+async function importEntitiesFromText(type: EntityTabKey, text: string) {
+  const { headers, rows } = parseCsv(text)
+  const payload: any[] = []
+  const get = (row: string[], key: string, fallbackIndex: number) => {
+    if (headers.length === 0) return row[fallbackIndex] ?? ''
+    const idx = headers.indexOf(key)
+    return idx >= 0 ? (row[idx] ?? '') : ''
+  }
+  const teamNameMap = new Map<string, string>()
+  teams.teams.forEach((team) => {
+    teamNameMap.set(team._id, team._id)
+    teamNameMap.set(team.name.toLowerCase(), team._id)
+  })
+  const institutionIdMap = new Map<string, string>()
+  institutions.institutions.forEach((inst) => {
+    institutionIdMap.set(inst._id, inst._id)
+    institutionIdMap.set(inst.name, inst._id)
+    institutionIdMap.set(inst.name.toLowerCase(), inst._id)
+  })
+  const resolveConflictIds = (cell: string) => {
+    const ids = splitList(cell).map((token) => {
+      const normalized = token.trim()
+      if (!normalized) return ''
+      return teamNameMap.get(normalized) ?? teamNameMap.get(normalized.toLowerCase()) ?? ''
+    })
+    return Array.from(new Set(ids.filter(Boolean)))
+  }
+  const resolveInstitutionIds = (cell: string) => {
+    const ids = splitList(cell).map((token) => {
+      const normalized = token.trim()
+      if (!normalized) return ''
+      return institutionIdMap.get(normalized) ?? institutionIdMap.get(normalized.toLowerCase()) ?? ''
+    })
+    return Array.from(new Set(ids.filter(Boolean)))
+  }
+  const hasRoundAvailabilityHeader = headers.some(
+    (header) => /^available_r\d+$/.test(header) || /^availability_r\d+$/.test(header)
+  )
+  const hasRoundConflictHeader = headers.some((header) => /^conflicts?_r\d+$/.test(header))
+
+  for (const row of rows) {
+    if (type === 'teams') {
+      const name = get(row, 'name', 0)
+      if (!name) continue
+      const institution = get(row, 'institution', 1)
+      const speakersCell = get(row, 'speakers', 2)
+      const speakersList = splitList(speakersCell).map((n) => ({ name: n }))
+      payload.push({
+        tournamentId: tournamentId.value,
+        name,
+        institution: institution || undefined,
+        speakers: speakersList,
+      })
+    } else if (type === 'adjudicators') {
+      const name = get(row, 'name', 0)
+      if (!name) continue
+      const strength = Number(get(row, 'strength', 1) || 0)
+      const preev = Number(get(row, 'preev', 2) || 0)
+      const activeValue = get(row, 'active', 3)
+      const active = toBooleanCell(activeValue, true)
+      const institutionCell = findHeaderValue(headers, row, ['institutions', 'institution'])
+      const baseInstitutionIds = resolveInstitutionIds(institutionCell)
+      const defaultAvailableCell =
+        headers.length === 0
+          ? (row[4] ?? '')
+          : findHeaderValue(headers, row, ['available', 'availability'])
+      const defaultAvailable = toBooleanCell(defaultAvailableCell, true)
+      const baseConflictCell =
+        headers.length === 0
+          ? (row[5] ?? '')
+          : findHeaderValue(headers, row, ['conflicts', 'conflict'])
+      const baseConflicts = resolveConflictIds(baseConflictCell)
+      const includeDetails =
+        sortedRounds.value.length > 0 &&
+        (defaultAvailable === false ||
+          baseInstitutionIds.length > 0 ||
+          baseConflicts.length > 0 ||
+          hasRoundAvailabilityHeader ||
+          hasRoundConflictHeader)
+      const details = includeDetails
+        ? sortedRounds.value.map((roundItem) => {
+            const availableCell = findHeaderValue(headers, row, [
+              `available_r${roundItem.round}`,
+              `availability_r${roundItem.round}`,
+            ])
+            const available = toBooleanCell(availableCell, defaultAvailable)
+            const conflictCell = findHeaderValue(headers, row, [
+              `conflicts_r${roundItem.round}`,
+              `conflict_r${roundItem.round}`,
+            ])
+            const conflictIds = Array.from(new Set([...baseConflicts, ...resolveConflictIds(conflictCell)]))
+            return {
+              r: roundItem.round,
+              available,
+              institutions: baseInstitutionIds,
+              conflicts: conflictIds,
+            }
+          })
+        : undefined
+      payload.push({
+        tournamentId: tournamentId.value,
+        name,
+        strength,
+        preev,
+        active,
+        details,
+      })
+    } else if (type === 'venues') {
+      const name = get(row, 'name', 0)
+      if (!name) continue
+      const priority = Number(get(row, 'priority', 1) || 1)
+      payload.push({
+        tournamentId: tournamentId.value,
+        name,
+        details: sortedRounds.value.map((round) => ({
+          r: round.round,
+          available: true,
+          priority,
+        })),
+      })
+    } else if (type === 'speakers') {
+      const name = get(row, 'name', 0)
+      if (!name) continue
+      payload.push({ tournamentId: tournamentId.value, name })
+    } else if (type === 'institutions') {
+      const name = get(row, 'name', 0)
+      if (!name) continue
+      const category =
+        headers.length === 0
+          ? (row[1] ?? '')
+          : findHeaderValue(headers, row, ['category', 'kind', 'type'])
+      const priorityRaw =
+        headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
+      payload.push({
+        tournamentId: tournamentId.value,
+        name,
+        category: institutionCategoryLabel(category || undefined),
+        priority: institutionPriorityValue(Number(priorityRaw || 1)),
+      })
+    }
+  }
+
+  if (payload.length === 0) {
+    throw new Error(t('取り込み可能な行がありません。'))
+  }
+  const endpoint =
+    type === 'teams'
+      ? '/teams'
+      : type === 'adjudicators'
+        ? '/adjudicators'
+        : type === 'venues'
+          ? '/venues'
+          : type === 'speakers'
+            ? '/speakers'
+            : '/institutions'
+  await api.post(endpoint, payload)
+  await refreshEntities()
+}
+
+async function applyEntityImport() {
+  if (!entityImportType.value) return
+  entityImportError.value = null
   csvError.value = null
   try {
-    const text = await file.text()
-    const { headers, rows } = parseCsv(text)
-    const payload: any[] = []
-    const get = (row: string[], key: string, fallbackIndex: number) => {
-      if (headers.length === 0) return row[fallbackIndex] ?? ''
-      const idx = headers.indexOf(key)
-      return idx >= 0 ? (row[idx] ?? '') : ''
-    }
-    const teamNameMap = new Map<string, string>()
-    teams.teams.forEach((team) => {
-      teamNameMap.set(team._id, team._id)
-      teamNameMap.set(team.name.toLowerCase(), team._id)
-    })
-    const institutionIdMap = new Map<string, string>()
-    institutions.institutions.forEach((inst) => {
-      institutionIdMap.set(inst._id, inst._id)
-      institutionIdMap.set(inst.name, inst._id)
-      institutionIdMap.set(inst.name.toLowerCase(), inst._id)
-    })
-    const resolveConflictIds = (cell: string) => {
-      const ids = splitList(cell).map((token) => {
-        const normalized = token.trim()
-        if (!normalized) return ''
-        return teamNameMap.get(normalized) ?? teamNameMap.get(normalized.toLowerCase()) ?? ''
-      })
-      return Array.from(new Set(ids.filter(Boolean)))
-    }
-    const resolveInstitutionIds = (cell: string) => {
-      const ids = splitList(cell).map((token) => {
-        const normalized = token.trim()
-        if (!normalized) return ''
-        return (
-          institutionIdMap.get(normalized) ?? institutionIdMap.get(normalized.toLowerCase()) ?? ''
-        )
-      })
-      return Array.from(new Set(ids.filter(Boolean)))
-    }
-    const hasRoundAvailabilityHeader = headers.some(
-      (header) => /^available_r\d+$/.test(header) || /^availability_r\d+$/.test(header)
-    )
-    const hasRoundConflictHeader = headers.some((header) => /^conflicts?_r\d+$/.test(header))
-    for (const row of rows) {
-      if (type === 'teams') {
-        const name = get(row, 'name', 0)
-        if (!name) continue
-        const institution = get(row, 'institution', 1)
-        const speakersCell = get(row, 'speakers', 2)
-        const speakersList = splitList(speakersCell).map((n) => ({ name: n }))
-        payload.push({
-          tournamentId: tournamentId.value,
-          name,
-          institution: institution || undefined,
-          speakers: speakersList,
-        })
-      } else if (type === 'adjudicators') {
-        const name = get(row, 'name', 0)
-        if (!name) continue
-        const strength = Number(get(row, 'strength', 1) || 0)
-        const preev = Number(get(row, 'preev', 2) || 0)
-        const activeValue = get(row, 'active', 3)
-        const active = toBooleanCell(activeValue, true)
-        const institutionCell = findHeaderValue(headers, row, ['institutions', 'institution'])
-        const baseInstitutionIds = resolveInstitutionIds(institutionCell)
-        const defaultAvailableCell =
-          headers.length === 0
-            ? (row[4] ?? '')
-            : findHeaderValue(headers, row, ['available', 'availability'])
-        const defaultAvailable = toBooleanCell(defaultAvailableCell, true)
-        const baseConflictCell =
-          headers.length === 0
-            ? (row[5] ?? '')
-            : findHeaderValue(headers, row, ['conflicts', 'conflict'])
-        const baseConflicts = resolveConflictIds(baseConflictCell)
-        const includeDetails =
-          sortedRounds.value.length > 0 &&
-          (defaultAvailable === false ||
-            baseInstitutionIds.length > 0 ||
-            baseConflicts.length > 0 ||
-            hasRoundAvailabilityHeader ||
-            hasRoundConflictHeader)
-        const details = includeDetails
-          ? sortedRounds.value.map((roundItem) => {
-              const availableCell = findHeaderValue(headers, row, [
-                `available_r${roundItem.round}`,
-                `availability_r${roundItem.round}`,
-              ])
-              const available = toBooleanCell(availableCell, defaultAvailable)
-              const conflictCell = findHeaderValue(headers, row, [
-                `conflicts_r${roundItem.round}`,
-                `conflict_r${roundItem.round}`,
-              ])
-              const conflictIds = Array.from(
-                new Set([...baseConflicts, ...resolveConflictIds(conflictCell)])
-              )
-              return {
-                r: roundItem.round,
-                available,
-                institutions: baseInstitutionIds,
-                conflicts: conflictIds,
-              }
-            })
-          : undefined
-        payload.push({
-          tournamentId: tournamentId.value,
-          name,
-          strength,
-          preev,
-          active,
-          details,
-        })
-      } else if (type === 'venues') {
-        const name = get(row, 'name', 0)
-        if (!name) continue
-        const priority = Number(get(row, 'priority', 1) || 1)
-        payload.push({
-          tournamentId: tournamentId.value,
-          name,
-          details: sortedRounds.value.map((round) => ({
-            r: round.round,
-            available: true,
-            priority,
-          })),
-        })
-      } else if (type === 'speakers') {
-        const name = get(row, 'name', 0)
-        if (!name) continue
-        payload.push({ tournamentId: tournamentId.value, name })
-      } else if (type === 'institutions') {
-        const name = get(row, 'name', 0)
-        if (!name) continue
-        const category =
-          headers.length === 0
-            ? (row[1] ?? '')
-            : findHeaderValue(headers, row, ['category', 'kind', 'type'])
-        const priorityRaw = headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
-        payload.push({
-          tournamentId: tournamentId.value,
-          name,
-          category: institutionCategoryLabel(category || undefined),
-          priority: institutionPriorityValue(Number(priorityRaw || 1)),
-        })
-      }
-    }
-
-    if (payload.length === 0) return
-    const endpoint =
-      type === 'teams'
-        ? '/teams'
-        : type === 'adjudicators'
-          ? '/adjudicators'
-          : type === 'venues'
-            ? '/venues'
-            : type === 'speakers'
-              ? '/speakers'
-              : '/institutions'
-    await api.post(endpoint, payload)
-    await refreshEntities()
+    await importEntitiesFromText(entityImportType.value, entityImportText.value)
+    closeEntityImportModal()
   } catch (err: any) {
-    csvError.value = err?.response?.data?.errors?.[0]?.message ?? t('CSV取り込みに失敗しました')
-  } finally {
-    input.value = ''
+    const message =
+      err?.response?.data?.errors?.[0]?.message ??
+      err?.message ??
+      t('CSV取り込みに失敗しました')
+    entityImportError.value = message
+    csvError.value = message
   }
 }
 
@@ -2591,10 +2857,73 @@ watch(
 )
 
 watch(
+  () => tournamentForm.accessRequired,
+  (required) => {
+    if (isApplyingTournamentForm.value) return
+    if (!required) {
+      accessPasswordConfigured.value = false
+      if (tournamentForm.accessPassword !== DEFAULT_TOURNAMENT_ACCESS_PASSWORD) {
+        tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+      }
+      return
+    }
+    accessPasswordConfigured.value = true
+    if (!tournamentForm.accessPassword.trim()) {
+      tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+    }
+  }
+)
+
+watch(
+  () => tournamentForm.accessPassword,
+  (password) => {
+    if (isApplyingTournamentForm.value) return
+    if (!tournamentForm.accessRequired) return
+    if (String(password).trim().length > 0) return
+    tournamentForm.accessRequired = false
+    accessPasswordConfigured.value = false
+    tournamentForm.accessPassword = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+  }
+)
+
+watch(
+  () => [
+    tournamentForm.style,
+    tournamentForm.hidden,
+    tournamentForm.accessRequired,
+    tournamentForm.accessPassword,
+  ],
+  () => {
+    queueTournamentAutosave()
+  }
+)
+
+watch(
   tournamentId,
   () => {
+    pendingTournamentAutosave.value = false
+    isSavingTournamentAutosave.value = false
+    isSavingNotice.value = false
+    tournamentAutosaveStatus.value = 'idle'
+    tournamentAutosaveError.value = ''
+    noticeSaveError.value = ''
+    noticeSaved.value = false
+    if (tournamentAutosaveTimer) {
+      window.clearTimeout(tournamentAutosaveTimer)
+      tournamentAutosaveTimer = null
+    }
+    if (tournamentAutosaveStatusTimer) {
+      window.clearTimeout(tournamentAutosaveStatusTimer)
+      tournamentAutosaveStatusTimer = null
+    }
+    if (noticeSavedTimer) {
+      window.clearTimeout(noticeSavedTimer)
+      noticeSavedTimer = null
+    }
     if (editingEntity.value) cancelEditEntity()
     if (setupRoundEditingId.value) cancelEditRoundFromSetup()
+    showRoundDefaultsModal.value = false
+    closeEntityImportModal()
     setupRoundDetailsOpen.value = {}
     refresh()
   },
@@ -2632,9 +2961,27 @@ onUnmounted(() => {
   if (copyTimeout) {
     window.clearTimeout(copyTimeout)
   }
+  if (tournamentAutosaveTimer) {
+    window.clearTimeout(tournamentAutosaveTimer)
+    tournamentAutosaveTimer = null
+  }
+  if (tournamentAutosaveStatusTimer) {
+    window.clearTimeout(tournamentAutosaveStatusTimer)
+    tournamentAutosaveStatusTimer = null
+  }
+  if (noticeSavedTimer) {
+    window.clearTimeout(noticeSavedTimer)
+    noticeSavedTimer = null
+  }
 })
 
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && showRoundDefaultsModal.value) {
+    showRoundDefaultsModal.value = false
+  }
+  if (event.key === 'Escape' && showEntityImportModal.value) {
+    closeEntityImportModal()
+  }
   if (event.key === 'Escape' && editingEntity.value) {
     cancelEditEntity()
   }
@@ -2690,10 +3037,30 @@ function onGlobalKeydown(event: KeyboardEvent) {
   min-height: 0;
 }
 
+.notice-actions {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .overview-setting-card h4 {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.tournament-name-row {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tournament-name-row input {
+  flex: 1 1 auto;
+  margin-bottom: 0;
+}
+
+.tournament-name-submit {
+  flex: 0 0 auto;
 }
 
 .setup-rounds-head {
@@ -2706,24 +3073,53 @@ function onGlobalKeydown(event: KeyboardEvent) {
   align-items: end;
 }
 
+.create-actions {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .setup-round-list {
   padding-top: var(--space-1);
 }
 
 .setup-round-item {
-  justify-content: space-between;
-  align-items: flex-start;
   gap: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-2);
-  flex-wrap: wrap;
+  background: var(--color-surface);
+}
+
+.setup-round-motion-panel {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.publish-switch-inline {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.publish-switch-inline-compact {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.publish-switch-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.publish-switch-toggle {
+  flex: 0 0 auto;
 }
 
 .setup-round-edit-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  flex: 1 1 520px;
-  min-width: min(100%, 520px);
 }
 
 .setup-round-item-actions {
@@ -2738,7 +3134,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .setup-round-details-summary {
@@ -2754,38 +3150,6 @@ function onGlobalKeydown(event: KeyboardEvent) {
   display: none;
 }
 
-.setup-round-toggle-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-muted);
-}
-
-.setup-round-toggle-icon::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--color-muted);
-  border-bottom: 2px solid var(--color-muted);
-  transform: rotate(45deg);
-  transition: transform 0.16s ease;
-  margin-top: -2px;
-}
-
-.setup-round-summary-text {
-  min-width: 0;
-}
-
-.setup-round-details[open] .setup-round-toggle-icon::before {
-  transform: rotate(225deg);
-  margin-top: 1px;
-}
-
 .setup-round-details-body {
   gap: var(--space-2);
   padding: 0 var(--space-2) var(--space-2);
@@ -2795,18 +3159,9 @@ function onGlobalKeydown(event: KeyboardEvent) {
   gap: var(--space-2);
 }
 
-.setup-round-details-frame {
-  width: 100%;
-  min-height: 420px;
-  height: clamp(420px, 56vh, 620px);
-  border: none;
-  display: block;
-  background: var(--color-surface);
-}
-
-.setup-round-details-placeholder {
-  margin: 0;
-  padding: 0 var(--space-3) var(--space-3);
+.setup-round-config-group {
+  padding: 0;
+  gap: var(--space-2);
 }
 
 .settings-options-grid {
@@ -2833,56 +3188,6 @@ function onGlobalKeydown(event: KeyboardEvent) {
   color: var(--color-text);
   font-size: 13px;
   font-weight: 700;
-}
-
-.toggle-switch {
-  position: relative;
-  width: 54px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.toggle-switch input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  margin: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: #cbd5e1;
-  transition: background 0.2s ease;
-}
-
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #fff;
-  top: 3px;
-  left: 3px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
-  transition: transform 0.2s ease;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background: var(--color-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(24px);
-}
-
-.toggle-switch input:focus-visible + .toggle-slider {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
 }
 
 .overview-qr-card h4 {
@@ -2952,6 +3257,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .entity-submit-row {
   grid-column: 1 / -1;
   justify-content: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .availability-control {
@@ -2999,58 +3306,6 @@ textarea {
   padding: var(--space-3);
   display: grid;
   gap: var(--space-3);
-}
-
-.section-row {
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.section-row h3 {
-  margin: 0;
-}
-
-.section-reload {
-  margin-left: 0;
-}
-
-.setup-section-switch {
-  display: inline-flex;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  gap: 0;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.setup-section-tab {
-  border: none;
-  border-right: 1px solid var(--color-border);
-  border-radius: 0;
-  background: var(--color-surface);
-  color: var(--color-muted);
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.setup-section-tab:hover {
-  background: #f8fafc;
-  color: var(--color-primary);
-}
-
-.setup-section-tab.active {
-  background: var(--color-secondary);
-  color: var(--color-primary);
-}
-
-.setup-section-tab:last-child {
-  border-right: none;
 }
 
 .entity-switch {
@@ -3105,79 +3360,12 @@ textarea {
   background: var(--color-surface-muted);
 }
 
-.entry-mode-row {
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.entry-mode-switch {
-  display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-
-.entry-mode-button {
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
-  font: inherit;
-  font-size: 12px;
-  min-height: 30px;
-  padding: 0 12px;
-  cursor: pointer;
-}
-
-.entry-mode-button + .entry-mode-button {
-  border-left: 1px solid var(--color-border);
-}
-
-.entry-mode-button:hover {
-  color: var(--color-primary);
-}
-
-.entry-mode-button.active {
-  background: var(--color-secondary);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
 .relation-group {
   gap: 6px;
 }
 
 .relation-group input[type='text'] {
   margin-bottom: 0;
-}
-
-.csv-file-input {
-  width: 100%;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  background: var(--color-surface);
-  color: var(--color-muted);
-}
-
-.csv-file-input::file-selector-button {
-  appearance: none;
-  border: none;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 8px 12px;
-  margin-right: 10px;
-  cursor: pointer;
-}
-
-.csv-file-input::file-selector-button:hover {
-  filter: brightness(0.96);
 }
 
 .relation-picker {

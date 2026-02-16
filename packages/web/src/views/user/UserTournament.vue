@@ -27,90 +27,13 @@
     </div>
     <LoadingState v-if="sectionLoading" />
     <TournamentNotice v-else-if="showTournamentNotice" :tournament-id="tournamentId" />
-    <div v-if="showSubnav" class="row subnav-row">
-      <nav class="subnav">
-        <RouterLink
-          v-for="link in links"
-          :key="link.to"
-          :to="link.to"
-          class="subnav-link"
-          :class="{ active: isActive(link) }"
-          :aria-current="isActive(link) ? 'page' : undefined"
-        >
-          {{ link.label }}
-        </RouterLink>
-      </nav>
-      <div v-if="showAudienceViewSwitch" class="view-switch" role="group" :aria-label="$t('表示形式')">
-        <button
-          type="button"
-          class="view-button"
-          :class="{ active: audienceViewMode === 'card' }"
-          :aria-pressed="audienceViewMode === 'card' ? 'true' : 'false'"
-          :title="$t('カード表示')"
-          @click="setAudienceViewMode('card')"
-        >
-          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-            <rect
-              x="3"
-              y="4"
-              width="14"
-              height="5"
-              rx="1.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-            <rect
-              x="3"
-              y="11"
-              width="14"
-              height="5"
-              rx="1.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-          </svg>
-          <span>{{ $t('カード表示') }}</span>
-        </button>
-        <button
-          type="button"
-          class="view-button"
-          :class="{ active: audienceViewMode === 'table' }"
-          :aria-pressed="audienceViewMode === 'table' ? 'true' : 'false'"
-          :title="$t('テーブル表示')"
-          @click="setAudienceViewMode('table')"
-        >
-          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-            <rect
-              x="3"
-              y="4"
-              width="14"
-              height="12"
-              rx="1.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-            <path
-              d="M3 8h14M8 4v12M13 4v12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-          </svg>
-          <span>{{ $t('テーブル表示') }}</span>
-        </button>
-      </div>
-    </div>
-
     <RouterView v-if="!sectionLoading" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { useTournamentStore } from '@/stores/tournament'
@@ -119,7 +42,6 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 
 const route = useRoute()
-const router = useRouter()
 const tournamentStore = useTournamentStore()
 const { t } = useI18n({ useScope: 'global' })
 
@@ -134,18 +56,6 @@ const isTournamentHomeRoute = computed(() => {
   return route.path === homePath || route.path === rootPath
 })
 const showTournamentNotice = computed(() => !isTournamentHomeRoute.value)
-const showSubnav = computed(() => {
-  const homePath = `/user/${tournamentId.value}/home`
-  const rootPath = `/user/${tournamentId.value}`
-  if (route.path.includes('/rounds/')) return false
-  return route.path !== homePath && route.path !== rootPath
-})
-const showAudienceViewSwitch = computed(
-  () => route.path === `/user/${tournamentId.value}/audience/home`
-)
-const audienceViewMode = computed<'card' | 'table'>(() =>
-  route.query.viewMode === 'table' ? 'table' : 'card'
-)
 const currentOrigin = computed(() => {
   if (typeof window === 'undefined') return ''
   return window.location.origin
@@ -163,30 +73,6 @@ let qrGenerationId = 0
 const copyStatus = ref<'idle' | 'copied' | 'error'>('idle')
 const copyError = ref('')
 let copyTimeout: number | null = null
-
-type ParticipantLink = {
-  to: string
-  label: string
-  participant: 'audience' | 'speaker' | 'adjudicator'
-}
-
-const links = computed<ParticipantLink[]>(() => [
-  { to: `/user/${tournamentId.value}/audience/home`, label: t('対戦表'), participant: 'audience' },
-  {
-    to: `/user/${tournamentId.value}/speaker/home`,
-    label: t('チーム評価'),
-    participant: 'speaker',
-  },
-  {
-    to: `/user/${tournamentId.value}/adjudicator/home`,
-    label: t('ジャッジ評価'),
-    participant: 'adjudicator',
-  },
-])
-
-function isActive(link: ParticipantLink) {
-  return route.params.participant === link.participant
-}
 
 async function generateQrCode(url: string) {
   const generationId = ++qrGenerationId
@@ -227,17 +113,6 @@ async function copyParticipantUrl() {
     copyStatus.value = 'error'
     copyError.value = t('クリップボードへのコピーに失敗しました。')
   }
-}
-
-function setAudienceViewMode(mode: 'card' | 'table') {
-  if (!showAudienceViewSwitch.value) return
-  if (route.query.viewMode === mode) return
-  router.replace({
-    query: {
-      ...route.query,
-      viewMode: mode,
-    },
-  })
 }
 
 watch(
@@ -320,77 +195,6 @@ onUnmounted(() => {
   display: block;
 }
 
-.subnav-row {
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.subnav {
-  display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--color-surface);
-  margin-bottom: 0;
-}
-
-.subnav-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  color: var(--color-muted);
-  font-weight: 600;
-}
-
-.subnav-link + .subnav-link {
-  border-left: 1px solid var(--color-border);
-}
-
-.subnav-link.router-link-active,
-.subnav-link.active {
-  background: var(--color-secondary);
-  color: var(--color-primary);
-}
-
-.view-switch {
-  display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--color-surface);
-  flex-shrink: 0;
-}
-
-.view-button {
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
-  min-height: 36px;
-  padding: 0 12px;
-  gap: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.view-button + .view-button {
-  border-left: 1px solid var(--color-border);
-}
-
-.view-button.active {
-  background: var(--color-secondary);
-  color: var(--color-primary);
-}
-
 @media (max-width: 720px) {
   .tournament-header {
     align-items: center;
@@ -401,20 +205,5 @@ onUnmounted(() => {
     height: 64px;
   }
 
-  .subnav-row {
-    align-items: flex-start;
-  }
-
-  .subnav-link {
-    min-height: 34px;
-    padding: 0 12px;
-    font-size: 0.85rem;
-  }
-
-  .view-button {
-    min-height: 34px;
-    padding: 0 10px;
-    font-size: 11px;
-  }
 }
 </style>

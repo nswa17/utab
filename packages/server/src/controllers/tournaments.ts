@@ -30,33 +30,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function isTournamentPublic(auth: unknown): boolean {
-  const authObject = asRecord(auth)
-  const accessObject = asRecord(authObject.access)
-  const hasAccessShape = Object.keys(accessObject).length > 0
-
-  if (hasAccessShape) {
-    const access = getTournamentAccessConfig(authObject)
-    return access.required !== true
-  }
-
-  return asRecord(authObject.audience).required !== true
-}
-
-function hasSessionTournamentAccess(req: any, tournamentId: string, auth: unknown): boolean {
-  const sessionAccess = req.session?.tournamentAccess?.[String(tournamentId)]
-  if (!sessionAccess) return false
-
-  const now = Date.now()
-  if (sessionAccess.expiresAt <= now) {
-    delete req.session?.tournamentAccess?.[String(tournamentId)]
-    return false
-  }
-
-  const config = getTournamentAccessConfig(auth)
-  return sessionAccess.version === config.version
-}
-
 function hasTournamentOrganizerAccess(req: any, tournament: any): boolean {
   const role = req.session?.usertype
   if (role === 'superuser') return true
@@ -69,13 +42,9 @@ function hasTournamentOrganizerAccess(req: any, tournament: any): boolean {
 function canViewTournament(req: any, tournament: any): boolean {
   if (hasTournamentOrganizerAccess(req, tournament)) return true
 
-  const tournamentId = String(tournament?._id)
-  const isPublic = isTournamentPublic(tournament?.auth)
-
-  if (hasTournamentMembership(req, tournamentId) && isPublic) return true
-  if (hasSessionTournamentAccess(req, tournamentId, tournament?.auth)) return true
-
-  return isPublic
+  const userDefinedData = asRecord(tournament?.user_defined_data)
+  if (userDefinedData.hidden === true) return false
+  return true
 }
 
 export const listTournaments: RequestHandler = async (req, res, next) => {

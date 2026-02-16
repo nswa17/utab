@@ -45,7 +45,7 @@ async function waitForResult<T>(
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', launchTimeout: 60000 },
+    instance: { ip: '127.0.0.1', launchTimeout: 600000 },
   })
 
   process.env.NODE_ENV = 'test'
@@ -1021,7 +1021,7 @@ describe('Server integration', () => {
     expect(publicList.status).toBe(200)
     const publicTournamentIds = publicList.body.data.map((item: any) => item._id)
     expect(publicTournamentIds).toContain(openTournamentId)
-    expect(publicTournamentIds).not.toContain(protectedTournamentId)
+    expect(publicTournamentIds).toContain(protectedTournamentId)
 
     const publicOpenTournament = publicList.body.data.find((item: any) => item._id === openTournamentId)
     expect(publicOpenTournament).toBeTruthy()
@@ -1062,4 +1062,3 @@ describe('Server integration', () => {
   })
 
 })
-

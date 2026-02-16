@@ -51,6 +51,8 @@ const en = {
   'チームIDを確認してください。': 'Check team IDs.',
   '勝者はチームA/チームBのいずれかを指定してください。':
     'Winner must be either Team A or Team B.',
+  '提出者はジャッジから選択してください。':
+    'For team evaluations, select the submitter from adjudicators.',
   'チーム A の Matter/Manner 件数を一致させてください。':
     'Team A Matter/Manner counts must match.',
   'チーム B の Matter/Manner 件数を一致させてください。':
@@ -118,10 +120,20 @@ const en = {
   大会セットアップ: 'Tournament setup',
   ラウンド運営: 'Round operations',
   '結果確定・レポート': 'Finalize & reports',
+  大会結果レポート: 'Tournament results report',
   ラウンドデフォルト設定: 'Round defaults',
   '新規ラウンド作成時に適用される標準設定です。':
     'Default settings applied when creating a new round.',
   ブレイク基本方針: 'Break defaults',
+  'ブレイクラウンドの集計ソース・人数・シード方式を決めます。':
+    'Configure source, break size, and seeding policy for break rounds.',
+  'ブレイク判定の基準データを選びます。通常は提出データを使います。':
+    'Choose the source used for break determination. Submissions are recommended for normal operation.',
+  'ブレイク進出チーム数です。': 'Number of teams advancing to break.',
+  'カットラインが同点になった時の扱いです。':
+    'How to handle ties at the break cutoff line.',
+  'ブレイク対戦時の初期シード割り当て方式です。':
+    'Initial seeding method used for break pairings.',
   ラウンドデフォルトを保存: 'Save round defaults',
   '新規ラウンドは大会セットアップのラウンドデフォルトを継承します。':
     'New rounds inherit round defaults from tournament setup.',
@@ -134,19 +146,42 @@ const en = {
   開始ステップ: 'Start',
   '前段: {task}': 'Depends on: {task}',
   前ラウンド集計: 'Previous-round compile',
-  '対戦生成に必要な前ラウンド集計が不足しています。未集計: {rounds}':
-    'Missing previous-round compile data required for draw generation. Missing: {rounds}',
+  '対戦表自動生成に必要な前ラウンド集計が不足しています。未集計: {rounds}':
+    'Missing previous-round compile data required for automatic draw generation. Missing: {rounds}',
   'このラウンドには前提となる集計ラウンドがありません。':
     'This round has no prerequisite rounds for compile.',
-  '公開後に提出を回収します。先に公開/ロックで公開してください。':
-    'Collect submissions after publication. Publish/lock first.',
+  '第1ラウンドは集計スナップショットなしで自動生成できます。':
+    'Round 1 can run automatic generation without a compiled snapshot.',
+  '対戦生成では参照スナップショットを選択できます。':
+    'You can choose a reference snapshot for automatic generation.',
+  '対戦生成では参照集計結果を選択できます。未選択でも自動生成できます。':
+    'You can select a reference compile result for draw generation. Auto-generation also works without selecting one.',
+  '公開後に提出を回収します。先に公開設定で公開してください。':
+    'Collect submissions after publication. Publish first in publication settings.',
   '提出回収後に集計を実行します。': 'Run compile after collecting submissions.',
+  '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。':
+    'Compile submissions to finalize standings. Confirm which rounds are included before running.',
   集計設定: 'Compile settings',
   表示スナップショット: 'Displayed snapshot',
+  参照スナップショット: 'Reference snapshot',
+  参照集計結果: 'Reference compile result',
+  日時: 'Date/time',
+  考慮ラウンド: 'Included rounds',
+  '参照可能な集計スナップショットがありません。': 'No compiled snapshots are available for reference.',
+  '参照可能な集計結果がありません。': 'No compile results are available for reference.',
+  '参照できる集計結果がありません。未選択のまま自動生成できます。':
+    'No compile results are available to reference. You can auto-generate without selecting one.',
+  '警告と詳細は次の集計を参照: {label}':
+    'Warnings and details reference this snapshot: {label}',
   '表示中: {label}': 'Showing: {label}',
   '集計スナップショットはまだありません。': 'No compiled snapshots yet.',
+  '前ラウンドの集計スナップショットがありません。先に集計を実行してください。':
+    'No compiled snapshots for previous rounds. Run compile first.',
   '必要な場合のみ詳細再計算を実行してください。':
     'Run detailed recomputation only when needed.',
+  '必要な場合のみ詳細設定で再計算条件を変更してください。':
+    'Change recomputation settings only when needed.',
+  詳細設定: 'Detailed settings',
   詳細再計算を開く: 'Open detailed recomputation',
   詳細再計算を閉じる: 'Close detailed recomputation',
   新画面へ移動: 'Open new flow',
@@ -164,7 +199,7 @@ const en = {
     'The displayed snapshot was compiled from raw results (exception mode).',
   ラウンド運営へ: 'Open round operations',
   次ラウンド対戦生成: 'Next-round pairing',
-  '公開/ロック': 'Publish / Lock',
+  公開設定: 'Publication settings',
   レポートを開く: 'Open reports',
   対戦表設定を開く: 'Open draw settings',
   生結果を開く: 'Open raw results',
@@ -182,12 +217,27 @@ const en = {
   '対象ラウンド: {round}': 'Target round: {round}',
   '次ラウンドの対戦を生成': 'Generate next-round draw',
   'このラウンドの対戦を生成': 'Generate draw for this round',
+  評価者: 'Evaluator',
+  'チーム/スピーカー': 'Team/Speaker',
+  '先にジャッジを選択してください。': 'Select an adjudicator first.',
+  'タスク一覧を表示するには「あなたの情報」でジャッジを選択してください。':
+    "Select an adjudicator in 'Your details' to show tasks.",
+  'タスク一覧を表示するには「あなたの情報」でチームを選択してください。':
+    "Select a team in 'Your details' to show tasks.",
+  'タスク一覧を表示するには「あなたの情報」でチームとスピーカーを選択してください。':
+    "Select a team and speaker in 'Your details' to show tasks.",
   '対戦表設定（この画面内）': 'Draw settings (inline)',
   '生結果（この画面内）': 'Raw results (inline)',
   '提出一覧（この画面内）': 'Submissions (inline)',
   'レポート（この画面内）': 'Reports (inline)',
   強制実行: 'Force run',
   強制実行の確認: 'Confirm force run',
+  '注意: 強制実行は例外運用です。': 'Warning: force run is an exception workflow.',
+  強制実行オプション: 'Force-run options',
+  欠損データの扱い: 'Missing data handling',
+  警告して続行: 'Warn and continue',
+  欠損データを除外: 'Exclude rows with missing data',
+  欠損があれば中止: 'Stop on missing data',
   強制実行する: 'Force run now',
   '強制実行（生結果）': 'Force run (raw results)',
   '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
@@ -222,6 +272,7 @@ const en = {
     'Some ballots are still missing (submitted {submitted}/{expected}). Check submissions.',
   '提出者情報が不足したチーム評価が {count} 件あります。提出一覧で提出者を補完してください。':
     '{count} ballots have missing submitter information. Fix submitter data in submissions.',
+  '提出者情報不足: {count}': 'Missing submitter info: {count}',
   '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
     'Cannot run compile because selected round ballots are incomplete.',
   '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
@@ -275,6 +326,8 @@ const en = {
   ストレート: 'Straight',
   スピーカー: 'Speaker',
   既存スピーカーから選択: 'Select from existing speakers',
+  '以下のスピーカーは既存リストに存在しません: {names}':
+    'The following speakers are not in the existing list: {names}',
   検索してスピーカーを絞り込む: 'Filter speakers by search',
   'スピーカー (カンマ区切り)': 'Speakers (comma-separated)',
   '追加スピーカー (カンマ区切り)': 'Additional speakers (comma-separated)',
@@ -327,9 +380,12 @@ const en = {
   'ドローと割り当てが公開されるまでフィードバックは利用できません。':
     'Feedback is unavailable until the draw and allocation are published.',
   'ドローは未公開です。': 'Draw has not been published yet.',
+  '対戦表は一部のみ公開されています。': 'Draw is partially published.',
   ドローをロック: 'Lock draw',
   'ドローや評価を絞り込む場合は選択してください。': 'Select to filter draws or feedback.',
   ドロー公開: 'Draw open',
+  '対戦表公開（チームのみ）': 'Publish draw (teams only)',
+  '対戦表公開（ジャッジのみ）': 'Publish draw (adjudicators only)',
   バブル: 'Bubble',
   パスワード: 'Password',
   パスワードを表示: 'Show password',
@@ -466,7 +522,17 @@ const en = {
   参加者: 'Participant',
   参加者に非公開: 'Hidden from participants',
   大会を非公開: 'Hide tournament',
+  参加者ホーム: 'Participant home',
   参加者ダッシュボード: 'Participant dashboard',
+  入力開始: 'Start input',
+  '対戦表の評価ボタンから入力を開始してください。':
+    'Start input from the evaluation buttons in the draw.',
+  '対象試合: {gov} vs {opp}': 'Target match: {gov} vs {opp}',
+  '提出候補ジャッジ: {names}': 'Candidate submitter judges: {names}',
+  '先に提出者を選択すると入力ボタンが表示されます。':
+    'Select a submitter first to show the input button.',
+  チーム評価を開始: 'Start team evaluation',
+  ジャッジ評価を開始: 'Start adjudicator evaluation',
   現在公開中の大会: 'Currently open tournaments',
   '参加者ホームでジャッジを選択してください。': 'Select an adjudicator on the participant home.',
   '参加者ホームでジャッジを選択すると、割当の試合に絞り込めます。':
@@ -508,6 +574,10 @@ const en = {
   大会パスワード必須: 'Require tournament password',
   '大会パスワードを入力してください。': 'Enter the tournament password.',
   '空欄なら現在のパスワードを維持します。': 'Leave blank to keep the current password.',
+  '空欄にすると大会パスワード設定を解除し、初期値に戻します。':
+    'Clearing this field disables tournament password and resets to the default value.',
+  'スイッチをオンにすると編集できます。未設定時の初期値は "password" です。':
+    'Turn the switch on to edit. The default value is "password" when not configured.',
   '大会ホームでパスワードを入力してください。':
     'Enter the tournament password from the tournament home.',
   'アクセス確認に失敗しました。': 'Failed to verify tournament access.',
@@ -533,6 +603,10 @@ const en = {
   '大会情報（Markdown形式対応）': 'Tournament info (Markdown supported)',
   '重要なお知らせ（Markdown形式対応）': 'Important notice (Markdown supported)',
   重要なお知らせを更新: 'Update important notice',
+  '大会設定を保存中...': 'Saving tournament settings...',
+  '大会設定を自動保存しました。': 'Tournament settings were auto-saved.',
+  '大会設定の保存に失敗しました。': 'Failed to save tournament settings.',
+  '大会設定の変更は自動で保存されます。': 'Tournament setting changes are saved automatically.',
   '大会情報が見つかりません。': 'Tournament not found.',
   '大会パスワードを設定すると、参加者に入力を求められます。':
     'When enabled, participants are asked for the tournament password.',
@@ -556,7 +630,11 @@ const en = {
   強さ: 'Strength',
   機関衝突重み: 'Institution conflict weight',
   '強さ: {value}': 'Strength: {value}',
+  '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。':
+    'Strength is an internal score used for auto allocation; higher values are more likely to be placed at top rooms.',
   '推奨範囲: 0〜10': 'Recommended range: 0 to 10',
+  '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。':
+    'Pre-evaluation is a prior estimate used for auto allocation priority.',
   '入力範囲: {from}〜{to} (刻み {unit})': 'Range: {from} to {to} (step {unit})',
   役割: 'Role',
   役割選択: 'Select role',
@@ -652,8 +730,12 @@ const en = {
   '権限が一致しません。ログイン情報を確認してください。':
     'Role does not match. Please check your login.',
   機関: 'Institution',
+  コンフリクトグループ: 'Conflict group',
   '機関を削除しますか？': 'Delete this institution?',
   機関名: 'Institution name',
+  コンフリクトグループ名で検索: 'Search conflict group name',
+  'institution / region / league から選択します。競合判定の粒度を揃えるために使います。':
+    'Choose from institution / region / league to align conflict-detection granularity.',
   '機関衝突 (チーム/ジャッジ)': 'Institution conflict (team/judge)',
   点: 'pts',
   生データ: 'Raw',
@@ -702,8 +784,17 @@ const en = {
   '評価するジャッジを選択してください。': 'Select an adjudicator to evaluate.',
   評価をジャッジから: 'Evaluate from adjudicators',
   評価をチームから: 'Evaluate from teams',
+  'ジャッジ・チームのどちらから評価を受け付けるかを設定します。':
+    'Configure whether evaluations are accepted from adjudicators and/or teams.',
   '評価者の単位をチームかスピーカーから選択します。':
     'Choose whether evaluators are selected by team or by speaker.',
+  'チームからのフィードバック入力を有効にします。':
+    'Enable feedback input submitted by teams.',
+  'チェアの評価入力を常に要求します。': 'Always require chair evaluation input.',
+  '勝敗判定や入力フォーマットに関する設定です。':
+    'Settings for winner judgement and score input format.',
+  'POI賞とベストスピーカー賞の入力有無を設定します。':
+    'Configure whether POI and Best Speaker award inputs are enabled.',
   'Matter/Manner の個別入力を有効にします。': 'Enable separate Matter/Manner scoring.',
   'POI賞の入力を有効にします。': 'Enable POI award input.',
   'ベストスピーカー賞の入力を有効にします。': 'Enable Best Speaker award input.',
@@ -766,6 +857,8 @@ const en = {
   集計を実行: 'Run compile',
   集計区分: 'Compile category',
   集計オプション: 'Compile options',
+  データソース: 'Data source',
+  集計に使うデータ: 'Data used for compile',
   集計結果: 'Compiled results',
   順位比較: 'Ranking priority',
   現行: 'Current',
@@ -786,9 +879,11 @@ const en = {
   警告のみ: 'Warn only',
   欠損を除外: 'Exclude missing',
   エラー停止: 'Stop on error',
-  生成対象: 'Included labels',
+  生成対象: 'Output categories',
   差分比較: 'Diff baseline',
   最新集計: 'Latest compiled',
+  過去の集計結果: 'Previous compile results',
+  集計ラウンド: 'Compiled rounds',
   過去の集計結果を選択: 'Select previous compile',
   比較対象: 'Baseline target',
   '過去の集計結果を選ぶ場合は比較対象を選択してください。':
@@ -806,6 +901,7 @@ const en = {
   '差分サマリー: {value}': 'Diff baseline: {value}',
   基準なし: 'No baseline',
   '選択した過去集計: {label}': 'Selected previous compile: {label}',
+  選択した過去集計: 'Selected previous compile',
   '選択した過去集計（ID: {id}）': 'Selected previous compile (ID: {id})',
   '指定compiled（ID: {id}）': 'Specific compiled (ID: {id})',
   '最新集計（ID: {id}）': 'Latest compiled (ID: {id})',
@@ -830,6 +926,8 @@ const en = {
   '生成するランキングの種類を選びます。': 'Choose which ranking categories to generate.',
   '差分比較の基準です。最新集計か、過去集計を選んで比較できます。':
     'Sets the diff baseline. Compare with the latest compile or a selected previous compile.',
+  '差分比較の基準です。最新集計、または具体的な過去集計を選んで比較できます。':
+    'Sets the diff baseline. Compare with the latest compile or a specific previous compile.',
   'ヘルプ:ソース':
     'Choose submissions or raw results as the compile source. Submissions are normalized first.',
   'ヘルプ:ラウンド':
@@ -888,6 +986,11 @@ const en = {
   操作: 'Actions',
   備考: 'Notes',
   検索: 'Search',
+  対戦検索: 'Draw search',
+  '一致 {count}件': '{count} matches',
+  'チーム名またはIDで検索': 'Search by team name or ID',
+  'チーム名またはジャッジ名で検索': 'Search by team or adjudicator name',
+  次の一致: 'Next match',
   構造化編集に切替: 'Switch to structured editor',
   機関名で検索: 'Search by institution name',
   '例: institution / region / league': 'e.g. institution / region / league',
@@ -900,6 +1003,11 @@ const en = {
   非公開: 'Private',
   モーション公開: 'Motion visibility',
   モーションを更新: 'Update motion',
+  '保存済みモーション: {motion}': 'Saved motion: {motion}',
+  チーム評価: 'Team evaluation',
+  ジャッジ評価: 'Adjudicator evaluation',
+  '評価対象ジャッジ': 'Target adjudicator',
+  'スコアは0以上で入力してください。': 'Score must be 0 or higher.',
   チーム割り当て: 'Team allocation',
   ジャッジ割り当て: 'Adjudicator allocation',
   非表示: 'Hide',
@@ -915,6 +1023,10 @@ const en = {
   賞設定: 'Award settings',
   詳細を表示: 'Show details',
   詳細を隠す: 'Hide details',
+  '比較に使う（上から優先）': 'Used for comparison (top has higher priority)',
+  '比較に使わない': 'Not used for comparison',
+  'すべて使用中です。': 'All metrics are in use.',
+  除外: 'Exclude',
   JSONを表示: 'Show JSON',
   JSONを隠す: 'Hide JSON',
   設定を保存: 'Save settings',
@@ -929,6 +1041,7 @@ const en = {
   'コピーしました。': 'Copied.',
   候補を圧縮表示: 'Compact waiting list',
   公開前プレビュー: 'Pre-publish preview',
+  対戦表プレビュー: 'Draw preview',
   提出サマリ: 'Submission summary',
   表彰コピー: 'Award copy',
   '部屋順 / Win順を公開前に確認できます。': 'Check room order and win order before publish.',
@@ -983,6 +1096,7 @@ const en = {
   選択してください: 'Please select',
   タスク一覧: 'Task list',
   'タスク一覧に戻る': 'Back to task list',
+  '参加者ホームに戻る': 'Back to participant home',
   対戦表に戻る: 'Back to draw',
   送信完了: 'Submitted',
   '送信しました。次の操作を選択してください。': 'Submitted. Choose where to go next.',
@@ -1039,6 +1153,7 @@ const jaOverrides: Record<string, string> = {
   フィードバック: 'ジャッジフィードバック',
   対戦表: '対戦表',
   レポート生成: 'レポート生成',
+  大会結果レポート: '大会結果レポート',
   'compiled_* データが見つかりません。': 'compiled_* データが見つかりませんでした。',
   'スコアシートはドローから選択できます。': 'ドローからチーム評価を選択できます。',
   'ドローが登録されていません。': 'ドローがまだありません。',

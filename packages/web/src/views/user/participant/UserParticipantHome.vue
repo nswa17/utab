@@ -1,5 +1,14 @@
 <template>
   <section class="stack">
+    <div class="row participant-home-header">
+      <h3>{{ isAudience ? $t('対戦表') : $t('参加者ダッシュボード') }}</h3>
+      <ReloadButton
+        @click="refresh"
+        :disabled="isLoading"
+        :loading="isLoading"
+        :target="isAudience ? $t('対戦表') : $t('参加者ダッシュボード')"
+      />
+    </div>
     <LoadingState v-if="isLoading" />
     <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
     <div v-else-if="visibleRounds.length === 0" class="muted">
@@ -10,113 +19,99 @@
       <div v-if="isSpeaker || isAdjudicator" class="card stack">
         <h4>{{ $t('あなたの情報') }}</h4>
         <label v-if="isSpeaker" class="field">
-          <span>{{ $t('チーム') }}</span>
+          <span>{{ $t('ジャッジ名') }}</span>
           <select v-model="teamIdentityId">
+            <option value="">{{ $t('未選択') }}</option>
+            <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
+              {{ adj.name }}
+            </option>
+          </select>
+        </label>
+        <label v-if="isAdjudicator" class="field">
+          <span>{{ $t('評価者') }}</span>
+          <select v-model="judgeEvaluationActorMode">
+            <option value="team">{{ $t('チーム/スピーカー') }}</option>
+            <option value="adjudicator">{{ $t('ジャッジ') }}</option>
+          </select>
+        </label>
+        <label v-if="isAdjudicator && judgeEvaluationActorMode === 'team'" class="field">
+          <span>{{ $t('チーム') }}</span>
+          <select v-model="judgeFeedbackTeamIdentityId">
             <option value="">{{ $t('未選択') }}</option>
             <option v-for="team in teamsStore.teams" :key="team._id" :value="team._id">
               {{ team.name }}
             </option>
           </select>
         </label>
-        <label v-if="isSpeaker && speakerSelectionRequired" class="field">
+        <label
+          v-if="
+            isAdjudicator &&
+            judgeEvaluationActorMode === 'team' &&
+            speakerSelectionRequired
+          "
+          class="field"
+        >
           <span>{{ $t('スピーカー') }}</span>
           <select
-            v-model="speakerIdentityId"
-            :disabled="!teamIdentityId || selectableSpeakers.length === 0"
+            v-model="judgeFeedbackSpeakerIdentityId"
+            :disabled="!judgeFeedbackTeamIdentityId || judgeFeedbackSelectableSpeakers.length === 0"
           >
             <option value="">{{ $t('未選択') }}</option>
-            <option v-for="speaker in selectableSpeakers" :key="speaker._id" :value="speaker._id">
+            <option
+              v-for="speaker in judgeFeedbackSelectableSpeakers"
+              :key="speaker._id"
+              :value="speaker._id"
+            >
               {{ speaker.name }}
             </option>
           </select>
         </label>
+        <label v-if="isAdjudicator && judgeEvaluationActorMode === 'adjudicator'" class="field">
+          <span>{{ $t('ジャッジ名') }}</span>
+          <select v-model="teamIdentityId">
+            <option value="">{{ $t('未選択') }}</option>
+            <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
+              {{ adj.name }}
+            </option>
+          </select>
+        </label>
         <p v-if="isSpeaker && !teamIdentityId" class="muted">
+          {{ $t('先にジャッジを選択してください。') }}
+        </p>
+        <p
+          v-if="
+            isAdjudicator &&
+            judgeEvaluationActorMode === 'team' &&
+            !judgeFeedbackTeamIdentityId
+          "
+          class="muted"
+        >
           {{ $t('先にチームを選択してください。') }}
         </p>
-        <p v-if="isSpeaker && speakerSelectionRequired && teamIdentityId && selectableSpeakers.length === 0" class="muted">
+        <p
+          v-if="
+            isAdjudicator &&
+            judgeEvaluationActorMode === 'team' &&
+            speakerSelectionRequired &&
+            judgeFeedbackTeamIdentityId &&
+            judgeFeedbackSelectableSpeakers.length === 0
+          "
+          class="muted"
+        >
           {{ $t('このチームに選択可能なスピーカーがいません。') }}
         </p>
-        <template v-if="isAdjudicator">
-          <div class="stack">
-            <span>{{ $t('ロール') }}</span>
-            <div class="row role-switch" role="radiogroup" :aria-label="$t('ロール')">
-              <label class="role-option">
-                <input
-                  type="radio"
-                  :checked="adjudicatorRoleMode === 'adjudicator'"
-                  @change="setAdjudicatorRoleMode('adjudicator')"
-                />
-                <span>{{ $t('ジャッジとして提出') }}</span>
-              </label>
-              <label class="role-option">
-                <input
-                  type="radio"
-                  :checked="adjudicatorRoleMode === 'team'"
-                  @change="setAdjudicatorRoleMode('team')"
-                />
-                <span>{{ adjudicatorTeamRoleLabel }}</span>
-              </label>
-            </div>
-          </div>
-          <label v-if="adjudicatorRoleMode === 'adjudicator'" class="field">
-            <span>{{ $t('ジャッジ名') }}</span>
-            <select v-model="teamIdentityId">
-              <option value="">{{ $t('未選択') }}</option>
-              <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
-                {{ adj.name }}
-              </option>
-            </select>
-          </label>
-          <label v-if="adjudicatorRoleMode === 'team'" class="field">
-            <span>{{ $t('チーム名') }}</span>
-            <select v-model="judgeFeedbackTeamIdentityId">
-              <option value="">{{ $t('未選択') }}</option>
-              <option v-for="team in teamsStore.teams" :key="team._id" :value="team._id">
-                {{ team.name }}
-              </option>
-            </select>
-          </label>
-          <label v-if="adjudicatorRoleMode === 'team' && judgeFeedbackSpeakerSelectionRequired" class="field">
-            <span>{{ $t('スピーカー名') }}</span>
-            <select
-              v-model="judgeFeedbackSpeakerIdentityId"
-              :disabled="!judgeFeedbackTeamIdentityId || judgeFeedbackSelectableSpeakers.length === 0"
-            >
-              <option value="">{{ $t('未選択') }}</option>
-              <option
-                v-for="speaker in judgeFeedbackSelectableSpeakers"
-                :key="speaker._id"
-                :value="speaker._id"
-              >
-                {{ speaker.name }}
-              </option>
-            </select>
-          </label>
-          <p
-            v-if="
-              adjudicatorRoleMode === 'team' &&
-              judgeFeedbackSpeakerSelectionRequired &&
-              !judgeFeedbackTeamIdentityId
-            "
-            class="muted"
-          >
-            {{ $t('先にチームを選択してください。') }}
-          </p>
-          <p
-            v-if="
-              adjudicatorRoleMode === 'team' &&
-              judgeFeedbackSpeakerSelectionRequired &&
-              judgeFeedbackTeamIdentityId &&
-              judgeFeedbackSelectableSpeakers.length === 0
-            "
-            class="muted"
-          >
-            {{ $t('このチームに選択可能なスピーカーがいません。') }}
-          </p>
-        </template>
       </div>
 
       <template v-if="isAudience">
+        <div class="card stack audience-tools">
+          <input
+            v-model.trim="audienceTeamQuery"
+            type="search"
+            class="audience-team-input"
+            :placeholder="$t('チーム名またはジャッジ名で検索')"
+          />
+        </div>
+
         <div v-for="round in visibleRounds" :key="round._id" class="card stack compact-round">
           <button
             type="button"
@@ -149,8 +144,37 @@
           </button>
 
           <div v-show="isRoundExpanded(round.round)" class="stack">
-            <div v-if="!drawForRound(round.round) || !teamAllocationVisible(round.round)" class="muted">
-              {{ $t('ドローは未公開です。') }}
+            <div
+              v-if="roundHasPartialAllocation(round.round)"
+              class="row round-visibility-note"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="round-visibility-title">{{ $t('対戦表は一部のみ公開されています。') }}</span>
+              <div class="row round-visibility-chip-list">
+                <span class="round-visibility-chip" :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
+                  {{ $t('チーム') }}: {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                </span>
+                <span class="round-visibility-chip" :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
+                  {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                </span>
+              </div>
+            </div>
+            <div
+              v-if="!drawForRound(round.round) || !roundHasVisibleAllocation(round.round)"
+              class="row round-visibility-note"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="round-visibility-title">{{ $t('ドローは未公開です。') }}</span>
+              <div class="row round-visibility-chip-list">
+                <span class="round-visibility-chip" :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
+                  {{ $t('チーム') }}: {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                </span>
+                <span class="round-visibility-chip" :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
+                  {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                </span>
+              </div>
             </div>
             <div v-else-if="sortedAllocation(round.round).length === 0" class="muted">
               {{ $t('ドローが登録されていません。') }}
@@ -160,11 +184,13 @@
                 v-for="(row, index) in sortedAllocation(round.round)"
                 :key="`${round.round}-${index}`"
                 class="draw-row"
+                :class="{ 'match-hit': isAudienceRowMatched(row) }"
+                :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
               >
                 <div class="row draw-main">
                   <span class="muted small">{{ venueName(row.venue) }}</span>
                 </div>
-                <div class="match-sides">
+                <div v-if="teamAllocationVisible(round.round)" class="match-sides">
                   <div class="side-card gov-card">
                     <span class="side-chip">{{ govLabel }}</span>
                     <strong>{{ teamName(row.teams.gov) }}</strong>
@@ -178,6 +204,19 @@
                 <div v-if="adjudicatorAllocationVisible(round.round)" class="draw-chair-line">
                   <span class="draw-chair-label">{{ $t('チェア:') }}</span>
                   <span class="draw-chair-names">{{ adjudicatorNames(row.chairs) }}</span>
+                </div>
+                <div class="row draw-actions">
+                  <Button variant="ghost" size="sm" :to="teamEvaluationPath(round.round, row)">
+                    {{ $t('チーム評価') }}
+                  </Button>
+                  <Button
+                    v-if="judgeEvaluationEnabled(round.round)"
+                    variant="ghost"
+                    size="sm"
+                    :to="judgeEvaluationPath(round.round, row)"
+                  >
+                    {{ $t('ジャッジ評価') }}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -197,7 +236,7 @@
                         }}</span>
                       </button>
                     </th>
-                    <th>
+                    <th v-if="teamAllocationVisible(round.round)">
                       <button
                         type="button"
                         class="table-sort"
@@ -209,7 +248,7 @@
                         }}</span>
                       </button>
                     </th>
-                    <th>
+                    <th v-if="teamAllocationVisible(round.round)">
                       <button
                         type="button"
                         class="table-sort"
@@ -233,18 +272,36 @@
                         }}</span>
                       </button>
                     </th>
+                    <th>{{ $t('操作') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr
                     v-for="(row, index) in sortedAudienceTableAllocation(round.round)"
                     :key="`table-${round.round}-${index}`"
+                    :class="{ 'match-hit': isAudienceRowMatched(row) }"
+                    :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
                   >
                     <td>{{ venueName(row.venue) }}</td>
-                    <td>{{ teamName(row.teams.gov) }}</td>
-                    <td>{{ teamName(row.teams.opp) }}</td>
+                    <td v-if="teamAllocationVisible(round.round)">{{ teamName(row.teams.gov) }}</td>
+                    <td v-if="teamAllocationVisible(round.round)">{{ teamName(row.teams.opp) }}</td>
                     <td v-if="adjudicatorAllocationVisible(round.round)">
                       {{ adjudicatorNames(row.chairs) }}
+                    </td>
+                    <td class="draw-actions-cell">
+                      <div class="row draw-actions">
+                        <Button variant="ghost" size="sm" :to="teamEvaluationPath(round.round, row)">
+                          {{ $t('チーム評価') }}
+                        </Button>
+                        <Button
+                          v-if="judgeEvaluationEnabled(round.round)"
+                          variant="ghost"
+                          size="sm"
+                          :to="judgeEvaluationPath(round.round, row)"
+                        >
+                          {{ $t('ジャッジ評価') }}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -256,34 +313,57 @@
 
       <template v-else>
         <div class="card stack">
-          <h4>{{ $t('タスク一覧') }}</h4>
-          <p v-if="tasks.length === 0" class="muted">{{ tasksHint }}</p>
-          <div v-else class="stack task-groups">
-            <section
-              v-for="group in taskGroups"
-              :key="group.round"
-              class="card soft stack task-group-card"
+          <h4>{{ $t('入力開始') }}</h4>
+          <p v-if="!pendingTaskContext" class="muted">
+            {{ $t('対戦表の評価ボタンから入力を開始してください。') }}
+          </p>
+          <template v-else>
+            <p class="muted">
+              {{
+                $t('対象ラウンド: {round}', {
+                  round: pendingTaskContext.round,
+                })
+              }}
+            </p>
+            <p v-if="pendingBallotContext" class="muted">
+              {{
+                $t('対象試合: {gov} vs {opp}', {
+                  gov: teamName(pendingBallotContext.teamA),
+                  opp: teamName(pendingBallotContext.teamB),
+                })
+              }}
+            </p>
+            <p
+              v-if="
+                pendingBallotContext &&
+                pendingBallotContext.submitterCandidates.length > 0
+              "
+              class="muted small"
             >
-              <h5 class="task-group-title">{{ group.label }}</h5>
-              <ul class="list compact task-list">
-                <li v-for="task in group.items" :key="task.id" class="list-item task-item">
-                  <div class="stack tight">
-                    <strong>{{ task.title }}</strong>
-                    <span class="muted small">{{ task.statusLabel }}</span>
-                    <span v-if="task.description" class="muted small">{{ task.description }}</span>
-                  </div>
-                  <Button
-                    :variant="task.completed ? 'secondary' : 'primary'"
-                    size="sm"
-                    class="task-action"
-                    :to="task.to"
-                  >
-                    {{ task.actionLabel }}
-                  </Button>
-                </li>
-              </ul>
-            </section>
-          </div>
+              {{
+                $t('提出候補ジャッジ: {names}', {
+                  names: adjudicatorNames(pendingBallotContext.submitterCandidates),
+                })
+              }}
+            </p>
+            <p v-if="pendingFeedbackContext" class="muted">
+              {{
+                $t('対象試合: {gov} vs {opp}', {
+                  gov: teamName(pendingFeedbackContext.teamGov),
+                  opp: teamName(pendingFeedbackContext.teamOpp),
+                })
+              }}
+            </p>
+            <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
+            <div v-else class="row pending-task-actions">
+              <Button :to="pendingTaskPrimaryPath">
+                {{ pendingTaskPrimaryLabel }}
+              </Button>
+              <Button variant="secondary" :to="pendingTaskDrawPath">
+                {{ $t('対戦表') }}
+              </Button>
+            </div>
+          </template>
         </div>
       </template>
     </div>
@@ -291,7 +371,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTournamentStore } from '@/stores/tournament'
@@ -302,23 +382,12 @@ import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useDrawsStore } from '@/stores/draws'
 import { useVenuesStore } from '@/stores/venues'
-import { useSubmissionsStore } from '@/stores/submissions'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
+import ReloadButton from '@/components/common/ReloadButton.vue'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
-
-type TaskItem = {
-  id: string
-  round: number
-  title: string
-  description?: string
-  completed: boolean
-  statusLabel: string
-  actionLabel: string
-  to: string
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -330,14 +399,12 @@ const adjudicatorsStore = useAdjudicatorsStore()
 const speakersStore = useSpeakersStore()
 const drawsStore = useDrawsStore()
 const venuesStore = useVenuesStore()
-const submissionsStore = useSubmissionsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const participant = computed(() => route.params.participant as string)
 
 const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
-const { identityId: speakerIdentityId } = useParticipantIdentity(tournamentId, participant, 'speaker')
 const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
   tournamentId,
   participant,
@@ -352,6 +419,19 @@ const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
 const isAudience = computed(() => participant.value === 'audience')
 const isAdjudicator = computed(() => participant.value === 'adjudicator')
 const isSpeaker = computed(() => participant.value === 'speaker')
+const judgeEvaluationActorMode = computed<'team' | 'adjudicator'>({
+  get: () => (route.query.actor === 'adjudicator' ? 'adjudicator' : 'team'),
+  set: (value) => {
+    if (!isAdjudicator.value) return
+    if (value === judgeEvaluationActorMode.value) return
+    router.replace({
+      query: {
+        ...route.query,
+        actor: value,
+      },
+    })
+  },
+})
 
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
@@ -389,13 +469,13 @@ function speakersForTeam(teamId: string) {
   return speakersStore.speakers.filter((speaker) => speakerNames.has(speaker.name))
 }
 
-const selectableSpeakers = computed(() => {
-  if (!isSpeaker.value || !teamIdentityId.value) return []
-  return speakersForTeam(teamIdentityId.value)
+const judgeFeedbackSelectableSpeakers = computed(() => {
+  if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return []
+  if (!judgeFeedbackTeamIdentityId.value) return []
+  return speakersForTeam(judgeFeedbackTeamIdentityId.value)
 })
 
 const speakerSelectionRequired = computed(() => {
-  if (!isSpeaker.value) return false
   return visibleRounds.value.some((round) => {
     const userDefined = round.userDefinedData ?? {}
     return (
@@ -404,29 +484,6 @@ const speakerSelectionRequired = computed(() => {
     )
   })
 })
-
-const judgeFeedbackSpeakerSelectionRequired = computed(() =>
-  visibleRounds.value.some((round) => {
-    const userDefined = round.userDefinedData ?? {}
-    return (
-      userDefined.evaluate_from_teams !== false &&
-      (userDefined.evaluator_in_team ?? 'team') === 'speaker'
-    )
-  })
-)
-const adjudicatorRoleMode = ref<'adjudicator' | 'team'>('adjudicator')
-const adjudicatorTeamRoleLabel = computed(() =>
-  judgeFeedbackSpeakerSelectionRequired.value ? t('スピーカーとして提出') : t('チームとして提出')
-)
-
-const judgeFeedbackSelectableSpeakers = computed(() => {
-  if (!judgeFeedbackTeamIdentityId.value) return []
-  return speakersForTeam(judgeFeedbackTeamIdentityId.value)
-})
-
-function setAdjudicatorRoleMode(mode: 'adjudicator' | 'team') {
-  adjudicatorRoleMode.value = mode
-}
 
 const isLoading = computed(
   () =>
@@ -437,8 +494,7 @@ const isLoading = computed(
     teamsStore.loading ||
     adjudicatorsStore.loading ||
     speakersStore.loading ||
-    venuesStore.loading ||
-    submissionsStore.loading
+    venuesStore.loading
 )
 
 const errorMessage = computed(
@@ -451,7 +507,6 @@ const errorMessage = computed(
     adjudicatorsStore.error ||
     speakersStore.error ||
     venuesStore.error ||
-    submissionsStore.error ||
     ''
 )
 
@@ -460,256 +515,276 @@ type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair'
 type AudienceSortDirection = 'asc' | 'desc'
 type AudienceSortState = { key: AudienceSortKey; direction: AudienceSortDirection }
 const audienceTableSortByRound = ref<Record<number, AudienceSortState>>({})
+const audienceTeamQuery = ref('')
+const audienceViewportMode = ref<'card' | 'table'>('table')
+let disposeAudienceViewportWatcher: (() => void) | null = null
 const audienceViewMode = computed<'card' | 'table'>(() => {
   if (route.query.viewMode === 'table') return 'table'
   if (route.query.viewMode === 'card') return 'card'
-  return teamsStore.teams.length >= 20 ? 'table' : 'card'
+  return audienceViewportMode.value
 })
 const audienceSortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
+const normalizedAudienceTeamQuery = computed(() => audienceTeamQuery.value.trim().toLowerCase())
+const hasAudienceTeamQuery = computed(() => normalizedAudienceTeamQuery.value.length > 0)
 
-const feedbackSubmittedKeySet = computed(() => {
-  const set = new Set<string>()
-  submissionsStore.submissions.forEach((item) => {
-    if (item.type !== 'feedback') return
-    const submittedEntityId = String((item.payload as any)?.submittedEntityId ?? '')
-    if (!submittedEntityId) return
-    set.add(`${Number(item.round)}:${submittedEntityId}`)
-  })
-  return set
-})
-
-const ballotSubmittedKeySet = computed(() => {
-  const set = new Set<string>()
-  submissionsStore.submissions.forEach((item) => {
-    if (item.type !== 'ballot') return
-    const submittedEntityId = String((item.payload as any)?.submittedEntityId ?? '')
-    if (!submittedEntityId) return
-    set.add(`${Number(item.round)}:${submittedEntityId}`)
-  })
-  return set
-})
-
-const identityReadyForTasks = computed(() => {
-  if (isSpeaker.value) {
-    return Boolean(teamIdentityId.value)
-  }
-  if (isAdjudicator.value) {
-    if (adjudicatorRoleMode.value === 'adjudicator') {
-      return Boolean(teamIdentityId.value)
+type PendingTaskContext =
+  | {
+      kind: 'ballot'
+      round: number
+      teamA: string
+      teamB: string
+      submitterCandidates: string[]
     }
-    return Boolean(judgeFeedbackTeamIdentityId.value || judgeFeedbackSpeakerIdentityId.value)
-  }
-  return false
-})
-
-const activeSubmittedEntityId = computed(() => {
-  if (isSpeaker.value) {
-    return teamIdentityId.value
-  }
-  if (isAdjudicator.value) {
-    return teamIdentityId.value
-  }
-  return ''
-})
-
-const tasks = computed<TaskItem[]>(() => {
-  if (isAudience.value) return []
-  if (!identityReadyForTasks.value) return []
-
-  const list: TaskItem[] = []
-  visibleRounds.value.forEach((roundItem) => {
-    const roundNumber = Number(roundItem.round)
-    const draw = drawsByRound.value.get(roundNumber)
-    const teamOpen = teamAllocationVisible(roundNumber)
-    const adjudicatorOpen = adjudicatorAllocationVisible(roundNumber)
-    if (!draw || !teamOpen) return
-    const allocation = Array.isArray(draw.allocation) ? draw.allocation : []
-
-    if (isSpeaker.value) {
-      const teamId = teamIdentityId.value
-      const teamRows = allocation.filter(
-        (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
-      )
-      const hasAssignedMatch = teamRows.length > 0
-      if (!hasAssignedMatch) return
-      if (!adjudicatorOpen) return
-      if (roundItem.userDefinedData?.evaluate_from_teams === false) return
-      const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
-      const submittedEntityId = evaluatorInTeam === 'speaker' ? speakerIdentityId.value : teamId
-      if (!submittedEntityId) return
-      const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
-      const teamJudgeIds = Array.from(
-        new Set(
-          teamRows.flatMap((row: any) =>
-            chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
-          )
-        )
-      )
-      const targetPath =
-        teamJudgeIds.length === 1
-          ? `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
-          : `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
-      const completed = feedbackSubmittedKeySet.value.has(
-        `${roundNumber}:${submittedEntityId}`
-      )
-
-      list.push({
-        id: `speaker-feedback-${roundNumber}-${evaluatorInTeam}`,
-        round: roundNumber,
-        title: t('ジャッジ評価'),
-        completed,
-        statusLabel: completed ? t('完了') : t('未完了'),
-        actionLabel: completed ? t('修正して送信') : t('入力'),
-        to: targetPath,
-      })
-      return
+  | {
+      kind: 'feedback'
+      round: number
+      teamGov: string
+      teamOpp: string
+      targetJudgeIds: string[]
     }
 
-    if (isAdjudicator.value) {
-      if (!adjudicatorOpen) return
-      if (adjudicatorRoleMode.value === 'adjudicator') {
-        const adjudicatorId = teamIdentityId.value
-        const adjudicatorRows = adjudicatorId
-          ? allocation.filter((row: any) =>
-              [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].includes(
-                adjudicatorId
-              )
-            )
-          : []
-        const hasJudgeAssignedMatch = adjudicatorRows.length > 0
-        if (hasJudgeAssignedMatch) {
-          const ballotTargetPath =
-            adjudicatorRows.length === 1
-              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/entry?teamA=${adjudicatorRows[0]?.teams?.gov ?? ''}&teamB=${adjudicatorRows[0]?.teams?.opp ?? ''}`
-              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/ballot/home`
-          const ballotCompleted = ballotSubmittedKeySet.value.has(`${roundNumber}:${adjudicatorId}`)
-          list.push({
-            id: `adjudicator-ballot-${roundNumber}`,
-            round: roundNumber,
-            title: t('スコアシート'),
-            description: t('ドローから試合を選択'),
-            completed: ballotCompleted,
-            statusLabel: ballotCompleted ? t('完了') : t('未完了'),
-            actionLabel: ballotCompleted ? t('修正して送信') : t('入力'),
-            to: ballotTargetPath,
-          })
-        }
-
-        if (
-          hasJudgeAssignedMatch &&
-          roundItem.userDefinedData?.evaluate_from_adjudicators !== false
-        ) {
-          const feedbackPeers = Array.from(
-            new Set(
-              adjudicatorRows.flatMap((row: any) =>
-                [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].filter(
-                  (id: string) => id !== adjudicatorId
-                )
-              )
-            )
-          )
-          const feedbackTargetPath =
-            feedbackPeers.length === 1
-              ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${feedbackPeers[0]}?filter=adjudicator&actor=adjudicator`
-              : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=adjudicator&actor=adjudicator`
-          const feedbackCompleted = feedbackSubmittedKeySet.value.has(
-            `${roundNumber}:${adjudicatorId}`
-          )
-          list.push({
-            id: `adjudicator-feedback-${roundNumber}`,
-            round: roundNumber,
-            title: t('ジャッジ評価（ジャッジ）'),
-            completed: feedbackCompleted,
-            statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
-            actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-            to: feedbackTargetPath,
-          })
-        }
-      }
-
-      if (adjudicatorRoleMode.value === 'team' && roundItem.userDefinedData?.evaluate_from_teams !== false) {
-        const teamId = judgeFeedbackTeamIdentityId.value
-        const teamRows = teamId
-          ? allocation.filter(
-              (row: any) => row?.teams?.gov === teamId || row?.teams?.opp === teamId
-            )
-          : []
-        const hasTeamAssignedMatch = teamRows.length > 0
-        if (!hasTeamAssignedMatch) return
-        const evaluatorInTeam = roundItem.userDefinedData?.evaluator_in_team ?? 'team'
-        const submittedEntityId =
-          evaluatorInTeam === 'speaker'
-            ? judgeFeedbackSpeakerIdentityId.value
-            : judgeFeedbackTeamIdentityId.value
-        if (!submittedEntityId) return
-        const chairsOnly = roundItem.userDefinedData?.chairs_always_evaluated === true
-        const teamJudgeIds = Array.from(
-          new Set(
-            teamRows.flatMap((row: any) =>
-              chairsOnly ? [...(row.chairs ?? [])] : [...(row.chairs ?? []), ...(row.panels ?? [])]
-            )
-          )
-        )
-        const targetPath =
-          teamJudgeIds.length === 1
-            ? `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${teamJudgeIds[0]}?filter=team&actor=team`
-            : `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?filter=team&actor=team`
-        const feedbackCompleted = feedbackSubmittedKeySet.value.has(
-          `${roundNumber}:${submittedEntityId}`
-        )
-        list.push({
-          id: `team-feedback-via-adjudicator-${roundNumber}-${evaluatorInTeam}`,
-          round: roundNumber,
-          title: t('ジャッジ評価（チーム）'),
-          completed: feedbackCompleted,
-          statusLabel: feedbackCompleted ? t('完了') : t('未完了'),
-          actionLabel: feedbackCompleted ? t('修正して送信') : t('入力'),
-          to: targetPath,
+function parseQueryList(value: unknown) {
+  if (typeof value !== 'string' || value.trim().length === 0) return []
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((item) => {
+          const token = item.trim()
+          try {
+            return decodeURIComponent(token)
+          } catch {
+            return token
+          }
         })
-      }
-    }
-  })
+        .filter(Boolean)
+    )
+  )
+}
 
-  return list
-})
+const pendingTaskContext = computed<PendingTaskContext | null>(() => {
+  if (isAudience.value) return null
+  const task = typeof route.query.task === 'string' ? route.query.task : ''
+  const roundNumber = Number(route.query.round)
+  if (!Number.isFinite(roundNumber) || roundNumber < 1) return null
 
-const taskGroups = computed(() => {
-  const map = new Map<number, TaskItem[]>()
-  tasks.value.forEach((task) => {
-    const list = map.get(task.round) ?? []
-    list.push(task)
-    map.set(task.round, list)
-  })
-  return Array.from(map.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([roundNumber, items]) => ({
+  if (task === 'ballot') {
+    const teamA = typeof route.query.teamA === 'string' ? route.query.teamA.trim() : ''
+    const teamB = typeof route.query.teamB === 'string' ? route.query.teamB.trim() : ''
+    if (!teamA || !teamB) return null
+    return {
+      kind: 'ballot',
       round: roundNumber,
-      label:
-        visibleRounds.value.find((round) => Number(round.round) === Number(roundNumber))?.name ??
-        t('ラウンド {round}', { round: roundNumber }),
-      items,
-    }))
+      teamA,
+      teamB,
+      submitterCandidates: parseQueryList(route.query.submitters),
+    }
+  }
+
+  if (task === 'feedback') {
+    const teamGov = typeof route.query.teamGov === 'string' ? route.query.teamGov.trim() : ''
+    const teamOpp = typeof route.query.teamOpp === 'string' ? route.query.teamOpp.trim() : ''
+    const targetJudgeIds = parseQueryList(route.query.targets)
+    if (!teamGov || !teamOpp || targetJudgeIds.length === 0) return null
+    return {
+      kind: 'feedback',
+      round: roundNumber,
+      teamGov,
+      teamOpp,
+      targetJudgeIds,
+    }
+  }
+  return null
 })
 
-const tasksHint = computed(() => {
-  if (!identityReadyForTasks.value) {
-    return t('タスク一覧を表示するには「あなたの情報」を選択してください。')
-  }
-  if (isSpeaker.value && speakerSelectionRequired.value && !speakerIdentityId.value) {
-    return t('参加者ホームでスピーカーを選択すると、評価対象を絞り込めます。')
-  }
-  if (
-    isAdjudicator.value &&
-    judgeFeedbackSpeakerSelectionRequired.value &&
-    judgeFeedbackTeamIdentityId.value &&
-    !judgeFeedbackSpeakerIdentityId.value
-  ) {
-    return t('ジャッジ評価でスピーカー単位を使うラウンドでは、スピーカーを選択してください。')
-  }
-  return t('タスクはありません。')
+const pendingBallotContext = computed(() => {
+  if (!pendingTaskContext.value || pendingTaskContext.value.kind !== 'ballot') return null
+  return pendingTaskContext.value
 })
+
+const pendingFeedbackContext = computed(() => {
+  if (!pendingTaskContext.value || pendingTaskContext.value.kind !== 'feedback') return null
+  return pendingTaskContext.value
+})
+
+const pendingTaskReady = computed(() => {
+  if (!pendingTaskContext.value) return false
+  if (pendingTaskContext.value.kind === 'ballot') {
+    return isSpeaker.value && Boolean(teamIdentityId.value)
+  }
+  if (!isAdjudicator.value) return false
+  if (!judgeFeedbackTeamIdentityId.value) return false
+  if (speakerSelectionRequired.value && !judgeFeedbackSpeakerIdentityId.value) return false
+  return true
+})
+
+const pendingTaskHint = computed(() => {
+  if (!pendingTaskContext.value) return ''
+  if (pendingTaskContext.value.kind === 'ballot') {
+    return t('先に提出者を選択すると入力ボタンが表示されます。')
+  }
+  if (speakerSelectionRequired.value) {
+    return t('先に提出者を選択すると入力ボタンが表示されます。')
+  }
+  return t('先に提出者を選択すると入力ボタンが表示されます。')
+})
+
+const pendingTaskPrimaryLabel = computed(() => {
+  if (!pendingTaskContext.value) return t('入力')
+  return pendingTaskContext.value.kind === 'ballot'
+    ? t('チーム評価を開始')
+    : t('ジャッジ評価を開始')
+})
+
+const pendingTaskDrawPath = computed(() => {
+  if (!pendingTaskContext.value) {
+    return `/user/${tournamentId.value}/${participant.value}/home`
+  }
+  return `/user/${tournamentId.value}/${participant.value}/rounds/${pendingTaskContext.value.round}/draw`
+})
+
+const pendingTaskPrimaryPath = computed(() => {
+  if (!pendingTaskContext.value || !pendingTaskReady.value) return ''
+  if (pendingTaskContext.value.kind === 'ballot') {
+    const query = new URLSearchParams({
+      teamA: pendingTaskContext.value.teamA,
+      teamB: pendingTaskContext.value.teamB,
+      submitter: teamIdentityId.value,
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${pendingTaskContext.value.round}/ballot/entry?${query.toString()}`
+  }
+  const feedbackQuery = new URLSearchParams({
+    filter: 'team',
+    actor: 'team',
+    team: judgeFeedbackTeamIdentityId.value,
+  })
+  const judgeId = pendingTaskContext.value.targetJudgeIds[0]
+  if (pendingTaskContext.value.targetJudgeIds.length === 1 && judgeId) {
+    return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(judgeId)}?${feedbackQuery.toString()}`
+  }
+  return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/home?${feedbackQuery.toString()}`
+})
+
+function audienceTeamMatchesQuery(teamId?: string) {
+  const query = normalizedAudienceTeamQuery.value
+  if (!query || !teamId) return false
+  const team = teamsStore.teams.find((item) => item._id === teamId)
+  if (!team) return false
+  const normalizedName = team.name.trim().toLowerCase()
+  return normalizedName.includes(query) || team._id.toLowerCase().includes(query)
+}
+
+function audienceAdjudicatorMatchesQuery(adjudicatorId?: string) {
+  const query = normalizedAudienceTeamQuery.value
+  if (!query || !adjudicatorId) return false
+  const adjudicator = adjudicatorsStore.adjudicators.find((item) => item._id === adjudicatorId)
+  if (!adjudicator) return false
+  const normalizedName = String(adjudicator.name ?? '').trim().toLowerCase()
+  return normalizedName.includes(query) || adjudicator._id.toLowerCase().includes(query)
+}
+
+function isAudienceRowMatched(row: DrawAllocationRow) {
+  if (!hasAudienceTeamQuery.value) return false
+  const judgeIds = [...(row.chairs ?? []), ...(row.panels ?? [])]
+  return (
+    audienceTeamMatchesQuery(row?.teams?.gov) ||
+    audienceTeamMatchesQuery(row?.teams?.opp) ||
+    judgeIds.some((id) => audienceAdjudicatorMatchesQuery(id))
+  )
+}
+
+function roundHasAudienceMatch(roundNumber: number) {
+  if (!hasAudienceTeamQuery.value) return false
+  return sortedAllocation(roundNumber).some((row) => isAudienceRowMatched(row))
+}
+
+function preferredTeamIdForRow(row: DrawAllocationRow) {
+  const govMatched = audienceTeamMatchesQuery(row?.teams?.gov)
+  const oppMatched = audienceTeamMatchesQuery(row?.teams?.opp)
+  if (govMatched && !oppMatched) return row.teams?.gov ?? ''
+  if (oppMatched && !govMatched) return row.teams?.opp ?? ''
+  return ''
+}
+
+function rowAdjudicatorIds(row: DrawAllocationRow) {
+  return Array.from(
+    new Set([...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])])
+  ).filter(Boolean)
+}
+
+function encodeList(values: string[]) {
+  return values.map((value) => encodeURIComponent(value)).join(',')
+}
+
+function judgeEvaluationEnabled(roundNumber: number) {
+  const config = roundConfig(roundNumber)
+  const userDefined = config?.userDefinedData ?? {}
+  return userDefined.evaluate_from_teams !== false || userDefined.evaluate_from_adjudicators !== false
+}
+
+function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
+  const teamA = row?.teams?.gov
+  const teamB = row?.teams?.opp
+  if (!teamA || !teamB) {
+    return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/home`
+  }
+  const adjudicatorIds = rowAdjudicatorIds(row)
+  if (adjudicatorIds.length === 1) {
+    const query = new URLSearchParams({
+      teamA,
+      teamB,
+      submitter: adjudicatorIds[0],
+    })
+    return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/entry?${query.toString()}`
+  }
+  const query = new URLSearchParams({
+    task: 'ballot',
+    round: String(roundNumber),
+    teamA,
+    teamB,
+  })
+  if (adjudicatorIds.length > 0) {
+    query.set('submitters', encodeList(adjudicatorIds))
+  }
+  return `/user/${tournamentId.value}/speaker/home?${query.toString()}`
+}
+
+function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
+  const teamGov = String(row?.teams?.gov ?? '')
+  const teamOpp = String(row?.teams?.opp ?? '')
+  const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+  if (!teamGov || !teamOpp || targetIds.length === 0) {
+    return `/user/${tournamentId.value}/adjudicator/home`
+  }
+
+  const teamId = preferredTeamIdForRow(row)
+  if (teamId) {
+    const query = new URLSearchParams({
+      filter: 'team',
+      actor: 'team',
+      team: teamId,
+    })
+    if (targetIds.length === 1) {
+      return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}?${query.toString()}`
+    }
+    return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?${query.toString()}`
+  }
+
+  const unresolvedQuery = new URLSearchParams({
+    actor: 'team',
+    task: 'feedback',
+    round: String(roundNumber),
+    teamGov,
+    teamOpp,
+    targets: encodeList(targetIds),
+  })
+  return `/user/${tournamentId.value}/adjudicator/home?${unresolvedQuery.toString()}`
+}
 
 function isRoundExpanded(roundNumber: number) {
+  if (isAudience.value && hasAudienceTeamQuery.value && roundHasAudienceMatch(roundNumber)) {
+    return true
+  }
   return roundExpanded.value[roundNumber] !== false
 }
 
@@ -737,11 +812,25 @@ function roundConfig(roundNumber: number) {
 }
 
 function teamAllocationVisible(roundNumber: number) {
+  const draw = drawForRound(roundNumber)
+  if (typeof draw?.drawOpened === 'boolean') return draw.drawOpened
   return roundConfig(roundNumber)?.teamAllocationOpened !== false
 }
 
 function adjudicatorAllocationVisible(roundNumber: number) {
+  const draw = drawForRound(roundNumber)
+  if (typeof draw?.allocationOpened === 'boolean') return draw.allocationOpened
   return roundConfig(roundNumber)?.adjudicatorAllocationOpened !== false
+}
+
+function roundHasVisibleAllocation(roundNumber: number) {
+  return teamAllocationVisible(roundNumber) || adjudicatorAllocationVisible(roundNumber)
+}
+
+function roundHasPartialAllocation(roundNumber: number) {
+  const teamOpen = teamAllocationVisible(roundNumber)
+  const adjudicatorOpen = adjudicatorAllocationVisible(roundNumber)
+  return (teamOpen || adjudicatorOpen) && teamOpen !== adjudicatorOpen
 }
 
 function venuePriority(roundNumber: number, venueId?: string) {
@@ -764,8 +853,8 @@ function sortedAllocation(roundNumber: number) {
 
 function audienceSortValue(row: DrawAllocationRow, key: AudienceSortKey) {
   if (key === 'venue') return venueName(row.venue)
-  if (key === 'gov') return teamName(row.teams.gov)
-  if (key === 'opp') return teamName(row.teams.opp)
+  if (key === 'gov') return teamName(row.teams?.gov)
+  if (key === 'opp') return teamName(row.teams?.opp)
   return adjudicatorNames(row.chairs ?? [])
 }
 
@@ -816,7 +905,8 @@ function audienceSortIndicator(roundNumber: number, key: AudienceSortKey) {
   return state.direction === 'asc' ? '↑' : '↓'
 }
 
-function teamName(id: string) {
+function teamName(id?: string) {
+  if (!id) return '—'
   return teamsStore.teams.find((team) => team._id === id)?.name ?? id
 }
 
@@ -844,76 +934,75 @@ async function refresh() {
     speakersStore.fetchSpeakers(tournamentId.value),
     venuesStore.fetchVenues(tournamentId.value),
   ])
-  await refreshTaskSubmissions()
 }
 
-async function refreshTaskSubmissions() {
-  if (!tournamentId.value || isAudience.value) {
-    submissionsStore.clearSubmissions()
-    return
-  }
-  if (isSpeaker.value) {
-    const ids = [teamIdentityId.value]
-    if (speakerSelectionRequired.value && speakerIdentityId.value) {
-      ids.push(speakerIdentityId.value)
-    }
-    const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
-    if (normalizedIds.length === 0) {
-      submissionsStore.clearSubmissions()
-      return
-    }
-    const merged = new Map<string, any>()
-    for (const entityId of normalizedIds) {
-      const rows = await submissionsStore.fetchParticipantSubmissions({
-        tournamentId: tournamentId.value,
-        submittedEntityId: entityId,
-      })
-      rows.forEach((item) => {
-        merged.set(item._id, item)
-      })
-    }
-    submissionsStore.submissions = Array.from(merged.values())
-    return
-  }
-  if (isAdjudicator.value) {
-    const ids =
-      adjudicatorRoleMode.value === 'adjudicator'
-        ? [teamIdentityId.value]
-        : [judgeFeedbackTeamIdentityId.value]
-    if (
-      adjudicatorRoleMode.value === 'team' &&
-      judgeFeedbackSpeakerSelectionRequired.value &&
-      judgeFeedbackSpeakerIdentityId.value
-    ) {
-      ids.push(judgeFeedbackSpeakerIdentityId.value)
-    }
-    const normalizedIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
-    if (normalizedIds.length === 0) {
-      submissionsStore.clearSubmissions()
-      return
-    }
-    const merged = new Map<string, any>()
-    for (const entityId of normalizedIds) {
-      const rows = await submissionsStore.fetchParticipantSubmissions({
-        tournamentId: tournamentId.value,
-        submittedEntityId: entityId,
-      })
-      rows.forEach((item) => {
-        merged.set(item._id, item)
-      })
-    }
-    submissionsStore.submissions = Array.from(merged.values())
-    return
-  }
-  if (!activeSubmittedEntityId.value) {
-    submissionsStore.clearSubmissions()
-    return
-  }
-  await submissionsStore.fetchParticipantSubmissions({
-    tournamentId: tournamentId.value,
-    submittedEntityId: activeSubmittedEntityId.value,
-  })
+function audienceTeamQueryStorageKey() {
+  if (!tournamentId.value) return ''
+  return `utab:audience:${tournamentId.value}:team-query`
 }
+
+function loadAudienceTeamQueryFromStorage() {
+  if (typeof window === 'undefined') return ''
+  const key = audienceTeamQueryStorageKey()
+  if (!key) return ''
+  return localStorage.getItem(key) ?? ''
+}
+
+function persistAudienceTeamQuery() {
+  if (typeof window === 'undefined' || !isAudience.value) return
+  const key = audienceTeamQueryStorageKey()
+  if (!key) return
+  const query = audienceTeamQuery.value.trim()
+  if (!query) {
+    localStorage.removeItem(key)
+    return
+  }
+  localStorage.setItem(key, query)
+}
+
+function resolveAudienceViewportMode() {
+  if (typeof window === 'undefined') return 'table'
+  return window.matchMedia('(max-width: 860px)').matches ? 'card' : 'table'
+}
+
+onMounted(() => {
+  audienceViewportMode.value = resolveAudienceViewportMode()
+  if (typeof window === 'undefined') return
+  const media = window.matchMedia('(max-width: 860px)')
+  const handleChange = () => {
+    audienceViewportMode.value = media.matches ? 'card' : 'table'
+  }
+  handleChange()
+  if (typeof media.addEventListener === 'function') {
+    media.addEventListener('change', handleChange)
+    disposeAudienceViewportWatcher = () => media.removeEventListener('change', handleChange)
+    return
+  }
+  media.addListener(handleChange)
+  disposeAudienceViewportWatcher = () => media.removeListener(handleChange)
+})
+
+onUnmounted(() => {
+  if (!disposeAudienceViewportWatcher) return
+  disposeAudienceViewportWatcher()
+  disposeAudienceViewportWatcher = null
+})
+
+watch(
+  [participant, tournamentId],
+  () => {
+    if (!isAudience.value) {
+      audienceTeamQuery.value = ''
+      return
+    }
+    audienceTeamQuery.value = loadAudienceTeamQueryFromStorage()
+  },
+  { immediate: true }
+)
+
+watch(audienceTeamQuery, () => {
+  persistAudienceTeamQuery()
+})
 
 watch(
   visibleRounds,
@@ -936,31 +1025,10 @@ watch(
 )
 
 watch(
-  [teamIdentityId, selectableSpeakers, speakerSelectionRequired],
+  [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, speakerSelectionRequired, judgeEvaluationActorMode],
   () => {
-    if (!isSpeaker.value) return
+    if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return
     if (!speakerSelectionRequired.value) {
-      return
-    }
-    if (!teamIdentityId.value) {
-      speakerIdentityId.value = ''
-      return
-    }
-    if (!speakerIdentityId.value) return
-    const exists = selectableSpeakers.value.some((speaker) => speaker._id === speakerIdentityId.value)
-    if (!exists) {
-      speakerIdentityId.value = ''
-    }
-  },
-  { immediate: true }
-)
-
-watch(
-  [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, judgeFeedbackSpeakerSelectionRequired],
-  () => {
-    if (!isAdjudicator.value) return
-    if (!judgeFeedbackSpeakerSelectionRequired.value) {
-      judgeFeedbackSpeakerIdentityId.value = ''
       return
     }
     if (!judgeFeedbackTeamIdentityId.value) {
@@ -979,15 +1047,9 @@ watch(
 )
 
 watch(
-  [participant, () => teamsStore.teams],
+  [participant, () => teamsStore.teams, judgeEvaluationActorMode],
   () => {
-    if (isSpeaker.value && teamIdentityId.value) {
-      const exists = teamsStore.teams.some((team) => team._id === teamIdentityId.value)
-      if (!exists) {
-        teamIdentityId.value = ''
-      }
-    }
-    if (isAdjudicator.value && judgeFeedbackTeamIdentityId.value) {
+    if (isAdjudicator.value && judgeEvaluationActorMode.value === 'team' && judgeFeedbackTeamIdentityId.value) {
       const exists = teamsStore.teams.some((team) => team._id === judgeFeedbackTeamIdentityId.value)
       if (!exists) {
         judgeFeedbackTeamIdentityId.value = ''
@@ -998,9 +1060,9 @@ watch(
 )
 
 watch(
-  [participant, () => adjudicatorsStore.adjudicators],
+  [participant, () => adjudicatorsStore.adjudicators, judgeEvaluationActorMode],
   () => {
-    if (!isAdjudicator.value) return
+    if (!isSpeaker.value && !(isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator')) return
     if (!teamIdentityId.value) return
     const exists = adjudicatorsStore.adjudicators.some((adj) => adj._id === teamIdentityId.value)
     if (!exists) {
@@ -1008,63 +1070,6 @@ watch(
     }
   },
   { immediate: true, deep: true }
-)
-
-watch([activeSubmittedEntityId, speakerIdentityId, speakerSelectionRequired], () => {
-  refreshTaskSubmissions()
-})
-
-watch(adjudicatorRoleMode, (mode) => {
-  if (!isAdjudicator.value) return
-  if (mode === 'adjudicator') {
-    judgeFeedbackTeamIdentityId.value = ''
-    judgeFeedbackSpeakerIdentityId.value = ''
-    return
-  }
-  teamIdentityId.value = ''
-})
-
-watch(
-  [judgeFeedbackTeamIdentityId, judgeFeedbackSpeakerIdentityId, judgeFeedbackSpeakerSelectionRequired],
-  () => {
-    refreshTaskSubmissions()
-  }
-)
-
-watch(
-  [participant, tournamentId, () => teamsStore.teams.length, () => route.query.viewMode],
-  () => {
-    if (!isAdjudicator.value) {
-      adjudicatorRoleMode.value = 'adjudicator'
-    }
-    if (!isAudience.value) return
-    if (route.query.viewMode === 'card' || route.query.viewMode === 'table') return
-    router.replace({
-      query: {
-        ...route.query,
-        viewMode: 'table',
-      },
-    })
-  },
-  { immediate: true }
-)
-
-watch(
-  [isAdjudicator, teamIdentityId, judgeFeedbackTeamIdentityId],
-  () => {
-    if (!isAdjudicator.value) {
-      adjudicatorRoleMode.value = 'adjudicator'
-      return
-    }
-    if (teamIdentityId.value) {
-      adjudicatorRoleMode.value = 'adjudicator'
-      return
-    }
-    if (judgeFeedbackTeamIdentityId.value) {
-      adjudicatorRoleMode.value = 'team'
-    }
-  },
-  { immediate: true }
 )
 
 watch(
@@ -1089,60 +1094,83 @@ select {
   color: #ef4444;
 }
 
-.task-list {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.task-groups {
-  gap: var(--space-2);
-}
-
-.task-group-card {
-  border: 1px solid var(--color-border);
-  padding: var(--space-2);
-}
-
-.task-group-title {
-  margin: 0;
-  font-size: 14px;
-}
-
-.task-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+.participant-home-header {
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.task-action {
-  min-width: 120px;
+.audience-tools {
+  padding: var(--space-2);
+  background: var(--color-surface);
+}
+
+.audience-team-input {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 14px;
+  background: #fff;
+  width: 100%;
+}
+
+.pending-task-actions {
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .tight {
   gap: 4px;
 }
 
-.role-switch {
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.role-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: var(--color-surface);
-  font-size: 12px;
-  color: var(--color-text);
-}
-
 .compact-round {
   padding-top: var(--space-3);
   padding-bottom: var(--space-3);
+}
+
+.round-visibility-note {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.round-visibility-title {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.round-visibility-chip-list {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.round-visibility-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.round-visibility-chip.is-open {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.round-visibility-chip.is-closed {
+  color: #9a3412;
+  border-color: #fed7aa;
+  background: #fff7ed;
 }
 
 .round-toggle {
@@ -1218,12 +1246,26 @@ select {
   background: var(--color-surface-muted);
 }
 
+.draw-table tr.match-hit td {
+  background: color-mix(in srgb, var(--color-secondary) 52%, white);
+}
+
 .draw-row {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 8px 10px;
   display: grid;
   gap: 6px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.draw-row.match-hit {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.match-jump {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 44%, transparent);
 }
 
 .draw-chair-line {
@@ -1251,6 +1293,26 @@ select {
 .draw-main {
   justify-content: space-between;
   align-items: center;
+}
+
+.draw-actions {
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.compact-draw-list .draw-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.compact-draw-list .draw-actions :deep(.btn) {
+  width: 100%;
+  justify-content: center;
+}
+
+.draw-actions-cell {
+  min-width: 180px;
 }
 
 .match-sides {
@@ -1314,10 +1376,6 @@ select {
 }
 
 @media (max-width: 720px) {
-  .task-item {
-    grid-template-columns: 1fr;
-  }
-
   .match-sides {
     grid-template-columns: 1fr;
   }

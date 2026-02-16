@@ -10,43 +10,6 @@
 
 ---
 
-## テスト実行の問題整理（2026-02-15）
-
-### 問題
-
-- `pnpm -C packages/web test` が無出力のまま停止し、完走しないケースがある
-- `pnpm -C packages/web typecheck` / `typecheck:vue` も同様に停止するケースがある
-- `pnpm -C packages/server exec tsc -p tsconfig.json --noEmit` も同様に停止するケースがある
-- `pnpm -C packages/server lint`（対象ファイル限定実行を含む）も停止するケースがある
-- 既存コマンドが長時間ブロックすると、CI/ローカルの「壊れているのか遅いだけか」の切り分けができない
-
-### わかっていること
-
-- Web 側に「負荷試験専用」の明示的なテストスイートは見当たらない（静的文字列検証中心のテストが多数）
-- Typecheck 側は `tsconfig.lint.json` / `tsconfig.typecheck.json` でテストファイル除外済みであり、単純な対象過多だけが原因とは断定できない
-- 実行環境依存で `vitest` / `tsc` プロセスがハングしている可能性が高い
-- 2026-02-15 時点で `web test`/`web typecheck`/`web typecheck:vue` は timeout wrapper により `124` で終了することを確認（無限待機は回避）
-- 暫定対策として `packages/web/scripts/run-with-timeout.mjs` を追加し、以下をデフォルト短時間実行へ変更済み
-  - `pnpm -C packages/web test`（120秒 timeout）
-  - `pnpm -C packages/web typecheck`（90秒 timeout）
-  - `pnpm -C packages/web typecheck:vue`（120秒 timeout）
-- テスト実行導線は簡素化し、`pnpm test`（ルート）と各packageの `pnpm -C packages/<name> test` に一本化した
-
-### 今後の方針
-
-- 方針1: 実行導線は最小限に保ち、テストは `test` コマンドで全件実行する
-- 方針2: 実行時間・ハング問題はテスト分岐ではなく、環境調査（依存・Node/PNPM・キャッシュ）で解消する
-- 方針3: タイムアウト発生時は「コマンド・経過秒・再現条件」を `PLAN.md` と PR 説明に必ず記録する
-
-### 追加で確認すべき重要ポイント
-
-- `vitest` 実行時の worker 設定（`threads/pool`）とプロセス残留の有無
-- `tsc` / `vue-tsc` の incremental キャッシュ破損有無（`node_modules/.cache/*`）
-- `pnpm install` 後の lockfile 差分と依存解決揺れ
-- CI 環境とローカル環境での再現差（同一 Node/PNPM バージョンで比較）
-
----
-
 ## Tab アップデート計画（完了）
 
 ### ステータス（2026-02-13）
@@ -55,16 +18,254 @@
 - `PLAN.md` 内のチェック項目はすべて完了済み（未完了チェックなし）。
 - 次フェーズは新要件受付後に起票する（本計画はクローズ）。
 
-### 方針（2026-02-12更新）
+### 方針（2026-02-15更新）
 
 - レポート生成画面を中心に、集計オプション・差分確認・提出状況確認を一体化する
 - 必要なコアロジック変更（ランキング比較・引き分け・正規化）は許容し、後方互換を維持して段階導入する
 - ラウンド管理の提出関連機能は当面併設し、利用実績を見て主導線をレポート生成側へ寄せる
 - 集計ソースは通常運用を `提出データ` に統一し、`生結果データ` は「例外補正レーン（高度な運用）」として扱う
 - メール/証明書など運用コストが高いものは外部連携を基本とし、Tab側はデータ出力を強化する
+- テストは並列に実行可能にする
+
+### レポートUX再設計（運営者向け・2026-02-15起票）
+
+#### UX方針（判断タスク起点）
+
+- 画面の価値を「統計の豊富さ」ではなく「運営の意思決定速度」で定義する
+- 1画面で完結させるのは「確定可否判断」、分析深掘りは2階層目へ分離する
+- 重要情報は常に上段固定（提出健全性、差分リスク、ブレイク境界）
+- 日常運用の主導線は `提出データ` 固定、`生結果データ` は例外導線として隔離する
+- 「次に何をすべきか」をカード単位で明示し、行動ボタンを近接配置する
+
+#### 新画面構成（情報設計）
+
+1. ヘッダー帯（全タブ共通）
+   - snapshot情報（作成時刻、対象ラウンド、source、比較基準）
+   - 健全性ステータス（提出欠損、重複、不明ID、前回差分件数）
+   - CTA（再計算、提出一覧へ、ラウンド運営へ、CSV出力）
+2. タブA: `運営判断`（既定）
+   - 提出健全性サマリ（ラウンド別 progress + 未提出者）
+   - 確定リスク（未提出/重複/不明ID/例外モード）を severity順で表示
+   - 順位差分サマリ（TopN入替、境界順位変動、要確認件数）
+3. タブB: `公平性`
+   - サイド偏り（Gov/Opp配分と勝率）
+   - 対戦偏り（同校再戦、強度偏り）
+   - ジャッジ偏り（担当数偏差、利益相反フラグ）
+4. タブC: `発表準備`
+   - ブレイク境界（同点とタイブレーク根拠）
+   - 表彰プレビュー（カテゴリ別 TopN）
+   - スライド/CSV出力（直前確認を同画面化）
+5. タブD: `分析`（任意）
+   - 既存グラフ群（推移、ヒストグラム、ヒートマップ）を集約
+   - 運営必須ではない統計を隔離し、初見ノイズを下げる
+
+#### 表示優先度（P0/P1/P2）
+
+- P0（必須）: 提出健全性、確定リスク、差分サマリ、ブレイク境界
+- P1（重要）: 公平性3指標（side/matchup/judge）
+- P2（補助）: 深掘り統計、分布図、全体ヒートマップ
+
+#### KPI（UX評価指標）
+
+- 集計確定までの所要時間（snapshot選択〜確定判断）
+- 未提出・重複の解消完了までの時間
+- 「差分理由が不明」の問い合わせ件数
+- 発表前オペレーション（CSV/スライド）準備時間
+
+#### 余力統計の追加ルール（UX最優先）
+
+- 既定表示は「運営判断に必要な異常・変化のみ」とし、全量分布は `分析` タブへ隔離する
+- 1カード1メッセージ原則（何が起きているか / なぜ重要か / 次の操作）で表示する
+- 閾値超過時のみ warning 表示し、平常時は簡潔な正常ステータスに畳む
+- 指標は必ず「定義ヘルプ（計算式/比較基準/解釈）」を併記し、誤読を防ぐ
+- クリック先は既存導線（提出一覧/ラウンド運営/表彰出力）へ接続し、分析だけで終わらせない
+
+#### 実装計画（新規）
+
+- [ ] **T35. レポート画面 IA 再編（4タブ化 + ヘッダー帯）**
+  - 目的: 運営判断に不要な情報を初期表示から外し、意思決定速度を上げる
+  - 実装内容:
+    - `AdminTournamentCompiled` の主レイアウトを `運営判断 / 公平性 / 発表準備 / 分析` に分割
+    - snapshot・健全性・主要CTAを上段ヘッダー帯へ固定表示
+    - 既存の統計カードを `分析` タブへ移設し、既定タブを `運営判断` に設定
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/components/common/Table.vue`（必要時）
+    - `packages/web/src/i18n/messages.ts`
+    - `docs/ui/ui-map.md`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+      - 既定タブ、タブ切替、ヘッダー帯の主要情報表示
+
+- [ ] **T36. 運営判断タブ実装（P0）**
+  - 目的: 「確定してよいか」を最短で判断できるようにする
+  - 実装内容:
+    - ラウンド別提出健全性（提出/未提出/重複/不明）を優先表示
+    - severity順リスクカード（未提出、例外source、不整合）を追加
+    - 順位差分の要約指標（TopN入替件数、境界変動件数、確認対象）を追加
+    - 各リスクに対応アクション（提出一覧へ、ラウンド運営へ）を近接配置
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/utils/diff-indicator.ts`
+    - `packages/web/src/stores/submissions.ts`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+      - リスク表示の優先順、アクション導線、差分要約の計算
+
+- [ ] **T37. 公平性タブ実装（P1）**
+  - 目的: 公平性懸念を早期検知し、再配席/説明責任に備える
+  - 実装内容:
+    - side bias（配分/勝率）をラウンド別に表示
+    - matchup bias（再戦、強度偏り）をサマリ化
+    - judge bias（担当数偏差、conflict）をサマリ化
+    - 閾値超過時に warning バッジを表示
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/components/mstat/SidePieChart.vue`
+    - `packages/web/src/components/mstat/SideScatter.vue`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+      - 閾値超過時バッジ、指標計算、ラウンド切替表示
+
+- [ ] **T38. 発表準備タブ実装（P0）**
+  - 目的: 発表作業を「確認→出力」まで一連で完了させる
+  - 実装内容:
+    - ブレイク境界カード（同点境界、適用タイブレーク指標）を表示
+    - 表彰プレビューと `受賞者CSV` を同タブ内で完結
+    - スライド設定とプレビュー導線を整理（必要項目のみ）
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/components/slides/*.vue`
+    - `packages/web/src/utils/certificate-export.ts`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+      - 境界表示、CSV/Slides 出力導線、同点時表示
+
+- [ ] **T39. 分析タブ再編（既存統計の隔離）**
+  - 目的: 既存機能を保ったまま初見ノイズを下げる
+  - 実装内容:
+    - `ScoreChange/Range/Histogram/Heatmap` を `分析` タブへ集約
+    - データ不足時の empty state を統一
+    - 大会規模が大きい場合の描画負荷を抑える（初期遅延描画）
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/components/mstat/*.vue`
+    - `packages/web/src/components/common/EmptyState.vue`
+  - 追加テスト:
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+      - タブ遷移時のみ描画、empty state の表示
+
+- [ ] **T40. 段階導入と回帰保証**
+  - 目的: 既存運用を止めずに新構成へ移行する
+  - 実装内容:
+    - `VITE_ADMIN_REPORTS_UX_V3` フラグで段階導入
+    - 旧表示との差分QAチェックリストを追加
+    - 計測イベント（タブ滞在、CTAクリック、出力完了）を導入し改善ループを回す
+  - 変更候補:
+    - `packages/server/src/config/environment.ts`
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `docs/ui/ui-qa-checklist.md`
+    - `docs/ui/ui-map.md`
+  - 追加テスト:
+    - `packages/web/src/router/admin-navigation.test.ts`
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+    - `packages/server/test/integration.test.ts`（フラグON/OFF時の互換確認）
+
+#### 余力統計拡張（T41〜T44, T35〜T40完了後）
+
+- [ ] **T41. 変動/ストーリー指標（Volatility + Cinderella）**
+  - 目的: 参加者・運営双方に「大会の動き」を短時間で伝える
+  - 対象指標:
+    - `Volatility Score`（ラウンド間順位変動幅の平均/分散）
+    - `Cinderella Tracker`（初期順位からの上昇幅ランキング）
+  - UX配置:
+    - 既定は `分析` タブ。`運営判断` には「急変チーム件数」のみ要約表示
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/utils/insights.ts`（新規）
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/utils/insights.test.ts`（新規）
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+
+- [ ] **T42. ジャッジ整合性指標（Strictness + Agreement）**
+  - 目的: 採点偏り・判定不一致を早期に検知し、説明責任を担保する
+  - 対象指標:
+    - `Judge Strictness`（大会平均比の z-score）
+    - `Judge Agreement Rate`（同一試合のジャッジ間分散/一致率）
+  - UX配置:
+    - `公平性` タブで outlier のみ強調し、通常時は summary 値だけ表示
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/components/mstat/*.vue`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/utils/insights.test.ts`
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+
+- [ ] **T43. 強度補正指標（SOS + Side Resilience）**
+  - 目的: 単純勝率では見えない「対戦相手強度込みの実力」を可視化する
+  - 対象指標:
+    - `Strength of Schedule (SOS)`（対戦相手の平均強度）
+    - `Side Resilience`（Gov/Opp別成績の強度補正値）
+  - UX配置:
+    - `公平性` タブで「補正後に逆転するケース」だけ warning として表示
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/core/src/results/results.ts`（必要時: 補正値の算出補助）
+    - `packages/web/src/utils/insights.ts`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/core/tests/results-compile-advanced.test.ts`
+    - `packages/web/src/utils/insights.test.ts`
+
+- [ ] **T44. 境界/提出速度指標（Bubble Pressure + Submission Speed）**
+  - 目的: 発表直前リスクと提出運用の詰まりを同時に把握する
+  - 対象指標:
+    - `Break Bubble Pressure`（境界順位の点差/同点人数/タイブレーク依存度）
+    - `Submission Speed Index`（提出開始から有効提出までの時間: median / P90 / 遅延率）
+  - 指標定義（提出速度）:
+    - roundごとに `提出受付開始時刻` を基準時刻とし、各提出の `createdAt` との差分（分）を計算
+    - `median` と `P90` を主表示、閾値超過（例: P90 > 30分）は warning 表示
+    - ラウンド別の「遅延上位提出者」を drill-down で表示
+  - UX配置:
+    - `Break Bubble Pressure` は `発表準備` タブ上段に固定
+    - `Submission Speed Index` は `運営判断` タブで提出健全性カードと並列表示
+  - 変更候補:
+    - `packages/web/src/views/admin/AdminTournamentCompiled.vue`
+    - `packages/web/src/stores/submissions.ts`
+    - `packages/server/src/controllers/submissions.ts`（開始時刻不足時の補完APIが必要なら）
+    - `packages/web/src/utils/insights.ts`
+    - `packages/web/src/i18n/messages.ts`
+  - 追加テスト:
+    - `packages/web/src/utils/insights.test.ts`
+    - `packages/web/src/views/admin/__tests__/AdminTournamentCompiledV2.test.ts`
+    - `packages/server/test/integration.test.ts`（提出時刻データ欠損時のフォールバック）
+
+#### 実装順（依存）
+
+1. `T35`（枠組み）を先行し、既存機能を壊さずにタブの骨格を作る
+2. `T36` と `T38` を優先し、運営必須機能を新導線へ移す
+3. `T37` で公平性を追加し、説明責任の可視化を強化する
+4. `T39` で既存統計を整理し、ノイズと描画負荷を調整する
+5. `T40` で段階導入・計測・QAを固め、本切替可否を判断する
+6. 余力があれば `T44` → `T42` → `T43` → `T41` の順で追加する（運営価値優先）
+
+#### 受け入れ条件（Done定義）
+
+- 初見ユーザーが `運営判断` タブのみで「確定可否」を判断できる
+- 未提出/重複/不明IDが1クリックで修正導線へ遷移できる
+- 発表準備（表彰・CSV・Slides）が単一タブ内で完結する
+- 既存統計は失わず `分析` タブから到達できる
+- 機能フラグOFFで現行UIに即時ロールバックできる
 
 ### 進捗
 
+- 2026-02-15: レポートUX再設計タスク（`T35〜T40`）を起票し、運営者向けの新画面構成（運営判断/公平性/発表準備/分析）と段階実装計画を追加
+- 2026-02-15: 余力統計バックログ（`T41〜T44`）を追加し、Volatility/Strictness/Agreement/SOS/Side Resilience/Bubble Pressure/Cinderella と `Submission Speed Index` のUX導入方針を定義
 - 2026-02-08: Phase 1 の `T01〜T06` を先行実装済み（詳細は `docs/migration/tab-update-roadmap-2026-02-08.md` を参照）
 - 2026-02-12: `T18`（集計オプション拡張）と `T19`（集計ロジック統合）の MVP を実装し、Core/Server/Web の関連テストを追加・更新
 - 2026-02-12: `T20`（差分表示基盤）`T21`（説明付きUI）`T22`（提出データ機能統合）の MVP を実装し、差分算出・凡例・ヘルプ・提出サマリをレポート生成画面へ統合
@@ -781,6 +982,8 @@
 - 色・余白・角丸は既存トークン（`packages/web/src/styles.css`）を優先し、個別色の直書きを増やさない。
 - 新しいUIパーツは既存コンポーネント（`Button`, `Field`, `Table`, `ReloadButton`）を再利用する。
 - 単発の例外スタイルを追加した場合は、後続で共通化できるかを必ず検討する。
+- 同じ構造・挙動・見た目のUIが2箇所以上に現れる場合は、画面固有実装より `packages/web/src/components/common` への共通化を優先する。
+- 共通化を見送る場合は、画面固有である理由（状態依存・性能要件・アクセス制御など）をPRに明記する。
 
 6. 実装時チェック（Definition of Done）
 - 新規/変更UIが `docs/ui/button-guidelines.md` と矛盾しない。
@@ -801,3 +1004,10 @@
 - 同じ目的（公式順位の確定）に対して、日常運用の主導線は1本にする（既定: `提出データ`）。
 - 例外レーン（`生結果データ`）は常設主導線に置かず、明示ラベル付きの高度運用導線として分離する。
 - 例外レーンを使った場合は、画面上で「例外モードで再計算した」ことが判別できる表示を必須にする。
+
+9. 共有状態（Single Source of Truth）の原則
+- ラウンド公開系と対戦公開/ロック系の状態は、画面ごとに別変数を持たず、Pinia Store の同一フィールドを正とする。
+- 共有状態の更新は必ず Store Action（`updateRound` / `upsertDraw` など）経由で行い、成功時に Store を更新する。
+- 一時入力（未保存）を持つ場合は `*Draft` 命名を必須にし、保存前状態であることをUI上で明示する。
+- 同一意味の状態に対して、画面間でフィールド名を変えない（例: `motionOpened`, `drawOpened`, `allocationOpened`, `locked`）。
+- 共有状態を扱う新規UI追加時は、既存画面で同じ状態を扱う実装を参照し、重複ロジックを composable/store に寄せる。

@@ -24,25 +24,16 @@
         <div v-if="!isEmbeddedRoute" class="stack round-head">
           <div class="row round-head-row">
             <button type="button" class="round-toggle" @click="toggleRound(round._id)">
-              <span class="toggle-icon" :class="{ open: isExpanded(round._id) }" aria-hidden="true">
-                <svg viewBox="0 0 20 20" width="16" height="16">
-                  <path
-                    d="M7 4l6 6-6 6"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </span>
-              <div class="stack tight">
-                <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
-                <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }}</span>
-                <span v-if="drawUpdatedLabel(round.round)" class="muted small">
-                  {{ $t('更新: {time}', { time: drawUpdatedLabel(round.round) }) }}
-                </span>
-              </div>
+              <CollapseHeader
+                :title="round.name || $t('ラウンド {round}', { round: round.round })"
+                :subtitle="$t('ラウンド番号') + ': ' + round.round"
+                :meta="
+                  drawUpdatedLabel(round.round)
+                    ? $t('更新: {time}', { time: drawUpdatedLabel(round.round) })
+                    : ''
+                "
+                :open="isExpanded(round._id)"
+              />
             </button>
             <div v-if="!isEmbeddedRoute" class="row round-head-actions">
               <Button variant="danger" size="sm" class="round-delete" @click="requestRemoveRound(round._id)">
@@ -52,83 +43,85 @@
           </div>
         </div>
 
-        <div v-show="isEmbeddedRoute || isExpanded(round._id)" class="stack round-body">
-          <div class="card soft stack round-settings-frame">
-            <div class="grid status-grid">
-              <div class="card soft stack status-card">
-                <div class="stack status-head status-head-vertical">
-                  <h4 class="status-card-title">{{ $t('モーション公開') }}</h4>
-                  <div class="switch-state">
-                    <span class="switch-label">{{ $t('非公開') }}</span>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        :checked="Boolean(round.motionOpened)"
-                        :disabled="isLoading"
-                        @change="onMotionOpenedChange(round, $event)"
-                      />
-                      <span class="switch-slider"></span>
-                    </label>
-                    <span class="switch-label">{{ $t('公開') }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="card soft stack status-card">
-                <div class="stack status-head status-head-vertical">
-                  <h4 class="status-card-title">{{ $t('チーム割り当て') }}</h4>
-                  <div class="switch-state">
-                    <span class="switch-label">{{ $t('非公開') }}</span>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        :checked="Boolean(round.teamAllocationOpened)"
-                        :disabled="isLoading"
-                        @change="onTeamAllocationChange(round, $event)"
-                      />
-                      <span class="switch-slider"></span>
-                    </label>
-                    <span class="switch-label">{{ $t('公開') }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="card soft stack status-card">
-                <div class="stack status-head status-head-vertical">
-                  <h4 class="status-card-title">{{ $t('ジャッジ割り当て') }}</h4>
-                  <div class="switch-state">
-                    <span class="switch-label">{{ $t('非公開') }}</span>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        :checked="Boolean(round.adjudicatorAllocationOpened)"
-                        :disabled="isLoading"
-                        @change="onAdjudicatorAllocationChange(round, $event)"
-                      />
-                      <span class="switch-slider"></span>
-                    </label>
-                    <span class="switch-label">{{ $t('公開') }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="card soft stack status-card">
-                <h4 class="status-card-title">{{ $t('提出状況') }}</h4>
-                <div class="status-line">
-                  <span>{{ $t('スコアシート') }}</span>
-                  <strong>{{ ballotSubmittedCount(round) }}/{{ ballotExpectedCount(round) }}</strong>
-                </div>
-                <div class="status-line">
-                  <span>{{ $t('フィードバック') }}</span>
-                  <strong
-                    >{{ feedbackSubmittedCount(round) }}/{{ feedbackExpectedCount(round) }}</strong
-                  >
-                </div>
-                <div class="row">
-                  <Button variant="secondary" size="sm" @click="openMissingModal(round.round)">
-                    {{ $t('未提出者を表示') }}
-                  </Button>
+        <div class="card soft stack round-status-frame">
+          <div class="grid status-grid">
+            <div class="card soft stack status-card">
+              <div class="stack status-head status-head-vertical">
+                <h4 class="status-card-title">{{ $t('モーション公開') }}</h4>
+                <div class="switch-state">
+                  <span class="switch-label">{{ $t('非公開') }}</span>
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(round.motionOpened)"
+                      :disabled="isLoading"
+                      @change="onMotionOpenedChange(round, $event)"
+                    />
+                    <span class="switch-slider"></span>
+                  </label>
+                  <span class="switch-label">{{ $t('公開') }}</span>
                 </div>
               </div>
             </div>
+            <div class="card soft stack status-card">
+              <div class="stack status-head status-head-vertical">
+                <h4 class="status-card-title">{{ $t('チーム割り当て') }}</h4>
+                <div class="switch-state">
+                  <span class="switch-label">{{ $t('非公開') }}</span>
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(round.teamAllocationOpened)"
+                      :disabled="isLoading"
+                      @change="onTeamAllocationChange(round, $event)"
+                    />
+                    <span class="switch-slider"></span>
+                  </label>
+                  <span class="switch-label">{{ $t('公開') }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="card soft stack status-card">
+              <div class="stack status-head status-head-vertical">
+                <h4 class="status-card-title">{{ $t('ジャッジ割り当て') }}</h4>
+                <div class="switch-state">
+                  <span class="switch-label">{{ $t('非公開') }}</span>
+                  <label class="switch">
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(round.adjudicatorAllocationOpened)"
+                      :disabled="isLoading"
+                      @change="onAdjudicatorAllocationChange(round, $event)"
+                    />
+                    <span class="switch-slider"></span>
+                  </label>
+                  <span class="switch-label">{{ $t('公開') }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="card soft stack status-card">
+              <h4 class="status-card-title">{{ $t('提出状況') }}</h4>
+              <div class="status-line">
+                <span>{{ $t('スコアシート') }}</span>
+                <strong>{{ ballotSubmittedCount(round) }}/{{ ballotExpectedCount(round) }}</strong>
+              </div>
+              <div class="status-line">
+                <span>{{ $t('フィードバック') }}</span>
+                <strong
+                  >{{ feedbackSubmittedCount(round) }}/{{ feedbackExpectedCount(round) }}</strong
+                >
+              </div>
+              <div class="row">
+                <Button variant="secondary" size="sm" @click="openMissingModal(round.round)">
+                  {{ $t('未提出者を表示') }}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
 
+        <div v-show="isEmbeddedRoute || isExpanded(round._id)" class="stack round-body">
+          <div class="card soft stack round-settings-frame">
             <div class="stack motion-editor">
               <Field class="motion-field" :label="$t('モーション')" v-slot="{ id, describedBy }">
                 <input
@@ -322,6 +315,26 @@
                 >
               </label>
             </div>
+          </section>
+
+          <section class="stack settings-group">
+            <h5 class="settings-group-title">{{ $t('集計設定') }}</h5>
+            <CompileOptionsEditor
+              v-model:source="roundDraft(round).compile.source"
+              v-model:source-rounds="roundDraft(round).compile.source_rounds"
+              v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
+              v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
+              v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
+              v-model:tie-points="roundDraft(round).compile.options.tie_points"
+              v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
+              v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
+              v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
+              v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
+              v-model:include-labels="roundDraft(round).compile.options.include_labels"
+              :show-source-rounds="true"
+              :source-round-options="compileSourceRoundSelectOptions(round.round)"
+              :disabled="isLoading"
+            />
           </section>
 
           <section class="stack settings-group">
@@ -593,6 +606,8 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
+import CollapseHeader from '@/components/common/CollapseHeader.vue'
+import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -602,6 +617,10 @@ import { useTeamsStore } from '@/stores/teams'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { defaultRoundDefaults } from '@/utils/round-defaults'
+import {
+  normalizeCompileOptions,
+  type CompileOptions,
+} from '@/types/compiled'
 import type { RoundBreakConfig } from '@/types/round'
 
 const route = useRoute()
@@ -613,16 +632,31 @@ const teamsStore = useTeamsStore()
 const speakersStore = useSpeakersStore()
 const adjudicatorsStore = useAdjudicatorsStore()
 const { t } = useI18n({ useScope: 'global' })
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    embeddedRound?: number | null
+  }>(),
+  {
+    embedded: false,
+    embeddedRound: null,
+  }
+)
+
+function normalizeRoundValue(value: unknown): number | null {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
+}
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const isEmbeddedRoute = computed(
-  () => route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
 )
 const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.round - b.round))
 const selectedRoundFromQuery = computed(() => {
-  const queryRound = Number(route.query.round)
-  if (!Number.isInteger(queryRound) || queryRound < 1) return null
-  return queryRound
+  const fromProp = normalizeRoundValue(props.embeddedRound)
+  if (fromProp !== null) return fromProp
+  return normalizeRoundValue(route.query.round)
 })
 const displayRounds = computed(() => {
   if (selectedRoundFromQuery.value === null) return sortedRounds.value
@@ -649,6 +683,15 @@ const roundDeleteModalRound = computed(() => {
 
 function defaultRoundUserDefined() {
   return { ...defaultRoundDefaults().userDefinedData, hidden: false }
+}
+
+function defaultRoundCompile() {
+  const compileDefaults = defaultRoundDefaults().compile
+  return {
+    source: compileDefaults.source,
+    source_rounds: [...compileDefaults.source_rounds],
+    options: normalizeCompileOptions(compileDefaults.options, compileDefaults.options),
+  }
 }
 
 type BreakCandidate = {
@@ -729,6 +772,7 @@ type RoundSettingsDraft = {
   motion: string
   weights: { chair: number; panel: number; trainee: number }
   userDefined: ReturnType<typeof defaultRoundUserDefined>
+  compile: ReturnType<typeof defaultRoundCompile>
   break: BreakDraft
 }
 const roundDrafts = reactive<Record<string, RoundSettingsDraft>>({})
@@ -736,9 +780,15 @@ const roundDrafts = reactive<Record<string, RoundSettingsDraft>>({})
 function createRoundDraft(round: any): RoundSettingsDraft {
   const motions = Array.isArray(round.motions) ? round.motions : []
   const userDefined = round.userDefinedData ?? {}
+  const compileSource = (userDefined.compile ?? {}) as Record<string, any>
+  const compileOptionsSource =
+    compileSource.options && typeof compileSource.options === 'object'
+      ? (compileSource.options as CompileOptions)
+      : (compileSource as CompileOptions)
   const userDefinedBreak = userDefined.break ?? {}
   const { break: _ignoredBreak, ...plainUserDefined } = userDefined
   void _ignoredBreak
+  const roundNumber = Number(round.round)
   return {
     motion: motions[0] ? String(motions[0]) : '',
     weights: {
@@ -751,6 +801,11 @@ function createRoundDraft(round: any): RoundSettingsDraft {
       ...plainUserDefined,
       hidden: false,
       evaluator_in_team: plainUserDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+    },
+    compile: {
+      source: compileSource.source === 'raw' ? 'raw' : defaultRoundCompile().source,
+      source_rounds: normalizeSourceRounds(roundNumber, compileSource.source_rounds),
+      options: normalizeCompileOptions(compileOptionsSource),
     },
     break: defaultBreakDraft(Number(round.round), userDefinedBreak),
   }
@@ -1008,6 +1063,13 @@ function breakSourceRoundOptions(targetRound: number): number[] {
     .sort((left, right) => left - right)
 }
 
+function compileSourceRoundSelectOptions(targetRound: number): Array<{ value: number; label: string }> {
+  return breakSourceRoundOptions(targetRound).map((roundNumber) => ({
+    value: roundNumber,
+    label: roundLabel(roundNumber),
+  }))
+}
+
 function onBreakSourceRoundToggle(draft: BreakDraft, sourceRound: number, event: Event) {
   const target = event.target as HTMLInputElement | null
   const checked = Boolean(target?.checked)
@@ -1229,6 +1291,8 @@ async function onMotionOpenedChange(round: any, event: Event) {
 async function saveRoundSettings(round: any) {
   const draft = roundDraft(round)
   const existingBreak = (round.userDefinedData ?? {}).break
+  const compileSourceRounds = normalizeSourceRounds(Number(round.round), draft.compile.source_rounds)
+  const compileOptions = normalizeCompileOptions(draft.compile.options)
   await roundsStore.updateRound({
     tournamentId: tournamentId.value,
     roundId: round._id,
@@ -1242,6 +1306,11 @@ async function saveRoundSettings(round: any) {
       hidden: false,
       evaluator_in_team: draft.userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
       ...(existingBreak ? { break: existingBreak } : {}),
+      compile: {
+        source: draft.compile.source === 'raw' ? 'raw' : 'submissions',
+        source_rounds: compileSourceRounds,
+        options: compileOptions,
+      },
     },
   })
 }
@@ -1422,30 +1491,17 @@ watch(
   flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
   text-align: left;
   cursor: pointer;
 }
 
-.toggle-icon {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-muted);
-  transition: transform 0.15s ease;
-  flex-shrink: 0;
-}
-
-.toggle-icon.open {
-  transform: rotate(90deg);
-}
-
 .round-body {
   padding-top: var(--space-1);
+}
+
+.round-status-frame {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
 }
 
 .round-settings-frame {

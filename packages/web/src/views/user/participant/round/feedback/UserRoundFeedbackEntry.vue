@@ -104,7 +104,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTaskList">{{ $t('タスク一覧に戻る') }}</Button>
+          <Button size="sm" @click="goToTaskList">{{ $t('参加者ホームに戻る') }}</Button>
         </div>
       </div>
     </div>

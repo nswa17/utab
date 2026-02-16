@@ -35,7 +35,7 @@ const baseBodySchema = z.object({
 })
 
 const baseBodyWithSnapshotSchema = baseBodySchema.extend({
-  snapshotId: z.string().min(1),
+  snapshotId: z.string().min(1).optional(),
 })
 
 const allocationBodySchema = baseBodyWithSnapshotSchema.extend({
