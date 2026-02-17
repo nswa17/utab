@@ -332,6 +332,37 @@ function judgeEvaluationPath(row: any) {
   if (!teamGov || !teamOpp || targetIds.length === 0) {
     return `/user/${tournamentId.value}/adjudicator/home`
   }
+  const submitterIds = Array.from(
+    new Set([...(row?.chairs ?? []), ...(row?.panels ?? []), ...(row?.trainees ?? [])])
+  ).filter(Boolean)
+  const userDefined = roundConfig.value?.userDefinedData ?? {}
+  const evaluateFromTeams = userDefined.evaluate_from_teams !== false
+  const evaluateFromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+  const canUseTeamActor = evaluateFromTeams
+  const canUseAdjudicatorActor = evaluateFromAdjudicators && submitterIds.length > 1
+  if (!canUseTeamActor && !canUseAdjudicatorActor) {
+    return `/user/${tournamentId.value}/adjudicator/home`
+  }
+  const defaultActor: 'team' | 'adjudicator' = canUseTeamActor ? 'team' : 'adjudicator'
+
+  if (defaultActor === 'adjudicator') {
+    const query = new URLSearchParams({
+      actor: 'adjudicator',
+      task: 'feedback',
+      round: String(round.value),
+      teamGov,
+      teamOpp,
+      targets: targetIds.map((id: string) => encodeURIComponent(String(id))).join(','),
+    })
+    if (submitterIds.length > 0) {
+      query.set(
+        'submitters',
+        submitterIds.map((id: string) => encodeURIComponent(String(id))).join(',')
+      )
+    }
+    return `/user/${tournamentId.value}/adjudicator/home?${query.toString()}`
+  }
+
   const query = new URLSearchParams({
     actor: 'team',
     task: 'feedback',
@@ -340,12 +371,27 @@ function judgeEvaluationPath(row: any) {
     teamOpp,
     targets: targetIds.map((id: string) => encodeURIComponent(String(id))).join(','),
   })
+  if (submitterIds.length > 0) {
+    query.set(
+      'submitters',
+      submitterIds.map((id: string) => encodeURIComponent(String(id))).join(',')
+    )
+  }
   return `/user/${tournamentId.value}/adjudicator/home?${query.toString()}`
 }
 
 function judgeEvaluationEnabled() {
   const userDefined = roundConfig.value?.userDefinedData ?? {}
-  return userDefined.evaluate_from_teams !== false || userDefined.evaluate_from_adjudicators !== false
+  const evaluateFromTeams = userDefined.evaluate_from_teams !== false
+  if (evaluateFromTeams) return true
+  const evaluateFromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+  if (!evaluateFromAdjudicators) return false
+  return rows.value.some((row) => {
+    const submitterIds = Array.from(
+      new Set([...(row?.chairs ?? []), ...(row?.panels ?? []), ...(row?.trainees ?? [])])
+    ).filter(Boolean)
+    return submitterIds.length > 1
+  })
 }
 
 async function refresh() {

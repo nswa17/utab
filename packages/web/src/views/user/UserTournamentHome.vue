@@ -43,7 +43,13 @@ const router = useRouter()
 const tournamentStore = useTournamentStore()
 const { t } = useI18n({ useScope: 'global' })
 
-const tournamentId = computed(() => route.params.tournamentId as string)
+const tournamentId = computed(() => {
+  const value = route.params.tournamentId
+  return typeof value === 'string' ? value.trim() : ''
+})
+const audienceHomePath = computed(() =>
+  tournamentId.value ? `/user/${tournamentId.value}/audience/home` : '/user'
+)
 const password = ref('')
 const checkingAccess = ref(true)
 const needsPassword = ref(false)
@@ -54,11 +60,16 @@ async function ensureTournamentAccess() {
   checkingAccess.value = true
   needsPassword.value = false
   errorMessage.value = ''
+  if (!tournamentId.value) {
+    errorMessage.value = t('大会情報が見つかりません。')
+    checkingAccess.value = false
+    return
+  }
 
   try {
     await api.get(`/tournaments/${tournamentId.value}`)
     await tournamentStore.fetchTournaments()
-    router.replace(`/user/${tournamentId.value}/audience/home`)
+    router.replace(audienceHomePath.value)
   } catch (err: any) {
     const status = err?.response?.status
     if (status === 401) {
@@ -76,6 +87,10 @@ async function ensureTournamentAccess() {
 }
 
 async function enterTournament() {
+  if (!tournamentId.value) {
+    errorMessage.value = t('大会情報が見つかりません。')
+    return
+  }
   if (!password.value) {
     errorMessage.value = t('パスワードを入力してください。')
     return
@@ -88,7 +103,7 @@ async function enterTournament() {
       password: password.value,
     })
     await tournamentStore.fetchTournaments()
-    router.replace(`/user/${tournamentId.value}/audience/home`)
+    router.replace(audienceHomePath.value)
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
   } finally {
