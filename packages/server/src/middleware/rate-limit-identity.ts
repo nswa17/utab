@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import type { RequestHandler, Response } from 'express'
+import type { Request, RequestHandler, Response } from 'express'
 import { isProd, rateLimitIdentitySettings } from '../config/environment.js'
 
 const COOKIE_PATH = '/'
@@ -80,7 +80,7 @@ export const ensureRateLimitIdentity: RequestHandler = (req, res, next) => {
   if (rawToken) {
     const clientId = verifyToken(rawToken)
     if (clientId) {
-      req.rateLimitClientId = clientId
+      ;(req as Request & { rateLimitClientId?: string }).rateLimitClientId = clientId
       next()
       return
     }

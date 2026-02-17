@@ -95,7 +95,7 @@ function resolveUserKey(req: Request): string | null {
 }
 
 function resolveClientKey(req: Request): string | null {
-  const clientId = String(req.rateLimitClientId ?? '').trim()
+  const clientId = String((req as Request & { rateLimitClientId?: string }).rateLimitClientId ?? '').trim()
   if (!clientId) return null
   return `client:${normalizeKeyPart(clientId)}`
 }
