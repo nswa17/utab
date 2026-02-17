@@ -314,6 +314,227 @@ describe('Server integration', () => {
     expect(compiledList.body.data.payload.compiled_team_results.length).toBe(2)
   })
 
+  it('rejects impossible submitted entities based on draw allocation and round settings', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'allocation-entity-guard', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'allocation-entity-guard', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Allocation Entity Guard Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: true,
+        evaluator_in_team: 'speaker',
+        chairs_always_evaluated: true,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerRes1 = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Guard Speaker 1' })
+    expect(speakerRes1.status).toBe(201)
+    const speakerId1 = speakerRes1.body.data._id
+
+    const speakerRes2 = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Guard Speaker 2' })
+    expect(speakerRes2.status).toBe(201)
+    const speakerId2 = speakerRes2.body.data._id
+
+    const speakerRes3 = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Guard Speaker 3' })
+    expect(speakerRes3.status).toBe(201)
+    const speakerId3 = speakerRes3.body.data._id
+
+    const teamRes1 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Guard Team A',
+      details: [{ r: 1, speakers: [speakerId1] }],
+    })
+    expect(teamRes1.status).toBe(201)
+    const teamId1 = teamRes1.body.data._id
+
+    const teamRes2 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Guard Team B',
+      details: [{ r: 1, speakers: [speakerId2] }],
+    })
+    expect(teamRes2.status).toBe(201)
+    const teamId2 = teamRes2.body.data._id
+
+    const teamRes3 = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Guard Team C',
+      details: [{ r: 1, speakers: [speakerId3] }],
+    })
+    expect(teamRes3.status).toBe(201)
+    const teamId3 = teamRes3.body.data._id
+
+    const chairRes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Guard Chair', strength: 7 })
+    expect(chairRes.status).toBe(201)
+    const chairId = chairRes.body.data._id
+
+    const panelRes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Guard Panel', strength: 6 })
+    expect(panelRes.status).toBe(201)
+    const panelId = panelRes.body.data._id
+
+    const traineeRes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Guard Trainee', strength: 5 })
+    expect(traineeRes.status).toBe(201)
+    const traineeId = traineeRes.body.data._id
+
+    const outsiderRes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Guard Outsider', strength: 4 })
+    expect(outsiderRes.status).toBe(201)
+    const outsiderId = outsiderRes.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamId1, opp: teamId2 },
+          chairs: [chairId],
+          panels: [panelId],
+          trainees: [traineeId],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const invalidBallotActor = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: outsiderId,
+    })
+    expect(invalidBallotActor.status).toBe(400)
+    expect(String(invalidBallotActor.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not assigned to this matchup'
+    )
+
+    const invalidBallotMatchup = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId3,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId3],
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: chairId,
+    })
+    expect(invalidBallotMatchup.status).toBe(400)
+    expect(String(invalidBallotMatchup.body.errors?.[0]?.message ?? '')).toContain(
+      'teamAId/teamBId is not present in draw allocation'
+    )
+
+    const validBallot = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: chairId,
+    })
+    expect(validBallot.status).toBe(201)
+
+    const invalidFeedbackTeamActor = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 8,
+      submittedEntityId: teamId1,
+    })
+    expect(invalidFeedbackTeamActor.status).toBe(400)
+    expect(String(invalidFeedbackTeamActor.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not allowed for this feedback target'
+    )
+
+    const invalidFeedbackPanelTargetFromSpeaker = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: panelId,
+      score: 8,
+      submittedEntityId: speakerId1,
+    })
+    expect(invalidFeedbackPanelTargetFromSpeaker.status).toBe(400)
+    expect(String(invalidFeedbackPanelTargetFromSpeaker.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not allowed for this feedback target'
+    )
+
+    const validFeedbackFromSpeaker = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 9,
+      submittedEntityId: speakerId1,
+    })
+    expect(validFeedbackFromSpeaker.status).toBe(201)
+
+    const validFeedbackFromAdjudicator = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 7.5,
+      submittedEntityId: panelId,
+    })
+    expect(validFeedbackFromAdjudicator.status).toBe(201)
+
+    const invalidFeedbackSelfAdjudicator = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 7,
+      submittedEntityId: chairId,
+    })
+    expect(invalidFeedbackSelfAdjudicator.status).toBe(400)
+    expect(String(invalidFeedbackSelfAdjudicator.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not allowed for this feedback target'
+    )
+  })
+
   it('rejects draw-like ballot submissions when low tie win is disabled', async () => {
     const agent = request.agent(app)
 
@@ -665,6 +886,89 @@ describe('Server integration', () => {
       submittedEntityId: 'judge-a',
     })
     expect(ballotRes.status).toBe(400)
+  })
+
+  it('rejects ballots when both sides have no score entries in score-enabled rounds', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'empty-scores-rejected', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'empty-scores-rejected', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Empty Scores Rejected Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(400)
+    expect(String(ballotRes.body.errors?.[0]?.message ?? '')).toContain(
+      'speaker scores are required in this round'
+    )
+  })
+
+  it('accepts empty score ballots when speaker scores are disabled for a round', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'empty-scores-allowed', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'empty-scores-allowed', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Empty Scores Allowed Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        no_speaker_score: true,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
   })
 
   it('rejects ballots with non-numeric score entries', async () => {

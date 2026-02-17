@@ -296,8 +296,9 @@ describe('Server integration', () => {
     const publicSubmission = await request(app).post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
-      adjudicatorId: 'open-judge',
+      adjudicatorId: 'adj-chair',
       score: 6,
+      submittedEntityId: teamId,
     })
     expect(publicSubmission.status).toBe(201)
   })

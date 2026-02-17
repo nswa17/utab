@@ -3,19 +3,28 @@
     <LoadingState v-if="teams.loading" />
     <p v-else-if="teams.error" class="error">{{ teams.error }}</p>
 
-    <div v-else-if="selectedTeamA && selectedTeamB" class="card stack ballot-sheet">
-      <h4 class="sheet-title">{{ $t('スコア入力') }}</h4>
-      <div class="row match-up">
-        <div class="team-heading">
-          <span class="side-chip gov-chip">{{ govLabel }}</span>
-          <strong>{{ teamAName }}</strong>
-        </div>
-        <span class="muted">{{ $t('vs') }}</span>
-        <div class="team-heading">
-          <span class="side-chip opp-chip">{{ oppLabel }}</span>
-          <strong>{{ teamBName }}</strong>
-        </div>
+    <div v-else-if="selectedTeamA && selectedTeamB" class="stack">
+      <div class="card stack identity-panel">
+        <h4 class="identity-panel-title">{{ $t('あなたの情報') }}</h4>
+        <p class="identity-line">
+          <span class="muted small">{{ $t('提出者') }}</span>
+          <strong>{{ selectedSubmitterName }}</strong>
+        </p>
       </div>
+
+      <div class="card stack ballot-sheet">
+        <h4 class="sheet-title">{{ $t('スコア入力') }}</h4>
+        <div class="row match-up">
+          <div class="team-heading">
+            <span class="side-chip gov-chip">{{ govLabel }}</span>
+            <strong>{{ teamAName }}</strong>
+          </div>
+          <span class="muted">{{ $t('vs') }}</span>
+          <div class="team-heading">
+            <span class="side-chip opp-chip">{{ oppLabel }}</span>
+            <strong>{{ teamBName }}</strong>
+          </div>
+        </div>
 
       <div class="grid">
         <label class="stack">
@@ -182,16 +191,20 @@
         <textarea v-model="comment" rows="4" />
       </label>
 
-      <Button :loading="submissions.loading" @click="requestSubmit">
+      <Button :loading="submissions.loading" :disabled="!scoreInputReady" @click="requestSubmit">
         {{ $t('送信') }}
       </Button>
       <p v-if="submitError" class="error">{{ submitError }}</p>
+      <p v-if="!scoreInputReady" class="muted">{{
+        $t('採点設定を読み込み中です。通信状況を確認して再度お試しください。')
+      }}</p>
       <p v-if="!identityReady" class="muted">{{ $t('参加者ホームでジャッジを選択してください。') }}</p>
       <p v-if="winnerRequiredWarning" class="error">{{ $t('スコア差がある場合は勝者を選択してください。') }}</p>
       <p v-if="lowTieWarning" class="error">{{ $t('低勝ち/同点勝ちは許可されていません。') }}</p>
       <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
       <p v-if="prefillNotice" class="muted">{{ prefillNotice }}</p>
-      <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
+        <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
+      </div>
     </div>
 
     <div v-else class="card stack">
@@ -254,6 +267,7 @@ import { useSubmissionsStore } from '@/stores/submissions'
 import { useTournamentStore } from '@/stores/tournament'
 import { useStylesStore } from '@/stores/styles'
 import { useSpeakersStore } from '@/stores/speakers'
+import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
@@ -274,6 +288,7 @@ const submissions = useSubmissionsStore()
 const tournamentStore = useTournamentStore()
 const stylesStore = useStylesStore()
 const speakersStore = useSpeakersStore()
+const adjudicatorsStore = useAdjudicatorsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -373,8 +388,15 @@ const winnerRequiredWarning = computed(
   () => allowLowTieWin.value && decisiveScore.value && !effectiveWinnerId.value
 )
 const identityReady = computed(() => Boolean(identityId.value))
+const roundConfigReady = computed(() => Boolean(roundConfig.value))
+const scoreInputReady = computed(() => {
+  if (!roundConfigReady.value) return false
+  if (noSpeakerScore.value) return true
+  return Boolean(style.value) && rolesA.value.length > 0 && rolesB.value.length > 0
+})
 
 const canSubmit = computed(() => {
+  if (!scoreInputReady.value) return false
   if (!selectedTeamA.value || !selectedTeamB.value) return false
   if (!effectiveWinnerId.value && !canSubmitDrawWithoutWinner.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
@@ -387,6 +409,11 @@ const winnerName = computed(() => {
   if (effectiveWinnerId.value === teamBId.value) return teamBName.value
   if (winnerDrawSelected.value) return t('引き分け')
   return t('未選択')
+})
+const selectedSubmitterName = computed(() => {
+  const selectedId = String(identityId.value ?? '').trim()
+  if (!selectedId) return t('未選択')
+  return adjudicatorsStore.adjudicators.find((adj) => adj._id === selectedId)?.name ?? selectedId
 })
 const confirmButtonLabel = computed(() =>
   confirmCountdown.value > 0
@@ -823,6 +850,10 @@ function clearCountdown(reset = true) {
 
 function validateBeforeSubmit() {
   submitError.value = ''
+  if (!scoreInputReady.value) {
+    submitError.value = t('採点設定を読み込み中です。通信状況を確認して再度お試しください。')
+    return false
+  }
   if (!selectedTeamA.value || !selectedTeamB.value) {
     submitError.value = t('チーム情報が不足しています。')
     return false
@@ -972,6 +1003,7 @@ watch(
 
 onMounted(() => {
   teams.fetchTeams(tournamentId.value)
+  adjudicatorsStore.fetchAdjudicators(tournamentId.value)
   rounds.fetchRounds(tournamentId.value, { forcePublic: true })
   tournamentStore.fetchTournaments()
   stylesStore.fetchStyles()
@@ -980,6 +1012,10 @@ onMounted(() => {
   const query = route.query
   teamAId.value = typeof query.teamA === 'string' ? query.teamA : ''
   teamBId.value = typeof query.teamB === 'string' ? query.teamB : ''
+})
+
+watch(tournamentId, () => {
+  adjudicatorsStore.fetchAdjudicators(tournamentId.value)
 })
 
 onUnmounted(() => {
@@ -1002,6 +1038,23 @@ onUnmounted(() => {
 .sheet-title {
   margin: 0;
   font-size: 1.2rem;
+}
+
+.identity-panel {
+  gap: var(--space-2);
+}
+
+.identity-panel-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.identity-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .match-up {

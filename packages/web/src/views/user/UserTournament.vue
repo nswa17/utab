@@ -2,8 +2,8 @@
   <section class="stack">
     <div class="stack header-stack">
       <div class="row tournament-header">
-        <Button variant="secondary" size="sm" class="tournament-list-back" to="/user">
-          ← {{ $t('大会一覧') }}
+        <Button variant="secondary" size="sm" class="tournament-list-back" :to="headerBackPath">
+          ← {{ headerBackLabel }}
         </Button>
         <div v-if="participantUrl" class="header-qr-slot">
           <button
@@ -45,17 +45,27 @@ const route = useRoute()
 const tournamentStore = useTournamentStore()
 const { t } = useI18n({ useScope: 'global' })
 
-const tournamentId = computed(() => route.params.tournamentId as string)
+const tournamentId = computed(() => {
+  const value = route.params.tournamentId
+  return typeof value === 'string' ? value.trim() : ''
+})
 const tournament = computed(() =>
   tournamentStore.tournaments.find((t) => t._id === tournamentId.value)
 )
 const sectionLoading = ref(true)
 const isTournamentHomeRoute = computed(() => {
+  if (!tournamentId.value) return true
   const homePath = `/user/${tournamentId.value}/home`
   const rootPath = `/user/${tournamentId.value}`
   return route.path === homePath || route.path === rootPath
 })
-const showTournamentNotice = computed(() => !isTournamentHomeRoute.value)
+const headerBackPath = computed(() =>
+  !tournamentId.value || isTournamentHomeRoute.value ? '/user' : `/user/${tournamentId.value}/home`
+)
+const headerBackLabel = computed(() =>
+  !tournamentId.value || isTournamentHomeRoute.value ? t('大会一覧') : t('大会ホームに戻る')
+)
+const showTournamentNotice = computed(() => Boolean(tournamentId.value) && !isTournamentHomeRoute.value)
 const currentOrigin = computed(() => {
   if (typeof window === 'undefined') return ''
   return window.location.origin
@@ -118,6 +128,10 @@ async function copyParticipantUrl() {
 watch(
   tournamentId,
   async () => {
+    if (!tournamentId.value) {
+      sectionLoading.value = false
+      return
+    }
     sectionLoading.value = true
     try {
       await tournamentStore.fetchTournaments()

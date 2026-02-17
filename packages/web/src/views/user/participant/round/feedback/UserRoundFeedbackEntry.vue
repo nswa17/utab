@@ -3,62 +3,71 @@
     <LoadingState v-if="adjudicators.loading" />
     <p v-else-if="adjudicators.error" class="error">{{ adjudicators.error }}</p>
 
-    <div v-else-if="judge" class="card stack">
-      <h4>{{ judge.name }}</h4>
-      <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
-      <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
-        <input
-          v-model.number="matter"
-          :id="id"
-          :aria-describedby="describedBy"
-          type="number"
-          :min="range.from"
-          :max="range.to"
-          :step="range.unit"
-        />
-      </Field>
-      <Field v-if="useMatterManner" :label="$t('Manner')" v-slot="{ id, describedBy }">
-        <input
-          v-model.number="manner"
-          :id="id"
-          :aria-describedby="describedBy"
-          type="number"
-          :min="range.from"
-          :max="range.to"
-          :step="range.unit"
-        />
-      </Field>
-      <Field v-if="!useMatterManner" :label="$t('スコア')" v-slot="{ id, describedBy }">
-        <input
-          v-model.number="score"
-          :id="id"
-          :aria-describedby="describedBy"
-          type="number"
-          :min="range.from"
-          :max="range.to"
-          :step="range.unit"
-        />
-      </Field>
-      <p class="muted small">
-        {{
-          $t('入力範囲: {from}〜{to} (刻み {unit})', {
-            from: range.from,
-            to: range.to,
-            unit: range.unit,
-          })
-        }}
-      </p>
-      <Field :label="$t('コメント')" v-slot="{ id, describedBy }">
-        <textarea v-model="comment" :id="id" :aria-describedby="describedBy" rows="4" />
-      </Field>
+    <div v-else-if="judge" class="stack">
+      <div class="card stack identity-panel">
+        <h4 class="identity-panel-title">{{ $t('あなたの情報') }}</h4>
+        <p class="identity-line">
+          <span class="muted small">{{ selectedIdentityTypeLabel }}</span>
+          <strong>{{ selectedIdentityName }}</strong>
+        </p>
+      </div>
+      <div class="card stack">
+        <h4>{{ judge.name }}</h4>
+        <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
+        <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
+          <input
+            v-model.number="matter"
+            :id="id"
+            :aria-describedby="describedBy"
+            type="number"
+            :min="range.from"
+            :max="range.to"
+            :step="range.unit"
+          />
+        </Field>
+        <Field v-if="useMatterManner" :label="$t('Manner')" v-slot="{ id, describedBy }">
+          <input
+            v-model.number="manner"
+            :id="id"
+            :aria-describedby="describedBy"
+            type="number"
+            :min="range.from"
+            :max="range.to"
+            :step="range.unit"
+          />
+        </Field>
+        <Field v-if="!useMatterManner" :label="$t('スコア')" v-slot="{ id, describedBy }">
+          <input
+            v-model.number="score"
+            :id="id"
+            :aria-describedby="describedBy"
+            type="number"
+            :min="range.from"
+            :max="range.to"
+            :step="range.unit"
+          />
+        </Field>
+        <p class="muted small">
+          {{
+            $t('入力範囲: {from}〜{to} (刻み {unit})', {
+              from: range.from,
+              to: range.to,
+              unit: range.unit,
+            })
+          }}
+        </p>
+        <Field :label="$t('コメント')" v-slot="{ id, describedBy }">
+          <textarea v-model="comment" :id="id" :aria-describedby="describedBy" rows="4" />
+        </Field>
 
-      <Button :loading="submissions.loading" @click="requestSubmit">
-        {{ $t('送信') }}
-      </Button>
-      <p v-if="submitError" class="error">{{ submitError }}</p>
-      <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
-      <p v-if="!identityReady" class="muted">{{ identityHint }}</p>
-      <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
+        <Button :loading="submissions.loading" @click="requestSubmit">
+          {{ $t('送信') }}
+        </Button>
+        <p v-if="submitError" class="error">{{ submitError }}</p>
+        <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
+        <p v-if="!identityReady" class="muted">{{ identityHint }}</p>
+        <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
+      </div>
     </div>
 
     <div v-else class="card stack">
@@ -120,6 +129,8 @@ import { useRoundsStore } from '@/stores/rounds'
 import { useSubmissionsStore } from '@/stores/submissions'
 import { useTournamentStore } from '@/stores/tournament'
 import { useStylesStore } from '@/stores/styles'
+import { useTeamsStore } from '@/stores/teams'
+import { useSpeakersStore } from '@/stores/speakers'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
@@ -133,6 +144,8 @@ const rounds = useRoundsStore()
 const submissions = useSubmissionsStore()
 const tournamentStore = useTournamentStore()
 const stylesStore = useStylesStore()
+const teamsStore = useTeamsStore()
+const speakersStore = useSpeakersStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -245,6 +258,38 @@ const submittedEntityId = computed(() => {
     return teamIdentityId.value
   }
   return ''
+})
+const selectedIdentityType = computed<'adjudicator' | 'team' | 'speaker' | 'unknown'>(() => {
+  if (participant.value === 'speaker') {
+    return evaluatorMode.value === 'speaker' ? 'speaker' : 'team'
+  }
+  if (participant.value === 'adjudicator') {
+    if (actorMode.value === 'team') {
+      return evaluatorMode.value === 'speaker' ? 'speaker' : 'team'
+    }
+    return 'adjudicator'
+  }
+  return 'unknown'
+})
+const selectedIdentityTypeLabel = computed(() => {
+  if (selectedIdentityType.value === 'adjudicator') return t('ジャッジ')
+  if (selectedIdentityType.value === 'team') return t('チーム')
+  if (selectedIdentityType.value === 'speaker') return t('スピーカー')
+  return t('提出者')
+})
+const selectedIdentityName = computed(() => {
+  const selectedId = String(submittedEntityId.value ?? '').trim()
+  if (!selectedId) return t('未選択')
+  if (selectedIdentityType.value === 'adjudicator') {
+    return adjudicators.adjudicators.find((item) => item._id === selectedId)?.name ?? selectedId
+  }
+  if (selectedIdentityType.value === 'team') {
+    return teamsStore.teams.find((item) => item._id === selectedId)?.name ?? selectedId
+  }
+  if (selectedIdentityType.value === 'speaker') {
+    return speakersStore.speakers.find((item) => item._id === selectedId)?.name ?? selectedId
+  }
+  return selectedId
 })
 const identityReady = computed(() => {
   if (participant.value === 'speaker') {
@@ -394,10 +439,21 @@ function goToTaskList() {
 
 onMounted(() => {
   adjudicators.fetchAdjudicators(tournamentId.value)
+  teamsStore.fetchTeams(tournamentId.value)
+  speakersStore.fetchSpeakers(tournamentId.value)
   rounds.fetchRounds(tournamentId.value, { forcePublic: true })
   tournamentStore.fetchTournaments()
   stylesStore.fetchStyles()
   window.addEventListener('keydown', onGlobalKeydown)
+})
+
+watch([tournamentId, round], () => {
+  adjudicators.fetchAdjudicators(tournamentId.value)
+  teamsStore.fetchTeams(tournamentId.value)
+  speakersStore.fetchSpeakers(tournamentId.value)
+  rounds.fetchRounds(tournamentId.value, { forcePublic: true })
+  tournamentStore.fetchTournaments()
+  stylesStore.fetchStyles()
 })
 
 watch(range, (next) => {
@@ -450,6 +506,23 @@ onUnmounted(() => {
 
 .success-actions {
   justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.identity-panel {
+  gap: var(--space-2);
+}
+
+.identity-panel-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.identity-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
 }

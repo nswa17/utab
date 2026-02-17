@@ -22,23 +22,28 @@
           <span>{{ $t('ジャッジ名') }}</span>
           <select v-model="teamIdentityId">
             <option value="">{{ $t('未選択') }}</option>
-            <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
+            <option v-for="adj in adjudicatorIdentityOptions" :key="adj._id" :value="adj._id">
               {{ adj.name }}
             </option>
           </select>
         </label>
         <label v-if="isAdjudicator" class="field">
           <span>{{ $t('評価者') }}</span>
-          <select v-model="judgeEvaluationActorMode">
-            <option value="team">{{ $t('チーム/スピーカー') }}</option>
-            <option value="adjudicator">{{ $t('ジャッジ') }}</option>
+          <select v-model="judgeEvaluationActorMode" :disabled="judgeEvaluationActorOptions.length <= 1">
+            <option
+              v-for="option in judgeEvaluationActorOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <label v-if="isAdjudicator && judgeEvaluationActorMode === 'team'" class="field">
           <span>{{ $t('チーム') }}</span>
           <select v-model="judgeFeedbackTeamIdentityId">
             <option value="">{{ $t('未選択') }}</option>
-            <option v-for="team in teamsStore.teams" :key="team._id" :value="team._id">
+            <option v-for="team in judgeFeedbackTeamOptions" :key="team._id" :value="team._id">
               {{ team.name }}
             </option>
           </select>
@@ -70,7 +75,7 @@
           <span>{{ $t('ジャッジ名') }}</span>
           <select v-model="teamIdentityId">
             <option value="">{{ $t('未選択') }}</option>
-            <option v-for="adj in adjudicatorsStore.adjudicators" :key="adj._id" :value="adj._id">
+            <option v-for="adj in adjudicatorIdentityOptions" :key="adj._id" :value="adj._id">
               {{ adj.name }}
             </option>
           </select>
@@ -99,6 +104,53 @@
           class="muted"
         >
           {{ $t('このチームに選択可能なスピーカーがいません。') }}
+        </p>
+        <template v-if="pendingTaskContext">
+          <p class="muted small task-summary">
+            {{
+              $t('対象ラウンド: {round}', {
+                round: pendingTaskContext.round,
+              })
+            }}
+          </p>
+          <p v-if="pendingBallotContext" class="muted">
+            {{
+              $t('対象試合: {gov} vs {opp}', {
+                gov: teamName(pendingBallotContext.teamA),
+                opp: teamName(pendingBallotContext.teamB),
+              })
+            }}
+          </p>
+          <p
+            v-if="
+              pendingBallotContext &&
+              pendingBallotContext.submitterCandidates.length > 0
+            "
+            class="muted small"
+          >
+            {{
+              $t('提出候補ジャッジ: {names}', {
+                names: adjudicatorNames(pendingBallotContext.submitterCandidates),
+              })
+            }}
+          </p>
+          <p v-if="pendingFeedbackContext" class="muted">
+            {{
+              $t('対象試合: {gov} vs {opp}', {
+                gov: teamName(pendingFeedbackContext.teamGov),
+                opp: teamName(pendingFeedbackContext.teamOpp),
+              })
+            }}
+          </p>
+          <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
+          <div v-else class="row pending-task-actions">
+            <Button :to="pendingTaskPrimaryPath">
+              {{ pendingTaskPrimaryLabel }}
+            </Button>
+          </div>
+        </template>
+        <p v-else class="muted small task-summary">
+          {{ $t('対戦表の評価ボタンから入力を開始してください。') }}
         </p>
       </div>
 
@@ -311,61 +363,6 @@
         </div>
       </template>
 
-      <template v-else>
-        <div class="card stack">
-          <h4>{{ $t('入力開始') }}</h4>
-          <p v-if="!pendingTaskContext" class="muted">
-            {{ $t('対戦表の評価ボタンから入力を開始してください。') }}
-          </p>
-          <template v-else>
-            <p class="muted">
-              {{
-                $t('対象ラウンド: {round}', {
-                  round: pendingTaskContext.round,
-                })
-              }}
-            </p>
-            <p v-if="pendingBallotContext" class="muted">
-              {{
-                $t('対象試合: {gov} vs {opp}', {
-                  gov: teamName(pendingBallotContext.teamA),
-                  opp: teamName(pendingBallotContext.teamB),
-                })
-              }}
-            </p>
-            <p
-              v-if="
-                pendingBallotContext &&
-                pendingBallotContext.submitterCandidates.length > 0
-              "
-              class="muted small"
-            >
-              {{
-                $t('提出候補ジャッジ: {names}', {
-                  names: adjudicatorNames(pendingBallotContext.submitterCandidates),
-                })
-              }}
-            </p>
-            <p v-if="pendingFeedbackContext" class="muted">
-              {{
-                $t('対象試合: {gov} vs {opp}', {
-                  gov: teamName(pendingFeedbackContext.teamGov),
-                  opp: teamName(pendingFeedbackContext.teamOpp),
-                })
-              }}
-            </p>
-            <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
-            <div v-else class="row pending-task-actions">
-              <Button :to="pendingTaskPrimaryPath">
-                {{ pendingTaskPrimaryLabel }}
-              </Button>
-              <Button variant="secondary" :to="pendingTaskDrawPath">
-                {{ $t('対戦表') }}
-              </Button>
-            </div>
-          </template>
-        </div>
-      </template>
     </div>
   </section>
 </template>
@@ -476,12 +473,16 @@ const judgeFeedbackSelectableSpeakers = computed(() => {
 })
 
 const speakerSelectionRequired = computed(() => {
-  return visibleRounds.value.some((round) => {
-    const userDefined = round.userDefinedData ?? {}
+  if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return false
+  if (pendingFeedbackRoundConfig.value) {
     return (
-      userDefined.evaluate_from_teams !== false &&
-      (userDefined.evaluator_in_team ?? 'team') === 'speaker'
+      pendingFeedbackRoundConfig.value.evaluateFromTeams &&
+      pendingFeedbackRoundConfig.value.evaluatorInTeam === 'speaker'
     )
+  }
+  return visibleRounds.value.some((round) => {
+    const config = feedbackConfig(round.round)
+    return config.evaluateFromTeams && config.evaluatorInTeam === 'speaker'
   })
 })
 
@@ -541,6 +542,7 @@ type PendingTaskContext =
       teamGov: string
       teamOpp: string
       targetJudgeIds: string[]
+      submitterCandidates: string[]
     }
 
 function parseQueryList(value: unknown) {
@@ -585,6 +587,7 @@ const pendingTaskContext = computed<PendingTaskContext | null>(() => {
     const teamGov = typeof route.query.teamGov === 'string' ? route.query.teamGov.trim() : ''
     const teamOpp = typeof route.query.teamOpp === 'string' ? route.query.teamOpp.trim() : ''
     const targetJudgeIds = parseQueryList(route.query.targets)
+    const submitterCandidates = parseQueryList(route.query.submitters)
     if (!teamGov || !teamOpp || targetJudgeIds.length === 0) return null
     return {
       kind: 'feedback',
@@ -592,6 +595,7 @@ const pendingTaskContext = computed<PendingTaskContext | null>(() => {
       teamGov,
       teamOpp,
       targetJudgeIds,
+      submitterCandidates,
     }
   }
   return null
@@ -607,13 +611,204 @@ const pendingFeedbackContext = computed(() => {
   return pendingTaskContext.value
 })
 
+function feedbackConfig(roundNumber: number) {
+  const userDefined = roundConfig(roundNumber)?.userDefinedData ?? {}
+  return {
+    evaluateFromTeams: userDefined.evaluate_from_teams !== false,
+    evaluateFromAdjudicators: userDefined.evaluate_from_adjudicators !== false,
+    evaluatorInTeam: userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+  } as const
+}
+
+const pendingFeedbackRoundConfig = computed(() => {
+  if (!pendingFeedbackContext.value) return null
+  return feedbackConfig(pendingFeedbackContext.value.round)
+})
+
+function normalizedPendingFeedbackSubmitterCandidates() {
+  return Array.from(
+    new Set(
+      (pendingFeedbackContext.value?.submitterCandidates ?? [])
+        .map((id) => String(id ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
+function rowJudgeTargetIds(row: DrawAllocationRow) {
+  return Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+}
+
+function supportsAdjudicatorToAdjudicatorFeedback(row: DrawAllocationRow) {
+  return rowJudgeTargetIds(row).length > 0 && rowAdjudicatorIds(row).length > 1
+}
+
+function findPendingFeedbackRow() {
+  if (!pendingFeedbackContext.value) return null
+  const expected = [pendingFeedbackContext.value.teamGov, pendingFeedbackContext.value.teamOpp].sort()
+  return (
+    sortedAllocation(pendingFeedbackContext.value.round).find((row) => {
+      const gov = String(row?.teams?.gov ?? '')
+      const opp = String(row?.teams?.opp ?? '')
+      const current = [gov, opp].sort()
+      return current[0] === expected[0] && current[1] === expected[1]
+    }) ?? null
+  )
+}
+
+function roundHasAdjudicatorToAdjudicatorFeedback(roundNumber: number) {
+  return sortedAllocation(roundNumber).some((row) => supportsAdjudicatorToAdjudicatorFeedback(row))
+}
+
+const pendingFeedbackHasAdjudicatorPeerCandidate = computed(() => {
+  if (!pendingFeedbackContext.value) return false
+  const submitterCandidates = normalizedPendingFeedbackSubmitterCandidates()
+  if (submitterCandidates.length > 0) {
+    return submitterCandidates.length > 1
+  }
+  const row = findPendingFeedbackRow()
+  if (!row) return false
+  return supportsAdjudicatorToAdjudicatorFeedback(row)
+})
+
+const judgeEvaluationActorOptions = computed<Array<{ value: 'team' | 'adjudicator'; label: string }>>(() => {
+  if (!isAdjudicator.value) return []
+  if (pendingFeedbackRoundConfig.value) {
+    const options: Array<{ value: 'team' | 'adjudicator'; label: string }> = []
+    if (pendingFeedbackRoundConfig.value.evaluateFromTeams) {
+      options.push({ value: 'team', label: t('チーム/スピーカー') })
+    }
+    if (
+      pendingFeedbackRoundConfig.value.evaluateFromAdjudicators &&
+      pendingFeedbackHasAdjudicatorPeerCandidate.value
+    ) {
+      options.push({ value: 'adjudicator', label: t('ジャッジ') })
+    }
+    return options
+  }
+  const canEvaluateAsTeam = visibleRounds.value.some(
+    (round) => feedbackConfig(round.round).evaluateFromTeams
+  )
+  const canEvaluateAsAdjudicator = visibleRounds.value.some((round) => {
+    const config = feedbackConfig(round.round)
+    if (!config.evaluateFromAdjudicators) return false
+    return roundHasAdjudicatorToAdjudicatorFeedback(round.round)
+  })
+  const options: Array<{ value: 'team' | 'adjudicator'; label: string }> = []
+  if (canEvaluateAsTeam) options.push({ value: 'team', label: t('チーム/スピーカー') })
+  if (canEvaluateAsAdjudicator) options.push({ value: 'adjudicator', label: t('ジャッジ') })
+  return options
+})
+
+const pendingFeedbackAllowsTeamActor = computed(() => {
+  if (!pendingFeedbackContext.value) return true
+  return pendingFeedbackRoundConfig.value?.evaluateFromTeams !== false
+})
+
+const pendingFeedbackAllowsAdjudicatorActor = computed(() => {
+  if (!pendingFeedbackContext.value) return true
+  if (!pendingFeedbackRoundConfig.value?.evaluateFromAdjudicators) return false
+  return pendingFeedbackHasAdjudicatorPeerCandidate.value
+})
+
+const pendingFeedbackSubmitterCandidates = computed(() =>
+  normalizedPendingFeedbackSubmitterCandidates()
+)
+const pendingFeedbackSubmitterCandidateSet = computed(
+  () => new Set(pendingFeedbackSubmitterCandidates.value)
+)
+
+const pendingBallotSubmitterCandidates = computed(() =>
+  Array.from(
+    new Set(
+      (pendingBallotContext.value?.submitterCandidates ?? [])
+        .map((id) => String(id ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+)
+const pendingBallotSubmitterCandidateSet = computed(
+  () => new Set(pendingBallotSubmitterCandidates.value)
+)
+const ballotSubmitterOptions = computed(() => {
+  if (pendingBallotSubmitterCandidateSet.value.size === 0) return adjudicatorsStore.adjudicators
+  return adjudicatorsStore.adjudicators.filter((adj) =>
+    pendingBallotSubmitterCandidateSet.value.has(adj._id)
+  )
+})
+
+const judgeFeedbackAdjudicatorOptions = computed(() => {
+  if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'adjudicator') {
+    return adjudicatorsStore.adjudicators
+  }
+  if (!pendingFeedbackContext.value) return adjudicatorsStore.adjudicators
+  if (!pendingFeedbackAllowsAdjudicatorActor.value) return []
+  if (pendingFeedbackSubmitterCandidateSet.value.size === 0) return adjudicatorsStore.adjudicators
+  return adjudicatorsStore.adjudicators.filter((adj) =>
+    pendingFeedbackSubmitterCandidateSet.value.has(adj._id)
+  )
+})
+
+const adjudicatorIdentityOptions = computed(() => {
+  if (isSpeaker.value) return ballotSubmitterOptions.value
+  if (isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator') {
+    return judgeFeedbackAdjudicatorOptions.value
+  }
+  return adjudicatorsStore.adjudicators
+})
+
+const pendingFeedbackTeamIds = computed(() =>
+  Array.from(
+    new Set(
+      [pendingFeedbackContext.value?.teamGov, pendingFeedbackContext.value?.teamOpp]
+        .map((id) => String(id ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+)
+const pendingFeedbackTeamSet = computed(() => new Set(pendingFeedbackTeamIds.value))
+const judgeFeedbackTeamOptions = computed(() => {
+  if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return teamsStore.teams
+  if (!pendingFeedbackAllowsTeamActor.value) return []
+  if (pendingFeedbackTeamSet.value.size === 0) return teamsStore.teams
+  return teamsStore.teams.filter((team) => pendingFeedbackTeamSet.value.has(team._id))
+})
+
+const selectedBallotSubmitterAllowed = computed(() => {
+  const submitter = teamIdentityId.value
+  if (!submitter) return false
+  if (!pendingBallotContext.value) return true
+  if (pendingBallotSubmitterCandidateSet.value.size === 0) return true
+  return pendingBallotSubmitterCandidateSet.value.has(submitter)
+})
+const selectedFeedbackTeamAllowed = computed(() => {
+  const selected = judgeFeedbackTeamIdentityId.value
+  if (!selected) return false
+  if (!pendingFeedbackContext.value) return true
+  if (!pendingFeedbackAllowsTeamActor.value) return false
+  if (pendingFeedbackTeamSet.value.size === 0) return true
+  return pendingFeedbackTeamSet.value.has(selected)
+})
+
+const selectedFeedbackAdjudicatorAllowed = computed(() => {
+  const selected = teamIdentityId.value
+  if (!selected) return false
+  if (!pendingFeedbackContext.value) return true
+  if (!pendingFeedbackAllowsAdjudicatorActor.value) return false
+  if (pendingFeedbackSubmitterCandidateSet.value.size === 0) return true
+  return pendingFeedbackSubmitterCandidateSet.value.has(selected)
+})
+
 const pendingTaskReady = computed(() => {
   if (!pendingTaskContext.value) return false
   if (pendingTaskContext.value.kind === 'ballot') {
-    return isSpeaker.value && Boolean(teamIdentityId.value)
+    return isSpeaker.value && selectedBallotSubmitterAllowed.value
   }
   if (!isAdjudicator.value) return false
-  if (!judgeFeedbackTeamIdentityId.value) return false
+  if (judgeEvaluationActorMode.value === 'adjudicator') {
+    return selectedFeedbackAdjudicatorAllowed.value
+  }
+  if (!selectedFeedbackTeamAllowed.value) return false
   if (speakerSelectionRequired.value && !judgeFeedbackSpeakerIdentityId.value) return false
   return true
 })
@@ -636,13 +831,6 @@ const pendingTaskPrimaryLabel = computed(() => {
     : t('ジャッジ評価を開始')
 })
 
-const pendingTaskDrawPath = computed(() => {
-  if (!pendingTaskContext.value) {
-    return `/user/${tournamentId.value}/${participant.value}/home`
-  }
-  return `/user/${tournamentId.value}/${participant.value}/rounds/${pendingTaskContext.value.round}/draw`
-})
-
 const pendingTaskPrimaryPath = computed(() => {
   if (!pendingTaskContext.value || !pendingTaskReady.value) return ''
   if (pendingTaskContext.value.kind === 'ballot') {
@@ -652,6 +840,12 @@ const pendingTaskPrimaryPath = computed(() => {
       submitter: teamIdentityId.value,
     })
     return `/user/${tournamentId.value}/speaker/rounds/${pendingTaskContext.value.round}/ballot/entry?${query.toString()}`
+  }
+  if (judgeEvaluationActorMode.value === 'adjudicator') {
+    const feedbackQuery = new URLSearchParams({
+      actor: 'adjudicator',
+    })
+    return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/home?${feedbackQuery.toString()}`
   }
   const feedbackQuery = new URLSearchParams({
     filter: 'team',
@@ -719,7 +913,11 @@ function encodeList(values: string[]) {
 function judgeEvaluationEnabled(roundNumber: number) {
   const config = roundConfig(roundNumber)
   const userDefined = config?.userDefinedData ?? {}
-  return userDefined.evaluate_from_teams !== false || userDefined.evaluate_from_adjudicators !== false
+  const evaluateFromTeams = userDefined.evaluate_from_teams !== false
+  if (evaluateFromTeams) return true
+  const evaluateFromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+  if (!evaluateFromAdjudicators) return false
+  return roundHasAdjudicatorToAdjudicatorFeedback(roundNumber)
 }
 
 function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
@@ -756,6 +954,29 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (!teamGov || !teamOpp || targetIds.length === 0) {
     return `/user/${tournamentId.value}/adjudicator/home`
   }
+  const submitterIds = rowAdjudicatorIds(row)
+  const config = feedbackConfig(roundNumber)
+  const canUseTeamActor = config.evaluateFromTeams
+  const canUseAdjudicatorActor = config.evaluateFromAdjudicators && submitterIds.length > 1
+  if (!canUseTeamActor && !canUseAdjudicatorActor) {
+    return `/user/${tournamentId.value}/adjudicator/home`
+  }
+  const defaultActor: 'team' | 'adjudicator' = canUseTeamActor ? 'team' : 'adjudicator'
+
+  if (defaultActor === 'adjudicator') {
+    const adjudicatorQuery = new URLSearchParams({
+      actor: 'adjudicator',
+      task: 'feedback',
+      round: String(roundNumber),
+      teamGov,
+      teamOpp,
+      targets: encodeList(targetIds),
+    })
+    if (submitterIds.length > 0) {
+      adjudicatorQuery.set('submitters', encodeList(submitterIds))
+    }
+    return `/user/${tournamentId.value}/adjudicator/home?${adjudicatorQuery.toString()}`
+  }
 
   const teamId = preferredTeamIdForRow(row)
   if (teamId) {
@@ -778,6 +999,9 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
     teamOpp,
     targets: encodeList(targetIds),
   })
+  if (submitterIds.length > 0) {
+    unresolvedQuery.set('submitters', encodeList(submitterIds))
+  }
   return `/user/${tournamentId.value}/adjudicator/home?${unresolvedQuery.toString()}`
 }
 
@@ -1025,6 +1249,18 @@ watch(
 )
 
 watch(
+  [participant, judgeEvaluationActorOptions],
+  () => {
+    if (!isAdjudicator.value) return
+    if (judgeEvaluationActorOptions.value.length === 0) return
+    const current = judgeEvaluationActorMode.value
+    if (judgeEvaluationActorOptions.value.some((option) => option.value === current)) return
+    judgeEvaluationActorMode.value = judgeEvaluationActorOptions.value[0].value
+  },
+  { immediate: true }
+)
+
+watch(
   [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, speakerSelectionRequired, judgeEvaluationActorMode],
   () => {
     if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return
@@ -1047,29 +1283,31 @@ watch(
 )
 
 watch(
-  [participant, () => teamsStore.teams, judgeEvaluationActorMode],
+  [participant, judgeEvaluationActorMode, judgeFeedbackTeamOptions],
   () => {
     if (isAdjudicator.value && judgeEvaluationActorMode.value === 'team' && judgeFeedbackTeamIdentityId.value) {
-      const exists = teamsStore.teams.some((team) => team._id === judgeFeedbackTeamIdentityId.value)
+      const exists = judgeFeedbackTeamOptions.value.some(
+        (team) => team._id === judgeFeedbackTeamIdentityId.value
+      )
       if (!exists) {
         judgeFeedbackTeamIdentityId.value = ''
       }
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 watch(
-  [participant, () => adjudicatorsStore.adjudicators, judgeEvaluationActorMode],
+  [participant, judgeEvaluationActorMode, adjudicatorIdentityOptions],
   () => {
     if (!isSpeaker.value && !(isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator')) return
     if (!teamIdentityId.value) return
-    const exists = adjudicatorsStore.adjudicators.some((adj) => adj._id === teamIdentityId.value)
+    const exists = adjudicatorIdentityOptions.value.some((adj) => adj._id === teamIdentityId.value)
     if (!exists) {
       teamIdentityId.value = ''
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 watch(
@@ -1118,6 +1356,10 @@ select {
 .pending-task-actions {
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.task-summary {
+  margin-top: 2px;
 }
 
 .tight {

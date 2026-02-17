@@ -21,9 +21,12 @@ import Button from '@/components/common/Button.vue'
 
 const route = useRoute()
 const { t } = useI18n({ useScope: 'global' })
-const tournamentId = computed(() => route.params.tournamentId as string)
+const tournamentId = computed(() => {
+  const value = route.params.tournamentId
+  return typeof value === 'string' ? value.trim() : ''
+})
 const participant = computed(() => route.params.participant as string)
-const homePath = computed(() => `/user/${tournamentId.value}/home`)
+const homePath = computed(() => (tournamentId.value ? `/user/${tournamentId.value}/home` : '/user'))
 
 const checking = ref(true)
 const blocked = ref(false)
@@ -33,6 +36,12 @@ async function evaluateAccess() {
   checking.value = true
   blocked.value = false
   blockReason.value = ''
+  if (!tournamentId.value) {
+    blocked.value = true
+    blockReason.value = t('大会情報が見つかりません。')
+    checking.value = false
+    return
+  }
 
   try {
     await api.get(`/tournaments/${tournamentId.value}`)

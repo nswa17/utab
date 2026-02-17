@@ -4,7 +4,7 @@ import { api } from '@/utils/api'
 import { i18n } from '@/i18n'
 import type { Submission } from '@/types/submission'
 
-const SUBMISSION_TIMEOUT_MS = 6000
+const SUBMISSION_TIMEOUT_MS = 15000
 
 export interface BallotSubmissionPayload {
   tournamentId: string

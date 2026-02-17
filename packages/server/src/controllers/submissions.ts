@@ -2,6 +2,9 @@ import type { Connection } from 'mongoose'
 import type { RequestHandler } from 'express'
 import { getSubmissionModel } from '../models/submission.js'
 import { getRoundModel } from '../models/round.js'
+import { getDrawModel } from '../models/draw.js'
+import { getTeamModel } from '../models/team.js'
+import { getSpeakerModel } from '../models/speaker.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
@@ -155,6 +158,275 @@ function parseOptionalTrimmedString(
   return { ok: true, value: normalized || undefined }
 }
 
+type DrawAllocationContext = {
+  teams: {
+    gov: string
+    opp: string
+  }
+  chairs: string[]
+  panels: string[]
+  trainees: string[]
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
+function normalizeDrawTeams(teams: unknown): { gov: string; opp: string } | null {
+  let gov = ''
+  let opp = ''
+  if (Array.isArray(teams)) {
+    gov = String(teams[0] ?? '').trim()
+    opp = String(teams[1] ?? '').trim()
+  } else if (teams && typeof teams === 'object') {
+    const source = teams as Record<string, unknown>
+    gov = String(source.gov ?? '').trim()
+    opp = String(source.opp ?? '').trim()
+  }
+  if (!gov || !opp || gov === opp) return null
+  return { gov, opp }
+}
+
+function normalizeDrawAllocationRows(allocation: unknown): DrawAllocationContext[] {
+  if (!Array.isArray(allocation)) return []
+  return allocation
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const source = item as Record<string, unknown>
+      const teams = normalizeDrawTeams(source.teams)
+      if (!teams) return null
+      return {
+        teams,
+        chairs: normalizeStringList(source.chairs),
+        panels: normalizeStringList(source.panels),
+        trainees: normalizeStringList(source.trainees),
+      }
+    })
+    .filter((item): item is DrawAllocationContext => Boolean(item))
+}
+
+async function loadRoundAllocationRows(
+  connection: Connection,
+  tournamentId: string,
+  round: number
+): Promise<DrawAllocationContext[]> {
+  const drawDoc = await getDrawModel(connection)
+    .findOne({ tournamentId, round })
+    .lean()
+    .exec()
+  return normalizeDrawAllocationRows((drawDoc as any)?.allocation)
+}
+
+function hasSameMatchup(
+  row: DrawAllocationContext,
+  teamAId: string,
+  teamBId: string
+): boolean {
+  const drawPair = [row.teams.gov, row.teams.opp].sort()
+  const payloadPair = [teamAId, teamBId].sort()
+  return drawPair[0] === payloadPair[0] && drawPair[1] === payloadPair[1]
+}
+
+function rowContainsAdjudicator(row: DrawAllocationContext, adjudicatorId: string): boolean {
+  return [...row.chairs, ...row.panels, ...row.trainees].includes(adjudicatorId)
+}
+
+async function loadSpeakerIdsByTeamForRound(
+  connection: Connection,
+  tournamentId: string,
+  teamIds: string[],
+  round: number
+): Promise<Map<string, Set<string>>> {
+  const uniqueTeamIds = Array.from(new Set(teamIds.map((teamId) => String(teamId ?? '').trim()).filter(Boolean)))
+  const speakerIdsByTeam = new Map<string, Set<string>>()
+  uniqueTeamIds.forEach((teamId) => speakerIdsByTeam.set(teamId, new Set<string>()))
+  if (uniqueTeamIds.length === 0) return speakerIdsByTeam
+
+  const TeamModel = getTeamModel(connection)
+  const teams = await TeamModel.find({
+    tournamentId,
+    _id: { $in: uniqueTeamIds },
+  })
+    .lean()
+    .exec()
+
+  const fallbackNamesByTeam = new Map<string, string[]>()
+  const fallbackSpeakerNames = new Set<string>()
+
+  teams.forEach((team: any) => {
+    const teamId = String(team?._id ?? '').trim()
+    if (!teamId) return
+    const collected = speakerIdsByTeam.get(teamId) ?? new Set<string>()
+    const details = Array.isArray(team?.details) ? team.details : []
+    const roundDetail = details.find((detail: any) => Number(detail?.r) === round)
+    if (Array.isArray(roundDetail?.speakers)) {
+      roundDetail.speakers.forEach((speakerId: any) => {
+        const normalized = String(speakerId ?? '').trim()
+        if (normalized) collected.add(normalized)
+      })
+    }
+    if (collected.size === 0) {
+      details.forEach((detail: any) => {
+        if (!Array.isArray(detail?.speakers)) return
+        detail.speakers.forEach((speakerId: any) => {
+          const normalized = String(speakerId ?? '').trim()
+          if (normalized) collected.add(normalized)
+        })
+      })
+    }
+    if (collected.size === 0 && Array.isArray(team?.speakers)) {
+      const names: string[] = team.speakers
+        .map((speaker: any) => String(speaker?.name ?? '').trim())
+        .filter((name: string) => name.length > 0)
+      if (names.length > 0) {
+        fallbackNamesByTeam.set(teamId, names)
+        names.forEach((name: string) => fallbackSpeakerNames.add(name))
+      }
+    }
+    speakerIdsByTeam.set(teamId, collected)
+  })
+
+  if (fallbackSpeakerNames.size === 0) return speakerIdsByTeam
+
+  const SpeakerModel = getSpeakerModel(connection)
+  const speakers = await SpeakerModel.find({
+    tournamentId,
+    name: { $in: Array.from(fallbackSpeakerNames) },
+  })
+    .lean()
+    .exec()
+  const speakerIdsByName = new Map<string, string[]>()
+  speakers.forEach((speaker: any) => {
+    const name = String(speaker?.name ?? '').trim()
+    const id = String(speaker?._id ?? '').trim()
+    if (!name || !id) return
+    const current = speakerIdsByName.get(name) ?? []
+    current.push(id)
+    speakerIdsByName.set(name, current)
+  })
+
+  fallbackNamesByTeam.forEach((names, teamId) => {
+    const collected = speakerIdsByTeam.get(teamId) ?? new Set<string>()
+    names.forEach((name) => {
+      const ids = speakerIdsByName.get(name) ?? []
+      ids.forEach((id) => collected.add(id))
+    })
+    speakerIdsByTeam.set(teamId, collected)
+  })
+
+  return speakerIdsByTeam
+}
+
+async function validateBallotAgainstDraw(
+  connection: Connection,
+  tournamentId: string,
+  round: number,
+  payload: Pick<NormalizedBallotPayload, 'teamAId' | 'teamBId' | 'submittedEntityId'>
+): Promise<ValidationOutcome<null>> {
+  const allocationRows = await loadRoundAllocationRows(connection, tournamentId, round)
+  if (allocationRows.length === 0) return { ok: true, value: null }
+
+  const row = allocationRows.find((item) => hasSameMatchup(item, payload.teamAId, payload.teamBId))
+  if (!row) {
+    return { ok: false, message: 'teamAId/teamBId is not present in draw allocation' }
+  }
+
+  const submittedEntityId = String(payload.submittedEntityId ?? '').trim()
+  if (!submittedEntityId) return { ok: true, value: null }
+
+  const allowedAdjudicators = new Set<string>([...row.chairs, ...row.panels, ...row.trainees])
+  if (allowedAdjudicators.size > 0 && !allowedAdjudicators.has(submittedEntityId)) {
+    return { ok: false, message: 'submittedEntityId is not assigned to this matchup' }
+  }
+
+  return { ok: true, value: null }
+}
+
+async function validateFeedbackAgainstDraw(
+  connection: Connection,
+  tournamentId: string,
+  round: number,
+  payload: Pick<NormalizedFeedbackPayload, 'adjudicatorId' | 'submittedEntityId'>
+): Promise<ValidationOutcome<null>> {
+  const allocationRows = await loadRoundAllocationRows(connection, tournamentId, round)
+  if (allocationRows.length === 0) return { ok: true, value: null }
+
+  const matchingRows = allocationRows.filter((row) => rowContainsAdjudicator(row, payload.adjudicatorId))
+  if (matchingRows.length === 0) {
+    return { ok: false, message: 'adjudicatorId is not assigned in draw allocation' }
+  }
+
+  const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  const userDefined = ((roundDoc as any)?.userDefinedData ?? {}) as Record<string, unknown>
+  const evaluateFromTeams = userDefined.evaluate_from_teams !== false
+  const evaluateFromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+  const evaluatorInTeam = userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team'
+  const chairsAlwaysEvaluated = userDefined.chairs_always_evaluated === true
+  if (!evaluateFromTeams && !evaluateFromAdjudicators) {
+    return { ok: false, message: 'feedback is disabled in this round' }
+  }
+
+  const submittedEntityId = String(payload.submittedEntityId ?? '').trim()
+  if (!submittedEntityId) return { ok: true, value: null }
+
+  let speakerIdsByTeam = new Map<string, Set<string>>()
+  if (evaluateFromTeams && evaluatorInTeam === 'speaker') {
+    const feedbackTeamIds = matchingRows.flatMap((row) => [row.teams.gov, row.teams.opp])
+    speakerIdsByTeam = await loadSpeakerIdsByTeamForRound(
+      connection,
+      tournamentId,
+      feedbackTeamIds,
+      round
+    )
+  }
+
+  const allowedSubmittedEntities = new Set<string>()
+  matchingRows.forEach((row) => {
+    if (evaluateFromAdjudicators) {
+      ;[...row.chairs, ...row.panels, ...row.trainees].forEach((adjudicatorId) => {
+        if (adjudicatorId && adjudicatorId !== payload.adjudicatorId) {
+          allowedSubmittedEntities.add(adjudicatorId)
+        }
+      })
+    }
+
+    if (!evaluateFromTeams) return
+    const teamCanEvaluateTarget = chairsAlwaysEvaluated
+      ? row.chairs.includes(payload.adjudicatorId)
+      : [...row.chairs, ...row.panels].includes(payload.adjudicatorId)
+    if (!teamCanEvaluateTarget) return
+
+    if (evaluatorInTeam === 'team') {
+      allowedSubmittedEntities.add(row.teams.gov)
+      allowedSubmittedEntities.add(row.teams.opp)
+      return
+    }
+
+    ;(speakerIdsByTeam.get(row.teams.gov) ?? new Set<string>()).forEach((speakerId) =>
+      allowedSubmittedEntities.add(speakerId)
+    )
+    ;(speakerIdsByTeam.get(row.teams.opp) ?? new Set<string>()).forEach((speakerId) =>
+      allowedSubmittedEntities.add(speakerId)
+    )
+  })
+
+  if (allowedSubmittedEntities.size === 0) {
+    return { ok: false, message: 'no valid submittedEntityId exists for this feedback target' }
+  }
+  if (!allowedSubmittedEntities.has(submittedEntityId)) {
+    return { ok: false, message: 'submittedEntityId is not allowed for this feedback target' }
+  }
+
+  return { ok: true, value: null }
+}
+
 async function normalizeBallotPayload(
   connection: Connection,
   tournamentId: string,
@@ -273,6 +545,9 @@ async function normalizeBallotPayload(
   if (hasScoresA !== hasScoresB) {
     return { ok: false, message: 'scoresA and scoresB must both be provided or both empty' }
   }
+  if (!noSpeakerScore && !hasScoresA && !hasScoresB) {
+    return { ok: false, message: 'speaker scores are required in this round' }
+  }
   if (noSpeakerScore && (hasScoresA || hasScoresB)) {
     return { ok: false, message: 'speaker scores are disabled in this round' }
   }
@@ -311,6 +586,13 @@ async function normalizeBallotPayload(
     }
   }
 
+  const drawValidation = await validateBallotAgainstDraw(connection, tournamentId, round, {
+    teamAId: normalizedTeamAId,
+    teamBId: normalizedTeamBId,
+    submittedEntityId: submittedEntityResult.value,
+  })
+  if (!drawValidation.ok) return drawValidation
+
   return {
     ok: true,
     value: {
@@ -336,7 +618,12 @@ async function normalizeBallotPayload(
   }
 }
 
-function normalizeFeedbackPayload(rawPayload: unknown): ValidationOutcome<NormalizedFeedbackPayload> {
+async function normalizeFeedbackPayload(
+  connection: Connection,
+  tournamentId: string,
+  round: number,
+  rawPayload: unknown
+): Promise<ValidationOutcome<NormalizedFeedbackPayload>> {
   const payload = toPayloadRecord(rawPayload)
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
@@ -369,6 +656,12 @@ function normalizeFeedbackPayload(rawPayload: unknown): ValidationOutcome<Normal
   ) {
     return { ok: false, message: 'manner must be a finite number' }
   }
+
+  const drawValidation = await validateFeedbackAgainstDraw(connection, tournamentId, round, {
+    adjudicatorId: normalizedAdjudicatorId,
+    submittedEntityId: submittedEntityResult.value,
+  })
+  if (!drawValidation.ok) return drawValidation
 
   return {
     ok: true,
@@ -588,7 +881,8 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
 
     if (!ensureTournamentId(res, tournamentId)) return
 
-    const normalized = normalizeFeedbackPayload({
+    const connection = await getTournamentConnection(tournamentId)
+    const normalized = await normalizeFeedbackPayload(connection, tournamentId, round, {
       adjudicatorId,
       score,
       comment,
@@ -603,7 +897,6 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     }
     const payload = normalized.value
 
-    const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
     const actor = resolveSubmissionActor(payload.submittedEntityId, req.session?.userId)
     if (actor) {
@@ -668,7 +961,12 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       }
       nextPayload = normalizedBallot.value
     } else {
-      const normalizedFeedback = normalizeFeedbackPayload(nextPayload)
+      const normalizedFeedback = await normalizeFeedbackPayload(
+        connection,
+        tournamentId,
+        nextRound,
+        nextPayload
+      )
       if (!normalizedFeedback.ok) {
         badRequest(res, normalizedFeedback.message)
         return

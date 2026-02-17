@@ -32,6 +32,15 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('setupRoundEditForm')
   })
 
+  it('supports deleting rounds directly from setup list', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('requestRemoveRoundFromSetup')
+    expect(source).toContain('confirmRemoveRoundFromSetup')
+    expect(source).toContain('setupRoundDeleteTarget')
+    expect(source).toContain('ラウンド削除')
+    expect(source).toContain('ラウンド {round} を削除しますか？')
+  })
+
   it('shows per-round detail settings inside setup list', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('setup-round-details')

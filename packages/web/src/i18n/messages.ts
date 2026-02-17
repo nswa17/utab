@@ -1209,6 +1209,8 @@ const en = {
   'タスクはありません。': 'No tasks.',
   スピーカー名で絞り込み: 'Filter by speaker name',
   'スコア入力を確認してください。': 'Please check the score inputs.',
+  '採点設定を読み込み中です。通信状況を確認して再度お試しください。':
+    'Loading score settings. Check your connection and try again.',
   'スピーカー選択を確認してください。': 'Please check speaker selection.',
   'チーム情報が不足しています。': 'Team information is incomplete.',
   '入力内容を確認してください。': 'Please check your entries.',
