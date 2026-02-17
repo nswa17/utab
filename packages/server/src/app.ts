@@ -16,7 +16,9 @@ import { errorHandler, notFound } from './middleware/error.js'
 import { connectDatabase } from './config/database.js'
 import { csrfOriginCheck } from './middleware/csrf.js'
 import { auditRequestLogger } from './middleware/audit-log.js'
+import { ensureRateLimitIdentity } from './middleware/rate-limit-identity.js'
 import {
+  apiIpGuardRateLimiter,
   apiRateLimiter,
   apiSlowDown,
   authRateLimiter,
@@ -45,15 +47,12 @@ export function createApp(): express.Express {
     })
   )
   app.use(csrfOriginCheck)
+  app.use('/api', ensureRateLimitIdentity)
+  app.use('/api', apiIpGuardRateLimiter)
   app.use('/api', apiSlowDown, apiRateLimiter)
-  app.use('/api/auth', authSlowDown, authRateLimiter)
-  app.use('/api/submissions', submissionSlowDown, submissionRateLimiter)
-  app.use('/api/raw-results', rawResultSlowDown, rawResultRateLimiter)
 
   app.use('/api/auth', express.json({ limit: jsonBodyLimits.auth }))
-  app.use('/api/submissions', express.json({ limit: jsonBodyLimits.submissions }))
-  app.use('/api/raw-results', express.json({ limit: jsonBodyLimits.rawResults }))
-  app.use('/api', express.json({ limit: jsonBodyLimits.default }))
+  app.use('/api/auth', authSlowDown, authRateLimiter)
 
   app.use(
     session({
@@ -70,6 +69,12 @@ export function createApp(): express.Express {
       },
     })
   )
+
+  app.use('/api/submissions', submissionSlowDown, submissionRateLimiter)
+  app.use('/api/raw-results', rawResultSlowDown, rawResultRateLimiter)
+  app.use('/api/submissions', express.json({ limit: jsonBodyLimits.submissions }))
+  app.use('/api/raw-results', express.json({ limit: jsonBodyLimits.rawResults }))
+  app.use('/api', express.json({ limit: jsonBodyLimits.default }))
   app.use(httpLogger)
   app.use(auditRequestLogger)
 

@@ -12,11 +12,16 @@ const envSchema = z.object({
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .optional(),
   UTAB_LOG_FILE: z.string().min(1).optional(),
+  RATE_LIMIT_ID_COOKIE_NAME: z.string().min(1).default('utab_rlid'),
+  RATE_LIMIT_ID_COOKIE_MAX_AGE_MS: positiveInt.default(30 * 24 * 60 * 60 * 1000),
+  RATE_LIMIT_ID_SECRET: z.string().min(16).optional(),
   RATE_LIMIT_API_WINDOW_MS: positiveInt.default(15 * 60 * 1000),
   RATE_LIMIT_API_MAX: positiveInt.default(1000),
   RATE_LIMIT_API_DELAY_AFTER: positiveInt.default(200),
   RATE_LIMIT_API_DELAY_STEP_MS: positiveInt.default(25),
   RATE_LIMIT_API_MAX_DELAY_MS: positiveInt.default(1000),
+  RATE_LIMIT_API_IP_GUARD_WINDOW_MS: positiveInt.default(60 * 1000),
+  RATE_LIMIT_API_IP_GUARD_MAX: positiveInt.default(600),
   RATE_LIMIT_AUTH_WINDOW_MS: positiveInt.default(15 * 60 * 1000),
   RATE_LIMIT_AUTH_MAX: positiveInt.default(40),
   RATE_LIMIT_AUTH_DELAY_AFTER: positiveInt.default(10),
@@ -70,6 +75,10 @@ export const rateLimitSettings = {
     delayStepMs: env.RATE_LIMIT_API_DELAY_STEP_MS,
     maxDelayMs: env.RATE_LIMIT_API_MAX_DELAY_MS,
   },
+  apiIpGuard: {
+    windowMs: env.RATE_LIMIT_API_IP_GUARD_WINDOW_MS,
+    max: env.RATE_LIMIT_API_IP_GUARD_MAX,
+  },
   auth: {
     windowMs: env.RATE_LIMIT_AUTH_WINDOW_MS,
     max: env.RATE_LIMIT_AUTH_MAX,
@@ -91,6 +100,12 @@ export const rateLimitSettings = {
     delayStepMs: env.RATE_LIMIT_RAW_RESULTS_DELAY_STEP_MS,
     maxDelayMs: env.RATE_LIMIT_RAW_RESULTS_MAX_DELAY_MS,
   },
+} as const
+
+export const rateLimitIdentitySettings = {
+  cookieName: env.RATE_LIMIT_ID_COOKIE_NAME,
+  cookieMaxAgeMs: env.RATE_LIMIT_ID_COOKIE_MAX_AGE_MS,
+  secret: env.RATE_LIMIT_ID_SECRET ?? env.SESSION_SECRET,
 } as const
 
 export const jsonBodyLimits = {
