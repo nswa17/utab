@@ -105,6 +105,22 @@ describe('Server integration', () => {
     expect(res.body.data.status).toBe('ok')
   })
 
+  it('issues and reuses a rate-limit identity cookie', async () => {
+    const cookieName = process.env.RATE_LIMIT_ID_COOKIE_NAME ?? 'utab_rlid'
+    const first = await request(app).get('/api/health')
+    const setCookies = first.headers['set-cookie'] ?? []
+    const identityCookie = setCookies.find((cookie) => cookie.startsWith(`${cookieName}=`))
+    expect(identityCookie).toBeTruthy()
+    if (!identityCookie) {
+      throw new Error('rate-limit identity cookie was not issued')
+    }
+
+    const second = await request(app)
+      .get('/api/health')
+      .set('Cookie', identityCookie.split(';')[0])
+    expect(second.headers['set-cookie']).toBeUndefined()
+  })
+
   it('applies CORS whitelist and origin checks on state-changing requests', async () => {
     const allowedOrigin = 'http://localhost'
     const blockedOrigin = 'http://evil.example'
