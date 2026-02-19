@@ -16,7 +16,3 @@ tabbycat/
 .certs/*.pem
 !.certs/.gitkeep
 packages/web/*.timestamp-*.mjs
-packages/web/src/**/* 2.ts
-packages/web/src/**/* 2.vue
-packages/core/src/**/* 2.ts
-packages/core/tests/**/* 2.ts

@@ -55,6 +55,50 @@ function sanitizeDeep(value: unknown, blockedKeys: Set<string>): unknown {
   return out
 }
 
+function toStringToken(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+function normalizeDrawTeams(value: unknown): PlainRecord {
+  if (Array.isArray(value)) {
+    const teams = value.map((item) => toStringToken(item))
+    if (teams.length >= 4) {
+      const [og = '', oo = '', cg = '', co = ''] = teams
+      return { gov: og, opp: oo, og, oo, cg, co }
+    }
+    const [gov = '', opp = ''] = teams
+    return { gov, opp }
+  }
+
+  const source = asRecord(value)
+  const teams: PlainRecord = {}
+
+  if (hasOwn(source, 'gov')) teams.gov = toStringToken(source.gov)
+  if (hasOwn(source, 'opp')) teams.opp = toStringToken(source.opp)
+  if (hasOwn(source, 'og')) teams.og = toStringToken(source.og)
+  if (hasOwn(source, 'oo')) teams.oo = toStringToken(source.oo)
+  if (hasOwn(source, 'cg')) teams.cg = toStringToken(source.cg)
+  if (hasOwn(source, 'co')) teams.co = toStringToken(source.co)
+
+  if (!hasOwn(teams, 'gov')) {
+    teams.gov = hasOwn(teams, 'og') ? toStringToken(teams.og) : ''
+  }
+  if (!hasOwn(teams, 'opp')) {
+    teams.opp = hasOwn(teams, 'oo') ? toStringToken(teams.oo) : ''
+  }
+  return teams
+}
+
+function maskDrawTeams(teams: PlainRecord, visible: boolean): PlainRecord {
+  const next: PlainRecord = {}
+  Object.entries(teams).forEach(([key, value]) => {
+    next[key] = visible ? toStringToken(value) : ''
+  })
+  return next
+}
+
 function sanitizeDrawAllocation(
   allocationValue: unknown,
   drawOpened: boolean,
@@ -64,15 +108,10 @@ function sanitizeDrawAllocation(
 
   return allocationValue.map((rowValue) => {
     const row = asRecord(rowValue)
-    const teams = asRecord(row.teams)
+    const teams = maskDrawTeams(normalizeDrawTeams(row.teams), drawOpened)
     return {
       ...(hasOwn(row, 'venue') ? { venue: row.venue } : {}),
-      teams: drawOpened
-        ? {
-            gov: typeof teams.gov === 'string' ? String(teams.gov) : '',
-            opp: typeof teams.opp === 'string' ? String(teams.opp) : '',
-          }
-        : { gov: '', opp: '' },
+      teams,
       chairs: allocationOpened && Array.isArray(row.chairs) ? row.chairs : [],
       panels: allocationOpened && Array.isArray(row.panels) ? row.panels : [],
       trainees: allocationOpened && Array.isArray(row.trainees) ? row.trainees : [],
