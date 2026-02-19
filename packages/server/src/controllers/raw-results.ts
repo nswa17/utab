@@ -13,26 +13,8 @@ import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
 import { buildDetailsForRounds, normalizeScoreWeights } from './shared/allocation-support.js'
-import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
-
-function ensureTournamentId(
-  res: Parameters<RequestHandler>[1],
-  tournamentId?: string
-): tournamentId is string {
-  if (!tournamentId || !isValidObjectId(tournamentId)) {
-    badRequest(res, 'Invalid tournament id')
-    return false
-  }
-  return true
-}
-
-function ensureRawResultId(res: Parameters<RequestHandler>[1], docId: string): boolean {
-  if (!isValidObjectId(docId)) {
-    badRequest(res, 'Invalid raw result id')
-    return false
-  }
-  return true
-}
+import { notFound } from './shared/http-errors.js'
+import { ensureObjectId, ensureTournamentId, requireSingleTournamentPayload } from './shared/request-validators.js'
 
 function buildRawFilter(
   tournamentId: string,
@@ -43,19 +25,6 @@ function buildRawFilter(
   if (params.id !== undefined) filter.id = params.id
   if (params.fromId !== undefined) filter.from_id = params.fromId
   return filter
-}
-
-function requireSingleTournamentPayload(
-  res: Parameters<RequestHandler>[1],
-  payload: any[]
-): string | null {
-  const tournamentId = payload[0]?.tournamentId
-  if (!ensureTournamentId(res, tournamentId)) return null
-  if (!payload.every((item) => item.tournamentId === tournamentId)) {
-    badRequest(res, 'Mixed tournament ids are not supported')
-    return null
-  }
-  return tournamentId
 }
 
 async function isTournamentAdmin(req: Request, tournamentId: string): Promise<boolean> {
@@ -85,6 +54,140 @@ function resolveRounds(requestedRound: number | undefined, ...rawLists: Array<Ar
   })
   return Array.from(rounds).sort((a, b) => a - b)
 }
+
+type PlainRecord = Record<string, unknown>
+type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
+
+type RawResultCrudModel = {
+  insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<unknown[]>
+  findOneAndUpdate: (
+    filter: PlainRecord,
+    update: PlainRecord,
+    options: { new: boolean }
+  ) => { lean: () => { exec: () => Promise<unknown | null> } }
+  findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<unknown | null> } }
+  deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
+}
+
+type RawResultCrudOptions = {
+  getModel: (connection: TournamentConnection) => RawResultCrudModel
+  duplicateConflictMessage: string
+  notFoundMessage: string
+}
+
+function createRawResultCrudHandlers(options: RawResultCrudOptions): {
+  create: RequestHandler
+  update: RequestHandler
+  deleteOne: RequestHandler
+  deleteMany: RequestHandler
+} {
+  const create: RequestHandler = async (req, res, next) => {
+    try {
+      const payload = Array.isArray(req.body) ? req.body : [req.body]
+      const tournamentId = requireSingleTournamentPayload(res, payload)
+      if (!tournamentId) return
+      const connection = await getTournamentConnection(tournamentId)
+      const Model = options.getModel(connection)
+      const created = await Model.insertMany(
+        payload.map((item: any) => ({ ...item, tournamentId })),
+        { ordered: false }
+      )
+      res.status(201).json({ data: created, errors: [] })
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
+      next(err)
+    }
+  }
+
+  const update: RequestHandler = async (req, res, next) => {
+    try {
+      const { id: docId } = req.params
+      const { tournamentId, ...rest } = req.body as { tournamentId?: string } & PlainRecord
+      if (!ensureTournamentId(res, tournamentId)) return
+      if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
+      const connection = await getTournamentConnection(tournamentId)
+      const Model = options.getModel(connection)
+      const updated = await Model.findOneAndUpdate(
+        { _id: docId, tournamentId },
+        { $set: rest },
+        { new: true }
+      )
+        .lean()
+        .exec()
+      if (!updated) {
+        notFound(res, options.notFoundMessage)
+        return
+      }
+      res.json({ data: updated, errors: [] })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  const deleteOne: RequestHandler = async (req, res, next) => {
+    try {
+      const { id: docId } = req.params
+      const { tournamentId } = req.query as { tournamentId?: string }
+      if (!ensureTournamentId(res, tournamentId)) return
+      if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
+      const connection = await getTournamentConnection(tournamentId)
+      const Model = options.getModel(connection)
+      const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
+      if (!deleted) {
+        notFound(res, options.notFoundMessage)
+        return
+      }
+      res.json({ data: deleted, errors: [] })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  const deleteMany: RequestHandler = async (req, res, next) => {
+    try {
+      const { tournamentId, round, id, fromId } = req.query as {
+        tournamentId?: string
+        round?: string
+        id?: string
+        fromId?: string
+      }
+      if (!ensureTournamentId(res, tournamentId)) return
+      const connection = await getTournamentConnection(tournamentId)
+      const Model = options.getModel(connection)
+      const filter = buildRawFilter(tournamentId, { round, id, fromId })
+      const result = await Model.deleteMany(filter).exec()
+      res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  return { create, update, deleteOne, deleteMany }
+}
+
+const rawTeamResultCrudHandlers = createRawResultCrudHandlers({
+  getModel: getRawTeamResultModel,
+  duplicateConflictMessage: 'Raw team result already exists',
+  notFoundMessage: 'Raw team result not found',
+})
+
+const rawSpeakerResultCrudHandlers = createRawResultCrudHandlers({
+  getModel: getRawSpeakerResultModel,
+  duplicateConflictMessage: 'Raw speaker result already exists',
+  notFoundMessage: 'Raw speaker result not found',
+})
+
+const rawAdjudicatorResultCrudHandlers = createRawResultCrudHandlers({
+  getModel: getRawAdjudicatorResultModel,
+  duplicateConflictMessage: 'Raw adjudicator result already exists',
+  notFoundMessage: 'Raw adjudicator result not found',
+})
 
 export const listRawTeamResults: RequestHandler = async (req, res, next) => {
   try {
@@ -167,84 +270,10 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
   }
 }
 
-export const createRawTeamResult: RequestHandler = async (req, res, next) => {
-  try {
-    const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = requireSingleTournamentPayload(res, payload)
-    if (!tournamentId) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawTeamResultModel(connection)
-    const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
-    res.status(201).json({ data: created, errors: [] })
-  } catch (err: any) {
-    if (isDuplicateKeyError(err)) {
-      res
-        .status(409)
-        .json({ data: null, errors: [{ name: 'Conflict', message: 'Raw team result already exists' }] })
-      return
-    }
-    next(err)
-  }
-}
-
-export const updateRawTeamResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawTeamResultModel(connection)
-    const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
-      .lean()
-      .exec()
-    if (!updated) {
-      notFound(res, 'Raw team result not found')
-      return
-    }
-    res.json({ data: updated, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawTeamResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId } = req.query as { tournamentId?: string }
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawTeamResultModel(connection)
-    const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
-    if (!deleted) {
-      notFound(res, 'Raw team result not found')
-      return
-    }
-    res.json({ data: deleted, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawTeamResults: RequestHandler = async (req, res, next) => {
-  try {
-    const { tournamentId, round, id, fromId } = req.query as {
-      tournamentId?: string
-      round?: string
-      id?: string
-      fromId?: string
-    }
-    if (!ensureTournamentId(res, tournamentId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawTeamResultModel(connection)
-    const filter = buildRawFilter(tournamentId, { round, id, fromId })
-    const result = await Model.deleteMany(filter).exec()
-    res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
+export const createRawTeamResult: RequestHandler = rawTeamResultCrudHandlers.create
+export const updateRawTeamResult: RequestHandler = rawTeamResultCrudHandlers.update
+export const deleteRawTeamResult: RequestHandler = rawTeamResultCrudHandlers.deleteOne
+export const deleteRawTeamResults: RequestHandler = rawTeamResultCrudHandlers.deleteMany
 
 export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
   try {
@@ -307,84 +336,10 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
   }
 }
 
-export const createRawSpeakerResult: RequestHandler = async (req, res, next) => {
-  try {
-    const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = requireSingleTournamentPayload(res, payload)
-    if (!tournamentId) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawSpeakerResultModel(connection)
-    const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
-    res.status(201).json({ data: created, errors: [] })
-  } catch (err: any) {
-    if (isDuplicateKeyError(err)) {
-      res
-        .status(409)
-        .json({ data: null, errors: [{ name: 'Conflict', message: 'Raw speaker result already exists' }] })
-      return
-    }
-    next(err)
-  }
-}
-
-export const updateRawSpeakerResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawSpeakerResultModel(connection)
-    const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
-      .lean()
-      .exec()
-    if (!updated) {
-      notFound(res, 'Raw speaker result not found')
-      return
-    }
-    res.json({ data: updated, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawSpeakerResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId } = req.query as { tournamentId?: string }
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawSpeakerResultModel(connection)
-    const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
-    if (!deleted) {
-      notFound(res, 'Raw speaker result not found')
-      return
-    }
-    res.json({ data: deleted, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawSpeakerResults: RequestHandler = async (req, res, next) => {
-  try {
-    const { tournamentId, round, id, fromId } = req.query as {
-      tournamentId?: string
-      round?: string
-      id?: string
-      fromId?: string
-    }
-    if (!ensureTournamentId(res, tournamentId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawSpeakerResultModel(connection)
-    const filter = buildRawFilter(tournamentId, { round, id, fromId })
-    const result = await Model.deleteMany(filter).exec()
-    res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
+export const createRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.create
+export const updateRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.update
+export const deleteRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.deleteOne
+export const deleteRawSpeakerResults: RequestHandler = rawSpeakerResultCrudHandlers.deleteMany
 
 export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) => {
   try {
@@ -428,81 +383,7 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
   }
 }
 
-export const createRawAdjudicatorResult: RequestHandler = async (req, res, next) => {
-  try {
-    const payload = Array.isArray(req.body) ? req.body : [req.body]
-    const tournamentId = requireSingleTournamentPayload(res, payload)
-    if (!tournamentId) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawAdjudicatorResultModel(connection)
-    const created = await Model.insertMany(payload.map((p: any) => ({ ...p, tournamentId })), { ordered: false })
-    res.status(201).json({ data: created, errors: [] })
-  } catch (err: any) {
-    if (isDuplicateKeyError(err)) {
-      res
-        .status(409)
-        .json({ data: null, errors: [{ name: 'Conflict', message: 'Raw adjudicator result already exists' }] })
-      return
-    }
-    next(err)
-  }
-}
-
-export const updateRawAdjudicatorResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId, ...rest } = req.body as { tournamentId?: string } & Record<string, unknown>
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawAdjudicatorResultModel(connection)
-    const updated = await Model.findOneAndUpdate({ _id: docId, tournamentId }, { $set: rest }, { new: true })
-      .lean()
-      .exec()
-    if (!updated) {
-      notFound(res, 'Raw adjudicator result not found')
-      return
-    }
-    res.json({ data: updated, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawAdjudicatorResult: RequestHandler = async (req, res, next) => {
-  try {
-    const { id: docId } = req.params
-    const { tournamentId } = req.query as { tournamentId?: string }
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRawResultId(res, docId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawAdjudicatorResultModel(connection)
-    const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
-    if (!deleted) {
-      notFound(res, 'Raw adjudicator result not found')
-      return
-    }
-    res.json({ data: deleted, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export const deleteRawAdjudicatorResults: RequestHandler = async (req, res, next) => {
-  try {
-    const { tournamentId, round, id, fromId } = req.query as {
-      tournamentId?: string
-      round?: string
-      id?: string
-      fromId?: string
-    }
-    if (!ensureTournamentId(res, tournamentId)) return
-    const connection = await getTournamentConnection(tournamentId)
-    const Model = getRawAdjudicatorResultModel(connection)
-    const filter = buildRawFilter(tournamentId, { round, id, fromId })
-    const result = await Model.deleteMany(filter).exec()
-    res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
-  } catch (err) {
-    next(err)
-  }
-}
+export const createRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.create
+export const updateRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.update
+export const deleteRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.deleteOne
+export const deleteRawAdjudicatorResults: RequestHandler = rawAdjudicatorResultCrudHandlers.deleteMany
