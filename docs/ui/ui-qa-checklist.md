@@ -28,6 +28,7 @@
 - Rounds: 作成UIは表示されず、`大会セットアップ` への導線と既存ラウンドの上書き編集に集中している。
 - Submissions: filter/search and JSON collapse expand/collapse via keyboard; chart toggle accessible.
 - Compiled results: CSV download button reachable; warning texts readable and contrast-compliant.
+- Round allocation: 警告付き entity（チーム/ジャッジ/会場）は常時で縁色表示され、備考の警告項目 hover/focus で該当 entity のみ強調される。
 - Compiled results (UX v3): 上段は `既存レポートの選択` / `新規レポート生成` / `提出状況サマリー` の3枠に分かれ、提出状況テーブル行から `提出状況` タブへ遷移できる。
 - Compiled results (UX v3): `entityごとの順位一覧 / 公平性 / 発表準備` の3タブが切り替わり、既定タブが `entityごとの順位一覧` である。
 - Compiled results (UX v3): `entityごとの順位一覧` で `集計区分` の小枠セグメントが表示され、選択中区分の順位テーブルが直下に表示される。

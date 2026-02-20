@@ -75,12 +75,6 @@
           <p v-if="activeTaskHint" class="muted small">{{ activeTaskHint }}</p>
 
           <section v-if="activeTask === 'draw'" class="stack step-content">
-            <p class="muted small">
-              {{ $t('対象ラウンド: {round}', { round: selectedRound }) }}
-            </p>
-            <p class="muted small">
-              {{ $t('対戦生成と保存は対戦表設定で実行します。') }}
-            </p>
             <AdminRoundAllocation
               v-if="selectedRound !== null"
               :embedded="true"
@@ -288,13 +282,6 @@
                 )
               }}
             </p>
-            <p class="muted small">
-              {{
-                $t('集計対象ラウンド: {rounds}', {
-                  rounds: compileTargetRoundsLabel || '-',
-                })
-              }}
-            </p>
             <div v-if="compileTargetRounds.length > 0" class="compile-round-picker">
               <label
                 v-for="roundNumber in compileTargetRounds"
@@ -352,14 +339,14 @@
               <div class="row compile-result-head">
                 <div class="stack tight">
                   <strong>{{ $t('集計レポート') }}</strong>
-                  <span class="muted small">{{ $t('差分基準: {baseline}', { baseline: compileDiffBaselineLabel }) }}</span>
                 </div>
-                <CompiledDiffBaselineSelect
+                <CompiledSnapshotSelect
                   v-if="diffBaselineCompiledOptions.length > 0"
                   v-model="compileDiffBaselineCompiledId"
                   class="compile-result-baseline-select"
                   :label="$t('差分比較')"
-                  :options="diffBaselineCompiledOptions"
+                  :options="compileDiffBaselineSelectOptions"
+                  :placeholder="$t('未選択')"
                 />
               </div>
               <div class="row diff-legend">
@@ -448,7 +435,7 @@ import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
-import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
+import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -478,13 +465,13 @@ import { countSubmissionActors, resolveRoundOperationStatus, type RoundOperation
 import { buildSubmissionDelayRows, buildSubmissionSpeedRows } from '@/utils/insights'
 import {
   formatCompiledSnapshotOptionLabel,
-  resolvePreviousCompiledId,
+  resolveLatestCompiledIdContainingRound,
 } from '@/utils/compiled-snapshot'
 import { includeLabelsFromRoundDetails } from '@/utils/compile-include-labels'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n({ useScope: 'global' })
+const { t, locale } = useI18n({ useScope: 'global' })
 
 const roundsStore = useRoundsStore()
 const drawsStore = useDrawsStore()
@@ -604,9 +591,6 @@ const compileTargetRounds = computed(() => {
 const effectiveCompileTargetRounds = computed(() =>
   compileTargetRounds.value.filter((roundNumber) => selectedCompileRounds.value.includes(roundNumber))
 )
-const compileTargetRoundsLabel = computed(() =>
-  effectiveCompileTargetRounds.value.length > 0 ? effectiveCompileTargetRounds.value.join(', ') : ''
-)
 type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
@@ -654,6 +638,13 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
 const currentCompiledId = computed(() => String(compiledStore.compiled?._id ?? '').trim())
 const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   baselineCompiledOptions.value.filter((item) => item.compiledId !== currentCompiledId.value)
+)
+const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
+const compileDiffBaselineSelectOptions = computed(() =>
+  diffBaselineCompiledOptions.value.map((option) => ({
+    value: option.compiledId,
+    label: formatCompiledSnapshotOptionLabel(option, snapshotLocaleTag.value),
+  }))
 )
 const compileRowsBase = computed<any[]>(() => {
   return Array.isArray(compiledStore.compiled?.compiled_team_results)
@@ -707,38 +698,6 @@ const sortedCompileRows = computed<any[]>(() => {
       return leftEntry.index - rightEntry.index
     })
     .map((entry) => entry.row)
-})
-const compileDiffMeta = computed<any | null>(() =>
-  compiledStore.compiled?.compile_diff_meta && typeof compiledStore.compiled.compile_diff_meta === 'object'
-    ? compiledStore.compiled.compile_diff_meta
-    : null
-)
-const compileDiffBaselineLabel = computed(() => {
-  const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
-  if (selectedBaselineId) {
-    const selected = diffBaselineCompiledOptions.value.find(
-      (item) => item.compiledId === selectedBaselineId
-    )
-    if (selected) {
-      return t('選択した過去集計: {label}', {
-        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
-      })
-    }
-    return t('選択した過去集計')
-  }
-  const meta = compileDiffMeta.value
-  if (!meta || meta.baseline_found !== true) return t('基準なし')
-  const baselineId = String(meta.baseline_compiled_id ?? '')
-  if (meta.baseline_mode === 'compiled') {
-    const selected = diffBaselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
-    if (selected) {
-      return t('選択した過去集計: {label}', {
-        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
-      })
-    }
-    return t('選択した過去集計')
-  }
-  return t('前回集計')
 })
 const snapshotIncludesSelectedRound = computed(() => {
   if (selectedRound.value === null) return false
@@ -1469,15 +1428,12 @@ async function refreshCompiledHistory() {
 }
 
 function applyDefaultCompileDiffBaseline() {
-  const resolved = resolvePreviousCompiledId(
-    baselineCompiledOptions.value,
-    String(compiledStore.compiled?._id ?? '')
+  const targetRound =
+    selectedRound.value !== null && selectedRound.value > 1 ? selectedRound.value - 1 : null
+  compileDiffBaselineCompiledId.value = resolveLatestCompiledIdContainingRound(
+    diffBaselineCompiledOptions.value,
+    targetRound
   )
-  compileDiffBaselineCompiledId.value = diffBaselineCompiledOptions.value.some(
-    (option) => option.compiledId === resolved
-  )
-    ? resolved
-    : ''
 }
 
 async function saveDrawPublication(
@@ -1615,6 +1571,7 @@ watch(
   selectedRound,
   () => {
     applyCompileDraftFromRound()
+    applyDefaultCompileDiffBaseline()
   },
   { immediate: true }
 )

@@ -6,8 +6,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
-
-type RoundEntry = { r: number; name: string }
+import { buildScoreChangeRounds, buildScoreChangeSeries } from '@/utils/score-change'
 
 const props = withDefaults(
   defineProps<{
@@ -24,46 +23,25 @@ const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
 
-function extractRounds(): RoundEntry[] {
-  if (props.tournament?.rounds?.length) {
-    return props.tournament.rounds.map((round: any) => ({
-      r: round.r ?? round.round ?? round.id,
-      name:
-        round.name ??
-        t('ラウンド {round}', { round: round.r ?? round.round ?? round.id ?? 0 }),
-    }))
-  }
-  const rounds = new Set<number>()
-  props.results.forEach((result) => {
-    result.details?.forEach((detail: any) => {
-      if (typeof detail.r === 'number') rounds.add(detail.r)
-    })
-  })
-  return Array.from(rounds)
-    .sort((a, b) => a - b)
-    .map((round) => ({ r: round, name: t('ラウンド {round}', { round }) }))
-}
-
 function render() {
   if (!container.value) return
-  const rounds = extractRounds()
-  const safeRounds: RoundEntry[] = rounds.length > 0 ? rounds : [{ r: 1, name: t('合計') }]
-  const series = props.results.map((result) => {
-    const name = result.name ?? result.id ?? t('エントリー')
-    const data = safeRounds.map((round: RoundEntry) => {
-      const detail = result.details?.find((d: any) => d.r === round.r)
-      const value = detail?.[props.score]
-      if (typeof value === 'number') return value
-      const fallback = result?.[props.score]
-      return typeof fallback === 'number' ? fallback : null
-    })
-    return { name, data, type: 'line' }
+  const rounds = buildScoreChangeRounds({
+    tournament: props.tournament,
+    results: props.results,
+    roundLabel: (round) => t('ラウンド {round}', { round }),
+  })
+  const { rounds: safeRounds, series } = buildScoreChangeSeries({
+    results: props.results,
+    rounds,
+    scoreKey: props.score,
+    fallbackRoundName: t('合計'),
+    entryName: (result) => String(result?.name ?? result?.id ?? t('エントリー')),
   })
 
   const options = {
     chart: { type: 'line', backgroundColor: 'transparent' },
     title: { text: t('スコア推移') },
-    xAxis: { categories: safeRounds.map((round: RoundEntry) => round.name) },
+    xAxis: { categories: safeRounds.map((round) => round.name) },
     yAxis: { title: { text: t('スコア') } },
     legend: { enabled: true },
     colors: (() => {

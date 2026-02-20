@@ -67,15 +67,13 @@ function renderChart(
 ) {
   if (!container) return
   const categories = config.rows.map((row) => row.name)
-  const data = config.rows.map((row) => row[config.metric])
-
   const styles = getComputedStyle(document.documentElement)
-  const palette = [
-    styles.getPropertyValue('--color-primary').trim() || '#2563eb',
-    styles.getPropertyValue('--color-success').trim() || '#16a34a',
-    styles.getPropertyValue('--color-warn').trim() || '#b45309',
-    styles.getPropertyValue('--color-danger').trim() || '#ef4444',
-  ]
+  const defaultBarColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
+  const maxWinCount = config.rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
+  const data = config.rows.map((row) => ({
+    y: row[config.metric],
+    color: colorByWins(row.win, maxWinCount, defaultBarColor),
+  }))
 
   Highcharts.chart(container, {
     chart: { type: 'bar', backgroundColor: 'transparent' },
@@ -85,11 +83,19 @@ function renderChart(
       title: { text: config.yAxisLabel },
       allowDecimals: config.metric === 'win' ? false : true,
     },
-    colors: palette,
     legend: { enabled: false },
     series: [{ name: config.seriesName, data, type: 'bar' }],
     credits: { enabled: false },
   })
+}
+
+function colorByWins(winCount: number, maxWinCount: number, fallbackColor: string): string {
+  if (maxWinCount <= 0) return fallbackColor
+  const ratio = Math.max(0, Math.min(1, winCount / maxWinCount))
+  const hue = 12 + ratio * 108
+  const saturation = 72
+  const lightness = 58 - ratio * 12
+  return `hsl(${hue} ${saturation}% ${lightness}%)`
 }
 
 function render() {

@@ -30,32 +30,13 @@
             />
           </div>
           <p v-else class="muted small">{{ $t('集計スナップショットはまだありません。') }}</p>
-          <p class="muted small">{{ $t('現在表示: {snapshot}', { snapshot: selectedSnapshotText }) }}</p>
-          <p class="muted small">
-            {{
-              $t('ソース: {source} / ラウンド数: {count}', {
-                source: isDisplayedRawSource ? $t('生結果データ') : $t('提出データ'),
-                count: compiledRoundsCount,
-              })
-            }}
-          </p>
         </section>
 
         <section class="card stack report-setup-card">
           <div class="row report-setup-head">
             <h4>{{ $t('新規レポート生成') }}</h4>
-            <span v-if="reportUxV3Enabled" class="muted small">{{ $t('全タブ共通') }}</span>
           </div>
-          <p class="muted small">
-            {{
-              $t(
-                'この設定はレポート全体に適用されます。カテゴリ別順位一覧・公平性・発表出力の各表示で共通です。'
-              )
-            }}
-          </p>
-          <p class="muted small">
-            {{ $t('必要な場合のみ詳細設定で再計算条件を変更してください。') }}
-          </p>
+          <p class="muted small">{{ $t('新規レポートを生成します。') }}</p>
           <div v-if="compileRounds.length > 0" class="stack compile-warning-list">
             <div v-for="r in compileRounds" :key="r">
               <p v-if="missingBallotByRound(r).length > 0" class="muted warning">
@@ -181,7 +162,6 @@
         <div v-if="reportUxV3Enabled" class="stack report-section-nav">
           <div class="row report-section-nav-head">
             <h4>{{ $t('レポート表示') }}</h4>
-            <p class="muted small">{{ $t('タブは実行ではなく表示切替です。') }}</p>
           </div>
           <div class="report-section-tabs" role="tablist" :aria-label="$t('レポートセクション')">
             <button
@@ -197,14 +177,6 @@
               {{ section.label }}
             </button>
           </div>
-          <p class="muted small report-section-active-note">
-            {{
-              $t('現在: {label} - {description}', {
-                label: activeReportSectionOption.label,
-                description: activeReportSectionOption.description,
-              })
-            }}
-          </p>
         </div>
 
         <p v-if="isDisplayedRawSource" class="muted warning raw-source-notice">
@@ -238,9 +210,6 @@
               {{ labelDisplay(label) }}
             </button>
           </div>
-          <p v-if="reportUxV3Enabled" class="muted small">
-            {{ $t('最終確定前に、順位・差分・境界をこの一覧で先に確認してください。') }}
-          </p>
           <div v-if="showDiffLegend" class="row diff-legend">
             <span class="diff-legend-item">
               <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
@@ -254,7 +223,6 @@
             <span class="diff-legend-item">
               <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
             </span>
-            <span class="muted">{{ $t('差分基準: {baseline}', { baseline: diffBaselineLabel }) }}</span>
             <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
           </div>
           <div v-if="activeResults.length === 0" class="muted">{{ $t('結果がありません。') }}</div>
@@ -507,30 +475,7 @@
             />
             <template v-else>
               <ScoreChange :results="activeResults" :tournament="compiled" :score="scoreKey" />
-              <div class="row score-range-sort-row">
-                <label class="stack score-range-sort-field">
-                  <span class="muted small">{{ $t('スコア範囲ソート') }}</span>
-                  <select v-model="scoreRangeSortBy">
-                    <option v-for="option in scoreRangeSortOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  :disabled="scoreRangeSortBy === 'none'"
-                  @click="toggleScoreRangeSortDirection"
-                >
-                  {{ scoreRangeSortDirection === 'asc' ? $t('昇順') : $t('降順') }}
-                </Button>
-              </div>
-              <ScoreRange
-                :results="activeResults"
-                :score="scoreKey"
-                :sort-by="scoreRangeSortBy"
-                :sort-direction="scoreRangeSortDirection"
-              />
+              <ScoreRange :results="activeResults" :score="scoreKey" />
               <TeamPerformance v-if="activeLabel === 'teams'" :results="activeResults" />
             </template>
           </section>
@@ -786,8 +731,6 @@ const activeReportSectionEnteredAt = ref<number>(Date.now())
 const analysisChartsReady = ref(!reportUxV3Enabled)
 const activeLabel = ref<CompiledLabel>('teams')
 const slideLabel = ref<CompiledLabel>('teams')
-const scoreRangeSortBy = ref<'none' | 'name' | 'min' | 'max' | 'spread'>('none')
-const scoreRangeSortDirection = ref<'asc' | 'desc'>('asc')
 const showRecomputeOptions = ref(false)
 const forceCompileModalOpen = ref(false)
 const compileRounds = ref<number[]>([])
@@ -857,7 +800,10 @@ type RecomputeOptionsSnapshot = {
 type FairnessSeverity = 'high' | 'medium' | 'low'
 const sortedRounds = computed<RoundSummary[]>(() => {
   if (rounds.rounds.length > 0) {
-    return rounds.rounds.slice().sort((a, b) => a.round - b.round)
+    return rounds.rounds
+      .filter((round) => Number.isInteger(Number(round.round)) && Number(round.round) >= 1)
+      .slice()
+      .sort((a, b) => a.round - b.round)
   }
   const payloadRounds = compiled.value?.rounds ?? []
   return payloadRounds
@@ -868,7 +814,7 @@ const sortedRounds = computed<RoundSummary[]>(() => {
         name: item?.name ?? t('ラウンド {round}', { round: roundValue }),
       }
     })
-    .filter((round: any) => Number.isFinite(round.round))
+    .filter((round: any) => Number.isInteger(round.round) && round.round >= 1)
     .sort((a: any, b: any) => a.round - b.round)
 })
 const teamResults = computed<any[]>(() => compiled.value?.compiled_team_results ?? [])
@@ -967,15 +913,6 @@ const reportSectionOptions = computed<
     description: t('スライドと表彰出力を確認'),
   },
 ])
-const activeReportSectionOption = computed(
-  () =>
-    reportSectionOptions.value.find((section) => section.key === activeReportSection.value) ??
-    reportSectionOptions.value[0] ?? {
-      key: 'operations' as const,
-      label: t('カテゴリ別順位一覧'),
-      description: t('集計区分ごとの順位と差分を確認'),
-    }
-)
 const showOperationsSection = computed(
   () => !reportUxV3Enabled || activeReportSection.value === 'operations'
 )
@@ -1010,13 +947,6 @@ const analysisEmptyState = computed(() => {
     message: t('初回表示時のみグラフを読み込んでいます。'),
   }
 })
-const scoreRangeSortOptions = computed(() => [
-  { value: 'none', label: t('ソートなし') },
-  { value: 'name', label: t('名前') },
-  { value: 'min', label: t('最小スコア') },
-  { value: 'max', label: t('最大スコア') },
-  { value: 'spread', label: t('スコア幅') },
-])
 const canRunCompile = computed(() => {
   if (!selectedDiffBaselineCompiledId.value) return true
   return diffBaselineCompiledOptions.value.some(
@@ -1089,32 +1019,6 @@ const compileDiffMeta = computed<any | null>(() =>
     ? compiled.value.compile_diff_meta
     : null
 )
-const diffBaselineLabel = computed(() => {
-  if (selectedDiffBaselineCompiledId.value) {
-    const selected = diffBaselineCompiledOptions.value.find(
-      (item) => item.compiledId === selectedDiffBaselineCompiledId.value
-    )
-    if (selected) {
-      return t('選択した過去集計: {label}', {
-        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
-      })
-    }
-    return t('選択した過去集計')
-  }
-  const meta = compileDiffMeta.value
-  if (!meta || meta.baseline_found !== true) return t('基準なし')
-  const baselineId = String(meta.baseline_compiled_id ?? '')
-  if (meta.baseline_mode === 'compiled') {
-    const selected = diffBaselineCompiledOptions.value.find((item) => item.compiledId === baselineId)
-    if (selected) {
-      return t('選択した過去集計: {label}', {
-        label: formatCompiledSnapshotOptionLabel(selected, 'ja-JP'),
-      })
-    }
-    return t('選択した過去集計')
-  }
-  return t('前回集計')
-})
 
 function mapInstitutions(values: any): string[] {
   if (!Array.isArray(values)) return []
@@ -1797,19 +1701,6 @@ const submissionOperationsLinkLabel = computed(() =>
 function submissionOperationsLinkForRound(roundNumber: number): string {
   return `/admin/${tournamentId.value}/operations?task=submissions&round=${roundNumber}`
 }
-const selectedSnapshotInfo = computed(() =>
-  baselineCompiledOptions.value.find((option) => option.compiledId === selectedCompiledId.value)
-)
-const selectedSnapshotText = computed(() => {
-  if (selectedSnapshotInfo.value) return formatCompiledSnapshotOptionLabel(selectedSnapshotInfo.value, 'ja-JP')
-  if (compiled.value?._id) return t('表示中スナップショット')
-  return t('未生成')
-})
-const compiledRoundsCount = computed(() => {
-  const roundsValue = compiled.value?.rounds
-  if (!Array.isArray(roundsValue)) return 0
-  return roundsValue.length
-})
 const fairnessTargetRounds = computed(() => new Set(summaryTargetRounds.value.map((round) => Number(round))))
 const fairnessSideSummary = computed(() => {
   let govAppearances = 0
@@ -2054,10 +1945,6 @@ function setResultSort(key: string) {
   }
   resultSortKey.value = key
   resultSortDirection.value = key === 'ranking' ? 'asc' : 'desc'
-}
-
-function toggleScoreRangeSortDirection() {
-  scoreRangeSortDirection.value = scoreRangeSortDirection.value === 'asc' ? 'desc' : 'asc'
 }
 
 function resultSortIndicator(key: string) {
@@ -3261,18 +3148,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .announcement-block {
   gap: var(--space-3);
-}
-
-.score-range-sort-row {
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.score-range-sort-field {
-  min-width: 200px;
-  gap: 4px;
 }
 
 .award-copy-toolbar {

@@ -340,7 +340,7 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .compile-group-title {
   margin: 0;
-  font-size: 1.12rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -352,14 +352,14 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 }
 
 .compile-group :deep(.field-label) {
-  font-size: 1rem;
+  font-size: 0.84rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--color-muted);
 }
 
 .compile-group :deep(select),
 .compile-group :deep(input) {
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.45;
 }
 

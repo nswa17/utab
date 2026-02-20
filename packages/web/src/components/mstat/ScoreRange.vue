@@ -11,8 +11,6 @@ const props = defineProps<{
   id?: string
   results: any[]
   score: string
-  sortBy?: 'none' | 'name' | 'min' | 'max' | 'spread'
-  sortDirection?: 'asc' | 'desc'
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
@@ -21,8 +19,8 @@ const { t, locale } = useI18n({ useScope: 'global' })
 
 function render() {
   if (!container.value) return
-  const direction = props.sortDirection === 'desc' ? -1 : 1
-  const sortBy = props.sortBy ?? 'none'
+  const styles = getComputedStyle(document.documentElement)
+  const defaultBarColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
   const rows = props.results
     .map((result, index) => {
       const values = result.details
@@ -45,6 +43,7 @@ function render() {
         name: String(result.name ?? result.id ?? t('エントリー')),
         min,
         max,
+        win: resolveWinCount(result),
         spread:
           typeof min === 'number' && typeof max === 'number'
             ? max - min
@@ -52,26 +51,25 @@ function render() {
       }
     })
     .sort((a, b) => {
-      if (sortBy === 'name') {
-        const diff = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
-        return diff !== 0 ? direction * diff : a.index - b.index
-      }
-      if (sortBy === 'min' || sortBy === 'max' || sortBy === 'spread') {
-        const left = a[sortBy]
-        const right = b[sortBy]
-        const missingValue = direction === 1 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
-        const leftNumber = typeof left === 'number' ? left : missingValue
-        const rightNumber = typeof right === 'number' ? right : missingValue
-        const diff = leftNumber - rightNumber
-        return diff !== 0 ? direction * diff : a.index - b.index
-      }
-      return a.index - b.index
+      const leftMax = typeof a.max === 'number' ? a.max : Number.NEGATIVE_INFINITY
+      const rightMax = typeof b.max === 'number' ? b.max : Number.NEGATIVE_INFINITY
+      if (rightMax !== leftMax) return rightMax - leftMax
+      const leftMin = typeof a.min === 'number' ? a.min : Number.NEGATIVE_INFINITY
+      const rightMin = typeof b.min === 'number' ? b.min : Number.NEGATIVE_INFINITY
+      if (rightMin !== leftMin) return rightMin - leftMin
+      const nameDiff = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      return nameDiff !== 0 ? nameDiff : a.index - b.index
     })
 
   const categories = rows.map((row) => row.name)
+  const maxWinCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
   const data = rows.map((row) => {
     if (typeof row.min === 'number' && typeof row.max === 'number') {
-      return [row.min, row.max]
+      return {
+        low: row.min,
+        high: row.max,
+        color: colorByWins(row.win, maxWinCount, defaultBarColor),
+      }
     }
     return null
   })
@@ -82,24 +80,41 @@ function render() {
     xAxis: { categories },
     yAxis: { title: { text: t('スコア') } },
     legend: { enabled: false },
-    colors: (() => {
-      const styles = getComputedStyle(document.documentElement)
-      return [
-        styles.getPropertyValue('--color-primary').trim() || '#2563eb',
-        styles.getPropertyValue('--color-success').trim() || '#16a34a',
-        styles.getPropertyValue('--color-warn').trim() || '#b45309',
-        styles.getPropertyValue('--color-danger').trim() || '#ef4444',
-      ]
-    })(),
     series: [{ name: t('スコア'), data, type: 'columnrange' }],
   }
 
   Highcharts.chart(container.value as HTMLElement, options as any)
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim().length === 0) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function resolveWinCount(result: any): number {
+  const directWin = toFiniteNumber(result?.win)
+  if (directWin !== null) return directWin
+  const details = Array.isArray(result?.details) ? result.details : []
+  return details.reduce((total: number, detail: any) => {
+    const win = toFiniteNumber(detail?.win)
+    return total + (win ?? 0)
+  }, 0)
+}
+
+function colorByWins(winCount: number, maxWinCount: number, fallbackColor: string): string {
+  if (maxWinCount <= 0) return fallbackColor
+  const ratio = Math.max(0, Math.min(1, winCount / maxWinCount))
+  const hue = 12 + ratio * 108
+  const saturation = 72
+  const lightness = 58 - ratio * 12
+  return `hsl(${hue} ${saturation}% ${lightness}%)`
+}
+
 onMounted(render)
 watch(
-  () => [props.results, props.score, props.sortBy, props.sortDirection, locale.value],
+  () => [props.results, props.score, locale.value],
   () => render(),
   { deep: true }
 )

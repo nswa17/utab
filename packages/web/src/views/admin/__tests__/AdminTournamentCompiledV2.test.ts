@@ -11,10 +11,10 @@ describe('AdminTournamentCompiled V2', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('reportUxV3Enabled')
     expect(source).toContain('activeReportSection')
-    expect(source).toContain('activeReportSectionOption')
     expect(source).toContain('reportSectionOptions')
     expect(source).toContain('レポート表示')
-    expect(source).toContain('タブは実行ではなく表示切替です。')
+    expect(source).not.toContain('タブは実行ではなく表示切替です。')
+    expect(source).not.toContain('現在: {label} - {description}')
     expect(source).toContain('カテゴリ別順位一覧')
     expect(source).toContain('公平性')
     expect(source).toContain('発表出力')
@@ -54,7 +54,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('operations-results')
     expect(source).toContain('カテゴリ別順位一覧')
     expect(source).not.toContain('順位一覧の対象を切り替えます。')
-    expect(source).toContain('最終確定前に、順位・差分・境界をこの一覧で先に確認してください。')
+    expect(source).not.toContain('最終確定前に、順位・差分・境界をこの一覧で先に確認してください。')
     expect(source).not.toContain('確定リスク')
     expect(source).not.toContain('operationRisks')
     expect(source).not.toContain('operationRiskSeverityLabel')
@@ -68,6 +68,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('diffBaselineCompiledOptions')
     expect(source).toContain('applyDefaultDiffBaselineSelection')
     expect(source).toContain('resolvePreviousCompiledId')
+    expect(source).not.toContain('差分基準: {baseline}')
     expect(source).not.toContain('latest-label')
     expect(helper).toContain('formatCompiledSnapshotOptionLabel')
     expect(helper).toContain('resolvePreviousCompiledId')
@@ -88,6 +89,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('fairnessJudgeSummary')
     expect(source).toContain('fairnessAlertCount')
     expect(source).toContain('ジャッジ割当偏り')
+    expect(source).toContain('Number.isInteger(round.round) && round.round >= 1')
   })
 
   it('adds judge strictness outlier insights on the fairness section', () => {
@@ -120,14 +122,13 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('<EmptyState')
   })
 
-  it('allows sorting score range display in fairness analytics', () => {
+  it('keeps score range display fixed to max-score order without sort controls', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('スコア範囲ソート')
-    expect(source).toContain('scoreRangeSortBy')
-    expect(source).toContain('scoreRangeSortDirection')
-    expect(source).toContain('toggleScoreRangeSortDirection')
-    expect(source).toContain(':sort-by="scoreRangeSortBy"')
-    expect(source).toContain(':sort-direction="scoreRangeSortDirection"')
+    expect(source).not.toContain('スコア範囲ソート')
+    expect(source).not.toContain('scoreRangeSortBy')
+    expect(source).not.toContain('scoreRangeSortDirection')
+    expect(source).not.toContain('toggleScoreRangeSortDirection')
+    expect(source).toContain('<ScoreRange :results="activeResults" :score="scoreKey" />')
   })
 
   it('removes heatmap charts from fairness visuals', () => {
@@ -215,7 +216,7 @@ describe('AdminTournamentCompiled V2', () => {
   it('keeps compile preparation independent from the operations tab', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('新規レポート生成')
-    expect(source).toContain('全タブ共通')
+    expect(source).toContain('新規レポートを生成します。')
     expect(source).not.toContain('v-if="!compiled || showOperationsSection"')
   })
 
