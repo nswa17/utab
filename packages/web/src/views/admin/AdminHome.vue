@@ -36,42 +36,52 @@
       </Field>
       <LoadingState v-if="tournament.loading || styles.loading" />
       <p v-else-if="tournament.error" class="error">{{ tournament.error }}</p>
-      <EmptyState
-        v-else-if="filteredTournaments.length === 0"
-        :title="$t('表示できる大会がありません。')"
-      />
-      <Table v-else hover striped sticky-header>
-        <thead>
-          <tr>
-            <th>{{ $t('大会名') }}</th>
-            <th>{{ $t('スタイル') }}</th>
-            <th>{{ $t('更新日') }}</th>
-            <th>{{ $t('操作') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in filteredTournaments" :key="item._id">
-            <td>
-              <RouterLink class="name-link" :to="`/admin/${item._id}/setup`">
-                <strong>{{ item.name }}</strong>
-                <span v-if="item.user_defined_data?.hidden" class="visibility-badge">
-                  {{ $t('非公開') }}
-                </span>
-              </RouterLink>
-            </td>
-            <td>{{ styleName(item.style) }}</td>
-            <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
-            <td>
-              <div class="row">
-                <Button variant="secondary" size="sm" :to="`/admin/${item._id}/setup`">
-                  {{ $t('大会管理') }}
-                </Button>
-                <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </Table>
+      <template v-else>
+        <p v-if="downloadError" class="error">{{ downloadError }}</p>
+        <EmptyState
+          v-if="filteredTournaments.length === 0"
+          :title="$t('表示できる大会がありません。')"
+        />
+        <Table v-else hover striped sticky-header>
+          <thead>
+            <tr>
+              <th>{{ $t('大会名') }}</th>
+              <th>{{ $t('スタイル') }}</th>
+              <th>{{ $t('更新日') }}</th>
+              <th>{{ $t('操作') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in filteredTournaments" :key="item._id">
+              <td>
+                <RouterLink class="name-link" :to="`/admin/${item._id}/setup`">
+                  <strong>{{ item.name }}</strong>
+                  <span v-if="item.user_defined_data?.hidden" class="visibility-badge">
+                    {{ $t('非公開') }}
+                  </span>
+                </RouterLink>
+              </td>
+              <td>{{ styleName(item.style) }}</td>
+              <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
+              <td>
+                <div class="row">
+                  <Button variant="secondary" size="sm" :to="`/admin/${item._id}/setup`">
+                    {{ $t('大会管理') }}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    @click="downloadTournamentBundle(item._id, item.name)"
+                  >
+                    {{ $t('大会データ一括DL') }}
+                  </Button>
+                  <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </Table>
+      </template>
     </div>
 
     <div
@@ -106,11 +116,14 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
+import { api } from '@/utils/api'
 
 const tournament = useTournamentStore()
 const styles = useStylesStore()
 const auth = useAuthStore()
 const { t } = useI18n({ useScope: 'global' })
+const downloadError = ref<string | null>(null)
+const downloadLoadingMap = ref<Record<string, boolean>>({})
 
 const visibleTournaments = computed(() => {
   if (auth.role === 'superuser') return tournament.tournaments
@@ -199,6 +212,90 @@ async function refresh() {
   await Promise.all([tournament.fetchTournaments(), styles.fetchStyles()])
   if (!form.style && styles.styles.length > 0) {
     form.style = styles.styles[0].id
+  }
+}
+
+function isDownloadLoading(tournamentId: string): boolean {
+  return Boolean(downloadLoadingMap.value[tournamentId])
+}
+
+function setDownloadLoading(tournamentId: string, loading: boolean) {
+  const next = { ...downloadLoadingMap.value }
+  if (loading) next[tournamentId] = true
+  else delete next[tournamentId]
+  downloadLoadingMap.value = next
+}
+
+function buildZipFilename(tournamentName: string, tournamentId: string): string {
+  const safeName = tournamentName.trim().replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'tournament'
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `${safeName}-${tournamentId}-${stamp}.zip`
+}
+
+function resolveDownloadFilename(headers: Record<string, unknown>, fallback: string): string {
+  const contentDisposition = String(headers['content-disposition'] ?? '')
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim())
+    } catch {
+      return utf8Match[1].trim()
+    }
+  }
+  const basicMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+  if (basicMatch?.[1]) return basicMatch[1].trim()
+  return fallback
+}
+
+function triggerDownload(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+async function extractDownloadErrorMessage(err: any): Promise<string | null> {
+  const directMessage = err?.response?.data?.errors?.[0]?.message
+  if (typeof directMessage === 'string' && directMessage.length > 0) {
+    return directMessage
+  }
+  const data = err?.response?.data
+  if (!(data instanceof Blob)) return null
+  try {
+    const text = await data.text()
+    const parsed = JSON.parse(text)
+    const blobMessage = parsed?.errors?.[0]?.message
+    return typeof blobMessage === 'string' && blobMessage.length > 0 ? blobMessage : null
+  } catch {
+    return null
+  }
+}
+
+async function downloadTournamentBundle(tournamentId: string, tournamentName: string) {
+  if (isDownloadLoading(tournamentId)) return
+  downloadError.value = null
+  setDownloadLoading(tournamentId, true)
+  try {
+    const fallbackFilename = buildZipFilename(tournamentName, tournamentId)
+    const response = await api.get(`/tournaments/${tournamentId}/export`, {
+      responseType: 'blob',
+    })
+    const filename = resolveDownloadFilename(
+      response.headers as Record<string, unknown>,
+      fallbackFilename
+    )
+    const blob =
+      response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'application/zip' })
+    triggerDownload(filename, blob)
+  } catch (err: any) {
+    downloadError.value =
+      (await extractDownloadErrorMessage(err)) ?? t('大会データの一括ダウンロードに失敗しました。')
+  } finally {
+    setDownloadLoading(tournamentId, false)
   }
 }
 

@@ -130,11 +130,11 @@ describe('round defaults', () => {
           winner_policy: 'winner_id_then_score',
           tie_points: 0.5,
           duplicate_normalization: {
-            merge_policy: 'average',
+            merge_policy: 'error',
             poi_aggregation: 'average',
             best_aggregation: 'average',
           },
-          missing_data_policy: 'warn',
+          missing_data_policy: 'error',
           include_labels: ['teams', 'speakers', 'adjudicators', 'poi', 'best'],
           diff_baseline: { mode: 'latest' },
         },

@@ -119,7 +119,7 @@ const best = defineModel<boolean>('best', { required: true })
 
 .option-group-head {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
 }
 

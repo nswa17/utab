@@ -103,7 +103,10 @@
             <Button @click="runCompile" :disabled="isLoading || !canRunCompile">
               {{ $t('レポート生成') }}
             </Button>
-            <Button variant="secondary" @click="showRecomputeOptions = true">
+            <Button variant="secondary" @click="openForceCompileModal" :disabled="isLoading || !canRunCompile">
+              {{ $t('強制実行') }}
+            </Button>
+            <Button variant="secondary" @click="openRecomputeOptions">
               {{ $t('詳細設定') }}
             </Button>
           </div>
@@ -504,23 +507,38 @@
             />
             <template v-else>
               <ScoreChange :results="activeResults" :tournament="compiled" :score="scoreKey" />
-              <ScoreRange :results="activeResults" :score="scoreKey" />
+              <div class="row score-range-sort-row">
+                <label class="stack score-range-sort-field">
+                  <span class="muted small">{{ $t('スコア範囲ソート') }}</span>
+                  <select v-model="scoreRangeSortBy">
+                    <option v-for="option in scoreRangeSortOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  :disabled="scoreRangeSortBy === 'none'"
+                  @click="toggleScoreRangeSortDirection"
+                >
+                  {{ scoreRangeSortDirection === 'asc' ? $t('昇順') : $t('降順') }}
+                </Button>
+              </div>
+              <ScoreRange
+                :results="activeResults"
+                :score="scoreKey"
+                :sort-by="scoreRangeSortBy"
+                :sort-direction="scoreRangeSortDirection"
+              />
               <TeamPerformance v-if="activeLabel === 'teams'" :results="activeResults" />
             </template>
           </section>
         </section>
 
-        <section v-if="showAnnouncementSection" class="card stack">
-          <div class="row">
-            <h4>{{ $t('スライド') }}</h4>
-            <div class="inline">
-              <Button variant="secondary" size="sm" @click="showSlides = !showSlides">
-                {{ showSlides ? $t('閉じる') : $t('表示') }}
-              </Button>
-              <Button variant="secondary" size="sm" @click="slideSettingsOpen = !slideSettingsOpen">
-                {{ slideSettingsOpen ? $t('設定を隠す') : $t('設定を表示') }}
-              </Button>
-            </div>
+        <section v-if="showAnnouncementSection" class="card stack announcement-panel">
+          <div class="row result-list-head">
+            <h4>{{ $t('発表出力') }}</h4>
           </div>
           <div v-if="slideAvailableLabels.length > 0" class="label-tabs ranking-category-tabs">
             <button
@@ -534,60 +552,74 @@
               {{ labelDisplay(label) }}
             </button>
           </div>
-          <div v-if="slideSettingsOpen" class="row wrap">
-            <label class="stack">
-              <span class="muted">{{ $t('表彰枠') }}</span>
-              <input v-model.number="maxRankingRewarded" type="number" min="1" />
-            </label>
-            <label class="stack">
-              <span class="muted">{{ $t('クレジット') }}</span>
-              <input v-model="slideCredit" type="text" />
-            </label>
-            <label class="stack">
-              <span class="muted">{{ $t('タイプ') }}</span>
-              <select v-model="slideType">
-                <option value="listed">{{ $t('一覧') }}</option>
-                <option value="pretty">{{ $t('装飾') }}</option>
-              </select>
-            </label>
-          </div>
-          <Slides
-            v-if="showSlides"
-            :label="slideLabel"
-            :tournament="compiledWithSubPrizes"
-            :entities="entities"
-            :max-ranking-rewarded="maxRankingRewarded"
-            :type="slideType"
-            :credit="slideCredit"
-            @close="showSlides = false"
-          />
-        </section>
 
-        <section v-if="showAnnouncementSection && awardCopyRows.length > 0" class="card stack">
-          <div class="row award-copy-toolbar">
-            <h4>{{ $t('表彰コピー') }}</h4>
-            <div class="row award-copy-controls">
-              <label class="stack award-copy-limit">
+          <section class="card soft stack announcement-block">
+            <div class="row">
+              <h4>{{ $t('スライド') }}</h4>
+              <div class="inline">
+                <Button variant="secondary" size="sm" @click="showSlides = !showSlides">
+                  {{ showSlides ? $t('閉じる') : $t('表示') }}
+                </Button>
+                <Button variant="secondary" size="sm" @click="slideSettingsOpen = !slideSettingsOpen">
+                  {{ slideSettingsOpen ? $t('設定を隠す') : $t('設定を表示') }}
+                </Button>
+              </div>
+            </div>
+            <div v-if="slideSettingsOpen" class="row wrap">
+              <label class="stack">
                 <span class="muted">{{ $t('表彰枠') }}</span>
-                <input v-model.number="awardCopyLimit" type="number" min="1" />
+                <input v-model.number="maxRankingRewarded" type="number" min="1" />
               </label>
-              <Button variant="secondary" size="sm" @click="copyAwardText">
-                {{ $t('コピー') }}
+              <label class="stack">
+                <span class="muted">{{ $t('クレジット') }}</span>
+                <input v-model="slideCredit" type="text" />
+              </label>
+              <label class="stack">
+                <span class="muted">{{ $t('タイプ') }}</span>
+                <select v-model="slideType">
+                  <option value="listed">{{ $t('一覧') }}</option>
+                  <option value="pretty">{{ $t('装飾') }}</option>
+                </select>
+              </label>
+            </div>
+            <Slides
+              v-if="showSlides"
+              :label="slideLabel"
+              :tournament="compiledWithSubPrizes"
+              :entities="entities"
+              :max-ranking-rewarded="maxRankingRewarded"
+              :type="slideType"
+              :credit="slideCredit"
+              @close="showSlides = false"
+            />
+          </section>
+
+          <section v-if="awardCopyRows.length > 0" class="card soft stack announcement-block">
+            <div class="row award-copy-toolbar">
+              <h4>{{ $t('表彰コピー') }}</h4>
+              <div class="row award-copy-controls">
+                <label class="stack award-copy-limit">
+                  <span class="muted">{{ $t('表彰枠') }}</span>
+                  <input v-model.number="awardCopyLimit" type="number" min="1" />
+                </label>
+                <Button variant="secondary" size="sm" @click="copyAwardText">
+                  {{ $t('コピー') }}
+                </Button>
+              </div>
+            </div>
+            <p v-if="awardCopyCopied" class="muted">{{ $t('コピーしました。') }}</p>
+            <pre class="award-copy-text">{{ awardCopyText }}</pre>
+            <div class="row section-download-row">
+              <Button
+                variant="secondary"
+                class="section-download-button"
+                :disabled="awardExportRows.length === 0"
+                @click="downloadAwardCsv"
+              >
+                {{ $t('受賞者CSV') }}
               </Button>
             </div>
-          </div>
-          <p v-if="awardCopyCopied" class="muted">{{ $t('コピーしました。') }}</p>
-          <pre class="award-copy-text">{{ awardCopyText }}</pre>
-          <div class="row section-download-row">
-            <Button
-              variant="secondary"
-              class="section-download-button"
-              :disabled="awardExportRows.length === 0"
-              @click="downloadAwardCsv"
-            >
-              {{ $t('受賞者CSV') }}
-            </Button>
-          </div>
+          </section>
         </section>
       </template>
     </div>
@@ -596,12 +628,12 @@
       v-if="showRecomputeOptions"
       class="modal-backdrop"
       role="presentation"
-      @click.self="showRecomputeOptions = false"
+      @click.self="cancelRecomputeOptions"
     >
       <div class="modal card stack report-modal recompute-modal" role="dialog" aria-modal="true">
         <div class="row report-modal-head">
           <strong>{{ $t('詳細設定') }}</strong>
-          <Button variant="ghost" size="sm" @click="showRecomputeOptions = false">
+          <Button variant="ghost" size="sm" @click="cancelRecomputeOptions">
             {{ $t('閉じる') }}
           </Button>
         </div>
@@ -610,7 +642,6 @@
         </p>
         <div class="stack recompute-panel">
           <CompileOptionsEditor
-            v-model:source="compileSource"
             v-model:source-rounds="compileRounds"
             v-model:ranking-preset="rankingPriorityPreset"
             v-model:ranking-order="rankingPriorityOrder"
@@ -620,62 +651,28 @@
             v-model:poi-aggregation="compilePoiAggregation"
             v-model:best-aggregation="compileBestAggregation"
             v-model:missing-data-policy="compileMissingDataPolicy"
-            v-model:include-labels="compileIncludeLabels"
             :show-source-rounds="true"
             :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
             :disabled="isLoading"
           />
-          <p v-if="isRawSourceSelected" class="muted warning">
-            {{
-              $t(
-                '例外モードです。生結果データで再計算します。通常運用では提出データに戻してください。'
-              )
-            }}
-          </p>
         </div>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="showRecomputeOptions = false">
+          <Button variant="ghost" size="sm" @click="cancelRecomputeOptions">
             {{ $t('取消') }}
+          </Button>
+          <Button size="sm" :disabled="isLoading" @click="applyRecomputeOptions">
+            {{ $t('設定を保存') }}
           </Button>
         </div>
       </div>
     </div>
 
-    <div
-      v-if="rawCompileConfirmOpen"
-      class="modal-backdrop"
-      role="presentation"
-      @click.self="closeRawCompileConfirm"
-    >
-      <div class="modal card stack report-modal" role="dialog" aria-modal="true">
-        <div class="row report-modal-head">
-          <strong>{{ $t('強制実行の確認') }}</strong>
-          <Button variant="ghost" size="sm" @click="closeRawCompileConfirm">
-            {{ $t('閉じる') }}
-          </Button>
-        </div>
-        <p class="muted">
-          {{
-            $t(
-              '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
-            )
-          }}
-        </p>
-        <ul class="list compact">
-          <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
-          <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
-          <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
-        </ul>
-        <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeRawCompileConfirm">
-            {{ $t('取消') }}
-          </Button>
-          <Button size="sm" :disabled="isLoading" @click="confirmRawCompile">
-            {{ $t('強制実行する') }}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <CompileForceRunModal
+      v-model:open="forceCompileModalOpen"
+      v-model:missing-data-policy="forceCompileMissingDataPolicy"
+      :loading="isLoading"
+      @confirm="confirmForcedCompile"
+    />
   </section>
 </template>
 
@@ -702,6 +699,7 @@ import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import Slides from '@/components/slides/Slides.vue'
 import ScoreChange from '@/components/mstat/ScoreChange.vue'
 import ScoreRange from '@/components/mstat/ScoreRange.vue'
@@ -713,7 +711,6 @@ import { api } from '@/utils/api'
 import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
-  type CompileIncludeLabel,
   type CompileOptions,
   type CompileRankingMetric,
 } from '@/types/compiled'
@@ -749,6 +746,7 @@ import {
   type AdminReportMetric,
   type AdminReportSection,
 } from '@/utils/report-telemetry'
+import { includeLabelsFromRoundDetailsAny } from '@/utils/compile-include-labels'
 
 const route = useRoute()
 const tournamentStore = useTournamentStore()
@@ -786,11 +784,12 @@ const awardCopyCopied = ref(false)
 const activeReportSection = ref<ReportSectionKey>('operations')
 const activeReportSectionEnteredAt = ref<number>(Date.now())
 const analysisChartsReady = ref(!reportUxV3Enabled)
-const activeLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>('teams')
-const slideLabel = ref<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'>('teams')
-const compileSource = ref<'submissions' | 'raw'>('submissions')
+const activeLabel = ref<CompiledLabel>('teams')
+const slideLabel = ref<CompiledLabel>('teams')
+const scoreRangeSortBy = ref<'none' | 'name' | 'min' | 'max' | 'spread'>('none')
+const scoreRangeSortDirection = ref<'asc' | 'desc'>('asc')
 const showRecomputeOptions = ref(false)
-const rawCompileConfirmOpen = ref(false)
+const forceCompileModalOpen = ref(false)
 const compileRounds = ref<number[]>([])
 const compileExecuted = ref(false)
 const resultSortKey = ref('ranking')
@@ -818,7 +817,10 @@ const compileBestAggregation = ref<CompileOptions['duplicate_normalization']['be
 const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
-const compileIncludeLabels = ref<CompileIncludeLabel[]>([...DEFAULT_COMPILE_OPTIONS.include_labels])
+const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
+  DEFAULT_COMPILE_OPTIONS.missing_data_policy
+)
+const recomputeSnapshot = ref<RecomputeOptionsSnapshot | null>(null)
 const compileDiffBaselineSelection = ref<string>('')
 const compiledHistory = ref<any[]>([])
 const selectedCompiledId = ref('')
@@ -834,11 +836,23 @@ const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
   }
 })
 type RoundSummary = { round: number; name?: string }
+type CompiledLabel = 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
 type ReportSectionKey = AdminReportSection
 type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
   createdAt?: string
+}
+type RecomputeOptionsSnapshot = {
+  compileRounds: number[]
+  rankingPreset: CompileOptions['ranking_priority']['preset']
+  rankingOrder: CompileRankingMetric[]
+  winnerPolicy: CompileOptions['winner_policy']
+  tiePoints: number
+  mergePolicy: CompileOptions['duplicate_normalization']['merge_policy']
+  poiAggregation: CompileOptions['duplicate_normalization']['poi_aggregation']
+  bestAggregation: CompileOptions['duplicate_normalization']['best_aggregation']
+  missingDataPolicy: CompileOptions['missing_data_policy']
 }
 type FairnessSeverity = 'high' | 'medium' | 'low'
 const sortedRounds = computed<RoundSummary[]>(() => {
@@ -996,23 +1010,52 @@ const analysisEmptyState = computed(() => {
     message: t('初回表示時のみグラフを読み込んでいます。'),
   }
 })
+const scoreRangeSortOptions = computed(() => [
+  { value: 'none', label: t('ソートなし') },
+  { value: 'name', label: t('名前') },
+  { value: 'min', label: t('最小スコア') },
+  { value: 'max', label: t('最大スコア') },
+  { value: 'spread', label: t('スコア幅') },
+])
 const canRunCompile = computed(() => {
   if (!selectedDiffBaselineCompiledId.value) return true
   return diffBaselineCompiledOptions.value.some(
     (option) => option.compiledId === selectedDiffBaselineCompiledId.value
   )
 })
-const isRawSourceSelected = computed(() => compileSource.value === 'raw')
 const displayedCompileSource = computed<'submissions' | 'raw'>(() =>
   compiled.value?.compile_source === 'raw' ? 'raw' : 'submissions'
 )
 const isDisplayedRawSource = computed(() => displayedCompileSource.value === 'raw')
 const isRawModeActive = computed(
-  () => isDisplayedRawSource.value || isRawSourceSelected.value
+  () => isDisplayedRawSource.value
 )
-const compileOptionsPayload = computed<CompileOptions>(() => {
+const compileTargetRoundNumbers = computed(() => {
+  const baseRounds =
+    compileRounds.value.length > 0
+      ? compileRounds.value
+      : sortedRounds.value.map((round) => Number(round.round))
+  return Array.from(
+    new Set(
+      baseRounds
+        .map((round) => Number(round))
+        .filter((round) => Number.isInteger(round) && round >= 1)
+    )
+  ).sort((left, right) => left - right)
+})
+const compileIncludeLabelsFromRounds = computed(() =>
+  includeLabelsFromRoundDetailsAny(
+    rounds.rounds.map((round) => ({
+      round: Number(round.round),
+      userDefinedData: round.userDefinedData ?? undefined,
+    })),
+    compileTargetRoundNumbers.value
+  )
+)
+function buildCompileOptions(overrides?: {
+  missing_data_policy?: CompileOptions['missing_data_policy']
+}): CompileOptions {
   const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
-  const includeLabels = Array.from(new Set(compileIncludeLabels.value))
   return {
     ranking_priority: {
       preset: rankingPriorityPreset.value,
@@ -1031,14 +1074,13 @@ const compileOptionsPayload = computed<CompileOptions>(() => {
       poi_aggregation: compilePoiAggregation.value,
       best_aggregation: compileBestAggregation.value,
     },
-    missing_data_policy: compileMissingDataPolicy.value,
-    include_labels:
-      includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    missing_data_policy: overrides?.missing_data_policy ?? compileMissingDataPolicy.value,
+    include_labels: compileIncludeLabelsFromRounds.value,
     diff_baseline: selectedDiffBaselineCompiledId.value
       ? { mode: 'compiled', compiled_id: selectedDiffBaselineCompiledId.value }
       : { mode: 'latest' },
   }
-})
+}
 const compileWarnings = computed<string[]>(() =>
   Array.isArray(compiled.value?.compile_warnings) ? compiled.value.compile_warnings : []
 )
@@ -1091,14 +1133,14 @@ function mapEntityNames(values: any): string[] {
   return values.map((value) => entities.value[String(value)] ?? String(value))
 }
 
-function mapResultRows(source: any[]) {
+function mapResultRows(source: any[], label: CompiledLabel = activeLabel.value) {
   return source.map((result: any) => {
     const base = {
       ...result,
       name: entityName(result.id),
       institutions: mapInstitutions(result.institutions),
     }
-    if (activeLabel.value === 'adjudicators') {
+    if (label === 'adjudicators') {
       const comments =
         result.details?.flatMap((detail: any) =>
           Array.isArray(detail.comments) ? detail.comments : []
@@ -1140,7 +1182,7 @@ const selectedDiffBaselineRows = computed<any[]>(() => {
 })
 
 const activeResults = computed<any[]>(() => {
-  const mapped = mapResultRows(activeResultsSource.value)
+  const mapped = mapResultRows(activeResultsSource.value, activeLabel.value)
   if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineRows.value.length === 0) {
     return mapped
   }
@@ -1171,9 +1213,17 @@ const showDiffLegend = computed(() =>
   activeResults.value.some((row: any) => row?.diff?.ranking) || compileDiffMeta.value !== null
 )
 
+const announcementResultsSource = computed<any[]>(() => {
+  if (!compiled.value) return []
+  return resultSourceForLabel(compiled.value, slideLabel.value)
+})
+const announcementResults = computed<any[]>(() =>
+  mapResultRows(announcementResultsSource.value, slideLabel.value)
+)
+
 const awardCopyRows = computed(() => {
-  if (activeResults.value.length === 0) return []
-  const ranked = activeResults.value
+  if (announcementResults.value.length === 0) return []
+  const ranked = announcementResults.value
     .filter((row) => Number.isFinite(Number(row.ranking)))
     .slice()
     .sort((a, b) => Number(a.ranking) - Number(b.ranking))
@@ -1188,9 +1238,9 @@ const awardCopyText = computed(() => {
       const teamText =
         Array.isArray(row.teams) && row.teams.length > 0 ? `（${row.teams.map((item: any) => String(item)).join('/')}）` : ''
       const metric =
-        activeLabel.value === 'poi'
+        slideLabel.value === 'poi'
           ? formatTimesCount(Number(row.poi ?? 0))
-          : activeLabel.value === 'best'
+          : slideLabel.value === 'best'
             ? formatTimesCount(Number(row.best ?? 0))
             : locale.value === 'ja'
               ? `${row.ranking}位`
@@ -1259,7 +1309,7 @@ const speakerTeamNameMap = computed(() => {
   return { byId, byName }
 })
 
-function awardMetricLabel(label: typeof activeLabel.value) {
+function awardMetricLabel(label: CompiledLabel) {
   if (label === 'teams') return teamHasScores.value ? t('合計') : t('勝利数')
   if (label === 'speakers') return t('平均')
   if (label === 'adjudicators') return t('平均')
@@ -1268,7 +1318,7 @@ function awardMetricLabel(label: typeof activeLabel.value) {
   return ''
 }
 
-function awardMetricValue(row: any, label: typeof activeLabel.value): string | number {
+function awardMetricValue(row: any, label: CompiledLabel): string | number {
   if (label === 'teams') return teamHasScores.value ? Number(row?.sum ?? 0) : Number(row?.win ?? 0)
   if (label === 'speakers') return Number(row?.average ?? 0)
   if (label === 'adjudicators') return Number(row?.average ?? 0)
@@ -1279,14 +1329,14 @@ function awardMetricValue(row: any, label: typeof activeLabel.value): string | n
 
 const awardExportRows = computed<AwardExportRowInput[]>(() =>
   awardCopyRows.value.map((row) => ({
-    category: labelDisplay(activeLabel.value),
+    category: labelDisplay(slideLabel.value),
     ranking: Number(row?.ranking ?? 0),
     place: ordinal(Number(row?.ranking ?? 0)),
     id: String(row?.id ?? ''),
     name: entityName(String(row?.id ?? '')),
     team: Array.isArray(row?.teams) ? row.teams.map((item: any) => String(item)).join('/') : '',
-    metric_name: awardMetricLabel(activeLabel.value),
-    metric_value: awardMetricValue(row, activeLabel.value),
+    metric_name: awardMetricLabel(slideLabel.value),
+    metric_value: awardMetricValue(row, slideLabel.value),
   }))
 )
 
@@ -1401,7 +1451,6 @@ function applyCompileDefaultsFromTournament() {
   const normalizedDefaults = normalizeRoundDefaults(tournament.user_defined_data?.round_defaults)
   const compileDefaults = normalizedDefaults.compile
   const normalizedOptions = normalizeCompileOptions(compileDefaults.options, compileDefaults.options)
-  compileSource.value = compileDefaults.source === 'raw' ? 'raw' : 'submissions'
   rankingPriorityPreset.value = normalizedOptions.ranking_priority.preset
   rankingPriorityOrder.value = [...normalizedOptions.ranking_priority.order]
   compileWinnerPolicy.value = normalizedOptions.winner_policy
@@ -1410,13 +1459,53 @@ function applyCompileDefaultsFromTournament() {
   compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
-  compileIncludeLabels.value =
-    normalizedOptions.include_labels.length > 0
-      ? [...normalizedOptions.include_labels]
-      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
   const availableRounds = new Set(sortedRounds.value.map((round) => Number(round.round)))
   compileRounds.value = compileDefaults.source_rounds.filter((roundNumber) => availableRounds.has(roundNumber))
   compileDiffBaselineSelection.value = ''
+}
+
+function captureRecomputeSnapshot(): RecomputeOptionsSnapshot {
+  return {
+    compileRounds: [...compileRounds.value],
+    rankingPreset: rankingPriorityPreset.value,
+    rankingOrder: [...rankingPriorityOrder.value],
+    winnerPolicy: compileWinnerPolicy.value,
+    tiePoints: compileTiePoints.value,
+    mergePolicy: compileDuplicateMergePolicy.value,
+    poiAggregation: compilePoiAggregation.value,
+    bestAggregation: compileBestAggregation.value,
+    missingDataPolicy: compileMissingDataPolicy.value,
+  }
+}
+
+function restoreRecomputeSnapshot(snapshot: RecomputeOptionsSnapshot) {
+  compileRounds.value = [...snapshot.compileRounds]
+  rankingPriorityPreset.value = snapshot.rankingPreset
+  rankingPriorityOrder.value = [...snapshot.rankingOrder]
+  compileWinnerPolicy.value = snapshot.winnerPolicy
+  compileTiePoints.value = snapshot.tiePoints
+  compileDuplicateMergePolicy.value = snapshot.mergePolicy
+  compilePoiAggregation.value = snapshot.poiAggregation
+  compileBestAggregation.value = snapshot.bestAggregation
+  compileMissingDataPolicy.value = snapshot.missingDataPolicy
+}
+
+function openRecomputeOptions() {
+  recomputeSnapshot.value = captureRecomputeSnapshot()
+  showRecomputeOptions.value = true
+}
+
+function cancelRecomputeOptions() {
+  if (recomputeSnapshot.value) {
+    restoreRecomputeSnapshot(recomputeSnapshot.value)
+  }
+  recomputeSnapshot.value = null
+  showRecomputeOptions.value = false
+}
+
+function applyRecomputeOptions() {
+  recomputeSnapshot.value = null
+  showRecomputeOptions.value = false
 }
 
 function resolveCompiledDocId(doc: any): string {
@@ -1967,6 +2056,10 @@ function setResultSort(key: string) {
   resultSortDirection.value = key === 'ranking' ? 'asc' : 'desc'
 }
 
+function toggleScoreRangeSortDirection() {
+  scoreRangeSortDirection.value = scoreRangeSortDirection.value === 'asc' ? 'desc' : 'asc'
+}
+
 function resultSortIndicator(key: string) {
   if (resultSortKey.value !== key) return '↕'
   return resultSortDirection.value === 'asc' ? '↑' : '↓'
@@ -2332,18 +2425,23 @@ async function refresh() {
   applyDefaultDiffBaselineSelection(selectedCompiledId.value)
 }
 
-function closeRawCompileConfirm() {
-  rawCompileConfirmOpen.value = false
+function closeForceCompileModal() {
+  forceCompileModalOpen.value = false
 }
 
-async function executeCompile() {
+async function executeCompile(
+  source: 'submissions' | 'raw',
+  optionOverrides?: {
+    missing_data_policy?: CompileOptions['missing_data_policy']
+  }
+) {
   if (!tournamentId.value) return
   if (!canRunCompile.value) return
   const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
-    source: compileSource.value,
+    source,
     rounds: roundsPayload,
-    options: compileOptionsPayload.value,
+    options: buildCompileOptions(optionOverrides),
   })
   if (compiledResult) {
     compileExecuted.value = true
@@ -2368,18 +2466,22 @@ async function executeCompile() {
 async function runCompile() {
   if (!tournamentId.value || !canRunCompile.value) return
   emitReportMetric('cta_click', { cta: 'run_compile' })
-  if (isRawSourceSelected.value) {
-    emitReportMetric('cta_click', { cta: 'open_raw_compile_confirm' })
-    rawCompileConfirmOpen.value = true
-    return
-  }
-  await executeCompile()
+  await executeCompile('submissions')
 }
 
-async function confirmRawCompile() {
+function openForceCompileModal() {
+  if (!tournamentId.value || !canRunCompile.value || isLoading.value) return
+  forceCompileMissingDataPolicy.value = compileMissingDataPolicy.value
+  forceCompileModalOpen.value = true
+  emitReportMetric('cta_click', { cta: 'open_raw_compile_confirm' })
+}
+
+async function confirmForcedCompile() {
   emitReportMetric('cta_click', { cta: 'confirm_raw_compile' })
-  closeRawCompileConfirm()
-  await executeCompile()
+  closeForceCompileModal()
+  await executeCompile('raw', {
+    missing_data_policy: forceCompileMissingDataPolicy.value,
+  })
 }
 
 async function refreshCompiledHistory() {
@@ -3151,6 +3253,26 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .wrap {
   flex-wrap: wrap;
+}
+
+.announcement-panel {
+  gap: var(--space-3);
+}
+
+.announcement-block {
+  gap: var(--space-3);
+}
+
+.score-range-sort-row {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.score-range-sort-field {
+  min-width: 200px;
+  gap: 4px;
 }
 
 .award-copy-toolbar {

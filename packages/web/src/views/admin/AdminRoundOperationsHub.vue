@@ -313,7 +313,6 @@
             <section class="card soft stack compile-option-panel">
               <h5>{{ $t('集計オプション') }}</h5>
               <CompileOptionsEditor
-                v-model:source="compileSource"
                 v-model:ranking-preset="rankingPriorityPreset"
                 v-model:ranking-order="rankingPriorityOrder"
                 v-model:winner-policy="compileWinnerPolicy"
@@ -322,7 +321,6 @@
                 v-model:poi-aggregation="compilePoiAggregation"
                 v-model:best-aggregation="compileBestAggregation"
                 v-model:missing-data-policy="compileMissingDataPolicy"
-                v-model:include-labels="compileIncludeLabels"
                 :disabled="isLoading"
               />
             </section>
@@ -335,8 +333,8 @@
             <div class="row step-actions">
               <Button
                 size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || (compileSource === 'submissions' && shouldBlockSubmissionCompile)"
-                @click="runCompileWithSource(compileSource)"
+                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
+                @click="runCompileWithSource('submissions')"
               >
                 {{ $t('集計を実行') }}
               </Button>
@@ -428,63 +426,12 @@
       </section>
     </div>
 
-    <div
-      v-if="forceCompileModalOpen"
-      class="modal-backdrop"
-      role="presentation"
-      @click.self="closeForceCompileModal"
-    >
-      <div class="modal card stack" role="dialog" aria-modal="true">
-        <h4>{{ $t('強制実行の確認') }}</h4>
-        <div class="force-warning-banner">
-          <strong>{{ $t('注意: 強制実行は例外運用です。') }}</strong>
-          <p>
-            {{
-              $t(
-                '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
-              )
-            }}
-          </p>
-          <ul class="list compact force-warning-list">
-            <li class="list-item">{{ $t('未提出・重複提出があると結果が偏る可能性があります。') }}</li>
-            <li class="list-item">{{ $t('提出者ID不足のデータは集計漏れ・誤集計の原因になります。') }}</li>
-            <li class="list-item">{{ $t('提出ソースが混在している場合、直近の入力で上書きされることがあります。') }}</li>
-          </ul>
-        </div>
-        <section class="card soft stack force-option-panel">
-          <h5>{{ $t('強制実行オプション') }}</h5>
-          <label class="stack force-option-field">
-            <span class="muted small">{{ $t('欠損データの扱い') }}</span>
-            <select v-model="forceCompileMissingDataPolicy">
-              <option value="warn">{{ $t('警告して続行') }}</option>
-              <option value="exclude">{{ $t('欠損データを除外') }}</option>
-              <option value="error">{{ $t('欠損があれば中止') }}</option>
-            </select>
-          </label>
-          <div class="stack force-option-field">
-            <span class="muted small">{{ $t('生成対象') }}</span>
-            <div class="grid force-include-grid">
-              <label v-for="option in forceIncludeLabelOptions" :key="`force-include-${option.value}`" class="row">
-                <input
-                  type="checkbox"
-                  :checked="forceCompileIncludeLabels.includes(option.value)"
-                  @change="toggleForceCompileIncludeLabel(option.value, $event)"
-                />
-                <span>{{ option.label }}</span>
-              </label>
-            </div>
-          </div>
-        </section>
-        <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeForceCompileModal">
-            {{ $t('キャンセル') }}
-          </Button>
-          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmForcedCompile">
-            {{ $t('強制実行する') }}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <CompileForceRunModal
+      v-model:open="forceCompileModalOpen"
+      v-model:missing-data-policy="forceCompileMissingDataPolicy"
+      :loading="isLoading"
+      @confirm="confirmForcedCompile"
+    />
   </section>
 </template>
 
@@ -500,6 +447,7 @@ import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
@@ -516,7 +464,6 @@ import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
   type CompileRankingMetric,
-  type CompileIncludeLabel,
   type CompileOptions,
 } from '@/types/compiled'
 import type { DrawPreviewRow } from '@/types/draw-preview'
@@ -533,6 +480,7 @@ import {
   formatCompiledSnapshotOptionLabel,
   resolvePreviousCompiledId,
 } from '@/utils/compiled-snapshot'
+import { includeLabelsFromRoundDetails } from '@/utils/compile-include-labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -559,7 +507,6 @@ const sectionLoading = ref(true)
 const actionError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
-const compileSource = ref<'submissions' | 'raw'>('submissions')
 const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
   DEFAULT_COMPILE_OPTIONS.ranking_priority.preset
 )
@@ -582,9 +529,6 @@ const compileBestAggregation = ref<CompileOptions['duplicate_normalization']['be
 const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
-const compileIncludeLabels = ref<CompileIncludeLabel[]>([
-  ...DEFAULT_COMPILE_OPTIONS.include_labels,
-])
 const compileDiffBaselineCompiledId = ref('')
 const compiledHistory = ref<any[]>([])
 const selectedCompileRounds = ref<number[]>([])
@@ -595,9 +539,6 @@ const compileSortDirection = ref<'asc' | 'desc'>('asc')
 const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
-const forceCompileIncludeLabels = ref<CompileIncludeLabel[]>([
-  ...DEFAULT_COMPILE_OPTIONS.include_labels,
-])
 const submissionEvaluationTab = ref<'team' | 'judge'>('team')
 const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
@@ -1102,13 +1043,9 @@ function roundStatusLabel(status: RoundOperationStatus) {
   return t('準備中')
 }
 
-const forceIncludeLabelOptions = computed<Array<{ value: CompileIncludeLabel; label: string }>>(() => [
-  { value: 'teams', label: t('チーム') },
-  { value: 'speakers', label: t('スピーカー') },
-  { value: 'adjudicators', label: t('ジャッジ') },
-  { value: 'poi', label: t('POI') },
-  { value: 'best', label: t('Best') },
-])
+const compileIncludeLabelsFromRound = computed(() =>
+  includeLabelsFromRoundDetails(selectedRoundData.value?.userDefinedData)
+)
 
 function normalizeCompileSourceRounds(sourceRounds: unknown, maxRound: number): number[] {
   if (!Array.isArray(sourceRounds)) return []
@@ -1130,7 +1067,6 @@ function applyCompileDraftFromRound() {
       ? (rawCompile.options as CompileOptions)
       : (rawCompile as CompileOptions)
   const normalizedOptions = normalizeCompileOptions(compileOptionsSource)
-  compileSource.value = rawCompile.source === 'raw' ? 'raw' : 'submissions'
   rankingPriorityPreset.value = normalizedOptions.ranking_priority.preset
   rankingPriorityOrder.value = [...normalizedOptions.ranking_priority.order]
   compileWinnerPolicy.value = normalizedOptions.winner_policy
@@ -1139,10 +1075,6 @@ function applyCompileDraftFromRound() {
   compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
-  compileIncludeLabels.value =
-    normalizedOptions.include_labels.length > 0
-      ? [...normalizedOptions.include_labels]
-      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
   const allowedRounds = compileTargetRounds.value
   const configuredRounds = normalizeCompileSourceRounds(rawCompile.source_rounds, selectedRound.value).filter(
     (roundNumber) => allowedRounds.includes(roundNumber)
@@ -1151,33 +1083,14 @@ function applyCompileDraftFromRound() {
     configuredRounds.length > 0 ? configuredRounds : allowedRounds.slice()
 }
 
-function toggleForceCompileIncludeLabel(label: CompileIncludeLabel, event: Event) {
-  const input = event.target as HTMLInputElement | null
-  const checked = Boolean(input?.checked)
-  const current = new Set(forceCompileIncludeLabels.value)
-  if (checked) {
-    current.add(label)
-  } else {
-    current.delete(label)
-  }
-  const normalized = DEFAULT_COMPILE_OPTIONS.include_labels.filter((value) => current.has(value))
-  forceCompileIncludeLabels.value =
-    normalized.length > 0 ? normalized : [...DEFAULT_COMPILE_OPTIONS.include_labels]
-}
-
 function buildCompileOptions(overrides?: {
   missing_data_policy?: CompileOptions['missing_data_policy']
-  include_labels?: CompileIncludeLabel[]
 }): CompileOptions {
   const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
   const diffBaseline =
     selectedBaselineId.length > 0
       ? { mode: 'compiled' as const, compiled_id: selectedBaselineId }
       : { mode: 'latest' as const }
-  const includeLabels =
-    Array.isArray(overrides?.include_labels) && overrides.include_labels.length > 0
-      ? Array.from(new Set(overrides.include_labels))
-      : Array.from(new Set(compileIncludeLabels.value))
   const rankingOrder = Array.from(new Set(rankingPriorityOrder.value))
   return {
     ranking_priority: {
@@ -1198,8 +1111,7 @@ function buildCompileOptions(overrides?: {
       best_aggregation: compileBestAggregation.value,
     },
     missing_data_policy: overrides?.missing_data_policy ?? compileMissingDataPolicy.value,
-    include_labels:
-      includeLabels.length > 0 ? includeLabels : [...DEFAULT_COMPILE_OPTIONS.include_labels],
+    include_labels: compileIncludeLabelsFromRound.value,
     diff_baseline: diffBaseline,
   }
 }
@@ -1484,14 +1396,12 @@ async function runCompileWithSource(
   source: 'submissions' | 'raw',
   optionOverrides?: {
     missing_data_policy?: CompileOptions['missing_data_policy']
-    include_labels?: CompileIncludeLabel[]
   }
 ) {
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
-  compileSource.value = source
   if (!selectedRoundPublished.value) {
     actionError.value = t('公開後に提出を回収します。先に公開設定で公開してください。')
     return
@@ -1535,10 +1445,6 @@ function openForceCompileModal() {
     return
   }
   forceCompileMissingDataPolicy.value = compileMissingDataPolicy.value
-  forceCompileIncludeLabels.value =
-    compileIncludeLabels.value.length > 0
-      ? [...compileIncludeLabels.value]
-      : [...DEFAULT_COMPILE_OPTIONS.include_labels]
   forceCompileModalOpen.value = true
 }
 
@@ -1549,7 +1455,6 @@ function closeForceCompileModal() {
 async function confirmForcedCompile() {
   await runCompileWithSource('raw', {
     missing_data_policy: forceCompileMissingDataPolicy.value,
-    include_labels: forceCompileIncludeLabels.value,
   })
 }
 
@@ -2287,65 +2192,6 @@ watch(
   border-color: #fdba74;
   color: #9a3412;
   background: #fff7ed;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-5);
-  z-index: 40;
-}
-
-.modal {
-  width: min(680px, 100%);
-  max-height: calc(100vh - 80px);
-  overflow: auto;
-}
-
-.force-warning-banner {
-  border: 1px solid #fca5a5;
-  border-radius: var(--radius-md);
-  background: #fff1f2;
-  color: #9f1239;
-  padding: var(--space-3);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.force-warning-banner p {
-  margin: 0;
-}
-
-.force-warning-list .list-item {
-  border-color: #fecdd3;
-  background: #fff;
-}
-
-.force-option-panel {
-  border: 1px solid var(--color-border);
-  gap: var(--space-2);
-}
-
-.force-option-panel h5 {
-  margin: 0;
-}
-
-.force-option-field {
-  gap: 4px;
-}
-
-.force-include-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.modal-actions {
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 .setting-option {

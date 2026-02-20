@@ -3,8 +3,8 @@
     <LoadingState v-if="checking" />
     <div v-else-if="blocked" class="card stack">
       <p class="muted">{{ blockReason }}</p>
-      <Button variant="secondary" size="sm" :to="homePath">
-        {{ $t('大会ホームに戻る') }}
+      <Button variant="secondary" size="sm" :to="listPath">
+        {{ $t('大会一覧') }}
       </Button>
     </div>
     <RouterView v-else />
@@ -26,7 +26,7 @@ const tournamentId = computed(() => {
   return typeof value === 'string' ? value.trim() : ''
 })
 const participant = computed(() => route.params.participant as string)
-const homePath = computed(() => (tournamentId.value ? `/user/${tournamentId.value}/home` : '/user'))
+const listPath = computed(() => '/user')
 
 const checking = ref(true)
 const blocked = ref(false)

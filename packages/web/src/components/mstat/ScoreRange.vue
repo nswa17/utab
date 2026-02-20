@@ -11,6 +11,8 @@ const props = defineProps<{
   id?: string
   results: any[]
   score: string
+  sortBy?: 'none' | 'name' | 'min' | 'max' | 'spread'
+  sortDirection?: 'asc' | 'desc'
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
@@ -19,18 +21,59 @@ const { t, locale } = useI18n({ useScope: 'global' })
 
 function render() {
   if (!container.value) return
-  const categories = props.results.map((result) => result.name ?? result.id ?? t('エントリー'))
-  const data = props.results.map((result) => {
-    const values = result.details
-      ?.map((detail: any) => detail[props.score])
-      .filter((value: any) => typeof value === 'number') as number[]
-    if (!values || values.length === 0) {
-      const fallback = result?.[props.score]
-      return typeof fallback === 'number' ? [fallback, fallback] : null
+  const direction = props.sortDirection === 'desc' ? -1 : 1
+  const sortBy = props.sortBy ?? 'none'
+  const rows = props.results
+    .map((result, index) => {
+      const values = result.details
+        ?.map((detail: any) => detail[props.score])
+        .filter((value: any) => typeof value === 'number') as number[]
+      let min: number | null = null
+      let max: number | null = null
+      if (values && values.length > 0) {
+        min = Math.min(...values)
+        max = Math.max(...values)
+      } else {
+        const fallback = result?.[props.score]
+        if (typeof fallback === 'number') {
+          min = fallback
+          max = fallback
+        }
+      }
+      return {
+        index,
+        name: String(result.name ?? result.id ?? t('エントリー')),
+        min,
+        max,
+        spread:
+          typeof min === 'number' && typeof max === 'number'
+            ? max - min
+            : null,
+      }
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') {
+        const diff = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+        return diff !== 0 ? direction * diff : a.index - b.index
+      }
+      if (sortBy === 'min' || sortBy === 'max' || sortBy === 'spread') {
+        const left = a[sortBy]
+        const right = b[sortBy]
+        const missingValue = direction === 1 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+        const leftNumber = typeof left === 'number' ? left : missingValue
+        const rightNumber = typeof right === 'number' ? right : missingValue
+        const diff = leftNumber - rightNumber
+        return diff !== 0 ? direction * diff : a.index - b.index
+      }
+      return a.index - b.index
+    })
+
+  const categories = rows.map((row) => row.name)
+  const data = rows.map((row) => {
+    if (typeof row.min === 'number' && typeof row.max === 'number') {
+      return [row.min, row.max]
     }
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    return [min, max]
+    return null
   })
 
   const options = {
@@ -56,7 +99,7 @@ function render() {
 
 onMounted(render)
 watch(
-  () => [props.results, props.score, locale.value],
+  () => [props.results, props.score, props.sortBy, props.sortDirection, locale.value],
   () => render(),
   { deep: true }
 )

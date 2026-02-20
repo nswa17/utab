@@ -5,6 +5,7 @@
         <Button variant="secondary" size="sm" class="tournament-list-back" :to="headerBackPath">
           ← {{ headerBackLabel }}
         </Button>
+        <h1 class="tournament-title">{{ tournament?.name ?? $t('大会詳細') }}</h1>
         <div v-if="participantUrl" class="header-qr-slot">
           <button
             type="button"
@@ -19,7 +20,6 @@
             <span v-else class="muted small">{{ $t('QRコード') }}</span>
           </button>
         </div>
-        <h1 class="tournament-title">{{ tournament?.name ?? $t('大会詳細') }}</h1>
       </div>
       <p v-if="copyStatus === 'copied'" class="muted small">{{ $t('コピーしました。') }}</p>
       <p v-else-if="copyStatus === 'error'" class="error small">{{ copyError }}</p>
@@ -59,12 +59,8 @@ const isTournamentHomeRoute = computed(() => {
   const rootPath = `/user/${tournamentId.value}`
   return route.path === homePath || route.path === rootPath
 })
-const headerBackPath = computed(() =>
-  !tournamentId.value || isTournamentHomeRoute.value ? '/user' : `/user/${tournamentId.value}/home`
-)
-const headerBackLabel = computed(() =>
-  !tournamentId.value || isTournamentHomeRoute.value ? t('大会一覧') : t('大会ホームに戻る')
-)
+const headerBackPath = computed(() => '/user')
+const headerBackLabel = computed(() => t('大会一覧'))
 const showTournamentNotice = computed(() => Boolean(tournamentId.value) && !isTournamentHomeRoute.value)
 const currentOrigin = computed(() => {
   if (typeof window === 'undefined') return ''
@@ -178,12 +174,15 @@ onUnmounted(() => {
 }
 
 .tournament-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: clamp(1.8rem, 2.4vw, 2.2rem);
   line-height: 1.2;
 }
 
 .header-qr-slot {
+  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -214,9 +213,8 @@ onUnmounted(() => {
     align-items: center;
   }
 
-  .title-qr-button {
-    width: 64px;
-    height: 64px;
+  .header-qr-slot {
+    display: none;
   }
 
 }

@@ -274,7 +274,6 @@
                     </section>
                     <section class="stack setup-round-config-group">
                       <CompileOptionsEditor
-                        v-model:source="setupRoundEditForm.compile.source"
                         v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
                         v-model:ranking-preset="setupRoundEditForm.compile.options.ranking_priority.preset"
                         v-model:ranking-order="setupRoundEditForm.compile.options.ranking_priority.order"
@@ -284,7 +283,6 @@
                         v-model:poi-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.poi_aggregation"
                         v-model:best-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.best_aggregation"
                         v-model:missing-data-policy="setupRoundEditForm.compile.options.missing_data_policy"
-                        v-model:include-labels="setupRoundEditForm.compile.options.include_labels"
                         :show-source-rounds="true"
                         :source-round-options="compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))"
                         :disabled="isLoading"
@@ -327,18 +325,7 @@
         </div>
         <p class="muted small">{{ $t('参加者がスマホで読み取って大会ページを開けます。') }}</p>
         <div v-if="participantUrl" class="qr-grid">
-          <div class="qr-box">
-            <LoadingState v-if="qrLoading" />
-            <img
-              v-else-if="qrCodeDataUrl"
-              class="qr-image"
-              :src="qrCodeDataUrl"
-              :alt="$t('QRコード')"
-            />
-            <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
-            <p v-if="qrError" class="error">{{ qrError }}</p>
-          </div>
-          <div class="stack">
+          <div class="stack qr-content">
             <div class="muted small">{{ $t('大会アクセスURL') }}</div>
             <code class="qr-url">{{ participantUrl }}</code>
             <div class="row qr-actions">
@@ -359,6 +346,17 @@
             <p class="muted small">
               {{ $t('大会パスワードが必要な場合、参加者は表示された画面で入力します。') }}
             </p>
+          </div>
+          <div class="qr-box">
+            <LoadingState v-if="qrLoading" />
+            <img
+              v-else-if="qrCodeDataUrl"
+              class="qr-image"
+              :src="qrCodeDataUrl"
+              :alt="$t('QRコード')"
+            />
+            <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
+            <p v-if="qrError" class="error">{{ qrError }}</p>
           </div>
         </div>
       </article>
@@ -527,7 +525,7 @@
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
-            <form class="grid" @submit.prevent="handleCreateAdjudicator">
+            <form class="grid aligned-field-grid" @submit.prevent="handleCreateAdjudicator">
               <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="adjudicatorForm.name"
@@ -839,7 +837,7 @@
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
-            <form class="grid" @submit.prevent="handleCreateInstitution">
+            <form class="grid aligned-field-grid" @submit.prevent="handleCreateInstitution">
               <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="institutionForm.name"
@@ -908,7 +906,7 @@
               :key="inst._id"
               class="list-item entity-list-item"
             >
-              <div>
+              <div class="entity-primary">
                 <strong>{{ inst.name }}</strong>
                 <span class="muted small entity-inline-meta">
                   {{
@@ -974,7 +972,6 @@
         </section>
         <section class="stack setup-round-config-group">
           <CompileOptionsEditor
-            v-model:source="roundDefaultsForm.compile.source"
             v-model:source-rounds="roundDefaultsForm.compile.source_rounds"
             v-model:ranking-preset="roundDefaultsForm.compile.options.ranking_priority.preset"
             v-model:ranking-order="roundDefaultsForm.compile.options.ranking_priority.order"
@@ -984,7 +981,6 @@
             v-model:poi-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation"
             v-model:best-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation"
             v-model:missing-data-policy="roundDefaultsForm.compile.options.missing_data_policy"
-            v-model:include-labels="roundDefaultsForm.compile.options.include_labels"
             :disabled="isLoading"
           />
         </section>
@@ -1062,7 +1058,7 @@
           <strong>{{ editingTitle }}</strong>
           <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('閉じる') }}</Button>
         </div>
-        <div class="grid" v-if="editingEntity.type === 'team'">
+        <div class="grid aligned-field-grid" v-if="editingEntity.type === 'team'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1132,7 +1128,7 @@
             </div>
           </Field>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'adjudicator'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'adjudicator'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1229,7 +1225,7 @@
             </div>
           </div>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'venue'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'venue'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1240,7 +1236,7 @@
             </label>
           </div>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'institution'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'institution'">
           <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1271,7 +1267,7 @@
             />
           </Field>
         </div>
-        <div class="grid" v-else>
+        <div class="grid aligned-field-grid" v-else>
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1346,6 +1342,7 @@ import { useInstitutionsStore } from '@/stores/institutions'
 import { useSubmissionsStore } from '@/stores/submissions'
 import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
+import { buildEntityImportPayload } from '@/utils/entity-csv-import'
 import {
   buildRoundUserDefinedFromDefaults,
   defaultRoundDefaults,
@@ -1540,31 +1537,35 @@ const entityImportHelpText = computed(() =>
 )
 
 const entityImportPlaceholder = computed(() => {
-  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'teams') {
+    return t('CSV例: name,institution,speakers,available,available_r1')
+  }
   if (entityImportType.value === 'adjudicators') {
     return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
   }
-  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
   if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
   if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
   return ''
 })
 
 const entityImportDescription = computed(() => {
-  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'teams') {
+    return t('CSV例: name,institution,speakers,available,available_r1')
+  }
   if (entityImportType.value === 'adjudicators') {
     return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
   }
-  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
   if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
   if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
   return ''
 })
 
 const entityImportExample = computed(() => {
-  if (entityImportType.value === 'teams') return 'Team A,Institution A,Speaker 1|Speaker 2'
+  if (entityImportType.value === 'teams') return 'name,institution,speakers,available,available_r1'
   if (entityImportType.value === 'adjudicators') return 'name,strength,preev,active,available,conflicts,available_r1'
-  if (entityImportType.value === 'venues') return 'Room 101'
+  if (entityImportType.value === 'venues') return 'name,priority,available,available_r1'
   if (entityImportType.value === 'speakers') return 'Speaker A'
   if (entityImportType.value === 'institutions') return 'Institution A,region,2'
   return ''
@@ -2893,207 +2894,30 @@ function adjudicatorInstitutionsLabel(adjudicator: any) {
   return unique.length > 0 ? unique.join(', ') : t('未設定')
 }
 
-function parseCsv(text: string) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-  if (lines.length === 0) return { headers: [], rows: [] }
-  const first = lines[0].split(',').map((cell) => cell.trim())
-  const headerKeys = [
-    'name',
-    'institution',
-    'category',
-    'kind',
-    'type',
-    'priority',
-    'speakers',
-    'strength',
-    'preev',
-    'priority',
-    'active',
-    'available',
-    'availability',
-    'conflict',
-    'conflicts',
-  ]
-  const hasHeader = first.some((cell) => {
-    const key = cell.toLowerCase()
-    return (
-      headerKeys.includes(key) ||
-      /^available_r\d+$/.test(key) ||
-      /^availability_r\d+$/.test(key) ||
-      /^conflicts?_r\d+$/.test(key)
-    )
-  })
-  const headers = hasHeader ? first.map((h) => h.toLowerCase()) : []
-  const rows = lines.slice(hasHeader ? 1 : 0).map((line) => line.split(',').map((c) => c.trim()))
-  return { headers, rows }
-}
-
-function splitList(value: string) {
-  return value
-    .split(/[;|]/)
-    .map((v) => v.trim())
-    .filter(Boolean)
-}
-
-function toBooleanCell(value: string, defaultValue: boolean) {
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return defaultValue
-  if (['true', '1', 'yes', 'y'].includes(normalized)) return true
-  if (['false', '0', 'no', 'n'].includes(normalized)) return false
-  return defaultValue
-}
-
-function findHeaderValue(headers: string[], row: string[], keyCandidates: string[]) {
-  for (const key of keyCandidates) {
-    const index = headers.indexOf(key)
-    if (index >= 0) return row[index] ?? ''
-  }
-  return ''
-}
-
 async function importEntitiesFromText(type: EntityTabKey, text: string) {
-  const { headers, rows } = parseCsv(text)
-  const payload: any[] = []
-  const get = (row: string[], key: string, fallbackIndex: number) => {
-    if (headers.length === 0) return row[fallbackIndex] ?? ''
-    const idx = headers.indexOf(key)
-    return idx >= 0 ? (row[idx] ?? '') : ''
-  }
-  const teamNameMap = new Map<string, string>()
-  teams.teams.forEach((team) => {
-    teamNameMap.set(team._id, team._id)
-    teamNameMap.set(team.name.toLowerCase(), team._id)
-  })
-  const institutionIdMap = new Map<string, string>()
-  institutions.institutions.forEach((inst) => {
-    institutionIdMap.set(inst._id, inst._id)
-    institutionIdMap.set(inst.name, inst._id)
-    institutionIdMap.set(inst.name.toLowerCase(), inst._id)
-  })
-  const resolveConflictIds = (cell: string) => {
-    const ids = splitList(cell).map((token) => {
-      const normalized = token.trim()
-      if (!normalized) return ''
-      return teamNameMap.get(normalized) ?? teamNameMap.get(normalized.toLowerCase()) ?? ''
-    })
-    return Array.from(new Set(ids.filter(Boolean)))
-  }
-  const resolveInstitutionIds = (cell: string) => {
-    const ids = splitList(cell).map((token) => {
-      const normalized = token.trim()
-      if (!normalized) return ''
-      return institutionIdMap.get(normalized) ?? institutionIdMap.get(normalized.toLowerCase()) ?? ''
-    })
-    return Array.from(new Set(ids.filter(Boolean)))
-  }
-  const hasRoundAvailabilityHeader = headers.some(
-    (header) => /^available_r\d+$/.test(header) || /^availability_r\d+$/.test(header)
-  )
-  const hasRoundConflictHeader = headers.some((header) => /^conflicts?_r\d+$/.test(header))
+  const roundNumbers = sortedRounds.value
+    .map((round) => Number(round.round))
+    .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
 
-  for (const row of rows) {
-    if (type === 'teams') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const institution = get(row, 'institution', 1)
-      const speakersCell = get(row, 'speakers', 2)
-      const speakersList = splitList(speakersCell).map((n) => ({ name: n }))
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        institution: institution || undefined,
-        speakers: speakersList,
-      })
-    } else if (type === 'adjudicators') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const strength = Number(get(row, 'strength', 1) || 0)
-      const preev = Number(get(row, 'preev', 2) || 0)
-      const activeValue = get(row, 'active', 3)
-      const active = toBooleanCell(activeValue, true)
-      const institutionCell = findHeaderValue(headers, row, ['institutions', 'institution'])
-      const baseInstitutionIds = resolveInstitutionIds(institutionCell)
-      const defaultAvailableCell =
-        headers.length === 0
-          ? (row[4] ?? '')
-          : findHeaderValue(headers, row, ['available', 'availability'])
-      const defaultAvailable = toBooleanCell(defaultAvailableCell, true)
-      const baseConflictCell =
-        headers.length === 0
-          ? (row[5] ?? '')
-          : findHeaderValue(headers, row, ['conflicts', 'conflict'])
-      const baseConflicts = resolveConflictIds(baseConflictCell)
-      const includeDetails =
-        sortedRounds.value.length > 0 &&
-        (defaultAvailable === false ||
-          baseInstitutionIds.length > 0 ||
-          baseConflicts.length > 0 ||
-          hasRoundAvailabilityHeader ||
-          hasRoundConflictHeader)
-      const details = includeDetails
-        ? sortedRounds.value.map((roundItem) => {
-            const availableCell = findHeaderValue(headers, row, [
-              `available_r${roundItem.round}`,
-              `availability_r${roundItem.round}`,
-            ])
-            const available = toBooleanCell(availableCell, defaultAvailable)
-            const conflictCell = findHeaderValue(headers, row, [
-              `conflicts_r${roundItem.round}`,
-              `conflict_r${roundItem.round}`,
-            ])
-            const conflictIds = Array.from(new Set([...baseConflicts, ...resolveConflictIds(conflictCell)]))
-            return {
-              r: roundItem.round,
-              available,
-              institutions: baseInstitutionIds,
-              conflicts: conflictIds,
-            }
-          })
-        : undefined
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        strength,
-        preev,
-        active,
-        details,
-      })
-    } else if (type === 'venues') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const priority = Number(get(row, 'priority', 1) || 1)
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        details: sortedRounds.value.map((round) => ({
-          r: round.round,
-          available: true,
-          priority,
-        })),
-      })
-    } else if (type === 'speakers') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      payload.push({ tournamentId: tournamentId.value, name })
-    } else if (type === 'institutions') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const category =
-        headers.length === 0
-          ? (row[1] ?? '')
-          : findHeaderValue(headers, row, ['category', 'kind', 'type'])
-      const priorityRaw =
-        headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        category: institutionCategoryLabel(category || undefined),
-        priority: institutionPriorityValue(Number(priorityRaw || 1)),
-      })
-    }
+  const { payload, errors } = buildEntityImportPayload({
+    type,
+    text,
+    tournamentId: tournamentId.value,
+    roundNumbers,
+    teams: teams.teams.map((team) => ({
+      _id: String(team._id),
+      name: String(team.name ?? ''),
+    })),
+    institutions: institutions.institutions.map((institution) => ({
+      _id: String(institution._id),
+      name: String(institution.name ?? ''),
+    })),
+    institutionCategoryLabel,
+    institutionPriorityValue,
+  })
+
+  if (errors.length > 0) {
+    throw new Error(errors.join('\n'))
   }
 
   if (payload.length === 0) {
@@ -3483,9 +3307,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 .qr-grid {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: minmax(0, 1fr) 240px;
   gap: var(--space-5);
   align-items: start;
+}
+
+.qr-content {
+  min-width: 0;
 }
 
 .qr-box {
@@ -3495,6 +3323,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--color-border);
   background: var(--color-surface-muted);
+  justify-self: end;
 }
 
 .qr-image {
@@ -3531,6 +3360,15 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 .grid .full {
   grid-column: 1 / -1;
+}
+
+.aligned-field-grid > :deep(.field),
+.aligned-field-grid > .availability-control {
+  min-height: 96px;
+}
+
+.aligned-field-grid > .availability-control {
+  align-items: flex-end;
 }
 
 .team-form-grid {
@@ -3784,8 +3622,7 @@ textarea {
   }
 
   .qr-box {
-    width: min(320px, 100%);
-    margin: 0 auto;
+    display: none;
   }
 
   .markdown-grid {

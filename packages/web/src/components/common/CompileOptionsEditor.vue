@@ -1,23 +1,12 @@
 <template>
   <div class="stack compile-options-editor">
-    <section class="stack compile-group">
+    <section v-if="showSourceRounds" class="stack compile-group">
       <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('データソース') }}</h6>
-        <HelpTip :text="$t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。')" />
+        <h6 class="compile-group-title">{{ $t('集計対象ラウンド') }}</h6>
+        <HelpTip :text="$t('ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。')" />
       </div>
       <div class="grid compile-grid">
-        <Field v-if="showSource" :label="$t('集計に使うデータ')">
-          <template #default="{ id, describedBy }">
-            <select v-model="source" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="submissions">{{ $t('提出データ') }}</option>
-              <option value="raw">{{ $t('生結果データ') }}</option>
-            </select>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。')" />
-          </template>
-        </Field>
-        <Field v-if="showSourceRounds" :label="$t('集計対象ラウンド')" class="compile-source-rounds">
+        <Field class="compile-source-rounds">
           <template #default="{ id, describedBy }">
             <div :id="id" :aria-describedby="describedBy" class="stack source-round-list">
               <p v-if="sourceRoundOptions.length === 0" class="muted small">
@@ -38,9 +27,6 @@
               </label>
               <p class="muted small">{{ $t('未選択時は直前までの全ラウンドを参照します。') }}</p>
             </div>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。')" />
           </template>
         </Field>
       </div>
@@ -66,13 +52,13 @@
         <Field :label="$t('勝敗判定')">
           <template #default="{ id, describedBy }">
             <select v-model="winnerPolicy" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="winner_id_then_score">{{ $t('勝者選択を優先（未選択時はスコア判定）') }}</option>
-              <option value="score_only">{{ $t('スコア推定のみ') }}</option>
-              <option value="draw_on_missing">{{ $t('未指定は引き分け') }}</option>
+              <option value="score_only">{{ $t('勝者のスコアが敗者のスコアより高いことを要求') }}</option>
+              <option value="winner_id_then_score">{{ $t('勝敗とスコアの大小が違うことを許容') }}</option>
+              <option value="draw_on_missing">{{ $t('引き分けを許容（勝者未指定は引き分け扱い）') }}</option>
             </select>
           </template>
           <template #label-suffix>
-            <HelpTip :text="$t('提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。')" />
+            <HelpTip :text="$t('勝敗判定の方法を選択します。スコア整合を必須にするか、勝敗入力を優先するか、勝者未指定を引き分け扱いにするかを選べます。')" />
           </template>
         </Field>
         <Field :label="$t('引き分け時ポイント')">
@@ -213,22 +199,6 @@
       </div>
     </section>
 
-    <section class="stack compile-group">
-      <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('生成対象') }}</h6>
-        <HelpTip :text="$t('生成するランキングの種類を選びます。')" />
-      </div>
-      <div class="grid include-label-grid">
-        <label
-          v-for="option in includeLabelOptions"
-          :key="`compile-include-${option.value}`"
-          class="row small include-label-item"
-        >
-          <input type="checkbox" :value="option.value" v-model="includeLabels" :disabled="disabled" />
-          <span>{{ option.label }}</span>
-        </label>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -238,7 +208,6 @@ import { useI18n } from 'vue-i18n'
 import type {
   CompileAggregationPolicy,
   CompileDuplicateMergePolicy,
-  CompileIncludeLabel,
   CompileMissingDataPolicy,
   CompileRankingMetric,
   CompileRankingPreset,
@@ -249,22 +218,19 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     disabled?: boolean
-    showSource?: boolean
     showSourceRounds?: boolean
     sourceRoundOptions?: Array<{ value: number; label: string }>
   }>(),
   {
     disabled: false,
-    showSource: true,
     showSourceRounds: false,
     sourceRoundOptions: () => [],
   }
 )
 
-const source = defineModel<'submissions' | 'raw'>('source', { required: true })
 const sourceRounds = defineModel<number[]>('sourceRounds', { default: () => [] })
 const rankingPreset = defineModel<CompileRankingPreset>('rankingPreset', { required: true })
 const rankingOrder = defineModel<CompileRankingMetric[]>('rankingOrder', { required: true })
@@ -274,18 +240,10 @@ const mergePolicy = defineModel<CompileDuplicateMergePolicy>('mergePolicy', { re
 const poiAggregation = defineModel<CompileAggregationPolicy>('poiAggregation', { required: true })
 const bestAggregation = defineModel<CompileAggregationPolicy>('bestAggregation', { required: true })
 const missingDataPolicy = defineModel<CompileMissingDataPolicy>('missingDataPolicy', { required: true })
-const includeLabels = defineModel<CompileIncludeLabel[]>('includeLabels', { required: true })
 
 const { t } = useI18n({ useScope: 'global' })
 
 const allRankingMetrics: CompileRankingMetric[] = [...compileRankingMetrics]
-const includeLabelOptions = computed<Array<{ value: CompileIncludeLabel; label: string }>>(() => [
-  { value: 'teams', label: t('チーム') },
-  { value: 'speakers', label: t('スピーカー') },
-  { value: 'adjudicators', label: t('ジャッジ') },
-  { value: 'poi', label: t('POI') },
-  { value: 'best', label: t('Best') },
-])
 
 const activeRankingMetrics = computed(() => normalizeRankingOrder(rankingOrder.value))
 const inactiveRankingMetrics = computed(() =>
@@ -374,7 +332,7 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .compile-group-head {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
   padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--color-border);
@@ -382,7 +340,7 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .compile-group-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.12rem;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -394,9 +352,15 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 }
 
 .compile-group :deep(.field-label) {
-  font-size: 0.84rem;
+  font-size: 1rem;
   font-weight: 700;
-  color: var(--color-muted);
+  color: var(--color-text);
+}
+
+.compile-group :deep(select),
+.compile-group :deep(input) {
+  font-size: 1rem;
+  line-height: 1.45;
 }
 
 .compile-source-rounds {
@@ -421,7 +385,7 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .ranking-builder-head {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
 }
 
@@ -460,18 +424,4 @@ function toggleSourceRound(roundNumber: number, event: Event) {
   flex-wrap: wrap;
 }
 
-.include-label-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-1);
-}
-
-.include-label-item {
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  background: var(--color-surface-soft);
-}
 </style>

@@ -64,9 +64,6 @@
             />
             <span v-else class="muted small">{{ $t('参照可能な集計結果がありません。') }}</span>
           </div>
-          <p v-if="detailSnapshotLabel" class="muted tiny">
-            {{ $t('警告と詳細は次の集計を参照: {label}', { label: detailSnapshotLabel }) }}
-          </p>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <div v-else class="allocation-table-wrap">
             <table class="allocation-table">
@@ -279,6 +276,31 @@
           <h4>{{ $t('未配置リスト') }}</h4>
           <div class="grid waiting-grid">
             <div class="stack">
+              <span class="muted">{{ $t('会場') }} ({{ unassignedVenues.length }})</span>
+              <div
+                class="drop-zone list compact multi-line"
+                :class="{ active: dragKind === 'venue' }"
+                @dragover.prevent
+                @drop="dropToWaiting('venue')"
+              >
+                <span v-if="unassignedVenues.length === 0" class="muted small">
+                  {{ $t('なし') }}
+                </span>
+                <span
+                  v-for="venue in unassignedVenues"
+                  :key="venue._id"
+                  class="pill draggable truncate-pill"
+                  :title="venue.name"
+                  draggable="true"
+                  @dragstart="onDragStart('venue', venue._id)"
+                  @dragend="onDragEnd"
+                  @click.stop="selectDetail('venue', venue._id)"
+                >
+                  {{ venue.name }}
+                </span>
+              </div>
+            </div>
+            <div class="stack">
               <span class="muted">{{ $t('チーム') }} ({{ unassignedTeams.length }})</span>
               <div
                 class="drop-zone list compact multi-line"
@@ -328,31 +350,6 @@
                 </span>
               </div>
             </div>
-            <div class="stack">
-              <span class="muted">{{ $t('会場') }} ({{ unassignedVenues.length }})</span>
-              <div
-                class="drop-zone list compact multi-line"
-                :class="{ active: dragKind === 'venue' }"
-                @dragover.prevent
-                @drop="dropToWaiting('venue')"
-              >
-                <span v-if="unassignedVenues.length === 0" class="muted small">
-                  {{ $t('なし') }}
-                </span>
-                <span
-                  v-for="venue in unassignedVenues"
-                  :key="venue._id"
-                  class="pill draggable truncate-pill"
-                  :title="venue.name"
-                  draggable="true"
-                  @dragstart="onDragStart('venue', venue._id)"
-                  @dragend="onDragEnd"
-                  @click.stop="selectDetail('venue', venue._id)"
-                >
-                  {{ venue.name }}
-                </span>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -368,7 +365,7 @@
             <Button
               variant="secondary"
               size="sm"
-              @click="showAutoGenerateModal = true"
+              @click="openAutoGenerateModal"
               :disabled="isLoading || requestLoading"
             >
               {{ $t('自動生成') }}
@@ -437,7 +434,7 @@
       v-if="showAutoGenerateModal"
       class="modal-backdrop"
       role="presentation"
-      @click.self="showAutoGenerateModal = false"
+      @click.self="closeAutoGenerateModal"
     >
       <section class="modal card stack auto-modal" role="dialog" aria-modal="true">
         <div class="row auto-generate-header">
@@ -454,7 +451,7 @@
               </span>
             </span>
           </div>
-          <Button variant="ghost" size="sm" @click="showAutoGenerateModal = false">
+          <Button variant="ghost" size="sm" @click="closeAutoGenerateModal">
             {{ $t('閉じる') }}
           </Button>
         </div>
@@ -650,7 +647,14 @@
                 />
               </label>
             </div>
-            <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
+            <div class="stack auto-break-policy" v-else-if="autoOptions.teamAlgorithm === 'break'">
+              <BreakPolicyEditor
+                v-model:source="autoBreakSource"
+                v-model:size="autoBreakSize"
+                v-model:cutoff-tie-policy="autoBreakCutoffTiePolicy"
+                v-model:seeding="autoBreakSeeding"
+                :disabled="requestLoading || isLoading"
+              />
               <p class="muted">
                 {{
                   $t(
@@ -903,10 +907,12 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { DrawPreviewRow } from '@/types/draw-preview'
+import type { BreakCutoffTiePolicy, BreakSeeding, RoundBreakConfig } from '@/types/round'
 import {
   applyDrawAllocationImportEntries,
   parseDrawAllocationImportText,
@@ -974,6 +980,130 @@ const selectedDetailSnapshotId = ref('')
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
 const allocationImportInfo = ref<string | null>(null)
+const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
+const autoBreakSize = ref(8)
+const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('manual')
+const autoBreakSeeding = ref<BreakSeeding>('high_low')
+
+type RoundBreakConfigLike = Partial<RoundBreakConfig> & {
+  source?: 'submissions' | 'raw'
+}
+
+function readRoundBreakConfig(): RoundBreakConfigLike {
+  const userDefined = roundConfig.value?.userDefinedData
+  if (!userDefined || typeof userDefined !== 'object' || Array.isArray(userDefined)) return {}
+  const breakConfig = (userDefined as Record<string, unknown>).break
+  if (!breakConfig || typeof breakConfig !== 'object' || Array.isArray(breakConfig)) return {}
+  return breakConfig as RoundBreakConfigLike
+}
+
+function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
+  if (!Array.isArray(sourceRounds)) return []
+  return Array.from(
+    new Set(
+      sourceRounds
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
+    )
+  ).sort((left, right) => left - right)
+}
+
+function normalizeBreakParticipants(participants: unknown): RoundBreakConfig['participants'] {
+  if (!Array.isArray(participants)) return []
+  const seenTeamIds = new Set<string>()
+  const seenSeeds = new Set<number>()
+  const normalized: RoundBreakConfig['participants'] = []
+  for (const raw of participants) {
+    const teamId = String((raw as any)?.teamId ?? '').trim()
+    const seed = Number((raw as any)?.seed)
+    if (teamId.length === 0 || !Number.isInteger(seed) || seed < 1) continue
+    if (seenTeamIds.has(teamId) || seenSeeds.has(seed)) continue
+    seenTeamIds.add(teamId)
+    seenSeeds.add(seed)
+    normalized.push({ teamId, seed })
+  }
+  return normalized.sort((left, right) => left.seed - right.seed)
+}
+
+function normalizeBreakSize(value: unknown): number {
+  const size = Number(value)
+  return Number.isInteger(size) && size >= 1 ? size : 8
+}
+
+function hydrateAutoBreakPolicyFromRound() {
+  const breakConfig = readRoundBreakConfig()
+  autoBreakSource.value = breakConfig.source === 'raw' ? 'raw' : 'submissions'
+  autoBreakSize.value = normalizeBreakSize(breakConfig.size)
+  autoBreakCutoffTiePolicy.value =
+    breakConfig.cutoff_tie_policy === 'include_all' || breakConfig.cutoff_tie_policy === 'strict'
+      ? breakConfig.cutoff_tie_policy
+      : 'manual'
+  autoBreakSeeding.value = breakConfig.seeding === 'high_low' ? breakConfig.seeding : 'high_low'
+}
+
+async function syncAutoBreakPolicyToRound() {
+  if (autoOptions.value.teamAlgorithm !== 'break' || requestScope.value !== 'teams') {
+    return true
+  }
+  const currentRound = roundConfig.value
+  if (!currentRound?._id) {
+    requestError.value = t('読み込みに失敗しました。')
+    return false
+  }
+  const currentBreak = readRoundBreakConfig()
+  const normalizedSize = normalizeBreakSize(autoBreakSize.value)
+  autoBreakSize.value = normalizedSize
+  const breakConfig: RoundBreakConfig = {
+    enabled: currentBreak.enabled === true,
+    source_rounds: normalizeBreakSourceRounds(round.value, currentBreak.source_rounds),
+    size: normalizedSize,
+    cutoff_tie_policy: autoBreakCutoffTiePolicy.value,
+    seeding: autoBreakSeeding.value,
+    participants: normalizeBreakParticipants(currentBreak.participants),
+  }
+  const saved = await roundsStore.saveBreakRound({
+    tournamentId: tournamentId.value,
+    roundId: currentRound._id,
+    breakConfig,
+    syncTeamAvailability: false,
+  })
+  if (!saved) {
+    requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
+    return false
+  }
+  const latestRound =
+    roundsStore.rounds.find((item) => item._id === currentRound._id) ?? currentRound
+  const latestUserDefined =
+    latestRound.userDefinedData &&
+    typeof latestRound.userDefinedData === 'object' &&
+    !Array.isArray(latestRound.userDefinedData)
+      ? (latestRound.userDefinedData as Record<string, unknown>)
+      : {}
+  const latestBreak =
+    latestUserDefined.break &&
+    typeof latestUserDefined.break === 'object' &&
+    !Array.isArray(latestUserDefined.break)
+      ? (latestUserDefined.break as Record<string, unknown>)
+      : {}
+  if (latestBreak.source !== autoBreakSource.value) {
+    const updated = await roundsStore.updateRound({
+      tournamentId: tournamentId.value,
+      roundId: currentRound._id,
+      userDefinedData: {
+        ...latestUserDefined,
+        break: {
+          ...latestBreak,
+          source: autoBreakSource.value,
+        },
+      },
+    })
+    if (!updated) {
+      requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
+      return false
+    }
+  }
+  return true
+}
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
@@ -1300,10 +1430,6 @@ const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
 const selectedDetailPayload = computed<Record<string, any>>(() =>
   selectedDetailSnapshot.value?.payload ?? {}
 )
-const detailSnapshotLabel = computed(() => {
-  if (!selectedDetailSnapshot.value) return ''
-  return autoCompiledOptionLabel(selectedDetailSnapshot.value)
-})
 const autoSnapshotSelectOptions = computed(() =>
   autoCompiledSnapshotOptions.value.map((option) => ({
     value: option.compiledId,
@@ -1553,6 +1679,19 @@ async function save() {
   savedDrawId.value = saved?._id ?? savedDrawId.value
 }
 
+function openAutoGenerateModal() {
+  requestError.value = null
+  if (autoOptions.value.teamAlgorithm === 'break') {
+    hydrateAutoBreakPolicyFromRound()
+  }
+  showAutoGenerateModal.value = true
+}
+
+function closeAutoGenerateModal() {
+  showAutoGenerateModal.value = false
+  requestError.value = null
+}
+
 function openAllocationImportModal() {
   allocationImportError.value = null
   showAllocationImportModal.value = true
@@ -1734,6 +1873,10 @@ async function requestAllocation() {
       requestError.value = t('ブレイク生成は対象をチームに設定してください。')
       return
     }
+    if (autoOptions.value.teamAlgorithm === 'break' && requestScope.value === 'teams') {
+      const synced = await syncAutoBreakPolicyToRound()
+      if (!synced) return
+    }
     const options = {
       team_allocation_algorithm: autoOptions.value.teamAlgorithm,
       team_allocation_algorithm_options: teamOptions,
@@ -1784,7 +1927,7 @@ async function requestAllocation() {
       } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
         generatedUserDefinedData.value = null
       }
-      showAutoGenerateModal.value = false
+      closeAutoGenerateModal()
     }
   } catch (err: any) {
     requestError.value = err?.response?.data?.errors?.[0]?.message ?? t('自動生成に失敗しました')
@@ -2607,9 +2750,16 @@ watch(
   (next) => {
     if (next === 'break') {
       requestScope.value = 'teams'
+      hydrateAutoBreakPolicyFromRound()
     }
   }
 )
+
+watch(showAutoGenerateModal, (isOpen) => {
+  if (isOpen && autoOptions.value.teamAlgorithm === 'break') {
+    hydrateAutoBreakPolicyFromRound()
+  }
+})
 </script>
 
 <style scoped>

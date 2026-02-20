@@ -88,7 +88,7 @@ const seeding = defineModel<BreakSeeding>('seeding', { required: true })
 
 .break-policy-head {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
   padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--color-border);

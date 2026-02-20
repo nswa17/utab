@@ -120,6 +120,16 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('<EmptyState')
   })
 
+  it('allows sorting score range display in fairness analytics', () => {
+    const source = load('src/views/admin/AdminTournamentCompiled.vue')
+    expect(source).toContain('スコア範囲ソート')
+    expect(source).toContain('scoreRangeSortBy')
+    expect(source).toContain('scoreRangeSortDirection')
+    expect(source).toContain('toggleScoreRangeSortDirection')
+    expect(source).toContain(':sort-by="scoreRangeSortBy"')
+    expect(source).toContain(':sort-direction="scoreRangeSortDirection"')
+  })
+
   it('removes heatmap charts from fairness visuals', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).not.toContain('SideHeatmap')
@@ -153,6 +163,9 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('slideLabel')
     expect(source).toContain('setSlideLabel')
     expect(source).toContain(':label="slideLabel"')
+    expect(source).toContain('announcementResultsSource')
+    expect(source).toContain('announcementResults')
+    expect(source).toContain('awardMetricLabel(slideLabel.value)')
     const slideHeadingIndex = source.indexOf("<h4>{{ $t('スライド') }}</h4>")
     const awardHeadingIndex = source.indexOf("<h4>{{ $t('表彰コピー') }}</h4>")
     expect(slideHeadingIndex).toBeGreaterThan(-1)
@@ -175,8 +188,8 @@ describe('AdminTournamentCompiled V2', () => {
     const messages = load('src/i18n/messages.ts')
     expect(messages).toContain("'現在表示: {snapshot}'")
     expect(messages).toContain("'現在: {label} - {description}'")
-    expect(messages).toContain("表示するレポート: 'Report to display'")
-    expect(messages).toContain("提出状況を確認: 'Check submission status'")
+    expect(messages).toContain("'表示するレポート': 'Report to display'")
+    expect(messages).toContain("'提出状況を確認': 'Check submission status'")
     expect(messages).toContain("'要確認: {count}件'")
     expect(messages).toContain("'Gov勝率 {gov}% / Opp勝率 {opp}%'")
     expect(messages).toContain("'順位変動あり: {count}件'")
@@ -194,7 +207,9 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('showRecomputeOptions')
     expect(source).toContain('詳細設定')
     expect(source).toContain('recompute-modal')
-    expect(source).toContain("@click=\"showRecomputeOptions = true\"")
+    expect(source).toContain('openRecomputeOptions')
+    expect(source).toContain('cancelRecomputeOptions')
+    expect(source).toContain('applyRecomputeOptions')
   })
 
   it('keeps compile preparation independent from the operations tab', () => {

@@ -320,7 +320,6 @@
           <section class="stack settings-group">
             <h5 class="settings-group-title">{{ $t('集計設定') }}</h5>
             <CompileOptionsEditor
-              v-model:source="roundDraft(round).compile.source"
               v-model:source-rounds="roundDraft(round).compile.source_rounds"
               v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
               v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
@@ -330,7 +329,6 @@
               v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
               v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
               v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
-              v-model:include-labels="roundDraft(round).compile.options.include_labels"
               :show-source-rounds="true"
               :source-round-options="compileSourceRoundSelectOptions(round.round)"
               :disabled="isLoading"
