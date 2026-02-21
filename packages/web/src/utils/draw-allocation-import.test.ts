@@ -78,7 +78,7 @@ describe('draw allocation import', () => {
       venues,
     })
     expect(result.errors.length).toBeGreaterThan(0)
-    expect(result.errors[0]).toContain('大会データ管理で先に取り込んでください')
+    expect(result.errors[0]).toContain('大会データ準備で先に取り込んでください')
     expect(result.allocation).toEqual(allocation)
   })
 

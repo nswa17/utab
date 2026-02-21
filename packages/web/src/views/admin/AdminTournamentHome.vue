@@ -3,9 +3,20 @@
     <p v-if="activeSection === 'overview'" class="muted small">
       {{ $t('大会の基本情報と公開設定を管理します。') }}
     </p>
-    <p v-else class="muted small">
-      {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
-    </p>
+    <div v-else class="stack tight data-guide-header">
+      <div class="row data-guide-row">
+        <p class="muted small">
+          {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
+        </p>
+      </div>
+      <p class="muted small">
+        {{
+          $t(
+            'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。'
+          )
+        }}
+      </p>
+    </div>
 
     <LoadingState v-if="isSectionLoading" />
 
@@ -374,7 +385,8 @@
           :class="{ active: activeEntityTab === tab.key }"
           @click="activeEntityTab = tab.key"
         >
-          {{ tab.label }}
+          <span class="entity-tab-step">{{ `STEP ${tab.step}` }}</span>
+          <span>{{ tab.label }}</span>
         </button>
       </div>
 
@@ -1501,13 +1513,13 @@ type InstitutionOptionGroup = {
 const institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
-const activeEntityTab = ref<EntityTabKey>('teams')
-const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
-  { key: 'teams', label: t('チーム') },
-  { key: 'adjudicators', label: t('ジャッジ') },
-  { key: 'speakers', label: t('スピーカー') },
-  { key: 'institutions', label: t('コンフリクトグループ') },
-  { key: 'venues', label: t('会場') },
+const activeEntityTab = ref<EntityTabKey>('institutions')
+const entityTabs = computed<Array<{ key: EntityTabKey; label: string; step: 1 | 2 | 3 }>>(() => [
+  { key: 'institutions', label: t('コンフリクトグループ'), step: 1 },
+  { key: 'venues', label: t('会場'), step: 1 },
+  { key: 'speakers', label: t('スピーカー'), step: 2 },
+  { key: 'adjudicators', label: t('ジャッジ'), step: 2 },
+  { key: 'teams', label: t('チーム'), step: 3 },
 ])
 const showEntityImportModal = ref(false)
 const entityImportType = ref<EntityTabKey | null>(null)
@@ -3420,6 +3432,9 @@ textarea {
 }
 
 .entity-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
@@ -3428,6 +3443,21 @@ textarea {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.entity-tab-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  font-weight: 700;
+  background: var(--color-surface-muted);
+  color: var(--color-muted);
 }
 
 .entity-tab:hover {
@@ -3439,6 +3469,26 @@ textarea {
   background: var(--color-secondary);
   color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+.entity-tab.active .entity-tab-step {
+  background: rgba(37, 99, 235, 0.16);
+  color: var(--color-primary);
+}
+
+.data-guide-header {
+  gap: 6px;
+}
+
+.data-guide-row {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.data-guide-row p {
+  margin: 0;
 }
 
 .entity-panel :deep(.btn--sm) {

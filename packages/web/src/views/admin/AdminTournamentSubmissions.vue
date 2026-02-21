@@ -30,7 +30,7 @@
         </div>
       </section>
 
-      <div v-if="!splitByEvaluation" :class="['stack', 'filter-bar', { card: !isEmbeddedRoute }]">
+      <div v-if="!splitByEvaluation && !focusEditOnly" :class="['stack', 'filter-bar', { card: !isEmbeddedRoute }]">
         <div class="grid">
           <Field :label="$t('種類')" v-slot="{ id, describedBy }">
             <select v-model="typeFilter" :id="id" :aria-describedby="describedBy">
@@ -54,12 +54,261 @@
             />
           </div>
         </div>
-        <p v-if="isRoundContext" class="muted small">
+        <p v-if="isRoundContext && !focusEditOnly" class="muted small">
           {{ $t('この画面はラウンド固定です。') }}
         </p>
       </div>
 
       <p v-if="loadError" class="error">{{ loadError }}</p>
+      <div v-else-if="focusEditOnly && focusedEditItem" class="stack focus-edit-only-content">
+        <div v-if="focusedEditItem.type === 'ballot'" class="card soft stack ballot-card">
+          <div class="grid ballot-meta-grid">
+            <Field :label="govLabel" v-slot="{ id, describedBy }">
+              <select :id="id" :aria-describedby="describedBy" v-model="editingBallotGovTeamId">
+                <option value="">{{ $t('未選択') }}</option>
+                <option
+                  v-for="option in editingBallotSideTeamOptions"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.name }}
+                </option>
+              </select>
+            </Field>
+            <Field :label="oppLabel" v-slot="{ id, describedBy }">
+              <input
+                :id="id"
+                :aria-describedby="describedBy"
+                :value="teamName(editingBallotOppTeamId)"
+                readonly
+              />
+            </Field>
+            <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
+              <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
+                <option value="">{{ $t('未選択') }}</option>
+                <option :value="editingBallotTeamAId">{{ teamName(editingBallotTeamAId) }}</option>
+                <option :value="editingBallotTeamBId">{{ teamName(editingBallotTeamBId) }}</option>
+              </select>
+            </Field>
+            <Field :label="$t('提出者')" v-slot="{ id, describedBy }">
+              <select :id="id" :aria-describedby="describedBy" v-model="editingBallotSubmittedEntityId">
+                <option value="">{{ $t('未選択') }}</option>
+                <optgroup :label="$t('ジャッジ')">
+                  <option
+                    v-for="option in adjudicatorEntityOptions"
+                    :key="`adj-${option.id}`"
+                    :value="option.id"
+                  >
+                    {{ option.name }}
+                  </option>
+                </optgroup>
+              </select>
+            </Field>
+            <Field :label="$t('コメント')" class="full" v-slot="{ id, describedBy }">
+              <textarea
+                :id="id"
+                :aria-describedby="describedBy"
+                rows="3"
+                v-model="editingBallotComment"
+              />
+            </Field>
+          </div>
+
+          <p v-if="editingBallotNoSpeakerScore" class="muted small">
+            {{ $t('このラウンドはスピーカースコアを入力しません。') }}
+          </p>
+
+          <div v-if="editingSpeakerRowsFor(focusedEditItem).length === 0" class="muted small">
+            {{ $t('編集対象のスピーカー行がありません。') }}
+          </div>
+          <table v-else class="speaker-table speaker-table-editable">
+            <thead>
+              <tr>
+                <th>{{ $t('サイド') }}</th>
+                <th>{{ $t('チーム') }}</th>
+                <th>{{ $t('スピーカー') }}</th>
+                <th>{{ $t('スコア') }}</th>
+                <th>{{ $t('Matter') }}</th>
+                <th>{{ $t('Manner') }}</th>
+                <th>{{ $t('Best') }}</th>
+                <th>{{ $t('POI') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in editingSpeakerRowsFor(focusedEditItem)" :key="row.key">
+                <td>{{ row.side }}</td>
+                <td>{{ row.teamName }}</td>
+                <td>
+                  <select v-model="row.entry.speakerId">
+                    <option value="">{{ $t('スピーカーを選択してください') }}</option>
+                    <option
+                      v-for="option in speakerOptionsForEditor(row.teamSlot, row.index)"
+                      :key="option.id"
+                      :value="option.id"
+                    >
+                      {{ option.name }}
+                    </option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'total'"
+                    type="number"
+                    step="0.1"
+                    v-model="row.entry.score"
+                  />
+                  <span v-else>{{ row.score }}</span>
+                </td>
+                <td>
+                  <input
+                    v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
+                    type="number"
+                    step="0.1"
+                    v-model="row.entry.matter"
+                  />
+                  <span v-else>{{ row.matter }}</span>
+                </td>
+                <td>
+                  <input
+                    v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
+                    type="number"
+                    step="0.1"
+                    v-model="row.entry.manner"
+                  />
+                  <span v-else>{{ row.manner }}</span>
+                </td>
+                <td>
+                  <input
+                    v-if="!editingBallotNoSpeakerScore"
+                    class="flag-input"
+                    type="checkbox"
+                    v-model="row.entry.best"
+                  />
+                  <span v-else>{{ row.best ? '✓' : '—' }}</span>
+                </td>
+                <td>
+                  <input
+                    v-if="!editingBallotNoSpeakerScore"
+                    class="flag-input"
+                    type="checkbox"
+                    v-model="row.entry.poi"
+                  />
+                  <span v-else>{{ row.poi ? '✓' : '—' }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-else class="card soft stack feedback-card">
+          <div class="grid feedback-meta-grid">
+            <Field :label="$t('評価対象ジャッジ')" v-slot="{ id, describedBy }">
+              <select :id="id" :aria-describedby="describedBy" v-model="editingFeedbackAdjudicatorId">
+                <option value="">{{ $t('未選択') }}</option>
+                <option
+                  v-for="option in adjudicatorEntityOptions"
+                  :key="`feedback-adj-${option.id}`"
+                  :value="option.id"
+                >
+                  {{ option.name }}
+                </option>
+              </select>
+            </Field>
+            <Field :label="$t('スコア')" v-slot="{ id, describedBy }">
+              <input
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+                step="0.1"
+                min="0"
+                v-model="editingFeedbackScore"
+              />
+            </Field>
+            <Field :label="$t('Matter')" v-slot="{ id, describedBy }">
+              <input
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+                step="0.1"
+                v-model="editingFeedbackMatter"
+              />
+            </Field>
+            <Field :label="$t('Manner')" v-slot="{ id, describedBy }">
+              <input
+                :id="id"
+                :aria-describedby="describedBy"
+                type="number"
+                step="0.1"
+                v-model="editingFeedbackManner"
+              />
+            </Field>
+            <Field :label="$t('提出者')" v-slot="{ id, describedBy }">
+              <select
+                :id="id"
+                :aria-describedby="describedBy"
+                v-model="editingFeedbackSubmittedEntityId"
+              >
+                <option value="">{{ $t('未選択') }}</option>
+                <optgroup :label="$t('ジャッジ')">
+                  <option
+                    v-for="option in adjudicatorEntityOptions"
+                    :key="`feedback-sub-adj-${option.id}`"
+                    :value="option.id"
+                  >
+                    {{ option.name }}
+                  </option>
+                </optgroup>
+                <optgroup :label="$t('スピーカー')">
+                  <option
+                    v-for="option in speakerEntityOptions"
+                    :key="`feedback-sub-spk-${option.id}`"
+                    :value="option.id"
+                  >
+                    {{ option.name }}
+                  </option>
+                </optgroup>
+                <optgroup :label="$t('チーム')">
+                  <option
+                    v-for="option in teamEntityOptions"
+                    :key="`feedback-sub-team-${option.id}`"
+                    :value="option.id"
+                  >
+                    {{ option.name }}
+                  </option>
+                </optgroup>
+              </select>
+            </Field>
+            <Field :label="$t('コメント')" class="full" v-slot="{ id, describedBy }">
+              <textarea
+                :id="id"
+                :aria-describedby="describedBy"
+                rows="3"
+                v-model="editingFeedbackComment"
+              />
+            </Field>
+          </div>
+        </div>
+        <p v-if="editError" class="error">{{ editError }}</p>
+        <div class="row ballot-action-row focus-edit-action-row">
+          <Button
+            variant="primary"
+            size="sm"
+            :loading="editingSaving"
+            :disabled="editingSaving"
+            @click="requestSaveEdit(focusedEditItem)"
+          >
+            {{ $t('更新を保存') }}
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            :disabled="editingSaving"
+            @click="requestDeleteSubmission(focusedEditItem)"
+          >
+            {{ $t('評価を削除') }}
+          </Button>
+        </div>
+      </div>
       <div v-else-if="!hasAnyVisibleItems" class="muted">{{ $t('提出がありません。') }}</div>
 
       <div v-else-if="splitByEvaluation" class="stack split-section-list">
@@ -68,7 +317,7 @@
           :key="`split-table-${group.key}`"
           class="card soft stack split-section-card"
         >
-          <div class="row split-section-head">
+          <div v-if="!focusEditOnly" class="row split-section-head">
             <strong class="split-section-title">{{ group.label }}</strong>
             <div class="stack split-search-field">
               <input
@@ -488,7 +737,12 @@
         </section>
       </div>
 
-      <Table v-else-if="items.length > 0" hover striped sticky-header>
+      <Table
+        v-else-if="items.length > 0"
+        hover
+        striped
+        sticky-header
+      >
         <thead>
           <tr>
             <th>{{ $t('種類') }}</th>
@@ -938,6 +1192,10 @@ const props = withDefaults(
     hideSummaryCards?: boolean
     splitByEvaluation?: boolean
     splitActiveKey?: 'team' | 'judge' | null
+    focusSubmissionId?: string | null
+    autoOpenFocusSubmission?: boolean
+    autoEditFocusSubmission?: boolean
+    focusEditOnly?: boolean
   }>(),
   {
     embedded: false,
@@ -945,6 +1203,10 @@ const props = withDefaults(
     hideSummaryCards: false,
     splitByEvaluation: false,
     splitActiveKey: null,
+    focusSubmissionId: null,
+    autoOpenFocusSubmission: false,
+    autoEditFocusSubmission: false,
+    focusEditOnly: false,
   }
 )
 
@@ -967,6 +1229,8 @@ const isRoundContext = computed(() => contextRound.value !== null)
 const hideSummaryCards = computed(() => props.hideSummaryCards)
 const splitByEvaluation = computed(() => props.splitByEvaluation)
 const splitActiveKey = computed(() => props.splitActiveKey)
+const focusedSubmissionId = computed(() => String(props.focusSubmissionId ?? '').trim())
+const focusEditOnly = computed(() => props.focusEditOnly)
 const typeFilter = ref<'all' | 'ballot' | 'feedback'>('all')
 const roundFilter = ref('')
 const searchQuery = ref('')
@@ -1120,6 +1384,7 @@ const editingBallotTeamPairLabel = computed(() => {
 
 const roundScopedItems = computed(() => {
   const fixedRound = contextRound.value
+  const focusId = focusedSubmissionId.value
   const round = Number(roundFilter.value)
   const hasRoundFilter = fixedRound === null && roundFilter.value !== '' && Number.isFinite(round)
   const filtered = submissions.submissions.filter((item) => {
@@ -1129,7 +1394,9 @@ const roundScopedItems = computed(() => {
         : hasRoundFilter
           ? Number(item.round) === round
           : true
-    return matchesRound
+    if (!matchesRound) return false
+    if (!focusId) return true
+    return String(item._id ?? '') === focusId
   })
   return filtered.slice().sort((a, b) => {
     const roundDiff = Number(a.round) - Number(b.round)
@@ -1159,7 +1426,16 @@ const items = computed(() => {
 
 const ballotCount = computed(() => items.value.filter((item) => item.type === 'ballot').length)
 const feedbackCount = computed(() => items.value.filter((item) => item.type === 'feedback').length)
+const focusedEditItem = computed<Submission | null>(() => {
+  if (!focusEditOnly.value) return null
+  const focusId = focusedSubmissionId.value
+  if (focusId) {
+    return roundScopedItems.value.find((item) => String(item._id ?? '') === focusId) ?? null
+  }
+  return roundScopedItems.value[0] ?? null
+})
 const hasAnyVisibleItems = computed(() => {
+  if (focusEditOnly.value) return focusedEditItem.value !== null
   if (!splitByEvaluation.value) return items.value.length > 0
   return splitTableGroups.value.some((group) => group.items.length > 0)
 })
@@ -1777,6 +2053,23 @@ function isEditing(id: string) {
   return editingSubmissionId.value === id
 }
 
+function syncFocusedSubmissionState() {
+  const focusId = focusedSubmissionId.value
+  if (!focusId) return
+  const target = roundScopedItems.value.find((item) => String(item._id ?? '') === focusId)
+  if (!target) return
+  expandedIds.value = new Set([focusId])
+  if (props.autoEditFocusSubmission) {
+    if (editingSubmissionId.value !== focusId) {
+      startEdit(target)
+    }
+    return
+  }
+  if (props.autoOpenFocusSubmission && editingSubmissionId.value && editingSubmissionId.value !== focusId) {
+    cancelEdit()
+  }
+}
+
 function submissionActionSummary(item: Submission) {
   return `${t('ラウンド')} ${item.round} / ${typeLabel(item.type)} / ${submittedByLabel(item)}`
 }
@@ -2357,6 +2650,14 @@ watch(
 )
 
 watch(
+  [focusedSubmissionId, roundScopedItems, () => props.autoOpenFocusSubmission, () => props.autoEditFocusSubmission],
+  () => {
+    syncFocusedSubmissionState()
+  },
+  { immediate: true }
+)
+
+watch(
   tournamentId,
   () => {
     refresh()
@@ -2437,6 +2738,10 @@ watch(
 
 .split-search-field input {
   min-height: 34px;
+}
+
+.focus-edit-only-content {
+  gap: var(--space-2);
 }
 
 .ballot-card {

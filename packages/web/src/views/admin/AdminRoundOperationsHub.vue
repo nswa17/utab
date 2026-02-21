@@ -44,7 +44,6 @@
       <section class="card stack">
         <div class="row step-head">
           <h4>{{ $t('運営ステップ') }}</h4>
-          <span v-if="selectedRoundLabel" class="muted small">{{ selectedRoundLabel }}</span>
         </div>
         <p v-if="selectedRound === null" class="muted small">{{ $t('ラウンドを選択してください。') }}</p>
         <template v-else>
@@ -72,7 +71,6 @@
               <span v-if="index < operationTasks.length - 1" class="task-flow-arrow" aria-hidden="true">›</span>
             </template>
           </div>
-          <p v-if="activeTaskHint" class="muted small">{{ activeTaskHint }}</p>
 
           <section v-if="activeTask === 'draw'" class="stack step-content">
             <AdminRoundAllocation
@@ -155,6 +153,12 @@
           </section>
 
           <section v-else-if="activeTask === 'submissions'" class="stack step-content">
+            <div class="row step-section-head">
+              <h5>{{ $t('提出状況') }}</h5>
+              <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
+                {{ $t('再読み込み') }}
+              </Button>
+            </div>
             <div class="grid submission-overview-grid">
               <div class="card soft stack submission-overview-card">
                 <span class="muted small">{{ $t('提出数') }}</span>
@@ -241,40 +245,38 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <div class="submission-evaluation-tabs" role="tablist" :aria-label="$t('提出種別')">
-              <button
-                type="button"
-                class="submission-evaluation-tab"
-                :class="{ active: submissionEvaluationTab === 'team' }"
-                role="tab"
-                :aria-selected="submissionEvaluationTab === 'team'"
-                @click="setSubmissionEvaluationTab('team')"
-              >
-                {{ $t('チーム評価') }}
-              </button>
-              <button
-                type="button"
-                class="submission-evaluation-tab"
-                :class="{ active: submissionEvaluationTab === 'judge' }"
-                role="tab"
-                :aria-selected="submissionEvaluationTab === 'judge'"
-                @click="setSubmissionEvaluationTab('judge')"
-              >
-                {{ $t('ジャッジ評価') }}
-              </button>
-            </div>
-            <AdminTournamentSubmissions
-              v-if="selectedRound !== null"
-              class="step-inline-submissions"
-              :embedded="true"
-              :embedded-round="selectedRound"
-              :hide-summary-cards="true"
-              :split-by-evaluation="true"
-              :split-active-key="submissionEvaluationTab"
-            />
+            <section v-if="selectedRoundHasDraw" class="stack submission-preview-section">
+              <div class="row preview-head submission-preview-head">
+                <h4>{{ $t('会場別提出状況') }}</h4>
+                <div class="stack submission-preview-search">
+                  <input
+                    v-model="submissionPreviewSearchQuery"
+                    :placeholder="$t('会場・チーム・提出者で検索')"
+                  />
+                </div>
+              </div>
+              <DrawPreviewTable
+                :rows="filteredSubmissionPreviewRows"
+                :gov-label="$t('政府')"
+                :opp-label="$t('反対')"
+                :team-visible="true"
+                :adjudicator-visible="true"
+                :show-submission-columns="true"
+                :show-judge-submission-column="submissionPreviewShowJudgeColumn"
+                :team-submission-label="submissionPreviewTeamColumnLabel"
+                :judge-submission-label="submissionPreviewJudgeColumnLabel"
+                @edit-submission="openSubmissionEditorModal"
+              />
+            </section>
           </section>
 
           <section v-else class="stack step-content">
+            <div class="row step-section-head">
+              <h5>{{ $t('大会結果レポート') }}</h5>
+              <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
+                {{ $t('再読み込み') }}
+              </Button>
+            </div>
             <p class="muted small">
               {{
                 $t(
@@ -317,19 +319,13 @@
             <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
               {{ selectedRoundUnknownBallotWarning }}
             </p>
-            <CompileWorkflowSteps
-              v-if="compileManualSaveEnabled"
-              :preview-ready="compileWorkflow.hasPreview"
-              :preview-stale="compileWorkflow.previewStale"
-              :can-save="compileWorkflow.canSave"
-            />
             <div class="row step-actions">
               <Button
                 size="sm"
                 :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
                 @click="compileManualSaveEnabled ? runPreviewWithSource('submissions') : runCompileWithSource('submissions')"
               >
-                {{ compileManualSaveEnabled ? $t('プレビュー更新') : $t('集計を実行') }}
+                {{ compileManualSaveEnabled ? $t('仮集計') : $t('集計を実行') }}
               </Button>
               <Button
                 variant="secondary"
@@ -337,7 +333,7 @@
                 :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished"
                 @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
               >
-                {{ $t('強制実行') }}
+                {{ $t('強制集計') }}
               </Button>
               <Button
                 v-if="compileManualSaveEnabled"
@@ -346,12 +342,12 @@
                 :disabled="!canSavePreview || isLoading"
                 @click="openSaveSnapshotModal"
               >
-                {{ $t('スナップショットを保存') }}
+                {{ $t('集計結果を保存') }}
               </Button>
               <span v-if="compileMessage" class="muted small">{{ compileMessage }}</span>
             </div>
             <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
-              {{ $t('設定が変更されました。保存前にプレビューを更新してください。') }}
+              {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
             </p>
             <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
               <div class="row compile-result-head">
@@ -461,8 +457,39 @@
               {{ $t('集計結果を表示するデータがありません。') }}
             </p>
           </section>
+          <p v-if="activeTaskHint" class="small task-hint-bottom">{{ activeTaskHint }}</p>
         </template>
       </section>
+    </div>
+
+    <div
+      v-if="submissionEditorModalOpen"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeSubmissionEditorModal"
+    >
+      <div class="modal card stack submission-editor-modal" role="dialog" aria-modal="true">
+        <div class="row submission-editor-head">
+          <h4>{{ submissionEditorHeading }}</h4>
+          <Button variant="ghost" size="sm" @click="closeSubmissionEditorModal">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
+        <p v-if="submissionEditorVenueLabel" class="muted small submission-editor-venue">
+          {{ $t('会場') }}: {{ submissionEditorVenueLabel }}
+        </p>
+        <AdminTournamentSubmissions
+          v-if="selectedRound !== null && submissionEditorSubmissionId"
+          class="submission-editor-body"
+          :embedded="true"
+          :embedded-round="selectedRound"
+          :hide-summary-cards="true"
+          :focus-edit-only="true"
+          :focus-submission-id="submissionEditorSubmissionId"
+          :auto-open-focus-submission="true"
+          :auto-edit-focus-submission="true"
+        />
+      </div>
     </div>
 
     <CompileForceRunModal
@@ -496,7 +523,6 @@ import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompileSaveSnapshotModal from '@/components/common/CompileSaveSnapshotModal.vue'
-import CompileWorkflowSteps from '@/components/common/CompileWorkflowSteps.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import FairnessAnalysisCharts from '@/components/mstat/FairnessAnalysisCharts.vue'
 import SidePieChart from '@/components/mstat/SidePieChart.vue'
@@ -512,6 +538,7 @@ import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useVenuesStore } from '@/stores/venues'
 import { api } from '@/utils/api'
+import type { Submission } from '@/types/submission'
 import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
@@ -519,7 +546,7 @@ import {
   type CompileOptions,
   type CompileSource,
 } from '@/types/compiled'
-import type { DrawPreviewRow } from '@/types/draw-preview'
+import type { DrawPreviewRow, DrawPreviewSubmissionRow } from '@/types/draw-preview'
 import {
   formatSignedDelta,
   rankingTrendSymbol,
@@ -535,7 +562,6 @@ import {
 } from '@/utils/compiled-snapshot'
 import { includeLabelsFromRoundDetails } from '@/utils/compile-include-labels'
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
-import { isAdminCompileManualSaveV1Enabled } from '@/config/feature-flags'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 
 const route = useRoute()
@@ -564,7 +590,7 @@ const sectionLoading = ref(true)
 const actionError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
-const compileManualSaveEnabled = isAdminCompileManualSaveV1Enabled()
+const compileManualSaveEnabled = true
 const compileWorkflow = useCompileWorkflow('submissions')
 const manualCompileSource = ref<CompileSource>('submissions')
 const forceCompileAction = ref<'compile' | 'preview' | 'save'>('compile')
@@ -604,7 +630,9 @@ const compileSortDirection = ref<'asc' | 'desc'>('asc')
 const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
-const submissionEvaluationTab = ref<'team' | 'judge'>('team')
+const submissionPreviewSearchQuery = ref('')
+const submissionEditorModalOpen = ref(false)
+const submissionEditorSubmissionId = ref('')
 const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
 
 const isLoading = computed(
@@ -636,10 +664,6 @@ const loadError = computed(
 const selectedRoundData = computed(() =>
   sortedRounds.value.find((round) => round.round === selectedRound.value) ?? null
 )
-const selectedRoundLabel = computed(() => {
-  if (!selectedRoundData.value) return ''
-  return selectedRoundData.value.name || t('ラウンド {round}', { round: selectedRoundData.value.round })
-})
 const selectedDraw = computed(() =>
   drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
@@ -881,6 +905,34 @@ const selectedRoundSubmissions = computed(() => {
   return submissionsForRound(selectedRound.value)
 })
 
+const submissionEditorTarget = computed<Submission | null>(() => {
+  const id = submissionEditorSubmissionId.value.trim()
+  if (!id) return null
+  return selectedRoundSubmissions.value.find((item) => String(item?._id ?? '') === id) ?? null
+})
+
+const submissionEditorHeading = computed(() => {
+  if (!submissionEditorTarget.value) return t('提出データを編集')
+  if (submissionEditorTarget.value.type === 'ballot') {
+    return `${t('チーム評価を編集')}：${submissionEditorTitleForItem(submissionEditorTarget.value)}`
+  }
+  if (submissionEditorTarget.value.type === 'feedback') {
+    return `${t('ジャッジ評価を編集')}：${submissionEditorTitleForItem(submissionEditorTarget.value)}`
+  }
+  return `${t('提出データを編集')}：${submissionEditorTitleForItem(submissionEditorTarget.value)}`
+})
+
+const submissionEditorVenueLabel = computed(() => {
+  const submissionId = submissionEditorSubmissionId.value.trim()
+  if (!submissionId) return ''
+  const matched = submissionPreviewRows.value.find((row) => {
+    const team = row.submissionDetail?.team ?? []
+    const judge = row.submissionDetail?.judge ?? []
+    return [...team, ...judge].some((entry) => String(entry.submissionId ?? '') === submissionId)
+  })
+  return matched?.venueLabel ?? ''
+})
+
 const selectedRoundSubmissionSpeed = computed(() => {
   if (selectedRound.value === null) return null
   return (
@@ -959,17 +1011,38 @@ function ballotExpectedCount(roundNumber: number) {
   return adjudicatorCount(roundNumber)
 }
 
-function feedbackExpectedCount(roundNumber: number) {
+type FeedbackExpectationSettings = {
+  fromTeams: boolean
+  fromAdjudicators: boolean
+  evaluatorInTeam: 'team' | 'speaker'
+  chairsAlwaysEvaluated: boolean
+}
+
+function feedbackExpectationSettings(roundNumber: number): FeedbackExpectationSettings {
   const round = sortedRounds.value.find((item) => item.round === roundNumber)
-  if (!round) return 0
+  if (!round) {
+    return {
+      fromTeams: false,
+      fromAdjudicators: false,
+      evaluatorInTeam: 'team',
+      chairsAlwaysEvaluated: false,
+    }
+  }
   const userDefined = (round.userDefinedData ?? {}) as Record<string, any>
-  const fromTeams = userDefined.evaluate_from_teams === true
-  const fromAdjudicators = userDefined.evaluate_from_adjudicators === true
-  const evaluatorInTeam = userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team'
+  return {
+    fromTeams: userDefined.evaluate_from_teams === true,
+    fromAdjudicators: userDefined.evaluate_from_adjudicators === true,
+    evaluatorInTeam: userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+    chairsAlwaysEvaluated: userDefined.chairs_always_evaluated === true,
+  }
+}
+
+function feedbackExpectedCount(roundNumber: number) {
+  const settings = feedbackExpectationSettings(roundNumber)
   let expected = 0
-  if (fromTeams) {
+  if (settings.fromTeams) {
     const teamIds = selectedTeamIds(roundNumber)
-    if (evaluatorInTeam === 'speaker') {
+    if (settings.evaluatorInTeam === 'speaker') {
       expected += teamIds.reduce((count, id) => {
         const team = teamsStore.teams.find((item) => item._id === id)
         if (!team) return count
@@ -980,11 +1053,25 @@ function feedbackExpectedCount(roundNumber: number) {
       expected += teamIds.length
     }
   }
-  if (fromAdjudicators) {
+  if (settings.fromAdjudicators) {
     expected += adjudicatorCount(roundNumber)
   }
   return expected
 }
+
+const submissionPreviewShowJudgeColumn = computed(() => {
+  if (selectedRound.value === null) return false
+  const settings = feedbackExpectationSettings(selectedRound.value)
+  return settings.fromTeams || settings.fromAdjudicators
+})
+
+const submissionPreviewTeamColumnLabel = computed(() => {
+  return t('チーム評価')
+})
+
+const submissionPreviewJudgeColumnLabel = computed(() => {
+  return t('ジャッジ評価')
+})
 
 const selectedRoundBallotGap = computed(() => {
   if (selectedRound.value === null) return { expected: 0, submitted: 0, unknown: 0, missing: 0, hasGap: false }
@@ -1280,8 +1367,9 @@ function compileRoundRangeLabel(rounds: number[]): string {
 
 function buildDefaultSnapshotName(source: CompileSource): string {
   const roundsText = compileRoundRangeLabel(effectiveCompileTargetRounds.value)
-  const sourceText = source === 'raw' ? t('生結果データ') : t('提出データ')
-  return `${roundsText} / ${sourceText} / ${toSnapshotTimeString(new Date())}`
+  const timestamp = toSnapshotTimeString(new Date())
+  const suffix = source === 'raw' ? `（${t('強制集計')}）` : ''
+  return `${roundsText} / ${timestamp}${suffix}`
 }
 
 function rankingTrendForRow(row: any) {
@@ -1422,8 +1510,16 @@ function speedStatusLabel(status: 'ok' | 'warn' | 'danger') {
   return t('正常')
 }
 
-function setSubmissionEvaluationTab(value: 'team' | 'judge') {
-  submissionEvaluationTab.value = value
+function openSubmissionEditorModal(submissionId: string) {
+  const normalized = String(submissionId ?? '').trim()
+  if (!normalized) return
+  submissionEditorSubmissionId.value = normalized
+  submissionEditorModalOpen.value = true
+}
+
+function closeSubmissionEditorModal() {
+  submissionEditorModalOpen.value = false
+  submissionEditorSubmissionId.value = ''
 }
 
 function setCompileReportTab(value: CompileReportTab) {
@@ -1465,7 +1561,104 @@ function adjudicatorLabel(ids: string[]) {
   return ids.map((id) => adjudicatorName(String(id))).join(', ')
 }
 
-const publishPreviewRows = computed<DrawPreviewRow[]>(() => {
+type HubDrawPreviewRow = DrawPreviewRow & {
+  govId: string
+  oppId: string
+  pairKey: string
+  chairIds: string[]
+  panelIds: string[]
+  adjudicatorIds: string[]
+}
+
+type SubmissionPreviewEntry = DrawPreviewSubmissionRow & {
+  sortValue: number
+}
+
+function normalizeTeamPairKey(teamAId: string, teamBId: string) {
+  const left = String(teamAId ?? '').trim()
+  const right = String(teamBId ?? '').trim()
+  if (!left || !right) return ''
+  return [left, right].sort((a, b) => sortCollator.compare(a, b)).join('::')
+}
+
+function ballotSummaryForPreview(payload: Record<string, unknown>) {
+  const teamAId = String(payload.teamAId ?? '').trim()
+  const teamBId = String(payload.teamBId ?? '').trim()
+  if (!teamAId || !teamBId) return t('チーム評価')
+  const matchup = `${teamName(teamAId)} vs ${teamName(teamBId)}`
+  const winnerId = String(payload.winnerId ?? '').trim()
+  if (!winnerId) return matchup
+  return `${matchup} / ${t('勝者')}: ${teamName(winnerId)}`
+}
+
+function feedbackSummaryForPreview(payload: Record<string, unknown>) {
+  const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+  if (!adjudicatorId) return t('ジャッジ評価')
+  const label = `${t('ジャッジ')}: ${adjudicatorName(adjudicatorId)}`
+  const score = toFiniteNumber(payload.score)
+  if (score === null) return label
+  return `${label} / ${t('スコア')}: ${score}`
+}
+
+function submissionSummaryForPreview(item: any) {
+  const payload = (item?.payload ?? {}) as Record<string, unknown>
+  if (item?.type === 'ballot') return ballotSummaryForPreview(payload)
+  if (item?.type === 'feedback') return feedbackSummaryForPreview(payload)
+  return t('提出データ')
+}
+
+function submissionEditorTitleForItem(item: Submission) {
+  const payload = (item?.payload ?? {}) as Record<string, unknown>
+  if (item.type === 'ballot') {
+    const teamAId = String(payload.teamAId ?? '').trim()
+    const teamBId = String(payload.teamBId ?? '').trim()
+    if (teamAId && teamBId) return `${teamName(teamAId)} vs ${teamName(teamBId)}`
+    return t('チーム評価')
+  }
+  if (item.type === 'feedback') {
+    const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+    if (adjudicatorId) return `${t('ジャッジ')}: ${adjudicatorName(adjudicatorId)}`
+    return t('ジャッジ評価')
+  }
+  return t('提出データ')
+}
+
+function submissionSortValue(value?: string) {
+  const parsed = Date.parse(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function buildSubmissionPreviewEntry(item: any, index: number): SubmissionPreviewEntry {
+  const actorId = submissionActorKey(item)
+  const submittedBy = actorId ? submissionEntityName(actorId) : ''
+  return {
+    key: String(item?._id ?? `${item?.type ?? 'submission'}-${index}`),
+    submissionId: String(item?._id ?? '').trim() || undefined,
+    submittedByLabel: submittedBy || t('不明'),
+    summaryLabel: submissionSummaryForPreview(item),
+    submittedAtLabel: formatSubmissionTimestamp(item?.createdAt),
+    sortValue: submissionSortValue(item?.createdAt),
+  }
+}
+
+function sortSubmissionPreviewEntries(entries: SubmissionPreviewEntry[]): DrawPreviewSubmissionRow[] {
+  return entries
+    .slice()
+    .sort((left, right) => right.sortValue - left.sortValue)
+    .map(({ sortValue: _, ...entry }) => entry)
+}
+
+function normalizedUniqueIds(values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((id) => String(id ?? '').trim())
+        .filter((id) => id.length > 0)
+    )
+  )
+}
+
+const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
   const allocation = Array.isArray(selectedDraw.value?.allocation) ? selectedDraw.value?.allocation : []
   return allocation.map((row: any, index: number) => {
     const govId = String(row?.teams?.gov ?? '')
@@ -1473,21 +1666,144 @@ const publishPreviewRows = computed<DrawPreviewRow[]>(() => {
     const govWin = compiledTeamWinMap.value.get(govId) ?? 0
     const oppWin = compiledTeamWinMap.value.get(oppId) ?? 0
     const venueId = String(row?.venue ?? '')
+    const chairs = Array.isArray(row?.chairs) ? normalizedUniqueIds(row.chairs) : []
+    const panels = Array.isArray(row?.panels) ? normalizedUniqueIds(row.panels) : []
+    const trainees = Array.isArray(row?.trainees) ? normalizedUniqueIds(row.trainees) : []
+    const adjudicatorIds = normalizedUniqueIds([...chairs, ...panels, ...trainees])
     return {
       key: `${index}-${govId}-${oppId}-${venueId}`,
       matchIndex: index,
       venuePriority: venuePriority(venueId),
       venueLabel: venueId ? venueName(venueId) : t('会場未定'),
+      govId,
+      oppId,
+      pairKey: normalizeTeamPairKey(govId, oppId),
+      chairIds: chairs,
+      panelIds: panels,
+      adjudicatorIds,
       govName: govId ? teamName(govId) : t('未選択'),
       oppName: oppId ? teamName(oppId) : t('未選択'),
       winLabel: `${govWin}-${oppWin}`,
       winTotal: govWin + oppWin,
       winGap: Math.abs(govWin - oppWin),
-      chairsLabel: adjudicatorLabel(Array.isArray(row?.chairs) ? row.chairs : []),
-      panelsLabel: adjudicatorLabel(Array.isArray(row?.panels) ? row.panels : []),
-      traineesLabel: adjudicatorLabel(Array.isArray(row?.trainees) ? row.trainees : []),
+      chairsLabel: adjudicatorLabel(chairs),
+      panelsLabel: adjudicatorLabel(panels),
+      traineesLabel: adjudicatorLabel(trainees),
     }
   })
+})
+
+const publishPreviewRows = computed<DrawPreviewRow[]>(() => drawPreviewRows.value)
+
+function feedbackExpectedCountForPreviewRow(row: HubDrawPreviewRow) {
+  if (selectedRound.value === null) return 0
+  const roundNumber = selectedRound.value
+  const settings = feedbackExpectationSettings(selectedRound.value)
+  const expectedTargetsFromAdjudicators = row.adjudicatorIds.length
+  const expectedTargetsFromTeams = settings.chairsAlwaysEvaluated
+    ? row.chairIds.length
+    : normalizedUniqueIds([...row.chairIds, ...row.panelIds]).length
+  const teamEvaluatorIds = new Set<string>()
+  if (settings.fromTeams) {
+    const teamIds = normalizedUniqueIds([row.govId, row.oppId])
+    if (settings.evaluatorInTeam === 'speaker') {
+      teamIds.forEach((id) => {
+        const team = teamsStore.teams.find((item) => item._id === id)
+        if (!team) return
+        teamSpeakerIdsForRound(team, roundNumber).forEach((speakerId) => {
+          const normalized = String(speakerId ?? '').trim()
+          if (normalized) teamEvaluatorIds.add(normalized)
+        })
+      })
+    } else {
+      teamIds.forEach((id) => teamEvaluatorIds.add(id))
+    }
+  }
+  let expected = 0
+  if (settings.fromTeams && expectedTargetsFromTeams > 0) {
+    expected += teamEvaluatorIds.size * expectedTargetsFromTeams
+  }
+  if (settings.fromAdjudicators && expectedTargetsFromAdjudicators > 1) {
+    expected += expectedTargetsFromAdjudicators * (expectedTargetsFromAdjudicators - 1)
+  }
+  return expected
+}
+
+const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
+  const rows = drawPreviewRows.value
+  if (rows.length === 0) return []
+
+  const teamPairToRowKey = new Map<string, string>()
+  const adjudicatorToRowKey = new Map<string, string>()
+  const bucketByRowKey = new Map<string, { team: SubmissionPreviewEntry[]; judge: SubmissionPreviewEntry[] }>()
+
+  rows.forEach((row) => {
+    if (row.pairKey) teamPairToRowKey.set(row.pairKey, row.key)
+    row.adjudicatorIds.forEach((adjudicatorId) => {
+      if (!adjudicatorToRowKey.has(adjudicatorId)) adjudicatorToRowKey.set(adjudicatorId, row.key)
+    })
+    bucketByRowKey.set(row.key, { team: [], judge: [] })
+  })
+
+  selectedRoundSubmissions.value.forEach((item, index) => {
+    const payload = (item?.payload ?? {}) as Record<string, unknown>
+    if (item?.type === 'ballot') {
+      const pairKey = normalizeTeamPairKey(String(payload.teamAId ?? ''), String(payload.teamBId ?? ''))
+      const rowKey = teamPairToRowKey.get(pairKey)
+      if (!rowKey) return
+      bucketByRowKey.get(rowKey)?.team.push(buildSubmissionPreviewEntry(item, index))
+      return
+    }
+    if (item?.type === 'feedback') {
+      const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+      if (!adjudicatorId) return
+      const rowKey = adjudicatorToRowKey.get(adjudicatorId)
+      if (!rowKey) return
+      bucketByRowKey.get(rowKey)?.judge.push(buildSubmissionPreviewEntry(item, index))
+    }
+  })
+
+  return rows.map((row) => {
+    const bucket = bucketByRowKey.get(row.key) ?? { team: [], judge: [] }
+    return {
+      ...row,
+      teamSubmissionCount: bucket.team.length,
+      teamSubmissionExpectedCount: row.adjudicatorIds.length,
+      judgeSubmissionCount: bucket.judge.length,
+      judgeSubmissionExpectedCount: feedbackExpectedCountForPreviewRow(row),
+      submissionDetail: {
+        team: sortSubmissionPreviewEntries(bucket.team),
+        judge: sortSubmissionPreviewEntries(bucket.judge),
+      },
+    }
+  })
+})
+
+function submissionPreviewSearchText(row: DrawPreviewRow): string {
+  const teamDetails = row.submissionDetail?.team ?? []
+  const judgeDetails = row.submissionDetail?.judge ?? []
+  const detailText = [...teamDetails, ...judgeDetails]
+    .map((entry) => `${entry.submittedByLabel} ${entry.summaryLabel} ${entry.submittedAtLabel}`)
+    .join(' ')
+  return [
+    row.venueLabel,
+    row.govName,
+    row.oppName,
+    row.chairsLabel,
+    row.panelsLabel,
+    row.traineesLabel,
+    detailText,
+  ]
+    .filter((value) => String(value).trim().length > 0)
+    .join(' ')
+}
+
+const filteredSubmissionPreviewRows = computed<DrawPreviewRow[]>(() => {
+  const query = submissionPreviewSearchQuery.value.trim().toLowerCase()
+  if (!query) return submissionPreviewRows.value
+  return submissionPreviewRows.value.filter((row) =>
+    submissionPreviewSearchText(row).toLowerCase().includes(query)
+  )
 })
 
 async function refresh() {
@@ -1658,7 +1974,7 @@ async function runPreviewWithSource(
     },
     inputKey
   )
-  compileMessage.value = t('プレビューを更新しました。内容を確認して保存してください。')
+  compileMessage.value = t('仮集計を実行しました。内容を確認して保存してください。')
   trackCompileMetric('preview_run', source)
   applyDefaultCompileDiffBaseline()
 }
@@ -1714,8 +2030,8 @@ function openSaveSnapshotModal(rawConfirmed = false) {
     const source = manualCompileSource.value
     const reason = compileWorkflow.previewStale ? 'stale' : 'preview_required'
     actionError.value = compileWorkflow.previewStale
-      ? t('設定が変更されました。保存前にプレビューを更新してください。')
-      : t('プレビューを更新してから保存してください。')
+      ? t('設定が変更されました。保存前に仮集計を実行してください。')
+      : t('仮集計を実行してから保存してください。')
     trackCompileMetric('save_blocked_stale', source, reason)
     return
   }
@@ -1755,7 +2071,7 @@ async function saveCompiledSnapshot() {
   if (!saved) {
     const isPreviewStale = (compiledStore.error ?? '').toLowerCase().includes('preview is stale')
     if (isPreviewStale) {
-      actionError.value = t('設定が変更されました。保存前にプレビューを更新してください。')
+      actionError.value = t('設定が変更されました。保存前に仮集計を実行してください。')
       trackCompileMetric('save_blocked_stale', source, 'server_stale')
       return
     }
@@ -1763,7 +2079,7 @@ async function saveCompiledSnapshot() {
     return
   }
   compileWorkflow.markSaved()
-  compileMessage.value = t('スナップショットを保存しました。')
+  compileMessage.value = t('集計結果を保存しました。')
   trackCompileMetric('save_snapshot', source)
   await refreshCompiledHistory()
   applyDefaultCompileDiffBaseline()
@@ -1938,6 +2254,15 @@ watch(
     applyDefaultCompileDiffBaseline()
   },
   { immediate: true }
+)
+
+watch(
+  submissionEditorTarget,
+  (target) => {
+    if (!submissionEditorModalOpen.value) return
+    if (target) return
+    closeSubmissionEditorModal()
+  }
 )
 
 watch(
@@ -2196,12 +2521,28 @@ watch(
   margin: 0;
 }
 
+.step-section-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.step-section-head h5 {
+  margin: 0;
+}
+
 .step-card {
   border: 1px solid var(--color-border);
 }
 
 .step-content {
   gap: var(--space-2);
+}
+
+.task-hint-bottom {
+  margin: 0;
+  color: var(--color-danger);
 }
 
 .step-title-row {
@@ -2527,6 +2868,25 @@ watch(
   gap: var(--space-2);
 }
 
+.submission-preview-section {
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.submission-preview-head {
+  align-items: center;
+}
+
+.submission-preview-search {
+  min-width: min(320px, 100%);
+  flex: 1 1 320px;
+  max-width: 420px;
+}
+
+.submission-preview-search input {
+  min-height: 34px;
+}
+
 .preview-head {
   align-items: center;
   justify-content: space-between;
@@ -2573,6 +2933,46 @@ watch(
 
 .warning {
   color: #b45309;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(17 24 39 / 44%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  z-index: 1400;
+}
+
+.modal {
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.submission-editor-modal {
+  gap: var(--space-2);
+}
+
+.submission-editor-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.submission-editor-head h4 {
+  margin: 0;
+}
+
+.submission-editor-venue {
+  margin: 0;
+}
+
+.submission-editor-body {
+  overflow: auto;
+  max-height: calc(100vh - 220px);
 }
 
 @media (max-width: 980px) {

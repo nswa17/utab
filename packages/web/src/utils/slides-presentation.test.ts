@@ -16,6 +16,15 @@ describe('slides-presentation utils', () => {
     expect(errors).toContain('missing_compiled_id')
   })
 
+  it('maps legacy credit query to left credit', () => {
+    const { parsed } = parsePresentationQuery({
+      compiledId: 'compiled-1',
+      credit: 'Legacy Credit',
+    })
+    expect(parsed.leftCredit).toBe('Legacy Credit')
+    expect(parsed.rightCredit).toBe('')
+  })
+
   it('keeps fallback max when value is empty', () => {
     expect(normalizeSlideMax(undefined, 7)).toBe(7)
     expect(normalizeSlideMax('', 5)).toBe(5)

@@ -2,7 +2,8 @@
   <SlideShow
     :slides="slides"
     :title="title"
-    :credit="credit"
+    :left-credit="leftCredit"
+    :right-credit="rightCredit"
     :style-mode="slideStyle"
     :presentation-mode="presentationMode"
     @close="$emit('close')"
@@ -49,14 +50,16 @@ const props = withDefaults(
     title: string
     organizedResults: SlideResultInput[]
     maxRankingRewarded?: number
-    credit?: string
+    leftCredit?: string
+    rightCredit?: string
     type?: SlideType
     slideStyle?: SlideStyle
     presentationMode?: boolean
   }>(),
   {
     maxRankingRewarded: 3,
-    credit: '',
+    leftCredit: '',
+    rightCredit: '',
     type: 'listed',
     slideStyle: 'pretty',
     presentationMode: false,

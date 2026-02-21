@@ -16,7 +16,8 @@ describe('useReportSlideSettings', () => {
       maxRankingRewarded: 6,
       type: 'single',
       style: 'simple',
-      credit: 'Speaker Credits',
+      leftCredit: 'Speaker Credits',
+      rightCredit: '2026/02/21 12:00',
     })
     await nextTick()
 
@@ -27,7 +28,8 @@ describe('useReportSlideSettings', () => {
     expect(second.settingsByLabel.value.speakers.maxRankingRewarded).toBe(6)
     expect(second.settingsByLabel.value.speakers.type).toBe('single')
     expect(second.settingsByLabel.value.speakers.style).toBe('simple')
-    expect(second.settingsByLabel.value.speakers.credit).toBe('Speaker Credits')
+    expect(second.settingsByLabel.value.speakers.leftCredit).toBe('Speaker Credits')
+    expect(second.settingsByLabel.value.speakers.rightCredit).toBe('2026/02/21 12:00')
   })
 
   it('uses defaults when storage is malformed', async () => {
@@ -40,7 +42,8 @@ describe('useReportSlideSettings', () => {
     expect(state.settingsByLabel.value.teams.maxRankingRewarded).toBe(3)
     expect(state.settingsByLabel.value.teams.type).toBe('listed')
     expect(state.settingsByLabel.value.teams.style).toBe('pretty')
-    expect(state.settingsByLabel.value.teams.credit).toBe('UTab')
+    expect(state.settingsByLabel.value.teams.leftCredit).toBe('UTab')
+    expect(state.settingsByLabel.value.teams.rightCredit).toBe('')
   })
 
   it('resets to defaults when stored version is unsupported', async () => {
@@ -50,7 +53,7 @@ describe('useReportSlideSettings', () => {
         version: 999,
         lastLabel: 'poi',
         settings: {
-          poi: { maxRankingRewarded: 9, type: 'single', style: 'simple', credit: 'x' },
+          poi: { maxRankingRewarded: 9, type: 'single', style: 'simple', leftCredit: 'x' },
         },
       })
     )
@@ -63,7 +66,8 @@ describe('useReportSlideSettings', () => {
     expect(state.settingsByLabel.value.poi.maxRankingRewarded).toBe(3)
     expect(state.settingsByLabel.value.poi.type).toBe('listed')
     expect(state.settingsByLabel.value.poi.style).toBe('pretty')
-    expect(state.settingsByLabel.value.poi.credit).toBe('UTab')
+    expect(state.settingsByLabel.value.poi.leftCredit).toBe('UTab')
+    expect(state.settingsByLabel.value.poi.rightCredit).toBe('')
   })
 
   it('migrates legacy type-only style values', async () => {
@@ -84,6 +88,8 @@ describe('useReportSlideSettings', () => {
 
     expect(state.settingsByLabel.value.teams.type).toBe('single')
     expect(state.settingsByLabel.value.teams.style).toBe('simple')
+    expect(state.settingsByLabel.value.teams.leftCredit).toBe('legacy')
+    expect(state.settingsByLabel.value.teams.rightCredit).toBe('')
   })
 
   it('does not reset max ranking when updating type/style only', async () => {

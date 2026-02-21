@@ -22,7 +22,8 @@ function cloneDefaultSettings(): SlideSettings {
     maxRankingRewarded: DEFAULT_SLIDE_SETTINGS.maxRankingRewarded,
     type: DEFAULT_SLIDE_SETTINGS.type,
     style: DEFAULT_SLIDE_SETTINGS.style,
-    credit: DEFAULT_SLIDE_SETTINGS.credit,
+    leftCredit: DEFAULT_SLIDE_SETTINGS.leftCredit,
+    rightCredit: DEFAULT_SLIDE_SETTINGS.rightCredit,
   }
 }
 
@@ -40,12 +41,20 @@ function normalizeSettings(value: unknown): SlideSettings {
   const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   const rawType = String(source.type ?? '').trim()
   const legacyStyle = rawType === 'simple' ? 'simple' : rawType === 'pretty' ? 'pretty' : undefined
-  const credit = String(source.credit ?? '').trim()
+  const legacyCredit = String(source.credit ?? '').trim()
+  const leftCredit = String(source.leftCredit ?? '').trim()
+  const rightCredit = String(source.rightCredit ?? '').trim()
   return {
     maxRankingRewarded: normalizeSlideMax(source.maxRankingRewarded),
     type: normalizeSlideType(source.type),
     style: normalizeSlideStyle(source.style, legacyStyle ?? DEFAULT_SLIDE_SETTINGS.style),
-    credit: credit.length > 0 ? credit : DEFAULT_SLIDE_SETTINGS.credit,
+    leftCredit:
+      leftCredit.length > 0
+        ? leftCredit
+        : legacyCredit.length > 0
+          ? legacyCredit
+          : DEFAULT_SLIDE_SETTINGS.leftCredit,
+    rightCredit: rightCredit.length > 0 ? rightCredit : DEFAULT_SLIDE_SETTINGS.rightCredit,
   }
 }
 
@@ -128,10 +137,10 @@ export function useReportSlideSettings(tournamentId: Ref<string>) {
         ),
         type: normalizeSlideType(patch.type, current.type),
         style: normalizeSlideStyle(patch.style, current.style),
-        credit:
-          typeof patch.credit === 'string' && patch.credit.trim().length > 0
-            ? patch.credit.trim()
-            : current.credit,
+        leftCredit:
+          typeof patch.leftCredit === 'string' ? patch.leftCredit.trim() : current.leftCredit,
+        rightCredit:
+          typeof patch.rightCredit === 'string' ? patch.rightCredit.trim() : current.rightCredit,
       },
     }
   }

@@ -38,6 +38,9 @@ const legendItems = ref<WinColorLegendItem[]>([])
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
 const sortCollator = new Intl.Collator(['ja', 'en'], { sensitivity: 'base', numeric: true })
+const MIN_CHART_HEIGHT = 320
+const ROW_HEIGHT = 24
+const CHART_VERTICAL_PADDING = 120
 
 function toFiniteNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
@@ -72,6 +75,7 @@ function renderChart(
     rows: TeamPerformanceRow[]
     maxWinCount: number
     fallbackColor: string
+    chartHeight: number
   }
 ) {
   if (!container) return
@@ -82,9 +86,12 @@ function renderChart(
   }))
 
   Highcharts.chart(container, {
-    chart: { type: 'bar', backgroundColor: 'transparent' },
+    chart: { type: 'bar', backgroundColor: 'transparent', height: config.chartHeight },
     title: { text: config.title },
-    xAxis: { categories },
+    xAxis: {
+      categories,
+      labels: { step: 1 },
+    },
     yAxis: {
       title: { text: config.yAxisLabel },
       allowDecimals: true,
@@ -134,6 +141,10 @@ function render() {
   const styles = getComputedStyle(document.documentElement)
   const defaultBarColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
   const maxWinCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
+  const chartHeight = Math.max(
+    MIN_CHART_HEIGHT,
+    rows.length * ROW_HEIGHT + CHART_VERTICAL_PADDING
+  )
   legendItems.value = buildLegendItems(rows, maxWinCount, defaultBarColor)
   renderChart(pointContainer.value, {
     title: t('チーム成績'),
@@ -142,6 +153,7 @@ function render() {
     rows,
     maxWinCount,
     fallbackColor: defaultBarColor,
+    chartHeight,
   })
 }
 

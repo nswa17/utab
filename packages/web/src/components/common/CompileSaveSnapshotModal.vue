@@ -2,7 +2,7 @@
   <div v-if="open" class="modal-backdrop" role="presentation" @click.self="close">
     <div class="modal card stack save-modal" role="dialog" aria-modal="true">
       <div class="row save-modal-head">
-        <h4>{{ $t('スナップショット保存') }}</h4>
+        <h4>{{ $t('集計結果保存') }}</h4>
         <Button variant="ghost" size="sm" @click="close">
           {{ $t('閉じる') }}
         </Button>
@@ -11,7 +11,7 @@
         {{ $t('保存時のみ履歴を作成します。必要に応じて名前とメモを編集してください。') }}
       </p>
       <label class="stack">
-        <span class="muted">{{ $t('スナップショット名') }}</span>
+        <span class="muted">{{ $t('集計結果名') }}</span>
         <input v-model="snapshotName" type="text" :placeholder="$t('自動生成名')" :disabled="loading" />
       </label>
       <label class="stack">
@@ -28,7 +28,7 @@
           {{ $t('取消') }}
         </Button>
         <Button size="sm" :disabled="loading" @click="$emit('confirm')">
-          {{ $t('スナップショットを保存') }}
+          {{ $t('集計結果を保存') }}
         </Button>
       </div>
     </div>

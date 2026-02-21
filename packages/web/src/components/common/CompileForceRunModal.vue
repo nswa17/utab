@@ -2,17 +2,17 @@
   <div v-if="open" class="modal-backdrop" role="presentation" @click.self="close">
     <div class="modal card stack force-modal" role="dialog" aria-modal="true">
       <div class="row force-modal-head">
-        <h4>{{ $t('強制実行の確認') }}</h4>
+        <h4>{{ $t('強制集計の確認') }}</h4>
         <Button variant="ghost" size="sm" @click="close">
           {{ $t('閉じる') }}
         </Button>
       </div>
       <div class="force-warning-banner">
-        <strong>{{ $t('注意: 強制実行は例外運用です。') }}</strong>
+        <strong>{{ $t('注意: 強制集計は例外運用です。') }}</strong>
         <p>
           {{
             $t(
-              '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
+              '強制集計では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。'
             )
           }}
         </p>
@@ -23,7 +23,7 @@
         </ul>
       </div>
       <section class="card soft stack force-option-panel">
-        <h5>{{ $t('強制実行オプション') }}</h5>
+        <h5>{{ $t('強制集計オプション') }}</h5>
         <label class="stack force-option-field">
           <span class="muted">{{ $t('欠損データの扱い') }}</span>
           <select v-model="missingDataPolicy" :disabled="loading">
@@ -38,7 +38,7 @@
           {{ $t('取消') }}
         </Button>
         <Button variant="danger" size="sm" :disabled="loading" @click="$emit('confirm')">
-          {{ $t('強制実行する') }}
+          {{ $t('強制集計する') }}
         </Button>
       </div>
     </div>

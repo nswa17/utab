@@ -1,16 +1,5 @@
 <template>
-  <div class="score-range-stack">
-    <div ref="container" class="chart" />
-    <div v-if="legendItems.length > 0" class="win-color-legend">
-      <p class="muted small win-color-legend-title">{{ $t('凡例') }} ({{ $t('勝利数') }})</p>
-      <div class="win-color-legend-items">
-        <span v-for="item in legendItems" :key="item.key" class="win-color-legend-item">
-          <span class="win-color-legend-swatch" :style="{ backgroundColor: item.color }" />
-          <span>{{ item.label }}</span>
-        </span>
-      </div>
-    </div>
-  </div>
+  <div ref="container" class="chart" />
 </template>
 
 <script setup lang="ts">
@@ -25,92 +14,174 @@ const props = defineProps<{
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
-type WinColorLegendItem = {
-  key: string
-  label: string
-  color: string
-}
-const legendItems = ref<WinColorLegendItem[]>([])
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
+const MIN_CHART_HEIGHT = 360
+const ROW_HEIGHT = 22
+const CHART_VERTICAL_PADDING = 90
+
+type CandleColorPalette = {
+  up: string
+  down: string
+  flat: string
+}
 
 function render() {
   if (!container.value) return
   const styles = getComputedStyle(document.documentElement)
-  const defaultBarColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
+  const candleColors: CandleColorPalette = {
+    up: styles.getPropertyValue('--color-success').trim() || '#16a34a',
+    down: styles.getPropertyValue('--color-danger').trim() || '#ef4444',
+    flat: styles.getPropertyValue('--color-muted').trim() || '#64748b',
+  }
   const rows = props.results
     .map((result, index) => {
-      const values = result.details
-        ?.map((detail: any) => detail[props.score])
-        .filter((value: any) => typeof value === 'number') as number[]
-      let min: number | null = null
-      let max: number | null = null
-      if (values && values.length > 0) {
-        min = Math.min(...values)
-        max = Math.max(...values)
+      const roundScores = ((result.details ?? []) as any[])
+        .map((detail: any) => ({
+          round: toFiniteNumber(detail?.r),
+          score: toFiniteNumber(detail?.[props.score]),
+        }))
+        .filter(
+          (
+            item
+          ): item is {
+            round: number | null
+            score: number
+          } => item.score !== null
+        )
+        .sort((left, right) => {
+          if (left.round === null && right.round === null) return 0
+          if (left.round === null) return 1
+          if (right.round === null) return -1
+          return left.round - right.round
+        })
+      const values = roundScores.map((item) => item.score)
+      let open: number | null = null
+      let close: number | null = null
+      let low: number | null = null
+      let high: number | null = null
+      if (values.length > 0) {
+        open = values[0]
+        close = values[values.length - 1]
+        low = Math.min(...values)
+        high = Math.max(...values)
       } else {
         const fallback = result?.[props.score]
         if (typeof fallback === 'number') {
-          min = fallback
-          max = fallback
+          open = fallback
+          close = fallback
+          low = fallback
+          high = fallback
         }
       }
       return {
         index,
         name: String(result.name ?? result.id ?? t('エントリー')),
-        min,
-        max,
-        win: resolveWinCount(result),
-        spread:
-          typeof min === 'number' && typeof max === 'number'
-            ? max - min
-            : null,
+        open,
+        close,
+        low,
+        high,
       }
     })
     .sort((a, b) => {
-      const leftMax = typeof a.max === 'number' ? a.max : Number.NEGATIVE_INFINITY
-      const rightMax = typeof b.max === 'number' ? b.max : Number.NEGATIVE_INFINITY
-      if (rightMax !== leftMax) return rightMax - leftMax
-      const leftMin = typeof a.min === 'number' ? a.min : Number.NEGATIVE_INFINITY
-      const rightMin = typeof b.min === 'number' ? b.min : Number.NEGATIVE_INFINITY
-      if (rightMin !== leftMin) return rightMin - leftMin
+      const leftMax = typeof a.high === 'number' ? a.high : Number.NEGATIVE_INFINITY
+      const rightMax = typeof b.high === 'number' ? b.high : Number.NEGATIVE_INFINITY
+      if (leftMax !== rightMax) return leftMax - rightMax
       const nameDiff = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
       return nameDiff !== 0 ? nameDiff : a.index - b.index
     })
 
   const categories = rows.map((row) => row.name)
-  const maxWinCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
+  const chartHeight = Math.max(
+    MIN_CHART_HEIGHT,
+    categories.length * ROW_HEIGHT + CHART_VERTICAL_PADDING
+  )
   const numericMins = rows
-    .map((row) => row.min)
+    .map((row) => row.low)
     .filter((value): value is number => typeof value === 'number')
   const numericMaxes = rows
-    .map((row) => row.max)
+    .map((row) => row.high)
     .filter((value): value is number => typeof value === 'number')
   const chartMin = numericMins.length > 0 ? Math.min(...numericMins) : 0
   const chartMax = numericMaxes.length > 0 ? Math.max(...numericMaxes) : chartMin + 1
   const epsilon = Math.max(0.05, (chartMax - chartMin) * 0.008)
-  const data = rows.map((row) => {
-    if (typeof row.min === 'number' && typeof row.max === 'number') {
-      const highValue = row.max === row.min ? row.max + epsilon : row.max
+  const formatScore = (value: unknown) => {
+    const numeric = toFiniteNumber(value)
+    if (numeric === null) return '—'
+    return Highcharts.numberFormat(numeric, 2)
+  }
+  const data = rows.map((row, pointIndex) => {
+    if (
+      typeof row.open === 'number' &&
+      typeof row.close === 'number' &&
+      typeof row.low === 'number' &&
+      typeof row.high === 'number'
+    ) {
+      const hasRange = row.high !== row.low
+      const highValue = hasRange ? row.high : row.high + epsilon
+      const lowValue = hasRange ? row.low : Math.max(0, row.low - epsilon)
+      const color = colorByOpenClose(row.open, row.close, candleColors)
       return {
-        low: row.min,
+        x: pointIndex,
+        open: row.open,
         high: highValue,
-        color: colorByWins(row.win, maxWinCount, defaultBarColor),
+        low: lowValue,
+        close: row.close,
+        color,
+        lineColor: color,
       }
     }
     return null
   })
 
   const options = {
-    chart: { type: 'columnrange', inverted: true, backgroundColor: 'transparent' },
+    chart: {
+      type: 'candlestick',
+      inverted: true,
+      backgroundColor: 'transparent',
+      height: chartHeight,
+    },
     title: { text: t('スコア範囲') },
-    xAxis: { categories },
-    yAxis: { title: { text: t('スコア') } },
+    xAxis: {
+      categories,
+      labels: { step: 1 },
+    },
+    yAxis: {
+      title: { text: t('スコア') },
+      min: chartMin - epsilon,
+      max: chartMax + epsilon,
+    },
     legend: { enabled: false },
-    series: [{ name: t('スコア'), data, type: 'columnrange', minPointLength: 3 }],
+    plotOptions: {
+      candlestick: {
+        lineWidth: 1.2,
+      },
+    },
+    tooltip: {
+      shared: false,
+      pointFormatter() {
+        const point = this as any
+        return [
+          `<span style="color:${point.color}">●</span> ${point.series.name}<br/>`,
+          `${t('開始得点')}: <b>${formatScore(point.open)}</b><br/>`,
+          `${t('最高得点')}: <b>${formatScore(point.high)}</b><br/>`,
+          `${t('最低得点')}: <b>${formatScore(point.low)}</b><br/>`,
+          `${t('終了得点')}: <b>${formatScore(point.close)}</b>`,
+        ].join('')
+      },
+    },
+    series: [
+      {
+        name: t('スコア'),
+        data,
+        type: 'candlestick',
+        color: candleColors.down,
+        upColor: candleColors.up,
+        lineColor: candleColors.down,
+        upLineColor: candleColors.up,
+      },
+    ],
   }
-
-  legendItems.value = buildLegendItems(rows, maxWinCount, defaultBarColor, t)
 
   Highcharts.chart(container.value as HTMLElement, options as any)
 }
@@ -122,49 +193,10 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function resolveWinCount(result: any): number {
-  const directWin = toFiniteNumber(result?.win)
-  if (directWin !== null) return directWin
-  const details = Array.isArray(result?.details) ? result.details : []
-  return details.reduce((total: number, detail: any) => {
-    const win = toFiniteNumber(detail?.win)
-    return total + (win ?? 0)
-  }, 0)
-}
-
-function colorByWins(winCount: number, maxWinCount: number, fallbackColor: string): string {
-  if (maxWinCount <= 0) return fallbackColor
-  const ratio = Math.max(0, Math.min(1, winCount / maxWinCount))
-  const hue = 12 + ratio * 108
-  const saturation = 72
-  const lightness = 58 - ratio * 12
-  return `hsl(${hue} ${saturation}% ${lightness}%)`
-}
-
-function buildLegendItems(
-  rows: Array<{ win: number }>,
-  maxWinCount: number,
-  fallbackColor: string,
-  t: (key: string) => string
-): WinColorLegendItem[] {
-  const wins = Array.from(
-    new Set(
-      rows
-        .map((row) => row.win)
-        .filter((value) => Number.isFinite(value))
-    )
-  ).sort((left, right) => right - left)
-  return wins.map((winCount) => ({
-    key: String(winCount),
-    label: `${t('勝利数')}: ${formatWinCount(winCount)}`,
-    color: colorByWins(winCount, maxWinCount, fallbackColor),
-  }))
-}
-
-function formatWinCount(value: number): string {
-  if (Number.isInteger(value)) return String(value)
-  const rounded = Math.round(value * 100) / 100
-  return String(rounded)
+function colorByOpenClose(open: number, close: number, colors: CandleColorPalette): string {
+  if (close > open) return colors.down
+  if (close < open) return colors.up
+  return colors.flat
 }
 
 onMounted(render)
@@ -176,43 +208,8 @@ watch(
 </script>
 
 <style scoped>
-.score-range-stack {
-  display: grid;
-  gap: var(--space-2);
-}
-
 .chart {
   width: 100%;
-  min-height: 280px;
-}
-
-.win-color-legend {
-  display: grid;
-  gap: 6px;
-}
-
-.win-color-legend-title {
-  margin: 0;
-}
-
-.win-color-legend-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-
-.win-color-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
-.win-color-legend-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
+  min-height: 320px;
 }
 </style>

@@ -76,8 +76,11 @@ function render() {
     xAxis: {
       title: { text: '' },
       categories,
-      startOnTick: true,
-      endOnTick: true,
+      min: categories.length > 0 ? -0.5 : undefined,
+      max: categories.length > 0 ? categories.length - 0.5 : undefined,
+      tickPositions: categories.map((_, index) => index),
+      startOnTick: false,
+      endOnTick: false,
       showLastLabel: true,
     },
     yAxis: { title: { text: t('スコア') } },

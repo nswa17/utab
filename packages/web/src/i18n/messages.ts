@@ -128,6 +128,7 @@ const en = {
   'チーム・ジャッジ・会場などのマスターデータを管理します。':
     'Manage teams, adjudicators, venues, and other master data.',
   '大会データ管理': 'Tournament data management',
+  '大会データ準備': 'Tournament data setup',
   'チーム・ジャッジ・会場・所属機関を管理します。':
     'Manage teams, adjudicators, venues, and institutions.',
   'チーム・ジャッジ・会場・コンフリクトグループを管理します。':
@@ -136,6 +137,10 @@ const en = {
     'Manage teams, adjudicators, speakers, institutions, and venues.',
   'チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。':
     'Manage teams, adjudicators, speakers, conflict groups, and venues.',
+  '推奨順: 1. コンフリクトグループ・会場 -> 2. スピーカー・ジャッジ -> 3. チーム':
+    'Recommended order: (1) conflict groups/venues -> (2) speakers/adjudicators -> (3) teams',
+  'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。':
+    'Setup is smoother when teams are added after speakers/conflict groups, and adjudicators after conflict groups.',
   '大会セットアップ': 'Tournament setup',
   'ラウンド運営': 'Round operations',
   '結果確定・レポート': 'Finalize & reports',
@@ -182,8 +187,8 @@ const en = {
     'Estimates strictness from deviations of ballot average scores. Requires 2+ matches.',
   '対象 {matches}試合 / outlier {count}名': 'Coverage {matches} matches / outliers {count}',
   'ラウンド平均との差の偏差を表示': 'Displays deviation from round mean',
-  'ラウンド平均との差の偏差を比較（2試合以上）':
-    'Compare deviation from round mean (2+ matches)',
+  'ラウンド平均との差の偏差を比較（担当した試合によって偏りが発生します）':
+    'Compare deviation from round mean (assignment-dependent bias may occur)',
   '試合数': 'Matches',
   'チーム評価平均': 'Ballot average',
   '相対差': 'Relative delta',
@@ -238,10 +243,10 @@ const en = {
     'Missing previous-round compile data required for automatic draw generation. Missing: {rounds}',
   'このラウンドには前提となる集計ラウンドがありません。':
     'This round has no prerequisite rounds for compile.',
-  '第1ラウンドは集計スナップショットなしで自動生成できます。':
-    'Round 1 can run automatic generation without a compiled snapshot.',
-  '対戦生成では参照スナップショットを選択できます。':
-    'You can choose a reference snapshot for automatic generation.',
+  '第1ラウンドは集計結果なしで自動生成できます。':
+    'Round 1 can run automatic generation without a compile result.',
+  '対戦生成では参照集計結果を選択できます。':
+    'You can choose a reference compile result for automatic generation.',
   '対戦生成では参照集計結果を選択できます。未選択でも自動生成できます。':
     'You can select a reference compile result for draw generation. Auto-generation also works without selecting one.',
   '公開後に提出を回収します。先に公開設定で公開してください。':
@@ -250,21 +255,19 @@ const en = {
   '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。':
     'Compile submissions to finalize standings. Confirm which rounds are included before running.',
   '集計設定': 'Compile settings',
-  '表示スナップショット': 'Displayed snapshot',
-  '参照スナップショット': 'Reference snapshot',
+  '表示集計結果': 'Displayed compile result',
   '参照集計結果': 'Reference compile result',
   '日時': 'Date/time',
   '考慮ラウンド': 'Included rounds',
-  '参照可能な集計スナップショットがありません。': 'No compiled snapshots are available for reference.',
   '参照可能な集計結果がありません。': 'No compile results are available for reference.',
   '参照できる集計結果がありません。未選択のまま自動生成できます。':
     'No compile results are available to reference. You can auto-generate without selecting one.',
   '警告と詳細は次の集計を参照: {label}':
-    'Warnings and details reference this snapshot: {label}',
+    'Warnings and details reference this compile result: {label}',
   '表示中: {label}': 'Showing: {label}',
-  '集計スナップショットはまだありません。': 'No compiled snapshots yet.',
-  '前ラウンドの集計スナップショットがありません。先に集計を実行してください。':
-    'No compiled snapshots for previous rounds. Run compile first.',
+  '集計結果はまだありません。': 'No compile results yet.',
+  '前ラウンドの集計結果がありません。先に集計を実行してください。':
+    'No compile results for previous rounds. Run compile first.',
   '必要な場合のみ詳細再計算を実行してください。':
     'Run detailed recomputation only when needed.',
   '必要な場合のみ詳細設定で再計算条件を変更してください。':
@@ -281,8 +284,8 @@ const en = {
     'Resolve missing and duplicate submissions in the submissions tab of round operations.',
   '生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。':
     'If raw-result corrections are needed, reflect them in submission edits and recompile.',
-  '提出データソースに戻して再計算し、確定snapshotを選択して出力します。':
-    'Switch back to submission source, recompile, then output from a finalized snapshot.',
+  '提出データソースに戻して再計算し、確定した集計結果を選択して出力します。':
+    'Switch back to submission source, recompile, then output from a finalized compile result.',
   '表示中の大会結果は例外モードで生成されました。':
     'The displayed tournament results were generated in exception mode.',
   'ラウンド運営へ': 'Open round operations',
@@ -319,17 +322,25 @@ const en = {
   '提出一覧（この画面内）': 'Submissions (inline)',
   'レポート（この画面内）': 'Reports (inline)',
   '強制実行': 'Force run',
+  '強制集計': 'Forced compile',
   '強制実行の確認': 'Confirm force run',
+  '強制集計の確認': 'Confirm forced compile',
   '注意: 強制実行は例外運用です。': 'Warning: force run is an exception workflow.',
+  '注意: 強制集計は例外運用です。': 'Warning: forced compile is an exception workflow.',
   '強制実行オプション': 'Force-run options',
+  '強制集計オプション': 'Forced-compile options',
   '欠損データの扱い': 'Missing data handling',
   '警告して続行': 'Warn and continue',
   '欠損データを除外': 'Exclude rows with missing data',
   '欠損があれば中止': 'Stop on missing data',
   '強制実行する': 'Force run now',
+  '強制集計する': 'Run forced compile',
   '強制実行（生結果）': 'Force run (raw results)',
+  '強制集計（生結果）': 'Forced compile (raw results)',
   '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
     'Force run uses raw-result source. Ranking may become unstable when it differs from submissions or submitter data is incomplete.',
+  '強制集計では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
+    'Forced compile uses raw-result source. Rankings may become unstable when it differs from submissions or submitter data is incomplete.',
   '未提出・重複提出があると結果が偏る可能性があります。':
     'Missing or duplicate submissions may bias the results.',
   '提出者ID不足のデータは集計漏れ・誤集計の原因になります。':
@@ -351,7 +362,7 @@ const en = {
   '公開状態を更新しました。': 'Publication status updated.',
   '集計に失敗しました。': 'Compilation failed.',
   '集計結果がありません。先に集計を実行してください。':
-    'No compiled snapshot is available. Run compilation first.',
+    'No compile result is available. Run compilation first.',
   '集計結果を表示するデータがありません。': 'No rows are available for this compiled result.',
   '対戦生成に失敗しました。': 'Failed to generate draw.',
   '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
@@ -365,15 +376,17 @@ const en = {
     'Cannot run compile because selected round ballots are incomplete.',
   '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
     'Cannot generate next-round draw because selected round ballots are incomplete.',
-  '最新スナップショットに選択ラウンドが含まれていません。先に集計を実行してください。':
-    'Selected round is not included in the latest snapshot. Run compile first.',
-  '次ラウンド生成では最新スナップショットを参照します。':
-    'Next-round generation will use the latest snapshot.',
+  '最新集計結果に選択ラウンドが含まれていません。先に集計を実行してください。':
+    'Selected round is not included in the latest compile result. Run compile first.',
+  '次ラウンド生成では最新集計結果を参照します。':
+    'Next-round generation will use the latest compile result.',
   'オリジナル': 'Original',
   'キー': 'Key',
   'キー生成': 'Generate keys',
   'クリア': 'Clear',
   'クレジット': 'Credit',
+  '左クレジット': 'Left credit',
+  '右クレジット': 'Right credit',
   'コメント': 'Comment',
   'カテゴリ': 'Category',
   'サイド': 'Side',
@@ -963,7 +976,7 @@ const en = {
   '集計オプション': 'Compile options',
   '既存レポートの選択': 'Select existing report',
   '表示するレポート': 'Report to display',
-  '現在表示: {snapshot}': 'Current display: {snapshot}',
+  '現在表示: {result}': 'Current display: {result}',
   '現在: {label} - {description}': 'Current: {label} - {description}',
   '新規レポート生成': 'Generate new report',
   'entityごとの順位一覧': 'Entity rankings',
@@ -976,6 +989,7 @@ const en = {
   'カスタム': 'Custom',
   '順位比較順（上から優先）': 'Ranking order (top = higher priority)',
   '勝敗判定': 'Winner policy',
+  'winnerId優先': 'Winner first',
   'winnerId優先（未指定時はスコア推定）': 'Winner selection first (infer by score when missing)',
   '勝者選択を優先（未選択時はスコア判定）':
     'Prioritize selected winner (fallback to score inference)',
@@ -1064,26 +1078,33 @@ const en = {
   '対象ラウンドと集計オプションを確認します。':
     'Confirm target rounds and compile options.',
   'プレビュー更新': 'Refresh preview',
+  '仮集計': 'Preview compile',
   '設定変更により要再プレビュー': 'Settings changed. Refresh preview.',
   '更新済み': 'Up to date',
   '未実行': 'Not run',
-  'スナップショット保存': 'Save snapshot',
+  '集計結果保存': 'Save compile result',
   '保存可能': 'Ready to save',
   'プレビュー後に保存可能': 'Save becomes available after preview',
   '保存時のみ履歴を作成します。必要に応じて名前とメモを編集してください。':
-    'History is created only on save. Edit snapshot name and memo as needed.',
-  'スナップショット名': 'Snapshot name',
+    'History is created only on save. Edit compile-result name and memo as needed.',
+  '集計結果名': 'Compile-result name',
   '自動生成名': 'Auto-generated name',
   'メモ (任意)': 'Memo (optional)',
   '必要な場合のみ記録してください。': 'Add notes only when needed.',
-  'スナップショットを保存': 'Save snapshot',
+  '集計結果を保存': 'Save compiled results',
   '設定が変更されました。保存前にプレビューを更新してください。':
     'Settings changed. Refresh preview before saving.',
+  '設定が変更されました。保存前に仮集計を実行してください。':
+    'Settings changed. Run preview compile before saving.',
   'プレビューを更新してから保存してください。':
     'Refresh preview before saving.',
+  '仮集計を実行してから保存してください。':
+    'Run preview compile before saving.',
   'プレビューを更新しました。内容を確認して保存してください。':
-    'Preview updated. Review and save the snapshot.',
-  'スナップショットを保存しました。': 'Snapshot saved.',
+    'Preview updated. Review and save the compile result.',
+  '仮集計を実行しました。内容を確認して保存してください。':
+    'Preview compile completed. Review and save.',
+  '集計結果を保存しました。': 'Compiled results saved.',
   '新規レポートを生成します。': 'Generate a new report.',
   '集計区分ごとの順位と差分を確認': 'Check rankings and deltas by entity category.',
   '偏り・割当と分析指標をまとめて確認': 'Review bias, allocations, and analytics together.',
@@ -1093,11 +1114,11 @@ const en = {
   '発表モードを開く': 'Open presentation mode',
   'レポートへ戻る': 'Back to reports',
   '発表モードを開始できませんでした。': 'Could not start presentation mode.',
-  '表示対象のスナップショットIDが必要です。':
-    'A target compiled snapshot ID is required.',
-  '指定したスナップショットが見つかりません。': 'The specified snapshot was not found.',
+  '表示対象の集計結果IDが必要です。':
+    'A target compile-result ID is required.',
+  '指定した集計結果が見つかりません。': 'The specified compile result was not found.',
   '発表用データを読み込めませんでした。': 'Failed to load presentation data.',
-  '固定スナップショット: {id}': 'Pinned snapshot: {id}',
+  '固定集計結果: {id}': 'Pinned compile result: {id}',
   'カテゴリ: {label}': 'Category: {label}',
   '同率{count}名': 'Tie {count} entries',
   'フルスクリーンで表示': 'Show fullscreen',
@@ -1172,6 +1193,7 @@ const en = {
   '名前で検索': 'Search by name',
   '大会名またはIDで検索': 'Search by tournament name or ID',
   '表示形式': 'View mode',
+  '表示中': 'Showing',
   '入力方式': 'Input mode',
   '手動入力': 'Manual input',
   '展開': 'Expand',
@@ -1327,6 +1349,10 @@ const en = {
   'サイド別スコア': 'Scores by side',
   'チームの成績': 'Team performance',
   'チーム成績': 'Team performance',
+  '開始得点': 'Opening score',
+  '最高得点': 'High score',
+  '最低得点': 'Low score',
+  '終了得点': 'Closing score',
   'チーム成績（勝利数）': 'Team performance (wins)',
   'チーム成績（得点）': 'Team performance (points)',
   '得点': 'Points',

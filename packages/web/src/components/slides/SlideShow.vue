@@ -19,38 +19,43 @@
     <div v-else class="empty">{{ $t('スライドがありません。') }}</div>
 
     <div class="footer">
-      <div class="pagination">{{ paginationLabel }}</div>
-      <div class="controls">
+      <div class="credit credit-left">{{ leftCredit }}</div>
+      <div class="footer-center">
+        <div class="pagination">{{ paginationLabel }}</div>
+        <div class="controls">
+          <Button
+            variant="ghost"
+            size="sm"
+            :aria-label="$t('前のスライド')"
+            @click="prev"
+            :disabled="currentIndex === 0 || !hasSlides"
+          >
+            ←
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            :aria-label="$t('次のスライド')"
+            @click="next"
+            :disabled="!hasSlides || currentIndex === slides.length - 1"
+          >
+            →
+          </Button>
+        </div>
+      </div>
+      <div class="footer-right">
+        <div class="credit credit-right">{{ rightCredit }}</div>
         <Button
           variant="ghost"
           size="sm"
-          :aria-label="$t('前のスライド')"
-          @click="prev"
-          :disabled="currentIndex === 0 || !hasSlides"
+          class="fullscreen-icon-button"
+          :aria-label="fullscreenButtonLabel"
+          :title="fullscreenButtonLabel"
+          @click="toggleFullscreen"
         >
-          ←
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          :aria-label="$t('次のスライド')"
-          @click="next"
-          :disabled="!hasSlides || currentIndex === slides.length - 1"
-        >
-          →
+          <span class="fullscreen-icon" :class="{ active: isFullscreen }" aria-hidden="true" />
         </Button>
       </div>
-      <div class="credit">{{ credit }}</div>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="fullscreen-icon-button"
-        :aria-label="fullscreenButtonLabel"
-        :title="fullscreenButtonLabel"
-        @click="toggleFullscreen"
-      >
-        <span class="fullscreen-icon" :class="{ active: isFullscreen }" aria-hidden="true" />
-      </Button>
     </div>
   </div>
 </template>
@@ -68,11 +73,12 @@ const props = withDefaults(
   defineProps<{
     slides: SlidePage[]
     title: string
-    credit?: string
+    leftCredit?: string
+    rightCredit?: string
     styleMode?: 'pretty' | 'simple'
     presentationMode?: boolean
   }>(),
-  { credit: '', styleMode: 'pretty', presentationMode: false }
+  { leftCredit: '', rightCredit: '', styleMode: 'pretty', presentationMode: false }
 )
 
 const { t } = useI18n({ useScope: 'global' })
@@ -213,11 +219,11 @@ watch(
 .footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 12px;
 }
 
 .header {
+  justify-content: flex-end;
   position: relative;
   min-height: 40px;
 }
@@ -349,8 +355,22 @@ watch(
 }
 
 .footer {
+  justify-content: space-between;
   border-top: 1px solid color-mix(in oklab, var(--certificate-border) 56%, white);
   padding-top: 10px;
+}
+
+.footer-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-inline: auto;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .pagination {
@@ -363,6 +383,14 @@ watch(
   color: color-mix(in oklab, var(--certificate-text) 64%, #8f7b59);
   font-size: 12px;
   letter-spacing: 0.08em;
+}
+
+.credit-left {
+  text-align: left;
+}
+
+.credit-right {
+  text-align: right;
 }
 
 .slideshow--simple {
@@ -446,7 +474,19 @@ watch(
   }
 
   .footer {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: center;
+    justify-items: stretch;
+  }
+
+  .footer-center {
+    margin-inline: 0;
+    justify-content: center;
+  }
+
+  .footer-right {
+    justify-content: flex-end;
   }
 }
 </style>

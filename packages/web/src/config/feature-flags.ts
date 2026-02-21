@@ -17,7 +17,3 @@ export function isLegacyAdminReadOnlyEnabled(): boolean {
 export function isAdminReportsUxV3Enabled(): boolean {
   return parseBooleanFlag(import.meta.env.VITE_ADMIN_REPORTS_UX_V3, true)
 }
-
-export function isAdminCompileManualSaveV1Enabled(): boolean {
-  return parseBooleanFlag(import.meta.env.VITE_ADMIN_COMPILE_MANUAL_SAVE_V1, false)
-}

@@ -9,11 +9,6 @@
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="allocationImportInfo" class="muted import-info">{{ allocationImportInfo }}</p>
 
-    <div class="card stack" v-if="formError || draws.error">
-      <p v-if="formError" class="error">{{ formError }}</p>
-      <p v-if="draws.error" class="error">{{ draws.error }}</p>
-    </div>
-
     <div class="card stack" v-if="unsubmittedEnabled && !isEmbeddedRoute">
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
@@ -80,7 +75,6 @@
               :options="detailSnapshotSelectOptions"
               :placeholder="$t('未選択')"
             />
-            <span v-else class="muted small">{{ $t('参照可能な集計結果がありません。') }}</span>
           </div>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <div v-else class="allocation-table-wrap">
@@ -461,7 +455,9 @@
             >
               {{ $t('クリア') }}
             </Button>
-            <Button size="sm" @click="save" :disabled="isLoading || locked">{{ $t('保存') }}</Button>
+            <Button size="sm" @click="save" :disabled="isLoading || locked || !allocationChanged">{{
+              $t('保存')
+            }}</Button>
             <Button
               variant="secondary"
               size="sm"
@@ -526,7 +522,7 @@
       :placeholder="$t('例: match,venue,gov,opp,chairs,panels,trainees')"
       :description="
         $t(
-          '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ管理で取り込み）。'
+          '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ準備で取り込み）。'
         )
       "
       :example="'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,,,Team D,,Judge D,'"
@@ -991,6 +987,8 @@
         </div>
       </div>
     </aside>
+
+    <NoticeDialog v-model:open="showNoticeDialog" :message="noticeMessage" />
   </section>
 </template>
 
@@ -1013,6 +1011,7 @@ import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
+import NoticeDialog from '@/components/common/NoticeDialog.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
@@ -1088,7 +1087,6 @@ const drawOpened = ref(false)
 const allocationOpened = ref(false)
 const locked = ref(false)
 const sectionLoading = ref(true)
-const formError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
 const requestScope = ref<'all' | 'teams' | 'adjudicators' | 'venues'>('all')
@@ -1108,6 +1106,13 @@ const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
 const autoBreakSize = ref(8)
 const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('manual')
 const autoBreakSeeding = ref<BreakSeeding>('high_low')
+const showNoticeDialog = ref(false)
+const noticeMessage = ref('')
+
+function openNotice(message: string) {
+  noticeMessage.value = message
+  showNoticeDialog.value = true
+}
 
 type RoundBreakConfigLike = Partial<RoundBreakConfig> & {
   source?: 'submissions' | 'raw'
@@ -1763,14 +1768,13 @@ function removeRow(index: number) {
 }
 
 async function save() {
-  formError.value = null
   const validRows = allocation.value.filter((row) => row.teams.gov && row.teams.opp)
   if (validRows.length === 0) {
-    formError.value = t('有効なマッチがありません。')
+    openNotice(t('有効なマッチがありません。'))
     return
   }
   if (validRows.some((row) => row.teams.gov === row.teams.opp)) {
-    formError.value = t('同じチームが両サイドに設定されています。')
+    openNotice(t('同じチームが両サイドに設定されています。'))
     return
   }
   const saved = await draws.upsertDraw({
@@ -1783,7 +1787,9 @@ async function save() {
     locked: locked.value,
   })
   if (!saved) {
-    formError.value = draws.error ?? t('保存に失敗しました')
+    if (!draws.error) {
+      openNotice(t('保存に失敗しました'))
+    }
     return
   }
   savedSnapshot.value = allocationSnapshot()
@@ -3013,6 +3019,14 @@ watch(showAutoGenerateModal, (isOpen) => {
     hydrateAutoBreakPolicyFromRound()
   }
 })
+
+watch(
+  () => draws.error,
+  (message) => {
+    if (!message) return
+    openNotice(message)
+  }
+)
 </script>
 
 <style scoped>

@@ -15,24 +15,47 @@
     <p v-else-if="compiledStore.error" class="error">{{ compiledStore.error }}</p>
 
     <div v-else class="stack">
-      <section class="report-setup-grid">
-        <section class="card stack report-setup-card">
-          <div class="row report-setup-head">
-            <h4>{{ $t('既存レポートの選択') }}</h4>
-            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
-          </div>
-          <div v-if="baselineCompiledOptions.length > 0" class="row snapshot-selector-row">
-            <CompiledSnapshotSelect
-              v-model="selectedCompiledId"
-              class="compile-diff-field compile-diff-field-wide"
-              :label="$t('表示するレポート')"
-              :options="snapshotSelectOptions"
-            />
-          </div>
-          <p v-else class="muted small">{{ $t('集計スナップショットはまだありません。') }}</p>
-        </section>
+      <section class="card stack report-setup-card">
+        <div class="row report-setup-head">
+          <h4>{{ $t('既存レポートの選択') }}</h4>
+          <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
+        </div>
+        <Table v-if="reportSnapshotRows.length > 0" hover striped class="report-snapshot-table">
+          <thead>
+            <tr>
+              <th>{{ $t('作成日時') }}</th>
+              <th>{{ $t('集計結果名') }}</th>
+              <th>{{ $t('ソース') }}</th>
+              <th>{{ $t('勝敗判定') }}</th>
+              <th>{{ $t('欠損データ') }}</th>
+              <th>{{ $t('重複マージ') }}</th>
+              <th>{{ $t('操作') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in reportSnapshotRows" :key="row.compiledId">
+              <td>{{ row.createdAtLabel }}</td>
+              <td>{{ row.snapshotLabel }}</td>
+              <td>{{ row.sourceLabel }}</td>
+              <td>{{ row.winnerPolicyLabel }}</td>
+              <td>{{ row.missingDataLabel }}</td>
+              <td>{{ row.mergePolicyLabel }}</td>
+              <td>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  :disabled="row.isSelected"
+                  @click="showExistingReport(row.compiledId)"
+                >
+                  {{ row.isSelected ? $t('表示中') : $t('表示') }}
+                </Button>
+              </td>
+            </tr>
+          </tbody>
+        </Table>
+        <p v-else class="muted small">{{ $t('集計結果はまだありません。') }}</p>
 
-        <section class="card stack report-setup-card">
+        <section class="stack report-generate-block">
           <div class="row report-setup-head">
             <h4>{{ $t('新規レポート生成') }}</h4>
           </div>
@@ -80,25 +103,19 @@
               </p>
             </div>
           </div>
-          <CompileWorkflowSteps
-            v-if="compileManualSaveEnabled"
-            :preview-ready="compileWorkflow.hasPreview"
-            :preview-stale="compileWorkflow.previewStale"
-            :can-save="compileWorkflow.canSave"
-          />
           <div class="row compile-actions">
             <Button
               @click="compileManualSaveEnabled ? runPreviewWithSource('submissions') : runCompile()"
               :disabled="isLoading || !canRunCompile"
             >
-              {{ compileManualSaveEnabled ? $t('プレビュー更新') : $t('レポート生成') }}
+              {{ compileManualSaveEnabled ? $t('仮集計') : $t('レポート生成') }}
             </Button>
             <Button
               variant="secondary"
               @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
               :disabled="isLoading || !canRunCompile"
             >
-              {{ $t('強制実行') }}
+              {{ $t('強制集計') }}
             </Button>
             <Button
               v-if="compileManualSaveEnabled"
@@ -106,14 +123,14 @@
               @click="openSaveSnapshotModal"
               :disabled="isLoading || !canSavePreview"
             >
-              {{ $t('スナップショットを保存') }}
+              {{ $t('集計結果を保存') }}
             </Button>
             <Button variant="secondary" @click="openRecomputeOptions">
               {{ $t('詳細設定') }}
             </Button>
           </div>
           <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
-            {{ $t('設定が変更されました。保存前にプレビューを更新してください。') }}
+            {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
           </p>
           <div v-if="compileWarnings.length > 0" class="stack compile-warning-list">
             <p v-for="warning in compileWarnings" :key="warning" class="muted warning">
@@ -125,7 +142,7 @@
             <ol class="migration-guide-list">
               <li>{{ $t('ラウンド運営の提出状況タブで不足提出を解消し、重複提出を整理します。') }}</li>
               <li>{{ $t('生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。') }}</li>
-              <li>{{ $t('提出データソースに戻して再計算し、確定snapshotを選択して出力します。') }}</li>
+              <li>{{ $t('提出データソースに戻して再計算し、確定した集計結果を選択して出力します。') }}</li>
             </ol>
             <div class="row migration-guide-actions">
               <RouterLink :to="submissionsOperationsLink" class="migration-guide-link">
@@ -291,8 +308,15 @@
             <article class="overview-item">
               <div class="row overview-status-row">
                 <p class="muted small">{{ $t('サイド偏り') }}</p>
-                <span class="fairness-severity" :class="fairnessSeverityClass(fairnessSideSummary.severity)">
-                  {{ fairnessSeverityLabel(fairnessSideSummary.severity) }}
+                <span
+                  class="fairness-severity"
+                  :class="
+                    hasFairnessSideData
+                      ? fairnessSeverityClass(fairnessSideSummary.severity)
+                      : 'fairness-severity-low'
+                  "
+                >
+                  {{ hasFairnessSideData ? fairnessSeverityLabel(fairnessSideSummary.severity) : $t('データ不足') }}
                 </span>
               </div>
               <p class="overview-value">
@@ -315,9 +339,15 @@
                 <p class="muted small">{{ $t('対戦偏り') }}</p>
                 <span
                   class="fairness-severity"
-                  :class="fairnessSeverityClass(fairnessMatchupSummary.severity)"
+                  :class="
+                    hasFairnessMatchupData
+                      ? fairnessSeverityClass(fairnessMatchupSummary.severity)
+                      : 'fairness-severity-low'
+                  "
                 >
-                  {{ fairnessSeverityLabel(fairnessMatchupSummary.severity) }}
+                  {{
+                    hasFairnessMatchupData ? fairnessSeverityLabel(fairnessMatchupSummary.severity) : $t('データ不足')
+                  }}
                 </span>
               </div>
               <p class="overview-value">
@@ -335,8 +365,17 @@
             <article class="overview-item">
               <div class="row overview-status-row">
                 <p class="muted small">{{ $t('ジャッジ担当回数') }}</p>
-                <span class="fairness-severity" :class="fairnessSeverityClass(fairnessJudgeSummary.severity)">
-                  {{ fairnessSeverityLabel(fairnessJudgeSummary.severity) }}
+                <span
+                  class="fairness-severity"
+                  :class="
+                    hasFairnessJudgeData
+                      ? fairnessSeverityClass(fairnessJudgeSummary.severity)
+                      : 'fairness-severity-low'
+                  "
+                >
+                  {{
+                    hasFairnessJudgeData ? fairnessSeverityLabel(fairnessJudgeSummary.severity) : $t('データ不足')
+                  }}
                 </span>
               </div>
               <p class="overview-value">
@@ -364,10 +403,20 @@
                 <span
                   class="fairness-severity"
                   :class="
-                    judgeFeedbackRankingOutliers > 0 ? 'fairness-severity-medium' : 'fairness-severity-low'
+                    canShowJudgeFeedbackRanking
+                      ? judgeFeedbackRankingOutliers > 0
+                        ? 'fairness-severity-medium'
+                        : 'fairness-severity-low'
+                      : 'fairness-severity-low'
                   "
                 >
-                  {{ judgeFeedbackRankingOutliers > 0 ? $t('要確認') : $t('概ね均衡') }}
+                  {{
+                    canShowJudgeFeedbackRanking
+                      ? judgeFeedbackRankingOutliers > 0
+                        ? $t('要確認')
+                        : $t('概ね均衡')
+                      : $t('データ不足')
+                  }}
                 </span>
               </div>
               <p class="overview-value">
@@ -459,7 +508,7 @@
           <section class="stack strictness-card">
             <div class="row result-list-head">
               <h5>{{ $t('チーム評価の厳しさ') }}</h5>
-              <p class="muted small">{{ $t('ラウンド平均との差の偏差を比較（2試合以上）') }}</p>
+              <p class="muted small">{{ $t('ラウンド平均との差の偏差を比較（担当した試合によって偏りが発生します）') }}</p>
             </div>
             <template v-if="canShowJudgeBallotStrictness">
               <Table hover striped>
@@ -603,10 +652,16 @@
                   </select>
                 </label>
               </div>
-              <label class="stack slide-setting-field slide-setting-field-credit">
-                <span class="muted">{{ $t('クレジット') }}</span>
-                <input v-model="slideCredit" type="text" />
-              </label>
+              <div class="slide-settings-credits">
+                <label class="stack slide-setting-field slide-setting-field-credit">
+                  <span class="muted">{{ $t('左クレジット') }}</span>
+                  <input v-model="slideLeftCredit" type="text" />
+                </label>
+                <label class="stack slide-setting-field slide-setting-field-credit">
+                  <span class="muted">{{ $t('右クレジット') }}</span>
+                  <input v-model="slideRightCredit" type="text" />
+                </label>
+              </div>
             </div>
             <Slides
               :label="slideLabel"
@@ -615,7 +670,8 @@
               :max-ranking-rewarded="maxRankingRewarded"
               :type="slideType"
               :slide-style="slideStyle"
-              :credit="slideCredit"
+              :left-credit="slideLeftCredit"
+              :right-credit="slideRightCredit"
               :presentation-mode="true"
             />
           </section>
@@ -720,12 +776,10 @@ import Table from '@/components/common/Table.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 import CategoryRankingTable from '@/components/common/CategoryRankingTable.vue'
-import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompileSaveSnapshotModal from '@/components/common/CompileSaveSnapshotModal.vue'
-import CompileWorkflowSteps from '@/components/common/CompileWorkflowSteps.vue'
 import Slides from '@/components/slides/Slides.vue'
 import FairnessAnalysisCharts from '@/components/mstat/FairnessAnalysisCharts.vue'
 import ScoreHistogram from '@/components/mstat/ScoreHistogram.vue'
@@ -737,10 +791,11 @@ import {
   normalizeCompileOptions,
   type CompileSource,
   type CompileOptions,
+  type CompileOptionsInput,
   type CompileRankingMetric,
 } from '@/types/compiled'
 import { normalizeRoundDefaults } from '@/utils/round-defaults'
-import { isAdminCompileManualSaveV1Enabled, isAdminReportsUxV3Enabled } from '@/config/feature-flags'
+import { isAdminReportsUxV3Enabled } from '@/config/feature-flags'
 import {
   formatSignedDelta,
   rankingTrendSymbol,
@@ -749,7 +804,7 @@ import {
 } from '@/utils/diff-indicator'
 import { applyClientBaselineDiff } from '@/utils/compiled-diff'
 import {
-  formatCompiledSnapshotOptionLabel,
+  formatCompiledSnapshotTimestamp,
   resolvePreviousCompiledId,
 } from '@/utils/compiled-snapshot'
 import {
@@ -795,7 +850,7 @@ const draws = useDrawsStore()
 const submissions = useSubmissionsStore()
 const { t, locale } = useI18n({ useScope: 'global' })
 const reportUxV3Enabled = isAdminReportsUxV3Enabled()
-const compileManualSaveEnabled = isAdminCompileManualSaveV1Enabled()
+const compileManualSaveEnabled = true
 const compileWorkflow = useCompileWorkflow('submissions')
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -838,21 +893,42 @@ const slideStyle = computed<SlideStyle>({
     updateSlideSettings(slideLabel.value, { style: value })
   },
 })
-const defaultSlideCredit = computed(() => {
+const defaultSlideLeftCredit = computed(() => {
   const tournamentName = String(currentTournament.value?.name ?? '').trim()
-  if (tournamentName.length > 0) return tournamentName
-  return DEFAULT_SLIDE_SETTINGS.credit
+  return tournamentName.length > 0 ? tournamentName : DEFAULT_SLIDE_SETTINGS.leftCredit
 })
-const slideCredit = computed({
+const defaultSlideRightCredit = computed(() => {
+  const now = new Date()
+  const datePart = new Intl.DateTimeFormat(locale.value, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+  const timePart = new Intl.DateTimeFormat(locale.value, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(now)
+  return `${datePart} ${timePart}`.trim()
+})
+const slideLeftCredit = computed({
   get: () => {
-    const currentCredit = String(currentSlideSettings.value?.credit ?? '').trim()
-    if (currentCredit.length === 0 || currentCredit === DEFAULT_SLIDE_SETTINGS.credit) {
-      return defaultSlideCredit.value
+    const currentCredit = String(currentSlideSettings.value?.leftCredit ?? '').trim()
+    if (currentCredit.length === 0 || currentCredit === DEFAULT_SLIDE_SETTINGS.leftCredit) {
+      return defaultSlideLeftCredit.value
     }
     return currentCredit
   },
   set: (value: string) => {
-    updateSlideSettings(slideLabel.value, { credit: value })
+    updateSlideSettings(slideLabel.value, { leftCredit: value })
+  },
+})
+const slideRightCredit = computed({
+  get: () => {
+    const currentCredit = String(currentSlideSettings.value?.rightCredit ?? '').trim()
+    return currentCredit.length > 0 ? currentCredit : defaultSlideRightCredit.value
+  },
+  set: (value: string) => {
+    updateSlideSettings(slideLabel.value, { rightCredit: value })
   },
 })
 const activeReportSection = ref<ReportSectionKey>('operations')
@@ -923,6 +999,18 @@ type BaselineCompiledOption = {
   rounds: number[]
   createdAt?: string
   snapshotName?: string
+  compileSource: CompileSource
+  compileOptions: CompileOptions
+}
+type ReportSnapshotRow = {
+  compiledId: string
+  createdAtLabel: string
+  snapshotLabel: string
+  sourceLabel: string
+  winnerPolicyLabel: string
+  missingDataLabel: string
+  mergePolicyLabel: string
+  isSelected: boolean
 }
 type RecomputeOptionsSnapshot = {
   compileRounds: number[]
@@ -1017,10 +1105,12 @@ const slideAvailableLabels = computed(() => availableLabels.value)
 const showCategoryTabs = computed(
   () => Boolean(compiled.value) && compileExecuted.value && showOperationsSection.value
 )
+const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
 const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   compiledHistory.value
     .map((item) => {
       const payload = item?.payload && typeof item.payload === 'object' ? item.payload : item
+      const compileSource: CompileSource = payload?.compile_source === 'raw' ? 'raw' : 'submissions'
       const roundsValue = Array.isArray(payload?.rounds) ? payload.rounds : []
       const normalizedRounds = roundsValue
         .map((entry: any) => entry?.r ?? entry?.round ?? entry)
@@ -1030,19 +1120,87 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
         rounds: normalizedRounds,
         createdAt: item?.createdAt ? String(item.createdAt) : undefined,
         snapshotName: String(payload?.snapshot_name ?? '').trim() || undefined,
+        compileSource,
+        compileOptions: normalizeCompileOptions(payload?.compile_options as CompileOptionsInput | undefined),
       }
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const snapshotSelectOptions = computed(() =>
-  baselineCompiledOptions.value.map((option) => ({
-    value: option.compiledId,
-    label: formatCompiledSnapshotOptionLabel(option, 'ja-JP'),
-  }))
-)
 const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   baselineCompiledOptions.value.filter((option) => option.compiledId !== selectedCompiledId.value)
 )
+
+function summarizeRounds(rounds: number[]): string {
+  const normalized = Array.from(
+    new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
+  ).sort((left, right) => left - right)
+  if (normalized.length === 0) return t('全ラウンド')
+  if (normalized.length <= 3) return normalized.map((round) => `R${round}`).join(', ')
+  return `R${normalized[0]}-R${normalized[normalized.length - 1]} (${normalized.length}${t('ラウンド')})`
+}
+
+function summarizeSnapshotLabel(option: BaselineCompiledOption): string {
+  const snapshotName = String(option.snapshotName ?? '').trim()
+  if (snapshotName.length > 0) return snapshotName
+  return summarizeRounds(option.rounds)
+}
+
+function summarizeWinnerPolicy(policy: CompileOptions['winner_policy']): string {
+  if (policy === 'score_only') return t('スコア推定のみ')
+  if (policy === 'draw_on_missing') return t('未指定は引き分け')
+  return t('winnerId優先')
+}
+
+function summarizeMissingDataPolicy(policy: CompileOptions['missing_data_policy']): string {
+  if (policy === 'exclude') return t('欠損を除外')
+  if (policy === 'error') return t('エラー停止')
+  return t('警告のみ')
+}
+
+function summarizeMergePolicy(
+  policy: CompileOptions['duplicate_normalization']['merge_policy']
+): string {
+  if (policy === 'latest') return t('最新を採用')
+  if (policy === 'average') return t('平均で統合')
+  return t('重複時はエラー')
+}
+
+const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
+  const sorted = baselineCompiledOptions.value
+    .map((option, index) => ({
+      option,
+      index,
+      timestamp: option.createdAt ? new Date(option.createdAt).getTime() : Number.NaN,
+    }))
+    .sort((left, right) => {
+      const leftValid = Number.isFinite(left.timestamp)
+      const rightValid = Number.isFinite(right.timestamp)
+      if (leftValid && rightValid && left.timestamp !== right.timestamp) {
+        return right.timestamp - left.timestamp
+      }
+      if (leftValid !== rightValid) return leftValid ? -1 : 1
+      return left.index - right.index
+    })
+
+  return sorted.map(({ option }) => ({
+    compiledId: option.compiledId,
+    createdAtLabel: formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value),
+    snapshotLabel: summarizeSnapshotLabel(option),
+    sourceLabel: option.compileSource === 'raw' ? t('生結果') : t('提出'),
+    winnerPolicyLabel: summarizeWinnerPolicy(option.compileOptions.winner_policy),
+    missingDataLabel: summarizeMissingDataPolicy(option.compileOptions.missing_data_policy),
+    mergePolicyLabel: summarizeMergePolicy(option.compileOptions.duplicate_normalization.merge_policy),
+    isSelected: option.compiledId === selectedCompiledId.value,
+  }))
+})
+
+function showExistingReport(compiledId: string) {
+  const targetId = String(compiledId).trim()
+  if (!targetId || targetId === selectedCompiledId.value) return
+  selectedCompiledId.value = targetId
+  emitReportMetric('cta_click', { cta: 'select_existing_report' })
+}
+
 const selectedDiffBaselineCompiledId = computed(() =>
   String(compileDiffBaselineSelection.value).trim()
 )
@@ -1060,7 +1218,7 @@ const reportSectionOptions = computed<
   },
   {
     key: 'fairness',
-    label: t('公平性'),
+    label: t('統計'),
     description: t('偏り・割当と分析指標をまとめて確認'),
   },
   {
@@ -1216,8 +1374,9 @@ function compileRoundRangeLabel(rounds: number[]): string {
 
 function buildDefaultSnapshotName(source: CompileSource): string {
   const roundsText = compileRoundRangeLabel(compileTargetRoundNumbers.value)
-  const sourceText = source === 'raw' ? t('生結果データ') : t('提出データ')
-  return `${roundsText} / ${sourceText} / ${toSnapshotTimeString(new Date())}`
+  const timestamp = toSnapshotTimeString(new Date())
+  const suffix = source === 'raw' ? `（${t('強制集計')}）` : ''
+  return `${roundsText} / ${timestamp}${suffix}`
 }
 
 const manualCompileInputKey = computed(() =>
@@ -1931,6 +2090,9 @@ const fairnessSideSummary = computed(() => {
     exposureGap,
   }
 })
+const hasFairnessSideData = computed(
+  () => fairnessSideSummary.value.govAppearances + fairnessSideSummary.value.oppAppearances > 0
+)
 const fairnessMatchupSummary = computed(() => {
   const pairCounts = new Map<string, number>()
   sortedRounds.value.forEach((round) => {
@@ -1959,6 +2121,7 @@ const fairnessMatchupSummary = computed(() => {
     maxRepeat,
   }
 })
+const hasFairnessMatchupData = computed(() => fairnessMatchupSummary.value.maxRepeat > 0)
 const fairnessJudgeSummary = computed(() => {
   const counts = new Map<string, number>()
   adjudicators.adjudicators.forEach((adj) => {
@@ -2008,6 +2171,7 @@ const fairnessJudgeSummary = computed(() => {
     min,
   }
 })
+const hasFairnessJudgeData = computed(() => fairnessJudgeSummary.value.max > 0)
 const judgeFeedbackRankingRows = computed<JudgeFeedbackRankingRow[]>(() => {
   const adjudicatorRows = compiled.value?.compiled_adjudicator_results ?? []
   const matchCountByJudge = new Map<string, number>()
@@ -2025,6 +2189,7 @@ const judgeFeedbackRankingRows = computed<JudgeFeedbackRankingRow[]>(() => {
 const judgeFeedbackRankingOutliers = computed(
   () => judgeFeedbackRankingRows.value.filter((row) => row.outlier).length
 )
+const canShowJudgeFeedbackRanking = computed(() => judgeFeedbackRankingRows.value.length > 0)
 const judgeFeedbackRankingPreview = computed(() => judgeFeedbackRankingRows.value.slice(0, 8))
 
 function toFiniteNumberList(value: unknown): number[] {
@@ -3021,6 +3186,16 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   flex-wrap: wrap;
 }
 
+.report-snapshot-table {
+  overflow-x: auto;
+}
+
+.report-generate-block {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+  gap: var(--space-3);
+}
+
 .submission-summary-card {
   gap: var(--space-3);
 }
@@ -3588,13 +3763,27 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   max-width: 170px;
 }
 
+.slide-settings-credits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  flex: 1 1 460px;
+  min-width: min(460px, 100%);
+}
+
 .slide-setting-field-credit {
-  flex: 1 1 320px;
-  min-width: min(420px, 100%);
+  min-width: 0;
 }
 
 .slide-setting-field-credit input {
   width: 100%;
+}
+
+@media (max-width: 760px) {
+  .slide-settings-credits {
+    grid-template-columns: 1fr;
+    min-width: 100%;
+  }
 }
 
 .award-copy-toolbar {

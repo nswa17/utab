@@ -6,7 +6,8 @@ export type SlideSettings = {
   maxRankingRewarded: number
   type: SlideType
   style: SlideStyle
-  credit: string
+  leftCredit: string
+  rightCredit: string
 }
 
 export type PresentationQuery = {
@@ -15,7 +16,8 @@ export type PresentationQuery = {
   type: SlideType
   style: SlideStyle
   max: number
-  credit: string
+  leftCredit: string
+  rightCredit: string
 }
 
 export type SlideRow = {
@@ -48,7 +50,8 @@ export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {
   maxRankingRewarded: 3,
   type: 'listed',
   style: 'pretty',
-  credit: 'UTab',
+  leftCredit: 'UTab',
+  rightCredit: '',
 }
 
 function firstQueryValue(value: unknown): string {
@@ -91,13 +94,15 @@ export function parsePresentationQuery(query: Record<string, unknown>): {
   errors: string[]
 } {
   const compiledId = firstQueryValue(query.compiledId).trim()
+  const fallbackLeftCredit = firstQueryValue(query.credit).trim() || DEFAULT_SLIDE_SETTINGS.leftCredit
   const parsed: PresentationQuery = {
     compiledId,
     label: normalizeSlideLabel(query.label),
     type: normalizeSlideType(query.type),
     style: normalizeSlideStyle(query.style),
     max: normalizeSlideMax(query.max),
-    credit: firstQueryValue(query.credit).trim() || DEFAULT_SLIDE_SETTINGS.credit,
+    leftCredit: firstQueryValue(query.leftCredit).trim() || fallbackLeftCredit,
+    rightCredit: firstQueryValue(query.rightCredit).trim() || DEFAULT_SLIDE_SETTINGS.rightCredit,
   }
   const errors: string[] = []
   if (!compiledId) errors.push('missing_compiled_id')

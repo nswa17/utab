@@ -207,7 +207,7 @@ describe('AdminTournamentCompiled V2', () => {
 
   it('registers interpolation labels for report cards to avoid raw {placeholders}', () => {
     const messages = load('src/i18n/messages.ts')
-    expect(messages).toContain("'現在表示: {snapshot}'")
+    expect(messages).toContain("'現在表示: {result}'")
     expect(messages).toContain("'現在: {label} - {description}'")
     expect(messages).toContain("'表示するレポート': 'Report to display'")
     expect(messages).toContain("'提出状況を確認': 'Check submission status'")
@@ -216,11 +216,18 @@ describe('AdminTournamentCompiled V2', () => {
     expect(messages).toContain("'順位変動あり: {count}件'")
   })
 
-  it('provides a snapshot selector in the report workflow', () => {
+  it('provides an existing-report table with per-row display action', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('表示するレポート')
+    expect(source).toContain('reportSnapshotRows')
+    expect(source).toContain("$t('作成日時')")
+    expect(source).toContain("$t('集計結果名')")
+    expect(source).not.toContain("$t('考慮ラウンド')")
+    expect(source).toContain("$t('勝敗判定')")
+    expect(source).toContain("$t('欠損データ')")
+    expect(source).toContain("$t('重複マージ')")
     expect(source).toContain('selectedCompiledId')
-    expect(source).toContain('snapshotSelectOptions')
+    expect(source).toContain('showExistingReport')
+    expect(source).toContain("$t('表示中')")
   })
 
   it('opens recomputation options in the detailed settings modal', () => {
@@ -260,6 +267,6 @@ describe('AdminTournamentCompiled V2', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('function applyCompiledSnapshot')
     expect(source).toContain('compiledStore.compiled = normalized')
-    expect(source).toContain('watch(\n  selectedCompiledId')
+    expect(source).toMatch(/watch\(\s*selectedCompiledId/)
   })
 })

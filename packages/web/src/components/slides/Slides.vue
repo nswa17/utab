@@ -4,7 +4,8 @@
     :max-ranking-rewarded="maxRankingRewarded"
     :type="type"
     :slide-style="slideStyle"
-    :credit="credit"
+    :left-credit="leftCredit"
+    :right-credit="rightCredit"
     :presentation-mode="presentationMode"
     :tournament="tournament"
     :entities="entities"
@@ -26,7 +27,8 @@ const props = withDefaults(
     maxRankingRewarded?: number
     type?: 'listed' | 'single'
     slideStyle?: 'pretty' | 'simple'
-    credit?: string
+    leftCredit?: string
+    rightCredit?: string
     presentationMode?: boolean
     tournament?: Record<string, any>
     entities?: Record<string, string>
@@ -35,7 +37,8 @@ const props = withDefaults(
     maxRankingRewarded: 3,
     type: 'listed',
     slideStyle: 'pretty',
-    credit: '',
+    leftCredit: '',
+    rightCredit: '',
     presentationMode: false,
   }
 )

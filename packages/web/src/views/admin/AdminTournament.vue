@@ -166,7 +166,7 @@ const reportsPath = computed(() =>
     : `/admin/${tournamentId.value}/compiled`
 )
 const setupOverviewLabel = computed(() => '大会設定')
-const setupDataLabel = computed(() => '大会データ管理')
+const setupDataLabel = computed(() => '大会データ準備')
 const operationsLabel = computed(() =>
   adminUiV2Enabled.value ? 'ラウンド運営' : 'ラウンド管理'
 )
