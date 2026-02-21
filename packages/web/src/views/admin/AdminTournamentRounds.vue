@@ -210,27 +210,28 @@
               v-model:poi="roundDraft(round).userDefined.poi"
               v-model:best="roundDraft(round).userDefined.best"
               :disabled="isLoading"
-            />
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('ラウンド結果集計') }}</h5>
-            <CompileOptionsEditor
-              v-model:source-rounds="roundDraft(round).compile.source_rounds"
-              v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
-              v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
-              v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
-              v-model:tie-points="roundDraft(round).compile.options.tie_points"
-              v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
-              v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
-              v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
-              v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
-              :show-winner-scoring="false"
-              :show-source-rounds="false"
-              :show-merge-and-missing="false"
-              :source-round-options="compileSourceRoundSelectOptions(round.round)"
-              :disabled="isLoading"
-            />
+            >
+              <template #after-team-settings>
+                <section class="stack round-ranking-settings">
+                  <CompileOptionsEditor
+                    v-model:source-rounds="roundDraft(round).compile.source_rounds"
+                    v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
+                    v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
+                    v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
+                    v-model:tie-points="roundDraft(round).compile.options.tie_points"
+                    v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
+                    v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
+                    v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
+                    v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
+                    :show-winner-scoring="false"
+                    :show-source-rounds="false"
+                    :show-merge-and-missing="false"
+                    :source-round-options="compileSourceRoundSelectOptions(round.round)"
+                    :disabled="isLoading"
+                  />
+                </section>
+              </template>
+            </RoundOptionEditor>
           </section>
 
           <section class="stack settings-group">
@@ -1451,6 +1452,10 @@ watch(
 
 .settings-group {
   gap: var(--space-2);
+}
+
+.round-ranking-settings {
+  margin-top: var(--space-1);
 }
 
 .settings-group + .settings-group {

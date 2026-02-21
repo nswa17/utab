@@ -113,7 +113,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTaskList">{{ $t('参加者ホームに戻る') }}</Button>
+          <Button size="sm" @click="goToTournamentHome">{{ $t('大会ホームに戻る') }}</Button>
         </div>
       </div>
     </div>
@@ -181,9 +181,9 @@ const homePath = computed(() => {
   }`
 })
 const drawPath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/draw`
+  () => `/user/${tournamentId.value}/${participant.value}/home`
 )
-const taskListPath = computed(() => `/user/${tournamentId.value}/${participant.value}/home`)
+const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
 
 const score = ref(8)
 const matter = ref(4)
@@ -432,9 +432,9 @@ function goToDraw() {
   router.push(drawPath.value)
 }
 
-function goToTaskList() {
+function goToTournamentHome() {
   successOpen.value = false
-  router.push(taskListPath.value)
+  router.push(tournamentHomePath.value)
 }
 
 onMounted(() => {

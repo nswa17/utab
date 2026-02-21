@@ -1,8 +1,8 @@
 <template>
   <div class="team-performance-stack">
     <div ref="pointContainer" class="chart" />
-    <div v-if="legendItems.length > 0" class="win-color-legend">
-      <p class="muted small win-color-legend-title">{{ $t('凡例') }} ({{ $t('勝利数') }})</p>
+    <div v-if="showLegend && legendItems.length > 0" class="win-color-legend">
+      <p class="muted small win-color-legend-title">{{ $t('凡例') }} ({{ legendLabel }})</p>
       <div class="win-color-legend-items">
         <span v-for="item in legendItems" :key="item.key" class="win-color-legend-item">
           <span class="win-color-legend-swatch" :style="{ backgroundColor: item.color }" />
@@ -14,18 +14,34 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
 
-const props = defineProps<{
-  results: any[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    results: any[]
+    title?: string
+    scoreKey?: string
+    valueLabel?: string
+    colorKey?: string
+    legendLabel?: string
+    showLegend?: boolean
+  }>(),
+  {
+    title: '',
+    scoreKey: 'sum',
+    valueLabel: '',
+    colorKey: 'win',
+    legendLabel: '',
+    showLegend: true,
+  }
+)
 
 type TeamPerformanceRow = {
   name: string
-  win: number
-  sum: number
+  colorMetric: number
+  value: number
 }
 type WinColorLegendItem = {
   key: string
@@ -51,16 +67,16 @@ function toFiniteNumber(value: unknown): number {
 function buildRows(): TeamPerformanceRow[] {
   return props.results.map((result) => ({
     name: String(result.name ?? result.id ?? t('チーム')),
-    win: toFiniteNumber(result.win),
-    sum: toFiniteNumber(result.sum),
+    colorMetric: toFiniteNumber(result[props.colorKey]),
+    value: toFiniteNumber(result[props.scoreKey]),
   }))
 }
 
 function sortRows(rows: TeamPerformanceRow[]): TeamPerformanceRow[] {
   return rows.slice().sort((left, right) => {
-    const primary = right.sum - left.sum
+    const primary = right.value - left.value
     if (primary !== 0) return primary
-    const secondary = right.win - left.win
+    const secondary = right.colorMetric - left.colorMetric
     if (secondary !== 0) return secondary
     return sortCollator.compare(left.name, right.name)
   })
@@ -73,7 +89,7 @@ function renderChart(
     yAxisLabel: string
     seriesName: string
     rows: TeamPerformanceRow[]
-    maxWinCount: number
+    maxColorMetric: number
     fallbackColor: string
     chartHeight: number
   }
@@ -81,8 +97,8 @@ function renderChart(
   if (!container) return
   const categories = config.rows.map((row) => row.name)
   const data = config.rows.map((row) => ({
-    y: row.sum,
-    color: colorByWins(row.win, config.maxWinCount, config.fallbackColor),
+    y: row.value,
+    color: colorByMetric(row.colorMetric, config.maxColorMetric, config.fallbackColor),
   }))
 
   Highcharts.chart(container, {
@@ -108,54 +124,61 @@ function renderChart(
 
 function buildLegendItems(
   rows: TeamPerformanceRow[],
-  maxWinCount: number,
+  maxColorMetric: number,
   fallbackColor: string
 ): WinColorLegendItem[] {
-  const wins = Array.from(
+  const metrics = Array.from(
     new Set(
       rows
-        .map((row) => row.win)
+        .map((row) => row.colorMetric)
         .filter((value) => Number.isFinite(value))
     )
   ).sort((left, right) => right - left)
-  return wins.map((winCount) => ({
-    key: String(winCount),
-    label: `${t('勝利数')}: ${formatWinCount(winCount)}`,
-    color: colorByWins(winCount, maxWinCount, fallbackColor),
+  return metrics.map((metric) => ({
+    key: String(metric),
+    label: `${legendLabel.value}: ${formatMetric(metric)}`,
+    color: colorByMetric(metric, maxColorMetric, fallbackColor),
   }))
 }
 
-function formatWinCount(value: number): string {
+function formatMetric(value: number): string {
   if (Number.isInteger(value)) return String(value)
   const rounded = Math.round(value * 100) / 100
   return String(rounded)
 }
 
-function colorByWins(winCount: number, maxWinCount: number, fallbackColor: string): string {
-  if (maxWinCount <= 0) return fallbackColor
-  const ratio = Math.max(0, Math.min(1, winCount / maxWinCount))
+function colorByMetric(metric: number, maxColorMetric: number, fallbackColor: string): string {
+  if (maxColorMetric <= 0) return fallbackColor
+  const ratio = Math.max(0, Math.min(1, metric / maxColorMetric))
   const hue = 12 + ratio * 108
   const saturation = 72
   const lightness = 58 - ratio * 12
   return `hsl(${hue} ${saturation}% ${lightness}%)`
 }
 
+const chartTitle = computed(() => props.title || t('チーム成績'))
+const valueLabel = computed(() => props.valueLabel || t('得点'))
+const legendLabel = computed(() => props.legendLabel || t('勝利数'))
+const showLegend = computed(() => props.showLegend)
+
 function render() {
   const rows = sortRows(buildRows())
   const styles = getComputedStyle(document.documentElement)
   const defaultBarColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
-  const maxWinCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
+  const maxColorMetric = rows.reduce((maxValue, row) => Math.max(maxValue, row.colorMetric), 0)
   const chartHeight = Math.max(
     MIN_CHART_HEIGHT,
     rows.length * ROW_HEIGHT + CHART_VERTICAL_PADDING
   )
-  legendItems.value = buildLegendItems(rows, maxWinCount, defaultBarColor)
+  legendItems.value = showLegend.value
+    ? buildLegendItems(rows, maxColorMetric, defaultBarColor)
+    : []
   renderChart(pointContainer.value, {
-    title: t('チーム成績'),
-    yAxisLabel: t('得点'),
-    seriesName: t('得点'),
+    title: chartTitle.value,
+    yAxisLabel: valueLabel.value,
+    seriesName: valueLabel.value,
     rows,
-    maxWinCount,
+    maxColorMetric,
     fallbackColor: defaultBarColor,
     chartHeight,
   })
@@ -163,7 +186,7 @@ function render() {
 
 onMounted(render)
 watch(
-  () => [props.results, locale.value],
+  () => [props.results, props.title, props.scoreKey, props.valueLabel, props.colorKey, props.legendLabel, props.showLegend, locale.value],
   () => render(),
   { deep: true }
 )

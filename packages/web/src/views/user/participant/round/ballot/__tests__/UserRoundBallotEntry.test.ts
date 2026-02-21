@@ -20,4 +20,14 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).not.toContain('未選択で引き分けとして送信できます。')
     expect(source).not.toContain('canSubmitDrawWithoutWinner')
   })
+
+  it('shows a single validation error and disables submit while invalid', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain(':disabled="submitButtonDisabled"')
+    expect(source).toContain('<p v-if="validationError" class="error">{{ validationError }}</p>')
+    expect(source).toContain('const validationError = computed(() => {')
+    expect(source).toContain('const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)')
+    expect(source).not.toContain('winnerRequiredWarning')
+    expect(source).not.toContain('submitError')
+  })
 })

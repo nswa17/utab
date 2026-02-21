@@ -200,8 +200,8 @@ function toFiniteNumber(value: unknown): number | null {
 }
 
 function colorByOpenClose(open: number, close: number, colors: CandleColorPalette): string {
-  if (close > open) return colors.down
-  if (close < open) return colors.up
+  if (close > open) return colors.up
+  if (close < open) return colors.down
   return colors.flat
 }
 

@@ -30,7 +30,6 @@ const UserParticipantLayout = () => import('@/views/user/participant/UserPartici
 const UserParticipantHome = () => import('@/views/user/participant/UserParticipantHome.vue')
 const UserParticipantRoundLayout = () => import('@/views/user/participant/round/UserParticipantRoundLayout.vue')
 const UserRoundHome = () => import('@/views/user/participant/round/UserRoundHome.vue')
-const UserRoundDraw = () => import('@/views/user/participant/round/UserRoundDraw.vue')
 const UserRoundBallot = () => import('@/views/user/participant/round/UserRoundBallot.vue')
 const UserRoundFeedback = () => import('@/views/user/participant/round/UserRoundFeedback.vue')
 const UserRoundBallotHome = () => import('@/views/user/participant/round/ballot/UserRoundBallotHome.vue')
@@ -208,7 +207,13 @@ export function createAppRouter(options: RouterOptions = {}): Router {
                 children: [
                   { path: '', redirect: 'home' },
                   { path: 'home', component: routeComponent(UserRoundHome) },
-                  { path: 'draw', component: routeComponent(UserRoundDraw) },
+                  {
+                    path: 'draw',
+                    redirect: (to: any) => ({
+                      path: `/user/${String(to.params.tournamentId ?? '')}/${String(to.params.participant ?? '')}/home`,
+                      query: to.query,
+                    }),
+                  },
                   {
                     path: 'ballot',
                     component: routeComponent(UserRoundBallot),

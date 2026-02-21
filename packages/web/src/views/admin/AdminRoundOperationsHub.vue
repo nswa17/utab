@@ -1,9 +1,5 @@
 <template>
   <section class="stack">
-    <div class="row section-header">
-      <h3 class="page-title">{{ $t('ラウンド運営ハブ') }}</h3>
-    </div>
-
     <div class="operations-content-shell">
       <LoadingState v-if="!hasLoaded && sectionLoading" />
       <template v-else>
@@ -331,7 +327,7 @@
                     v-model:best-aggregation="compileBestAggregation"
                     v-model:missing-data-policy="compileMissingDataPolicy"
                     :show-winner-scoring="false"
-                    :show-ranking-priority="false"
+                    :show-ranking-priority="true"
                     :show-source-rounds="true"
                     :source-round-options="compileSourceRoundOptions"
                     :disabled="isLoading"
@@ -391,39 +387,9 @@
                 </p>
                 <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
                   <div class="row compile-result-head">
-                    <div class="stack tight">
-                      <strong>{{ $t('集計レポート') }}</strong>
-                      <div
-                        class="compile-report-tabs"
-                        role="tablist"
-                        :aria-label="$t('レポートセクション')"
-                      >
-                        <button
-                          type="button"
-                          class="compile-report-tab"
-                          :class="{ active: compileReportTab === 'rankings' }"
-                          role="tab"
-                          :aria-selected="compileReportTab === 'rankings'"
-                          @click="setCompileReportTab('rankings')"
-                        >
-                          {{ $t('カテゴリ別順位一覧') }}
-                        </button>
-                        <button
-                          type="button"
-                          class="compile-report-tab"
-                          :class="{ active: compileReportTab === 'fairness' }"
-                          role="tab"
-                          :aria-selected="compileReportTab === 'fairness'"
-                          @click="setCompileReportTab('fairness')"
-                        >
-                          {{ $t('公平性') }}
-                        </button>
-                      </div>
-                    </div>
+                    <strong>{{ $t('集計レポート') }}</strong>
                     <CompiledSnapshotSelect
-                      v-if="
-                        compileReportTab === 'rankings' && diffBaselineCompiledOptions.length > 0
-                      "
+                      v-if="diffBaselineCompiledOptions.length > 0"
                       v-model="compileDiffBaselineCompiledId"
                       class="compile-result-baseline-select"
                       :label="$t('差分比較')"
@@ -431,88 +397,46 @@
                       :placeholder="$t('未選択')"
                     />
                   </div>
-                  <template v-if="compileReportTab === 'rankings'">
-                    <div class="row diff-legend">
-                      <span class="diff-legend-item">
-                        <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
-                      </span>
-                      <span class="diff-legend-item">
-                        <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
-                      </span>
-                      <span class="diff-legend-item">
-                        <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
-                      </span>
-                      <span class="diff-legend-item">
-                        <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
-                      </span>
-                    </div>
-                    <CategoryRankingTable
-                      :rows="sortedCompileRows"
-                      :columns="compileColumns"
-                      identity-key="team"
-                      :identity-label="compileTeamLabel"
-                      :row-key="compileRowKey"
-                      :column-label="compileColumnLabel"
-                      :sort-indicator="compileSortIndicator"
-                      :on-sort="setCompileSort"
-                      :value-formatter="formatCompileValue"
-                      :ranking-class="rankingTrendClass"
-                      :ranking-text="rankingTrendText"
-                      :ranking-symbol="compileRankingSymbolForRow"
-                      :ranking-delta="rankingDeltaText"
-                      :metric-delta="metricDeltaText"
-                    />
-                    <div class="row compile-download-row">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        :disabled="sortedCompileRows.length === 0"
-                        @click="downloadCompileReportCsv"
-                      >
-                        {{ $t('CSVダウンロード') }}
-                      </Button>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <p class="muted small">
-                      {{ $t('このタブは選択ラウンドのみを対象に集計します。') }}
-                    </p>
-                    <p v-if="compileFairnessResults.length === 0" class="muted small">
-                      {{ $t('公平性データがありません') }}
-                    </p>
-                    <template v-else>
-                      <div
-                        v-if="compileFairnessRoundNumber !== null"
-                        class="compile-fairness-visual-grid"
-                      >
-                        <div class="compile-fairness-visual-card">
-                          <SidePieChart
-                            :results="compileFairnessResults"
-                            :round="compileFairnessRoundNumber"
-                            :round-name="compileFairnessRoundName"
-                            :total-teams="compileFairnessTotalTeams"
-                          />
-                        </div>
-                        <div class="compile-fairness-visual-card">
-                          <ScoreHistogram
-                            :results="compileFairnessResults"
-                            score="sum"
-                            :round="compileFairnessRoundNumber"
-                            :round-name="compileFairnessRoundName"
-                          />
-                        </div>
-                      </div>
-                      <FairnessAnalysisCharts
-                        :results="compileFairnessResults"
-                        :tournament="compileFairnessTournament"
-                        score-key="sum"
-                        :round-filter="compileFairnessRoundFilter"
-                        :show-score-range="false"
-                        :show-team-performance="true"
-                        :show-score-histogram="false"
-                      />
-                    </template>
-                  </template>
+                  <div class="row diff-legend">
+                    <span class="diff-legend-item">
+                      <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
+                    </span>
+                    <span class="diff-legend-item">
+                      <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
+                    </span>
+                    <span class="diff-legend-item">
+                      <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
+                    </span>
+                    <span class="diff-legend-item">
+                      <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
+                    </span>
+                  </div>
+                  <CategoryRankingTable
+                    :rows="sortedCompileRows"
+                    :columns="compileColumns"
+                    identity-key="team"
+                    :identity-label="compileTeamLabel"
+                    :row-key="compileRowKey"
+                    :column-label="compileColumnLabel"
+                    :sort-indicator="compileSortIndicator"
+                    :on-sort="setCompileSort"
+                    :value-formatter="formatCompileValue"
+                    :ranking-class="rankingTrendClass"
+                    :ranking-text="rankingTrendText"
+                    :ranking-symbol="compileRankingSymbolForRow"
+                    :ranking-delta="rankingDeltaText"
+                    :metric-delta="metricDeltaText"
+                  />
+                  <div class="row compile-download-row">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      :disabled="sortedCompileRows.length === 0"
+                      @click="downloadCompileReportCsv"
+                    >
+                      {{ $t('CSVダウンロード') }}
+                    </Button>
+                  </div>
                 </section>
                 <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
                   {{ $t('集計結果を表示するデータがありません。') }}
@@ -596,9 +520,6 @@ import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompileSaveSnapshotModal from '@/components/common/CompileSaveSnapshotModal.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
-import FairnessAnalysisCharts from '@/components/mstat/FairnessAnalysisCharts.vue'
-import SidePieChart from '@/components/mstat/SidePieChart.vue'
-import ScoreHistogram from '@/components/mstat/ScoreHistogram.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -658,7 +579,6 @@ const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.
 const selectedRound = ref<number | null>(null)
 type HubTask = 'submissions' | 'compile' | 'draw' | 'publish'
 type HubTaskState = 'done' | 'ready' | 'blocked'
-type CompileReportTab = 'rankings' | 'fairness'
 const hubTaskOrder: HubTask[] = ['draw', 'publish', 'submissions', 'compile']
 const activeTask = ref<HubTask>('draw')
 const roundTaskSelection = ref<Record<number, HubTask>>({})
@@ -701,7 +621,6 @@ const compiledHistory = ref<any[]>([])
 const selectedCompileRounds = ref<number[]>([])
 const forceCompileModalOpen = ref(false)
 const publicationSaving = ref(false)
-const compileReportTab = ref<CompileReportTab>('rankings')
 const compileSortKey = ref('ranking')
 const compileSortDirection = ref<'asc' | 'desc'>('asc')
 const forceCompileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
@@ -881,70 +800,6 @@ const compileRows = computed<any[]>(() => {
     return compileRowsBase.value
   }
   return applyClientBaselineDiff(compileRowsBase.value, selectedCompileDiffBaselineRows.value)
-})
-const compileFairnessRoundFilter = computed<number[]>(() =>
-  selectedRound.value === null ? [] : [selectedRound.value]
-)
-const compileFairnessRoundNumber = computed<number | null>(() =>
-  selectedRound.value === null ? null : selectedRound.value
-)
-const compileFairnessRoundName = computed<string>(() =>
-  selectedRound.value === null ? '' : roundLabel(selectedRound.value)
-)
-const compileFairnessTotalTeams = computed<number>(() => {
-  if (selectedRound.value === null) return 0
-  const draw = drawsStore.draws.find((item) => item.round === selectedRound.value)
-  if (!draw || !Array.isArray(draw.allocation)) return 0
-  const teamIds = new Set<string>()
-  draw.allocation.forEach((row: any) => {
-    const gov = String(row?.teams?.gov ?? '').trim()
-    const opp = String(row?.teams?.opp ?? '').trim()
-    if (gov) teamIds.add(gov)
-    if (opp) teamIds.add(opp)
-  })
-  return teamIds.size
-})
-const compileFairnessTournament = computed(() => {
-  if (selectedRound.value === null) return { rounds: [] as any[] }
-  const roundName = roundLabel(selectedRound.value)
-  return {
-    rounds: [{ r: selectedRound.value, round: selectedRound.value, name: roundName }],
-  }
-})
-const compileFairnessResults = computed<any[]>(() => {
-  if (selectedRound.value === null) return []
-  return compileRowsBase.value
-    .map((row) => {
-      const details = Array.isArray(row?.details)
-        ? row.details.filter((detail: any) => detail.r === selectedRound.value)
-        : []
-      if (details.length === 0) return null
-      const win = details.reduce(
-        (total: number, detail: any) => total + (toFiniteNumber(detail?.win) ?? 0),
-        0
-      )
-      const sum = details.reduce(
-        (total: number, detail: any) => total + (toFiniteNumber(detail?.sum) ?? 0),
-        0
-      )
-      const averageValues = details
-        .map((detail: any) => toFiniteNumber(detail?.average))
-        .filter((value: number | null): value is number => value !== null)
-      const average =
-        averageValues.length > 0
-          ? averageValues.reduce((total: number, value: number) => total + value, 0) /
-            averageValues.length
-          : null
-      return {
-        ...row,
-        name: teamName(String(row?.id ?? '')),
-        win,
-        sum,
-        average,
-        details,
-      }
-    })
-    .filter((row): row is Record<string, any> => row !== null)
 })
 const compileColumns = computed(() => {
   const metricKeys = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
@@ -1671,10 +1526,6 @@ function openSubmissionEditorModal(submissionId: string) {
 function closeSubmissionEditorModal() {
   submissionEditorModalOpen.value = false
   submissionEditorSubmissionId.value = ''
-}
-
-function setCompileReportTab(value: CompileReportTab) {
-  compileReportTab.value = value
 }
 
 function venueName(id: string) {
@@ -2562,7 +2413,6 @@ watch(
 watch(
   selectedRound,
   () => {
-    compileReportTab.value = 'rankings'
     manualCompileSource.value = 'submissions'
     manualCompileOptionOverrides.value = undefined
     applyCompileDraftFromRound()
@@ -2627,20 +2477,6 @@ watch(
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-surface) 75%, transparent);
   pointer-events: none;
-}
-
-.section-header {
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.page-title {
-  margin: 0;
-  color: var(--color-text);
-  font-size: clamp(1.55rem, 1.9vw, 1.92rem);
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  font-weight: 750;
 }
 
 .round-bar-head {
@@ -3018,35 +2854,6 @@ watch(
   flex-wrap: wrap;
 }
 
-.compile-report-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.compile-report-tab {
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-muted);
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.compile-report-tab:hover {
-  border-color: #bfdbfe;
-  color: var(--color-primary);
-}
-
-.compile-report-tab.active {
-  background: var(--color-secondary);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
 .compile-result-baseline-select {
   margin-left: auto;
   width: min(340px, 100%);
@@ -3063,20 +2870,6 @@ watch(
 
 .compile-download-row {
   justify-content: flex-end;
-}
-
-.compile-fairness-visual-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-
-.compile-fairness-visual-card {
-  min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  padding: var(--space-2);
 }
 
 .diff-legend {
@@ -3316,10 +3109,6 @@ watch(
   }
 
   .publish-switch-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .compile-fairness-visual-grid {
     grid-template-columns: 1fr;
   }
 }

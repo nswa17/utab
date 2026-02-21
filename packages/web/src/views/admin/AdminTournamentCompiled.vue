@@ -1,35 +1,35 @@
 <template>
   <section class="stack">
-    <div class="row section-header">
-      <h3 class="page-title">{{ $t('大会結果レポート') }}</h3>
-      <ReloadButton
-        class="header-reload"
-        @click="refresh"
-        :target="$t('大会結果レポート')"
-        :disabled="isLoading"
-        :loading="isLoading"
-      />
-    </div>
-
     <div class="report-content-shell">
       <LoadingState v-if="!hasLoaded && isLoading" />
       <div v-else class="report-body">
         <p v-if="compiledStore.error" class="error">{{ compiledStore.error }}</p>
 
         <div v-else class="stack">
-      <section class="card stack report-setup-card">
-        <div class="row report-setup-head">
-          <h4>{{ $t('既存レポートの選択') }}</h4>
-          <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
-        </div>
+          <section class="card stack report-setup-card">
+            <div class="row report-setup-head">
+              <h4>{{ $t('既存レポートの選択') }}</h4>
+              <div class="row report-setup-actions">
+                <span v-if="isDisplayedRawSource" class="raw-source-badge">{{
+                  $t('例外モード')
+                }}</span>
+                <ReloadButton
+                  class="report-reload"
+                  variant="secondary"
+                  @click="refresh"
+                  :target="$t('大会結果レポート')"
+                  :disabled="isLoading"
+                  :loading="isLoading"
+                />
+              </div>
+            </div>
         <Table v-if="reportSnapshotRows.length > 0" hover striped class="report-snapshot-table">
           <thead>
             <tr>
               <th>{{ $t('作成日時') }}</th>
               <th>{{ $t('集計結果名') }}</th>
               <th>{{ $t('勝敗判定') }}</th>
-              <th>{{ $t('欠損データ') }}</th>
-              <th>{{ $t('重複マージ') }}</th>
+              <th>{{ $t('順位優先度設定') }}</th>
               <th>{{ $t('操作') }}</th>
             </tr>
           </thead>
@@ -38,8 +38,7 @@
               <td>{{ row.createdAtLabel }}</td>
               <td>{{ row.snapshotLabel }}</td>
               <td>{{ row.winnerPolicyLabel }}</td>
-              <td>{{ row.missingDataLabel }}</td>
-              <td>{{ row.mergePolicyLabel }}</td>
+              <td>{{ row.rankingPriorityLabel }}</td>
               <td>
                 <div class="row report-snapshot-actions">
                   <Button
@@ -69,6 +68,30 @@
           <div class="row report-setup-head">
             <h4>{{ $t('新規レポート生成') }}</h4>
           </div>
+          <section v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary-card">
+            <Table hover striped>
+              <thead>
+                <tr>
+                  <th>{{ $t('ラウンド') }}</th>
+                  <th>Ballot</th>
+                  <th>Feedback</th>
+                  <th>{{ $t('操作') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
+                  <td>{{ roundName(summary.round) }}</td>
+                  <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
+                  <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
+                  <td>
+                    <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
+                      {{ $t('提出状況を確認') }}
+                    </RouterLink>
+                  </td>
+                </tr>
+              </tbody>
+            </Table>
+          </section>
           <p class="muted small">{{ $t('新規レポートを生成します。') }}</p>
           <div class="row compile-actions">
             <Button
@@ -99,55 +122,10 @@
           <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
             {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
           </p>
-          <section v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary-card">
-            <div class="row submission-summary-header">
-              <h4>{{ $t('提出状況サマリー') }}</h4>
-              <div class="row submission-summary-actions">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  @click="downloadCommentSheetCsv"
-                  :disabled="commentSheetRows.length === 0"
-                >
-                  {{ $t('コメントシートCSV') }}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  @click="downloadParticipantCsv"
-                  :disabled="participantExportRows.length === 0"
-                >
-                  {{ $t('参加者CSV') }}
-                </Button>
-              </div>
-            </div>
-            <Table hover striped>
-              <thead>
-                <tr>
-                  <th>{{ $t('ラウンド') }}</th>
-                  <th>Ballot</th>
-                  <th>Feedback</th>
-                  <th>{{ $t('操作') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
-                  <td>{{ roundName(summary.round) }}</td>
-                  <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
-                  <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
-                  <td>
-                    <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
-                      {{ $t('提出状況を確認') }}
-                    </RouterLink>
-                  </td>
-                </tr>
-              </tbody>
-            </Table>
-          </section>
           <div v-if="isRawModeActive" class="card stack migration-guide">
             <h5>{{ $t('提出データ一本化ガイド') }}</h5>
             <ol class="migration-guide-list">
-              <li>{{ $t('ラウンド運営の提出状況タブで不足提出を解消し、重複提出を整理します。') }}</li>
+              <li>{{ $t('大会運営の提出状況タブで不足提出を解消し、重複提出を整理します。') }}</li>
               <li>{{ $t('生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。') }}</li>
               <li>{{ $t('提出データソースに戻して再計算し、確定した集計結果を選択して出力します。') }}</li>
             </ol>
@@ -158,7 +136,7 @@
             </div>
           </div>
         </section>
-      </section>
+          </section>
 
       <template v-if="compiled">
         <div v-if="reportUxV3Enabled" class="stack report-section-nav">
@@ -200,17 +178,28 @@
               <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
             </div>
           </div>
-          <div v-if="showCategoryTabs" class="label-tabs ranking-category-tabs">
-            <button
-              v-for="label in availableLabels"
-              :key="label"
-              type="button"
-              class="label-tab"
-              :class="{ active: activeLabel === label }"
-              @click="setActiveLabel(label)"
+          <div v-if="showCategoryTabs" class="row ranking-category-toolbar">
+            <div class="label-tabs ranking-category-tabs">
+              <button
+                v-for="label in rankingLabels"
+                :key="label"
+                type="button"
+                class="label-tab"
+                :class="{ active: activeLabel === label }"
+                @click="setActiveLabel(label)"
+              >
+                {{ labelDisplay(label) }}
+              </button>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="ranking-participant-download"
+              @click="downloadParticipantCsv"
+              :disabled="participantExportRows.length === 0"
             >
-              {{ labelDisplay(label) }}
-            </button>
+              {{ $t('参加者CSVダウンロード') }}
+            </Button>
           </div>
           <div v-if="showDiffLegend" class="row diff-legend">
             <span class="diff-legend-item">
@@ -227,7 +216,9 @@
             </span>
             <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
           </div>
-          <div v-if="activeResults.length === 0" class="muted">{{ $t('結果がありません。') }}</div>
+          <div v-if="activeResults.length === 0" class="muted">
+            {{ $t('このカテゴリの順位データがありません。') }}
+          </div>
           <CategoryRankingTable
             v-else
             :rows="sortedActiveResults"
@@ -247,15 +238,27 @@
             :plain-keys="['comments', 'judged_teams']"
             :plain-value-formatter="rankingPlainValue"
           />
-          <div class="row section-download-row">
-            <Button
-              variant="secondary"
-              class="section-download-button"
-              :disabled="activeResults.length === 0"
-              @click="downloadCsv"
-            >
-              {{ $t('CSVダウンロード') }}
-            </Button>
+          <div class="stack section-download-stack">
+            <div class="row section-download-row">
+              <Button
+                variant="secondary"
+                class="section-download-button"
+                :disabled="activeResults.length === 0"
+                @click="downloadCsv"
+              >
+                {{ $t('CSVダウンロード') }}
+              </Button>
+            </div>
+            <div class="row section-download-row">
+              <Button
+                variant="secondary"
+                class="section-download-button"
+                :disabled="commentSheetRows.length === 0"
+                @click="downloadCommentSheetCsv"
+              >
+                {{ $t('CSVダウンロード（コメントシートのみ）') }}
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -545,8 +548,8 @@
             <div class="fairness-round-visual-card">
               <ScoreHistogram
                 v-if="canShowAnalysisCharts && isSpeakerScoreEnabledRound(round.round)"
-                :results="activeResults"
-                :score="scoreKey"
+                :results="fairnessAnalysisResults"
+                :score="fairnessScoreKey"
                 :round="round.round"
                 :round-name="round.name"
               />
@@ -558,7 +561,7 @@
               <EmptyState
                 v-else
                 :title="$t('スコアヒストグラム')"
-                :message="$t('分析が利用可能な集計区分で表示されます。')"
+                :message="$t('集計を実行すると分析を表示できます。')"
               />
             </div>
           </div>
@@ -576,14 +579,45 @@
             />
             <template v-else>
               <FairnessAnalysisCharts
-                :results="activeResults"
+                :results="fairnessAnalysisResults"
                 :tournament="compiled"
-                :score-key="scoreKey"
+                :score-key="fairnessScoreKey"
                 :round-filter="fairnessVisualRoundNumbers"
                 :show-score-range="true"
-                :show-team-performance="activeLabel === 'teams'"
+                :show-team-performance="true"
                 :use-cards="true"
               />
+              <div
+                v-if="speakerPerformanceResults.length > 0 || adjudicatorPerformanceResults.length > 0"
+                class="fairness-performance-grid"
+              >
+                <div
+                  v-if="speakerPerformanceResults.length > 0"
+                  class="fairness-analysis-chart-card"
+                >
+                  <TeamPerformance
+                    :results="speakerPerformanceResults"
+                    :title="$t('スピーカー成績のプロット')"
+                    score-key="average"
+                    :value-label="$t('平均')"
+                    color-key="average"
+                    :show-legend="false"
+                  />
+                </div>
+                <div
+                  v-if="adjudicatorPerformanceResults.length > 0"
+                  class="fairness-analysis-chart-card"
+                >
+                  <TeamPerformance
+                    :results="adjudicatorPerformanceResults"
+                    :title="$t('ジャッジ成績のプロット')"
+                    score-key="average"
+                    :value-label="$t('平均')"
+                    color-key="average"
+                    :show-legend="false"
+                  />
+                </div>
+              </div>
             </template>
           </section>
         </section>
@@ -721,7 +755,7 @@
             v-model:best-aggregation="compileBestAggregation"
             v-model:missing-data-policy="compileMissingDataPolicy"
             :show-winner-scoring="false"
-            :show-ranking-priority="false"
+            :show-ranking-priority="true"
             :show-source-rounds="true"
             :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
             :disabled="isLoading"
@@ -812,6 +846,7 @@ import FairnessAnalysisCharts from '@/components/mstat/FairnessAnalysisCharts.vu
 import ScoreHistogram from '@/components/mstat/ScoreHistogram.vue'
 import SideScatter from '@/components/mstat/SideScatter.vue'
 import SidePieChart from '@/components/mstat/SidePieChart.vue'
+import TeamPerformance from '@/components/mstat/TeamPerformance.vue'
 import { api } from '@/utils/api'
 import {
   DEFAULT_COMPILE_OPTIONS,
@@ -1045,8 +1080,7 @@ type ReportSnapshotRow = {
   createdAtLabel: string
   snapshotLabel: string
   winnerPolicyLabel: string
-  missingDataLabel: string
-  mergePolicyLabel: string
+  rankingPriorityLabel: string
   isSelected: boolean
 }
 type RecomputeOptionsSnapshot = {
@@ -1140,9 +1174,16 @@ function isCompileLabelEnabled(label: 'teams' | 'speakers' | 'adjudicators' | 'p
   return selectedCompileLabels.value.has(label)
 }
 
-const availableLabels = computed(() => {
+const rankingLabels = computed<CompiledLabel[]>(() => [
+  'teams',
+  'speakers',
+  'adjudicators',
+  'poi',
+  'best',
+])
+const availableSlideLabels = computed<CompiledLabel[]>(() => {
   if (!compiled.value) return ['teams']
-  const labels: Array<'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'> = []
+  const labels: CompiledLabel[] = []
   if (isCompileLabelEnabled('teams') && compiled.value.compiled_team_results?.length) labels.push('teams')
   if (isCompileLabelEnabled('speakers') && compiled.value.compiled_speaker_results?.length) labels.push('speakers')
   if (isCompileLabelEnabled('adjudicators') && compiled.value.compiled_adjudicator_results?.length) labels.push('adjudicators')
@@ -1150,7 +1191,7 @@ const availableLabels = computed(() => {
   if (isCompileLabelEnabled('best') && bestResults.value.length > 0) labels.push('best')
   return labels.length > 0 ? labels : ['teams']
 })
-const slideAvailableLabels = computed(() => availableLabels.value)
+const slideAvailableLabels = computed(() => availableSlideLabels.value)
 const showCategoryTabs = computed(
   () => Boolean(compiled.value) && compileExecuted.value && showOperationsSection.value
 )
@@ -1200,18 +1241,10 @@ function summarizeWinnerPolicy(policy: CompileOptions['winner_policy']): string 
   return t('winnerId優先')
 }
 
-function summarizeMissingDataPolicy(policy: CompileOptions['missing_data_policy']): string {
-  if (policy === 'exclude') return t('欠損を除外')
-  if (policy === 'error') return t('エラー停止')
-  return t('警告のみ')
-}
-
-function summarizeMergePolicy(
-  policy: CompileOptions['duplicate_normalization']['merge_policy']
-): string {
-  if (policy === 'latest') return t('最新を採用')
-  if (policy === 'average') return t('統合')
-  return t('重複時はエラー')
+function summarizeRankingPriority(priority: CompileOptions['ranking_priority']): string {
+  const defaultOrder = DEFAULT_COMPILE_OPTIONS.ranking_priority.order
+  const order = Array.isArray(priority?.order) && priority.order.length > 0 ? priority.order : defaultOrder
+  return order.map((metric) => columnLabel(metric)).join(' → ')
 }
 
 const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
@@ -1236,8 +1269,7 @@ const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
     createdAtLabel: formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value),
     snapshotLabel: summarizeSnapshotLabel(option),
     winnerPolicyLabel: summarizeWinnerPolicy(option.compileOptions.winner_policy),
-    missingDataLabel: summarizeMissingDataPolicy(option.compileOptions.missing_data_policy),
-    mergePolicyLabel: summarizeMergePolicy(option.compileOptions.duplicate_normalization.merge_policy),
+    rankingPriorityLabel: summarizeRankingPriority(option.compileOptions.ranking_priority),
     isSelected: option.compiledId === selectedCompiledId.value,
   }))
 })
@@ -1276,14 +1308,14 @@ const reportSectionOptions = computed<
     description: t('集計区分ごとの順位と差分を確認'),
   },
   {
-    key: 'fairness',
-    label: t('統計'),
-    description: t('偏り・割当と分析指標をまとめて確認'),
-  },
-  {
     key: 'announcement',
     label: t('発表出力'),
     description: t('スライドと表彰出力を確認'),
+  },
+  {
+    key: 'fairness',
+    label: t('統計'),
+    description: t('偏り・割当と分析指標をまとめて確認'),
   },
 ])
 const showOperationsSection = computed(
@@ -1299,17 +1331,10 @@ const canShowAnalysisCharts = computed(
   () =>
     showFairnessSection.value &&
     (!reportUxV3Enabled || analysisChartsReady.value) &&
-    isStandardLabel.value &&
-    activeResults.value.length > 0
+    fairnessAnalysisResults.value.length > 0
 )
 const analysisEmptyState = computed(() => {
-  if (!isStandardLabel.value) {
-    return {
-      title: t('このカテゴリでは分析統計を表示できません'),
-      message: t('分析はチーム・スピーカー・ジャッジの集計区分で利用できます。'),
-    }
-  }
-  if (activeResults.value.length === 0) {
+  if (fairnessAnalysisResults.value.length === 0) {
     return {
       title: t('分析データがありません'),
       message: t('集計を実行すると分析を表示できます。'),
@@ -1506,6 +1531,29 @@ const activeResults = computed<any[]>(() => {
     return mapped
   }
   return applyClientBaselineDiff(mapped, selectedDiffBaselineRows.value)
+})
+const fairnessAnalysisSource = computed<any[]>(() => {
+  if (!compiled.value) return []
+  return resultSourceForLabel(compiled.value, 'teams')
+})
+const selectedDiffBaselineTeamRows = computed<any[]>(() => {
+  if (!selectedDiffBaselineCompiled.value) return []
+  return resultSourceForLabel(selectedDiffBaselineCompiled.value, 'teams')
+})
+const fairnessAnalysisResults = computed<any[]>(() => {
+  const mapped = mapResultRows(fairnessAnalysisSource.value, 'teams')
+  if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineTeamRows.value.length === 0) {
+    return mapped
+  }
+  return applyClientBaselineDiff(mapped, selectedDiffBaselineTeamRows.value)
+})
+const speakerPerformanceResults = computed<any[]>(() => {
+  if (!compiled.value) return []
+  return mapResultRows(resultSourceForLabel(compiled.value, 'speakers'), 'speakers')
+})
+const adjudicatorPerformanceResults = computed<any[]>(() => {
+  if (!compiled.value) return []
+  return mapResultRows(resultSourceForLabel(compiled.value, 'adjudicators'), 'adjudicators')
 })
 const sortedActiveResults = computed<any[]>(() => {
   const key = resultSortKey.value
@@ -1714,18 +1762,12 @@ const tableColumns = computed(() => {
   return ['ranking', 'id', 'institutions', 'win']
 })
 
-const scoreKey = computed(() => {
-  if (activeLabel.value === 'adjudicators') return 'score'
-  if (activeLabel.value === 'speakers') return 'average'
-  const hasSum = activeResults.value.some((result) =>
+const fairnessScoreKey = computed(() => {
+  const hasSum = fairnessAnalysisResults.value.some((result) =>
     result.details?.some((detail: any) => typeof detail.sum === 'number')
   )
   return hasSum ? 'sum' : 'win'
 })
-
-const isStandardLabel = computed(() =>
-  ['teams', 'speakers', 'adjudicators'].includes(activeLabel.value)
-)
 
 const poiResults = computed(() => buildSubPrizeResults('poi'))
 const bestResults = computed(() => buildSubPrizeResults('best'))
@@ -3084,7 +3126,7 @@ watch(
   { immediate: true }
 )
 
-watch(availableLabels, (labels) => {
+watch(rankingLabels, (labels) => {
   if (!labels.includes(activeLabel.value)) {
     activeLabel.value = (labels[0] ?? 'teams') as
       | 'teams'
@@ -3093,6 +3135,9 @@ watch(availableLabels, (labels) => {
       | 'poi'
       | 'best'
   }
+})
+
+watch(slideAvailableLabels, (labels) => {
   if (!labels.includes(slideLabel.value)) {
     persistSlideLabel((labels[0] ?? 'teams') as CompiledLabel)
   }
@@ -3215,25 +3260,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   flex-wrap: wrap;
 }
 
-.section-header {
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.page-title {
-  margin: 0;
-  color: var(--color-text);
-  font-size: clamp(1.55rem, 1.9vw, 1.92rem);
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  font-weight: 750;
-}
-
-.header-reload {
-  margin-left: var(--space-2);
-}
-
 .warning {
   color: var(--color-warn);
 }
@@ -3266,6 +3292,13 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 .report-setup-head {
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.report-setup-actions {
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -3395,8 +3428,18 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-3);
 }
 
+.ranking-category-toolbar {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .ranking-category-tabs {
   margin-top: 2px;
+}
+
+.ranking-participant-download {
+  margin-left: auto;
 }
 
 .strictness-card {
@@ -3486,6 +3529,12 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 }
 
 .fairness-analysis {
+  gap: var(--space-2);
+}
+
+.fairness-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
@@ -3598,17 +3647,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   color: var(--color-primary);
   text-decoration: none;
   font-size: 0.85rem;
-}
-
-.submission-summary-header {
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.submission-summary-actions {
-  margin-left: auto;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 .submission-link:hover {
@@ -3755,6 +3793,10 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   justify-content: flex-end;
 }
 
+.section-download-stack {
+  gap: var(--space-1);
+}
+
 .section-download-button {
   width: 100%;
   justify-content: center;
@@ -3835,6 +3877,10 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 @media (max-width: 980px) {
   .fairness-round-visual-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fairness-performance-grid {
     grid-template-columns: 1fr;
   }
 }

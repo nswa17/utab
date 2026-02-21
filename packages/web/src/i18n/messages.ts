@@ -60,8 +60,8 @@ const en = {
     'Team A Matter/Manner counts must match.',
   'チーム B の Matter/Manner 件数を一致させてください。':
     'Team B Matter/Manner counts must match.',
-  '前回送信した内容を読み込みました。必要に応じて修正して再送信してください。':
-    'Loaded your previous submission. Edit and resubmit if needed.',
+  '前回送信した内容を読み込みました。このラウンドの再送信はできません。修正が必要な場合は運営に報告してください。':
+    'Loaded your previous submission. You cannot resubmit for this round. Report needed corrections to organizers.',
   'Manner': 'Manner',
   'Matter': 'Matter',
   'Matter/Manner採点': 'Matter/Manner scoring',
@@ -145,7 +145,7 @@ const en = {
   'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。':
     'Setup is smoother when teams are added after speakers/conflict groups, and adjudicators after conflict groups.',
   '大会セットアップ': 'Tournament setup',
-  'ラウンド運営': 'Round operations',
+  '大会運営': 'Tournament operations',
   '結果確定・レポート': 'Finalize & reports',
   '大会結果レポート': 'Tournament results report',
   'レポート概要': 'Report overview',
@@ -288,15 +288,15 @@ const en = {
   '旧導線は読み取り専用です。新画面で操作してください。':
     'Legacy flow is read-only. Use the new flow for operations.',
   '提出データ一本化ガイド': 'Submission-first migration guide',
-  'ラウンド運営の提出状況タブで不足提出を解消し、重複提出を整理します。':
-    'Resolve missing and duplicate submissions in the submissions tab of round operations.',
+  '大会運営の提出状況タブで不足提出を解消し、重複提出を整理します。':
+    'Resolve missing and duplicate submissions in the submissions tab of tournament operations.',
   '生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。':
     'If raw-result corrections are needed, reflect them in submission edits and recompile.',
   '提出データソースに戻して再計算し、確定した集計結果を選択して出力します。':
     'Switch back to submission source, recompile, then output from a finalized compile result.',
   '表示中の大会結果は例外モードで生成されました。':
     'The displayed tournament results were generated in exception mode.',
-  'ラウンド運営へ': 'Open round operations',
+  '大会運営へ': 'Open tournament operations',
   '次ラウンド対戦生成': 'Next-round pairing',
   '公開設定': 'Publication settings',
   'ラウンド公開設定': 'Round publication settings',
@@ -1102,6 +1102,8 @@ const en = {
     'Points assigned to each team when a draw is allowed.',
   '同じ提出者から複数提出がある場合の扱いです。':
     'How duplicate submissions from the same submitter are handled.',
+  '重複提出、同一スピーカー入力、欠損データの扱いを設定します。':
+    'Configure handling for duplicate submissions, same-speaker inputs, and missing data.',
   '同一スピーカーへのPOI複数入力を平均か最大でまとめます。':
     'How multiple POI inputs for the same speaker are merged (average or maximum).',
   '同一スピーカーへのBest Debater複数入力を平均か最大でまとめます。':
@@ -1403,6 +1405,8 @@ const en = {
   'サイド別スコア': 'Scores by side',
   'チームの成績': 'Team performance',
   'チーム成績': 'Team performance',
+  'スピーカー成績のプロット': 'Speaker performance plot',
+  'ジャッジ成績のプロット': 'Adjudicator performance plot',
   '開始得点': 'Opening score',
   '最高得点': 'High score',
   '最低得点': 'Low score',

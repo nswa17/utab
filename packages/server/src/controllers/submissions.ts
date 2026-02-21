@@ -14,6 +14,11 @@ function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: stri
   return String(sessionUserId ?? '').trim()
 }
 
+const DUPLICATE_BALLOT_MESSAGE =
+  'すでにチーム評価が送信されています。運営に報告してください。'
+const DUPLICATE_FEEDBACK_MESSAGE =
+  'すでにジャッジ評価が送信されています。運営に報告してください。'
+
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 }
@@ -827,7 +832,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
 
     const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
     if (actor) {
-      await SubmissionModel.deleteMany({
+      const duplicate = await SubmissionModel.findOne({
         tournamentId,
         round,
         type: 'ballot',
@@ -840,7 +845,16 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
             ],
           },
         ],
-      }).exec()
+      })
+        .select({ _id: 1 })
+        .lean()
+        .exec()
+      if (duplicate) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_BALLOT_MESSAGE }] })
+        return
+      }
     }
     const created = await SubmissionModel.create({
       tournamentId,
@@ -900,13 +914,22 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     const SubmissionModel = getSubmissionModel(connection)
     const actor = resolveSubmissionActor(payload.submittedEntityId, req.session?.userId)
     if (actor) {
-      await SubmissionModel.deleteMany({
+      const duplicate = await SubmissionModel.findOne({
         tournamentId,
         round,
         type: 'feedback',
         'payload.adjudicatorId': payload.adjudicatorId,
         $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
-      }).exec()
+      })
+        .select({ _id: 1 })
+        .lean()
+        .exec()
+      if (duplicate) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_FEEDBACK_MESSAGE }] })
+        return
+      }
     }
     const created = await SubmissionModel.create({
       tournamentId,

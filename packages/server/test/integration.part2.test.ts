@@ -758,7 +758,7 @@ describe('Server integration', () => {
     expect(submissionsRes.body.data.length).toBe(2)
   })
 
-  it('treats blank submittedEntityId as session actor for dedupe', async () => {
+  it('rejects duplicate ballots when submittedEntityId is blank and actor falls back to session user', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -803,14 +803,17 @@ describe('Server integration', () => {
       comment: 'second submission',
       submittedEntityId: '   ',
     })
-    expect(secondBallot.status).toBe(201)
+    expect(secondBallot.status).toBe(409)
+    expect(String(secondBallot.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。運営に報告してください。'
+    )
 
     const submissionsRes = await agent.get(
       `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
     )
     expect(submissionsRes.status).toBe(200)
     expect(submissionsRes.body.data.length).toBe(1)
-    expect(submissionsRes.body.data[0].payload.comment).toBe('second submission')
+    expect(submissionsRes.body.data[0].payload.comment).toBe('first submission')
   })
 
   it('normalizes submitted entity ids on ballot submissions', async () => {

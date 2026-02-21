@@ -587,7 +587,7 @@ describe('Server integration', () => {
     expect(invalidRoundFilter.body.errors.some((issue: any) => issue.path === 'round')).toBe(true)
   })
 
-  it('deduplicates submissions for the same submitted entity per round', async () => {
+  it('rejects duplicate ballot submissions for the same submitted entity, round, and matchup', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -630,21 +630,81 @@ describe('Server integration', () => {
       comment: 'second submission',
       submittedEntityId: 'team-a',
     })
-    expect(secondBallot.status).toBe(201)
+    expect(secondBallot.status).toBe(409)
+    expect(String(secondBallot.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。運営に報告してください。'
+    )
 
     const adminList = await organizer.get(
       `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
     )
     expect(adminList.status).toBe(200)
     expect(adminList.body.data.length).toBe(1)
-    expect(adminList.body.data[0].payload.comment).toBe('second submission')
+    expect(adminList.body.data[0].payload.comment).toBe('first submission')
 
     const participantList = await organizer.get(
       `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=ballot&submittedEntityId=team-a`
     )
     expect(participantList.status).toBe(200)
     expect(participantList.body.data.length).toBe(1)
-    expect(participantList.body.data[0].payload.winnerId).toBe('team-b')
+    expect(participantList.body.data[0].payload.winnerId).toBe('team-a')
+  })
+
+  it('rejects duplicate feedback submissions for the same submitted entity, round, and target adjudicator', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'feedback-duplicate-reject', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'feedback-duplicate-reject', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Feedback Duplicate Reject Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const firstFeedback = await organizer.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: 'judge-a',
+      score: 7,
+      comment: 'first feedback',
+      submittedEntityId: 'team-a',
+    })
+    expect(firstFeedback.status).toBe(201)
+
+    const secondFeedback = await organizer.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: 'judge-a',
+      score: 8,
+      comment: 'second feedback',
+      submittedEntityId: 'team-a',
+    })
+    expect(secondFeedback.status).toBe(409)
+    expect(String(secondFeedback.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにジャッジ評価が送信されています。運営に報告してください。'
+    )
+
+    const adminList = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=1&type=feedback`
+    )
+    expect(adminList.status).toBe(200)
+    expect(adminList.body.data.length).toBe(1)
+    expect(adminList.body.data[0].payload.comment).toBe('first feedback')
+
+    const participantList = await organizer.get(
+      `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=feedback&submittedEntityId=team-a`
+    )
+    expect(participantList.status).toBe(200)
+    expect(participantList.body.data.length).toBe(1)
+    expect(participantList.body.data[0].payload.score).toBe(7)
   })
 
   it('updates submitted ballots via admin submission API', async () => {

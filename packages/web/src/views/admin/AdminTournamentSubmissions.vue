@@ -85,9 +85,13 @@
             </Field>
             <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
               <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
-                <option value="">{{ $t('未選択') }}</option>
-                <option :value="editingBallotTeamAId">{{ teamName(editingBallotTeamAId) }}</option>
-                <option :value="editingBallotTeamBId">{{ teamName(editingBallotTeamBId) }}</option>
+                <option
+                  v-for="option in editingBallotWinnerOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
               </select>
             </Field>
             <Field :label="$t('提出者')" v-slot="{ id, describedBy }">
@@ -422,9 +426,13 @@
                           </Field>
                           <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
                             <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
-                              <option value="">{{ $t('未選択') }}</option>
-                              <option :value="editingBallotTeamAId">{{ teamName(editingBallotTeamAId) }}</option>
-                              <option :value="editingBallotTeamBId">{{ teamName(editingBallotTeamBId) }}</option>
+                              <option
+                                v-for="option in editingBallotWinnerOptions"
+                                :key="option.value"
+                                :value="option.value"
+                              >
+                                {{ option.label }}
+                              </option>
                             </select>
                           </Field>
                           <Field :label="$t('提出者')" v-slot="{ id, describedBy }">
@@ -811,9 +819,13 @@
                       </Field>
                       <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
                         <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
-                          <option value="">{{ $t('未選択') }}</option>
-                          <option :value="editingBallotTeamAId">{{ teamName(editingBallotTeamAId) }}</option>
-                          <option :value="editingBallotTeamBId">{{ teamName(editingBallotTeamBId) }}</option>
+                          <option
+                            v-for="option in editingBallotWinnerOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </option>
                         </select>
                       </Field>
                       <Field :label="$t('提出者')" v-slot="{ id, describedBy }">
@@ -1246,6 +1258,7 @@ const splitSortStates = reactive<
   team: { key: 'createdAt', direction: 'desc' },
   judge: { key: 'createdAt', direction: 'desc' },
 })
+const DRAW_WINNER_OPTION_VALUE = '__draw__'
 const sectionLoading = ref(true)
 const expandedIds = ref<Set<string>>(new Set())
 const editingSubmissionId = ref<string | null>(null)
@@ -1374,6 +1387,22 @@ const editingBallotOppTeamId = computed(() => {
   if (govTeamId === teamAId) return teamBId
   if (govTeamId === teamBId) return teamAId
   return ''
+})
+
+const editingBallotAllowDraw = computed(() =>
+  roundScoreSettings(editingRound.value).allowLowTieWin
+)
+const editingBallotWinnerOptions = computed<Array<{ value: string; label: string }>>(() => {
+  const options: Array<{ value: string; label: string }> = []
+  const teamAId = editingBallotTeamAId.value.trim()
+  const teamBId = editingBallotTeamBId.value.trim()
+
+  if (teamAId) options.push({ value: teamAId, label: teamName(teamAId) })
+  if (teamBId && teamBId !== teamAId) options.push({ value: teamBId, label: teamName(teamBId) })
+  if (editingBallotAllowDraw.value && teamAId && teamBId) {
+    options.push({ value: DRAW_WINNER_OPTION_VALUE, label: t('引き分け') })
+  }
+  return options
 })
 
 const editingBallotTeamPairLabel = computed(() => {
@@ -2157,7 +2186,32 @@ function roundScoreSettings(roundNumber: number) {
   return {
     noSpeakerScore: found?.userDefinedData?.no_speaker_score === true,
     scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
+    allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false,
   }
+}
+
+function normalizeEditingBallotWinnerSelection(preferredWinnerId?: string) {
+  const options = editingBallotWinnerOptions.value
+  if (options.length === 0) {
+    editingBallotWinnerId.value = ''
+    return
+  }
+
+  const preferred = String(preferredWinnerId ?? editingBallotWinnerId.value).trim()
+  if (options.some((option) => option.value === preferred)) {
+    editingBallotWinnerId.value = preferred
+    return
+  }
+
+  if (!preferred && editingBallotAllowDraw.value) {
+    const drawOption = options.find((option) => option.value === DRAW_WINNER_OPTION_VALUE)
+    if (drawOption) {
+      editingBallotWinnerId.value = drawOption.value
+      return
+    }
+  }
+
+  editingBallotWinnerId.value = options[0].value
 }
 
 function buildEditableRows(options: {
@@ -2206,7 +2260,7 @@ function hydrateBallotEditor(payload: Record<string, unknown>) {
     initialSideMapping.govTeamId === editingBallotTeamBId.value
       ? initialSideMapping.govTeamId
       : editingBallotTeamAId.value || editingBallotTeamBId.value
-  editingBallotWinnerId.value = String(payload.winnerId ?? '')
+  normalizeEditingBallotWinnerSelection(String(payload.winnerId ?? ''))
   editingBallotSubmittedEntityId.value = String(payload.submittedEntityId ?? '')
   editingBallotComment.value = typeof payload.comment === 'string' ? payload.comment : ''
 
@@ -2351,10 +2405,16 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
     return fail(t('{side} 側のチームを選択してください。', { side: govLabel.value }))
   }
 
-  const winner = editingBallotWinnerId.value.trim()
-  if (winner && winner !== teamAId && winner !== teamBId) {
-    return fail(t('勝者は対戦チームのいずれかを指定してください。'))
+  const winnerSelection = editingBallotWinnerId.value.trim()
+  const availableWinnerValues = new Set(editingBallotWinnerOptions.value.map((option) => option.value))
+  if (!availableWinnerValues.has(winnerSelection)) {
+    return fail(
+      editingBallotAllowDraw.value
+        ? t('勝者または引き分けを選択してください。')
+        : t('勝者を選択してください。')
+    )
   }
+  const winner = winnerSelection === DRAW_WINNER_OPTION_VALUE ? '' : winnerSelection
 
   const payload: Record<string, unknown> = {
     ...editingBallotBasePayload.value,
@@ -2599,6 +2659,7 @@ watch(editingRound, () => {
   const previousNoSpeaker = editingBallotNoSpeakerScore.value
   const settings = roundScoreSettings(editingRound.value)
   editingBallotNoSpeakerScore.value = settings.noSpeakerScore
+  normalizeEditingBallotWinnerSelection()
 
   if (settings.noSpeakerScore) return
 
@@ -2631,7 +2692,17 @@ watch(editingRound, () => {
       })
     }
   }
+
 })
+
+watch(
+  editingBallotWinnerOptions,
+  () => {
+    if (!editingSubmissionId.value) return
+    normalizeEditingBallotWinnerSelection()
+  },
+  { deep: true }
+)
 
 watch(
   [contextRound, () => route.query.round],

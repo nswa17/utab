@@ -83,6 +83,7 @@
           </template>
         </Field>
       </div>
+      <slot name="after-team-settings" />
     </section>
 
   </div>

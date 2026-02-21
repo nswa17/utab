@@ -33,8 +33,11 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('compileRows')
     expect(source).toContain('buildCompileOptions')
     expect(source).toContain('v-model:source-rounds="selectedCompileRounds"')
+    expect(source).toContain(':show-ranking-priority="true"')
     expect(source).toContain(':show-source-rounds="true"')
     expect(source).toContain(':source-round-options="compileSourceRoundOptions"')
+    expect(source).toContain('applyCompileDraftFromRound')
+    expect(source).toContain('selectedRoundData.value?.userDefinedData')
     expect(source).not.toContain('compile-round-picker')
   })
 
@@ -46,15 +49,15 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('compileDiffBaselineCompiledId')
   })
 
-  it('uses shared fairness components in compile report with pie + histogram row and team performance bars', () => {
+  it('shows only team ranking list in compile report', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
-    expect(source).toContain('FairnessAnalysisCharts')
-    expect(source).toContain('SidePieChart')
-    expect(source).toContain('ScoreHistogram')
-    expect(source).toContain('compile-fairness-visual-grid')
-    expect(source).toContain(':show-score-range="false"')
-    expect(source).toContain(':show-team-performance="true"')
-    expect(source).toContain(':show-score-histogram="false"')
+    expect(source).toContain('CategoryRankingTable')
+    expect(source).not.toContain('FairnessAnalysisCharts')
+    expect(source).not.toContain('SidePieChart')
+    expect(source).not.toContain('ScoreHistogram')
+    expect(source).not.toContain('compile-report-tabs')
+    expect(source).not.toContain('カテゴリ別順位一覧')
+    expect(source).not.toContain('公平性')
   })
 
   it('stores selected task per round and defaults to first incomplete step', () => {
@@ -113,5 +116,17 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('openSubmissionEditorModal')
     expect(submissionsView).toContain('splitActiveKey')
     expect(submissionsView).toContain('focusEditOnly')
+  })
+
+  it('uses round tie settings to control ballot winner options without an unselected option', () => {
+    const submissionsView = load('src/views/admin/AdminTournamentSubmissions.vue')
+    expect(submissionsView).toContain("const DRAW_WINNER_OPTION_VALUE = '__draw__'")
+    expect(submissionsView).toContain('const editingBallotAllowDraw = computed(() =>')
+    expect(submissionsView).toContain('allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false')
+    expect(submissionsView).toContain('const editingBallotWinnerOptions = computed<Array<{ value: string; label: string }>>(() => {')
+    expect(submissionsView).toContain('v-for="option in editingBallotWinnerOptions"')
+    expect(submissionsView).not.toMatch(
+      /:label=\"\$t\('勝者'\)\"[\s\S]{0,220}<option value=\"\">\{\{ \$t\('未選択'\) \}\}<\/option>/
+    )
   })
 })

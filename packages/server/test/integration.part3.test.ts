@@ -433,7 +433,32 @@ describe('Server integration', () => {
       scoresB: [74],
       submittedEntityId: 'judge-a',
     })
-    expect(ballotRes2.status).toBe(201)
+    expect(ballotRes2.status).toBe(409)
+    expect(String(ballotRes2.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。運営に報告してください。'
+    )
+
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      payload: {
+        teamAId: teamId1,
+        teamBId: teamId2,
+        speakerIdsA: [speakerId1],
+        speakerIdsB: [speakerId2],
+        scoresA: [74],
+        scoresB: [74],
+        submittedEntityId: 'judge-a',
+      },
+      submittedBy: 'judge-a',
+    })
 
     const compileWithErrorPolicy = await agent.post('/api/compiled').send({
       tournamentId,
@@ -442,7 +467,10 @@ describe('Server integration', () => {
         duplicate_normalization: { merge_policy: 'error' },
       },
     })
-    expect(compileWithErrorPolicy.status).toBe(201)
+    expect(compileWithErrorPolicy.status).toBe(400)
+    expect(String(compileWithErrorPolicy.body.errors?.[0]?.message ?? '')).toContain(
+      'Duplicate ballots detected'
+    )
 
     const compileRes = await agent.post('/api/compiled').send({
       tournamentId,

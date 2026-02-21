@@ -13,7 +13,7 @@
       </RouterLink>
     </nav>
     <div v-else class="row task-header">
-      <Button variant="ghost" size="sm" @click="goTaskList">← {{ $t('参加者ホーム') }}</Button>
+      <Button variant="ghost" size="sm" @click="goTaskList">← {{ taskListLabel }}</Button>
       <h3>{{ currentTaskLabel }}</h3>
     </div>
     <RouterView />
@@ -37,11 +37,21 @@ const participant = computed(() => route.params.participant as string)
 const round = computed(() => route.params.round as string)
 
 const isAudience = computed(() => participant.value === 'audience')
+const isEvaluationEntry = computed(() => {
+  if (route.path.includes('/ballot/entry')) return true
+  return /\/feedback\/[^/]+$/.test(route.path)
+})
 const roundConfig = computed(() =>
   roundsStore.rounds.find((item) => item.round === Number(round.value))
 )
+const taskListLabel = computed(() =>
+  isEvaluationEntry.value ? t('大会ホームに戻る') : t('参加者ホーム')
+)
 
 function roundPath(tab: string) {
+  if (tab === 'draw') {
+    return `/user/${tournamentId.value}/${participant.value}/home`
+  }
   return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/${tab}`
 }
 
@@ -61,6 +71,10 @@ function goBack() {
 }
 
 function goTaskList() {
+  if (isEvaluationEntry.value) {
+    router.push(`/user/${tournamentId.value}/home`)
+    return
+  }
   router.push(`/user/${tournamentId.value}/${participant.value}/home`)
 }
 

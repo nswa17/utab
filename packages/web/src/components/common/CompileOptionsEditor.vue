@@ -147,7 +147,7 @@
     <section v-if="props.showMergeAndMissing" class="stack compile-group">
       <div class="row compile-group-head">
         <h6 class="compile-group-title">{{ $t('集計・欠損') }}</h6>
-        <HelpTip :text="$t('同じ提出者から複数提出がある場合の扱いです。')" />
+        <HelpTip :text="$t('重複提出、同一スピーカー入力、欠損データの扱いを設定します。')" />
       </div>
       <div class="grid compile-grid">
         <Field :label="$t('重複マージ')">
