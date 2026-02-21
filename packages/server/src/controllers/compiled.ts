@@ -1,5 +1,6 @@
 import type { Connection } from 'mongoose'
 import type { RequestHandler } from 'express'
+import { createHash } from 'node:crypto'
 import { results as coreResults } from '@utab/core'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { TournamentModel } from '../models/tournament.js'
@@ -53,9 +54,17 @@ type CompiledPayload = {
   compile_options: CompileOptions
   compile_warnings: string[]
   compile_diff_meta: CompileDiffMeta
+  snapshot_name?: string
+  snapshot_memo?: string
   compiled_team_results: any[]
   compiled_speaker_results: any[]
   compiled_adjudicator_results: any[]
+}
+
+type CompiledPreviewResponse = {
+  preview: CompiledPayload
+  preview_signature: string
+  revision: string
 }
 
 type CompiledResultsKey =
@@ -99,6 +108,107 @@ type CompileDiffMeta = {
   requested_compiled_id?: string
   baseline_compiled_id: string | null
   baseline_found: boolean
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) return 'null'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const keys = Object.keys(record).sort()
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`).join(',')}}`
+  }
+  return JSON.stringify(String(value))
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text).digest('hex')
+}
+
+function normalizeRequestToken(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value.trim()
+}
+
+function readOptionalText(value: unknown): { provided: boolean; value: string } {
+  if (typeof value !== 'string') return { provided: false, value: '' }
+  return { provided: true, value: value.trim() }
+}
+
+function buildPreviewSignature(payload: CompiledPayload): string {
+  return sha256Hex(stableSerialize(payload))
+}
+
+function buildPreviewRevision(payload: CompiledPayload): string {
+  const revisionSeed = {
+    tournamentId: payload.tournamentId,
+    compile_source: payload.compile_source,
+    rounds: payload.rounds,
+    compile_options: payload.compile_options,
+    compile_warnings: payload.compile_warnings,
+    compile_diff_meta: payload.compile_diff_meta,
+    team_result_count: payload.compiled_team_results.length,
+    speaker_result_count: payload.compiled_speaker_results.length,
+    adjudicator_result_count: payload.compiled_adjudicator_results.length,
+  }
+  return sha256Hex(stableSerialize(revisionSeed))
+}
+
+function attachSnapshotMetadata(
+  payload: CompiledPayload,
+  snapshotName: { provided: boolean; value: string },
+  snapshotMemo: { provided: boolean; value: string }
+) {
+  if (snapshotName.provided) payload.snapshot_name = snapshotName.value
+  if (snapshotMemo.provided) payload.snapshot_memo = snapshotMemo.value
+}
+
+async function buildCompiledPreviewPayload(params: {
+  tournamentId: string
+  source?: 'submissions' | 'raw'
+  requestedRounds?: number[]
+  compileOptions: CompileOptions
+}): Promise<{ payload: CompiledPayload; connection: Connection; preview_signature: string; revision: string }> {
+  const { payload, connection } = await buildCompiledPayload(
+    params.tournamentId,
+    params.source,
+    params.requestedRounds,
+    params.compileOptions
+  )
+  payload.compile_source = payload.compile_source === 'raw' || params.source === 'raw' ? 'raw' : 'submissions'
+  await attachDiffAgainstBaseline(payload, connection)
+  return {
+    payload,
+    connection,
+    preview_signature: buildPreviewSignature(payload),
+    revision: buildPreviewRevision(payload),
+  }
+}
+
+function validatePreviewToken(
+  res: Parameters<RequestHandler>[1],
+  expected: { preview_signature: string; revision: string },
+  provided: { preview_signature: string; revision: string }
+): boolean {
+  const signatureMismatch =
+    provided.preview_signature.length > 0 && provided.preview_signature !== expected.preview_signature
+  const revisionMismatch = provided.revision.length > 0 && provided.revision !== expected.revision
+  if (!signatureMismatch && !revisionMismatch) return true
+  res.status(409).json({
+    data: null,
+    errors: [
+      {
+        name: 'PreviewStale',
+        message: 'Preview is stale. Re-run preview before saving.',
+      },
+    ],
+  })
+  return false
 }
 
 function toNumberArray(value: unknown): number[] {
@@ -878,13 +988,6 @@ async function buildCompiledPayloadFromSubmissions(
         speakerMeta.set(speakerId, { teamId, teamName })
       }
     })
-
-    team.speakers?.forEach((_speaker: any, index: number) => {
-      const speakerId = `${teamId}:${index}`
-      if (!speakerMeta.has(speakerId)) {
-        speakerMeta.set(speakerId, { teamId, teamName })
-      }
-    })
   })
 
   function getSpeakersForTeamRound(teamId: string, round: number): string[] {
@@ -892,11 +995,7 @@ async function buildCompiledPayloadFromSubmissions(
     if (!team) return []
     const detail = team.details?.find((d: any) => Number(d.r) === round)
     const detailSpeakers = (detail?.speakers ?? []).map((id: string) => String(id)).filter(Boolean)
-    if (detailSpeakers.length > 0) return detailSpeakers
-    if (Array.isArray(team.speakers) && team.speakers.length > 0) {
-      return team.speakers.map((_speaker: any, index: number) => `${teamId}:${index}`)
-    }
-    return []
+    return detailSpeakers
   }
 
   const sideByRoundTeam = new Map<number, Map<string, string>>()
@@ -1434,22 +1533,34 @@ const makeCreateCompiled =
         source?: 'submissions' | 'raw'
         rounds?: number[]
         options?: CompileOptionsInput
+        snapshot_name?: string
+        snapshot_memo?: string
+        preview_signature?: string
+        revision?: string
       }
       if (!ensureTournamentId(res, tournamentId)) return
 
       const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
-      const { payload, connection } = await buildCompiledPayload(
+      const buildResult = await buildCompiledPreviewPayload({
         tournamentId,
         source,
         requestedRounds,
-        compileOptions
+        compileOptions,
+      })
+      const providedPreview = {
+        preview_signature: normalizeRequestToken(req.body?.preview_signature),
+        revision: normalizeRequestToken(req.body?.revision),
+      }
+      if (!validatePreviewToken(res, buildResult, providedPreview)) return
+      attachSnapshotMetadata(
+        buildResult.payload,
+        readOptionalText(req.body?.snapshot_name),
+        readOptionalText(req.body?.snapshot_memo)
       )
-      payload.compile_source = payload.compile_source === 'raw' || source === 'raw' ? 'raw' : 'submissions'
-      await attachDiffAgainstBaseline(payload, connection)
-      const CompiledModel = getCompiledModel(connection)
+      const CompiledModel = getCompiledModel(buildResult.connection)
       const created = await CompiledModel.create({
         tournamentId,
-        payload,
+        payload: buildResult.payload,
         createdBy: req.session?.userId,
       })
       const createdJson = created.toJSON()
@@ -1513,25 +1624,69 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       source?: 'submissions' | 'raw'
       rounds?: number[]
       options?: CompileOptionsInput
+      snapshot_name?: string
+      snapshot_memo?: string
+      preview_signature?: string
+      revision?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
 
     const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
-    const { payload, connection } = await buildCompiledPayload(
+    const buildResult = await buildCompiledPreviewPayload({
       tournamentId,
       source,
       requestedRounds,
-      compileOptions
+      compileOptions,
+    })
+    const providedPreview = {
+      preview_signature: normalizeRequestToken(req.body?.preview_signature),
+      revision: normalizeRequestToken(req.body?.revision),
+    }
+    if (!validatePreviewToken(res, buildResult, providedPreview)) return
+    attachSnapshotMetadata(
+      buildResult.payload,
+      readOptionalText(req.body?.snapshot_name),
+      readOptionalText(req.body?.snapshot_memo)
     )
-    payload.compile_source = payload.compile_source === 'raw' || source === 'raw' ? 'raw' : 'submissions'
-    await attachDiffAgainstBaseline(payload, connection)
-    const CompiledModel = getCompiledModel(connection)
+    const CompiledModel = getCompiledModel(buildResult.connection)
     const created = await CompiledModel.create({
       tournamentId,
-      payload,
+      payload: buildResult.payload,
       createdBy: req.session?.userId,
     })
     res.status(201).json({ data: created.toJSON(), errors: [] })
+  } catch (err) {
+    if ((err as any)?.status === 404) {
+      notFound(res, 'Tournament not found')
+      return
+    }
+    next(err)
+  }
+}
+
+export const createCompiledPreview: RequestHandler = async (req, res, next) => {
+  try {
+    const { tournamentId, source, rounds: requestedRounds } = req.body as {
+      tournamentId: string
+      source?: 'submissions' | 'raw'
+      rounds?: number[]
+      options?: CompileOptionsInput
+    }
+    if (!ensureTournamentId(res, tournamentId)) return
+
+    const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
+    const built = await buildCompiledPreviewPayload({
+      tournamentId,
+      source,
+      requestedRounds,
+      compileOptions,
+    })
+    const response: CompiledPreviewResponse = {
+      preview: built.payload,
+      preview_signature: built.preview_signature,
+      revision: built.revision,
+    }
+    res.json({ data: response, errors: [] })
   } catch (err) {
     if ((err as any)?.status === 404) {
       notFound(res, 'Tournament not found')

@@ -88,18 +88,24 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('fairnessMatchupSummary')
     expect(source).toContain('fairnessJudgeSummary')
     expect(source).toContain('fairnessAlertCount')
-    expect(source).toContain('ジャッジ割当偏り')
+    expect(source).toContain('ジャッジ担当回数')
     expect(source).toContain('Number.isInteger(round.round) && round.round >= 1')
   })
 
   it('adds judge strictness outlier insights on the fairness section', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('buildJudgeStrictnessRows')
-    expect(source).toContain('judgeStrictnessRows')
-    expect(source).toContain('judgeStrictnessOutliers')
-    expect(source).toContain('ジャッジ偏差 (Strictness)')
+    expect(source).toContain('judgeFeedbackRankingRows')
+    expect(source).toContain('judgeFeedbackRankingOutliers')
+    expect(source).toContain('ジャッジ評価')
+    expect(source).toContain('judgeBallotStrictnessRows')
+    expect(source).toContain('canShowJudgeBallotStrictness')
+    expect(source).toContain('チーム評価の厳しさ')
+    expect(source).toContain('row.matchCount')
     expect(source).toContain('strictnessBarStyle')
+    expect(source).not.toContain('strictnessPointStyle')
     expect(source).toContain('strictness-bar-track')
+    expect(source).not.toContain('strictness-plot')
   })
 
   it('removes announcement summary and boundary sections while keeping announcement export tools', () => {
@@ -128,7 +134,8 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).not.toContain('scoreRangeSortBy')
     expect(source).not.toContain('scoreRangeSortDirection')
     expect(source).not.toContain('toggleScoreRangeSortDirection')
-    expect(source).toContain('<ScoreRange :results="activeResults" :score="scoreKey" />')
+    expect(source).toContain('FairnessAnalysisCharts')
+    expect(source).toContain(':show-score-range="true"')
   })
 
   it('removes heatmap charts from fairness visuals', () => {
@@ -174,6 +181,19 @@ describe('AdminTournamentCompiled V2', () => {
     expect(slideHeadingIndex).toBeLessThan(awardHeadingIndex)
   })
 
+  it('shows slides by default and separates slide type from slide style', () => {
+    const source = load('src/views/admin/AdminTournamentCompiled.vue')
+    expect(source).toContain(':presentation-mode="true"')
+    expect(source).not.toContain('showSlides')
+    expect(source).not.toContain("$t('スライドを表示')")
+    expect(source).not.toContain('slideSettingsOpen')
+    expect(source).not.toContain('@close="showSlides = false"')
+    expect(source).toContain('<option value="single">{{ $t(\'個別\') }}</option>')
+    expect(source).toContain("$t('スライドスタイル')")
+    expect(source).toContain('<option value="simple">{{ $t(\'簡易\') }}</option>')
+    expect(source).toContain(':slide-style="slideStyle"')
+  })
+
   it('tracks report telemetry for section dwell, CTA clicks, and exports', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     const telemetry = load('src/utils/report-telemetry.ts')
@@ -192,7 +212,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(messages).toContain("'表示するレポート': 'Report to display'")
     expect(messages).toContain("'提出状況を確認': 'Check submission status'")
     expect(messages).toContain("'要確認: {count}件'")
-    expect(messages).toContain("'Gov勝率 {gov}% / Opp勝率 {opp}%'")
+    expect(messages).toContain("'Gov勝率 {gov}%'")
     expect(messages).toContain("'順位変動あり: {count}件'")
   })
 
@@ -232,7 +252,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('displayedCompileSource')
     expect(source).toContain('isDisplayedRawSource')
     expect(source).toContain('compiled.value?.compile_source')
-    expect(source).toContain('表示中スナップショットは「生結果データ」です（例外モード）。')
+    expect(source).toContain('表示中の大会結果は例外モードで生成されました。')
     expect(source).toContain("v-if=\"isDisplayedRawSource\" class=\"raw-source-badge\"")
   })
 

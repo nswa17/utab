@@ -42,6 +42,17 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('compileDiffBaselineCompiledId')
   })
 
+  it('uses shared fairness components in compile report with pie + histogram row and team performance bars', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('FairnessAnalysisCharts')
+    expect(source).toContain('SidePieChart')
+    expect(source).toContain('ScoreHistogram')
+    expect(source).toContain('compile-fairness-visual-grid')
+    expect(source).toContain(':show-score-range="false"')
+    expect(source).toContain(':show-team-performance="true"')
+    expect(source).toContain(':show-score-histogram="false"')
+  })
+
   it('stores selected task per round and defaults to first incomplete step', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
     expect(source).toContain('roundTaskSelection')
@@ -57,7 +68,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('selectedRoundHasDraw')
     expect(source).toContain('selectedRoundBallotGapWarning')
     expect(source).toContain('snapshotIncludesSelectedRound')
-    expect(source).toContain('未提出のチーム評価があります（提出 {submitted}/{expected}）。提出状況タブを確認してください。')
+    expect(source).toContain('未提出のチーム評価があります（提出 {submitted}/{expected}）。')
   })
 
   it('reads compiled rounds using r-or-round fallback for status chips', () => {

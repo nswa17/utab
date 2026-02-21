@@ -3,7 +3,9 @@
     :is="component"
     :max-ranking-rewarded="maxRankingRewarded"
     :type="type"
+    :slide-style="slideStyle"
     :credit="credit"
+    :presentation-mode="presentationMode"
     :tournament="tournament"
     :entities="entities"
     @close="$emit('close')"
@@ -22,12 +24,20 @@ const props = withDefaults(
   defineProps<{
     label: 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
     maxRankingRewarded?: number
-    type?: 'listed' | 'pretty'
+    type?: 'listed' | 'single'
+    slideStyle?: 'pretty' | 'simple'
     credit?: string
+    presentationMode?: boolean
     tournament?: Record<string, any>
     entities?: Record<string, string>
   }>(),
-  { maxRankingRewarded: 3, type: 'listed', credit: '' }
+  {
+    maxRankingRewarded: 3,
+    type: 'listed',
+    slideStyle: 'pretty',
+    credit: '',
+    presentationMode: false,
+  }
 )
 
 defineEmits<{ (event: 'close'): void }>()

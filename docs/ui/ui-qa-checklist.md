@@ -9,6 +9,7 @@
 
 ## Keyboard Flows
 - SlideShow: Left/Right arrows move slides; Esc closes; no trap after closing.
+- SlideShow fullscreen: Enter/Space move next, Backspace moves previous, Home/End jump to first/last.
 - Admin compiled results: round checkboxes reachable and togglable via keyboard; slide settings toggle operable by Enter/Space.
 - Forms: All primary actions are reachable without a mouse; no hidden focus traps in modals/dialogs.
 
@@ -43,6 +44,8 @@
 - Compiled results: 表示スナップショットを切り替えたとき、一覧/差分/CSVの対象が同じsnapshotに揃う。
 - Compiled results: `詳細再計算` は初期状態で閉じており、開閉後も表示中snapshotは保持される。
 - Compiled results: `source=raw` 選択時に `提出データ一本化ガイド` が表示され、`提出一覧` / `ラウンド運営` へ遷移できる。
+- Slide output: `発表出力` タブを開いた時点でスライドが初期表示され、右上に `フルスクリーンで表示` ボタンが出る。
+- Slide output: 表彰枠 N の境界同率者は全員表示される（listed/pretty の両方）。
 - Admin routing: `admin UI v2` フラグ ON/OFF で初期遷移先（`/setup` vs `/home`）が切り替わる。
 - Admin routing: `VITE_ADMIN_UI_LEGACY_READONLY=true` で `/home` `/rounds` `/compiled` が読み取り専用表示になり、`新画面へ移動` が表示される。
 - Admin routing: legacy read-only 時は移行導線が1箇所にまとまり、通常の `新画面へ移動` 行と重複表示しない。

@@ -367,19 +367,19 @@ describe('Server integration', () => {
     expect(forbidden.status).toBe(403)
   })
 
-  it('migrates legacy tournament access and membership data (phase 8)', async () => {
-    const { runSecurityPhase8Migration } = await import('../src/scripts/migrate-security-phase8.js')
+  it('normalizes tournament access and backfills memberships through maintenance services', async () => {
+    const { runStartupDataMaintenance } = await import('../src/services/startup-data-maintenance.service.js')
 
     const organizerPassword = 'password123'
     const organizer = await UserModel.create({
-      username: 'phase8-organizer',
+      username: 'maintenance-organizer',
       role: 'organizer',
       passwordHash: await hashPassword(organizerPassword),
       tournaments: [],
     })
 
     const speaker = await UserModel.create({
-      username: 'phase8-speaker',
+      username: 'maintenance-speaker',
       role: 'speaker',
       passwordHash: await hashPassword('password123'),
       tournaments: [],
@@ -427,7 +427,7 @@ describe('Server integration', () => {
     )
     expect(openBeforeMigration.status).toBe(401)
 
-    const firstRun = await runSecurityPhase8Migration()
+    const firstRun = await runStartupDataMaintenance()
     expect(firstRun.tournamentsUpdated).toBeGreaterThan(0)
 
     const migratedOpen = await TournamentModel.findById(legacyOpenTournament._id).lean().exec()
@@ -490,7 +490,7 @@ describe('Server integration', () => {
     const organizerAgent = request.agent(app)
     const organizerLogin = await organizerAgent
       .post('/api/auth/login')
-      .send({ username: 'phase8-organizer', password: organizerPassword })
+      .send({ username: 'maintenance-organizer', password: organizerPassword })
     expect(organizerLogin.status).toBe(200)
 
     const patchByCreatorMembership = await organizerAgent
@@ -498,7 +498,7 @@ describe('Server integration', () => {
       .send({ name: 'Phase8 Creator Tournament Updated' })
     expect(patchByCreatorMembership.status).toBe(200)
 
-    const secondRun = await runSecurityPhase8Migration()
+    const secondRun = await runStartupDataMaintenance()
     expect(secondRun.tournamentsUpdated).toBe(0)
     expect(secondRun.membershipsCreatedFromUsers).toBe(0)
     expect(secondRun.membershipsCreatedFromCreatedBy).toBe(0)

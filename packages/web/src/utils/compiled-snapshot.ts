@@ -2,6 +2,7 @@ export type CompiledSnapshotOption = {
   compiledId: string
   rounds: number[]
   createdAt?: string
+  snapshotName?: string
 }
 
 function isValidDate(date: Date): boolean {
@@ -50,9 +51,14 @@ function sortByRecency(options: CompiledSnapshotOption[]): CompiledSnapshotOptio
 }
 
 export function formatCompiledSnapshotOptionLabel(
-  option: Pick<CompiledSnapshotOption, 'rounds' | 'createdAt'>,
+  option: Pick<CompiledSnapshotOption, 'rounds' | 'createdAt' | 'snapshotName'>,
   locale = 'ja-JP'
 ): string {
+  const snapshotName = String(option.snapshotName ?? '').trim()
+  if (snapshotName.length > 0) {
+    const timestamp = formatCompiledSnapshotTimestamp(option.createdAt, locale)
+    return `${snapshotName} (${timestamp})`
+  }
   const rounds = normalizeRounds(option.rounds)
   const roundsText =
     rounds.length > 0 ? rounds.map((roundNumber) => `Round ${roundNumber}`).join(', ') : 'All Rounds'

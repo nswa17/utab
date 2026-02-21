@@ -3,14 +3,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
 
 const props = defineProps<{
   results: any[]
   score: string
-  round?: { r: number } | number
+  round?: number
   roundName?: string
 }>()
 
@@ -18,17 +18,12 @@ const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
 
-const roundValue = computed(() => {
-  if (!props.round) return undefined
-  return typeof props.round === 'number' ? props.round : props.round.r
-})
-
 function collectScores() {
   const values: number[] = []
   props.results.forEach((result) => {
     if (Array.isArray(result.details) && result.details.length > 0) {
       result.details.forEach((detail: any) => {
-        if (roundValue.value !== undefined && detail.r !== roundValue.value) return
+        if (props.round !== undefined && detail.r !== props.round) return
         const value = detail?.[props.score]
         if (typeof value === 'number') values.push(value)
       })
@@ -52,8 +47,8 @@ function render() {
   const data = keys.map((key) => buckets.get(key) ?? 0)
   const roundLabel =
     props.roundName ??
-    (roundValue.value !== undefined ? t('ラウンド {round}', { round: roundValue.value }) : '')
-  const titleText = roundValue.value !== undefined ? t('スコアヒストグラム（{round}）', { round: roundLabel }) : t('スコアヒストグラム')
+    (props.round !== undefined ? t('ラウンド {round}', { round: props.round }) : '')
+  const titleText = props.round !== undefined ? t('スコアヒストグラム（{round}）', { round: roundLabel }) : t('スコアヒストグラム')
 
   const styles = getComputedStyle(document.documentElement)
   const palette = [

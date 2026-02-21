@@ -16,6 +16,8 @@ const RESULT_BLOCKED_KEYS = new Set([
   'compile_options',
   'compile_warnings',
   'compile_diff_meta',
+  'snapshot_name',
+  'snapshot_memo',
 ])
 
 function asRecord(value: unknown): PlainRecord {

@@ -77,4 +77,4 @@
 ## スライド
 | 使用箇所 | 実装パターン | 差分・備考 |
 | --- | --- | --- |
-| AdminTournamentCompiled | `Slides.vue` + `SlideShow.vue` | スライドはボタン操作中心。キーボード対応は未実装。
+| AdminTournamentCompiled | `Slides.vue` + `SlideShow.vue` | 発表出力タブでスライドを初期表示し、同率表示・fullscreen・拡張キーボード操作を提供。

@@ -33,6 +33,14 @@ describe('admin navigation routes', () => {
     await router.push('/admin/tournament-1/reports')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
 
+    await router.push('/admin/tournament-1/reports/presentation?compiledId=abc')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+    expect(router.currentRoute.value.query.compiledId).toBe('abc')
+
+    await router.push('/admin-embed/tournament-1/reports/presentation?compiledId=embed-1')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/reports')
+    expect(router.currentRoute.value.query.compiledId).toBe('embed-1')
+
     await router.push('/admin/tournament-1/rounds/1/result')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/1/result')
   })
@@ -49,6 +57,10 @@ describe('admin navigation routes', () => {
 
     await router.push('/admin/tournament-1/compiled')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+
+    await router.push('/admin/tournament-1/compiled/presentation?compiledId=snap-1')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+    expect(router.currentRoute.value.query.compiledId).toBe('snap-1')
 
     await router.push('/admin/tournament-1/submissions?round=2')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
@@ -73,6 +85,14 @@ describe('admin navigation routes', () => {
 
     await router.push('/admin/tournament-1/compiled')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/compiled')
+
+    await router.push('/admin/tournament-1/reports/presentation?compiledId=xyz')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+    expect(router.currentRoute.value.query.compiledId).toBe('xyz')
+
+    await router.push('/admin/tournament-1/compiled/presentation?compiledId=legacy')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/compiled')
+    expect(router.currentRoute.value.query.compiledId).toBe('legacy')
 
     await router.push('/admin/tournament-1/setup')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/setup')

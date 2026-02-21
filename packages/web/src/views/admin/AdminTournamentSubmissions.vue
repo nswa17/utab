@@ -118,7 +118,10 @@
             </thead>
             <tbody>
               <template v-for="item in group.items" :key="item._id">
-                <tr>
+                <tr
+                  class="submission-summary-row"
+                  :class="{ 'is-expanded': isExpanded(item._id) }"
+                >
                   <td>{{ item.round }}</td>
                   <td>{{ submittedByLabel(item) }}</td>
                   <td>{{ submissionSummary(item) }}</td>
@@ -131,7 +134,7 @@
                     </div>
                   </td>
                 </tr>
-                <tr v-if="isExpanded(item._id)">
+                <tr v-if="isExpanded(item._id)" class="submission-detail-row">
                   <td colspan="5">
                     <div class="stack">
                       <div v-if="item.type === 'ballot'" class="card soft stack ballot-card">
@@ -140,31 +143,33 @@
                         </div>
 
                         <div v-if="isEditing(item._id)" class="grid ballot-meta-grid">
-                          <Field :label="$t('チーム A')" v-slot="{ id, describedBy }">
-                            <select
+                          <Field :label="$t('対戦チーム')" v-slot="{ id, describedBy }">
+                            <input
                               :id="id"
                               :aria-describedby="describedBy"
-                              v-model="editingBallotTeamAId"
-                              @change="onBallotTeamChanged('A')"
-                            >
+                              :value="editingBallotTeamPairLabel"
+                              readonly
+                            />
+                          </Field>
+                          <Field :label="govLabel" v-slot="{ id, describedBy }">
+                            <select :id="id" :aria-describedby="describedBy" v-model="editingBallotGovTeamId">
                               <option value="">{{ $t('未選択') }}</option>
-                              <option v-for="option in teamOptions" :key="option.id" :value="option.id">
+                              <option
+                                v-for="option in editingBallotSideTeamOptions"
+                                :key="option.id"
+                                :value="option.id"
+                              >
                                 {{ option.name }}
                               </option>
                             </select>
                           </Field>
-                          <Field :label="$t('チーム B')" v-slot="{ id, describedBy }">
-                            <select
+                          <Field :label="oppLabel" v-slot="{ id, describedBy }">
+                            <input
                               :id="id"
                               :aria-describedby="describedBy"
-                              v-model="editingBallotTeamBId"
-                              @change="onBallotTeamChanged('B')"
-                            >
-                              <option value="">{{ $t('未選択') }}</option>
-                              <option v-for="option in teamOptions" :key="option.id" :value="option.id">
-                                {{ option.name }}
-                              </option>
-                            </select>
+                              :value="teamName(editingBallotOppTeamId)"
+                              readonly
+                            />
                           </Field>
                           <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
                             <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
@@ -496,7 +501,10 @@
         </thead>
         <tbody>
           <template v-for="item in items" :key="item._id">
-            <tr>
+            <tr
+              class="submission-summary-row"
+              :class="{ 'is-expanded': isExpanded(item._id) }"
+            >
               <td>{{ typeLabel(item.type) }}</td>
               <td>{{ item.round }}</td>
               <td>{{ submittedByLabel(item) }}</td>
@@ -510,7 +518,7 @@
                 </div>
               </td>
             </tr>
-            <tr v-if="isExpanded(item._id)">
+            <tr v-if="isExpanded(item._id)" class="submission-detail-row">
               <td colspan="6">
                 <div class="stack">
                   <div v-if="item.type === 'ballot'" class="card soft stack ballot-card">
@@ -519,31 +527,33 @@
                     </div>
 
                     <div v-if="isEditing(item._id)" class="grid ballot-meta-grid">
-                      <Field :label="$t('チーム A')" v-slot="{ id, describedBy }">
-                        <select
+                      <Field :label="$t('対戦チーム')" v-slot="{ id, describedBy }">
+                        <input
                           :id="id"
                           :aria-describedby="describedBy"
-                          v-model="editingBallotTeamAId"
-                          @change="onBallotTeamChanged('A')"
-                        >
+                          :value="editingBallotTeamPairLabel"
+                          readonly
+                        />
+                      </Field>
+                      <Field :label="govLabel" v-slot="{ id, describedBy }">
+                        <select :id="id" :aria-describedby="describedBy" v-model="editingBallotGovTeamId">
                           <option value="">{{ $t('未選択') }}</option>
-                          <option v-for="option in teamOptions" :key="option.id" :value="option.id">
+                          <option
+                            v-for="option in editingBallotSideTeamOptions"
+                            :key="option.id"
+                            :value="option.id"
+                          >
                             {{ option.name }}
                           </option>
                         </select>
                       </Field>
-                      <Field :label="$t('チーム B')" v-slot="{ id, describedBy }">
-                        <select
+                      <Field :label="oppLabel" v-slot="{ id, describedBy }">
+                        <input
                           :id="id"
                           :aria-describedby="describedBy"
-                          v-model="editingBallotTeamBId"
-                          @change="onBallotTeamChanged('B')"
-                        >
-                          <option value="">{{ $t('未選択') }}</option>
-                          <option v-for="option in teamOptions" :key="option.id" :value="option.id">
-                            {{ option.name }}
-                          </option>
-                        </select>
+                          :value="teamName(editingBallotOppTeamId)"
+                          readonly
+                        />
                       </Field>
                       <Field :label="$t('勝者')" v-slot="{ id, describedBy }">
                         <select :id="id" :aria-describedby="describedBy" v-model="editingBallotWinnerId">
@@ -982,6 +992,7 @@ const editError = ref('')
 const editingBallotBasePayload = ref<Record<string, unknown>>({})
 const editingBallotTeamAId = ref('')
 const editingBallotTeamBId = ref('')
+const editingBallotGovTeamId = ref('')
 const editingBallotWinnerId = ref('')
 const editingBallotSubmittedEntityId = ref('')
 const editingBallotComment = ref('')
@@ -1078,6 +1089,33 @@ const speakerEntityOptions = computed(() => {
 
 const teamEntityOptions = computed(() => {
   return teamOptions.value.slice()
+})
+
+const editingBallotSideTeamOptions = computed(() => {
+  const options: Array<{ id: string; name: string }> = []
+  const seen = new Set<string>()
+  const teamIds = [editingBallotTeamAId.value.trim(), editingBallotTeamBId.value.trim()]
+  teamIds.forEach((teamId) => {
+    if (!teamId || seen.has(teamId)) return
+    seen.add(teamId)
+    options.push({ id: teamId, name: teamName(teamId) })
+  })
+  return options
+})
+
+const editingBallotOppTeamId = computed(() => {
+  const teamAId = editingBallotTeamAId.value.trim()
+  const teamBId = editingBallotTeamBId.value.trim()
+  const govTeamId = editingBallotGovTeamId.value.trim()
+  if (govTeamId === teamAId) return teamBId
+  if (govTeamId === teamBId) return teamAId
+  return ''
+})
+
+const editingBallotTeamPairLabel = computed(() => {
+  const names = editingBallotSideTeamOptions.value.map((option) => option.name)
+  if (names.length === 0) return t('未選択')
+  return names.join(' / ')
 })
 
 const roundScopedItems = computed(() => {
@@ -1483,6 +1521,27 @@ function resolveBallotSides(round: number, teamAId: string, teamBId: string): Si
   return { govTeamId, oppTeamId, govSlot, oppSlot }
 }
 
+function resolveEditingBallotSides(round: number, teamAId: string, teamBId: string): SideMapping {
+  const selectedGovTeamId = editingBallotGovTeamId.value.trim()
+  if (selectedGovTeamId === teamAId) {
+    return {
+      govTeamId: teamAId,
+      oppTeamId: teamBId,
+      govSlot: 'A',
+      oppSlot: 'B',
+    }
+  }
+  if (selectedGovTeamId === teamBId) {
+    return {
+      govTeamId: teamBId,
+      oppTeamId: teamAId,
+      govSlot: 'B',
+      oppSlot: 'A',
+    }
+  }
+  return resolveBallotSides(round, teamAId, teamBId)
+}
+
 function matchupLabelFromTeams(round: number, teamAId: string, teamBId: string) {
   const mapping = resolveBallotSides(round, teamAId, teamBId)
   return `${teamName(mapping.govTeamId)} ${t('vs')} ${teamName(mapping.oppTeamId)}`
@@ -1497,11 +1556,12 @@ function matchupLabel(item: Submission) {
 function matchupLabelForDisplay(item: Submission) {
   if (item.type !== 'ballot') return matchupLabel(item)
   if (!isEditing(item._id)) return matchupLabel(item)
-  return matchupLabelFromTeams(
+  const mapping = resolveEditingBallotSides(
     editingRound.value,
     editingBallotTeamAId.value.trim(),
     editingBallotTeamBId.value.trim()
   )
+  return `${teamName(mapping.govTeamId)} ${t('vs')} ${teamName(mapping.oppTeamId)}`
 }
 
 function submissionSummary(item: Submission) {
@@ -1633,7 +1693,7 @@ function editingSpeakerRowsFor(item: Submission): EditableSpeakerRowView[] {
   const teamBId = editingBallotTeamBId.value.trim()
   if (!teamAId || !teamBId) return []
 
-  const mapping = resolveBallotSides(editingRound.value, teamAId, teamBId)
+  const mapping = resolveEditingBallotSides(editingRound.value, teamAId, teamBId)
   const rowsGov = mapping.govSlot === 'A' ? editingBallotRowsA.value : editingBallotRowsB.value
   const rowsOpp = mapping.govSlot === 'A' ? editingBallotRowsB.value : editingBallotRowsA.value
 
@@ -1778,6 +1838,7 @@ function resetBallotEditor() {
   editingBallotBasePayload.value = {}
   editingBallotTeamAId.value = ''
   editingBallotTeamBId.value = ''
+  editingBallotGovTeamId.value = ''
   editingBallotWinnerId.value = ''
   editingBallotSubmittedEntityId.value = ''
   editingBallotComment.value = ''
@@ -1842,6 +1903,16 @@ function hydrateBallotEditor(payload: Record<string, unknown>) {
   editingBallotBasePayload.value = { ...payload }
   editingBallotTeamAId.value = String(payload.teamAId ?? '')
   editingBallotTeamBId.value = String(payload.teamBId ?? '')
+  const initialSideMapping = resolveBallotSides(
+    editingRound.value,
+    editingBallotTeamAId.value,
+    editingBallotTeamBId.value
+  )
+  editingBallotGovTeamId.value =
+    initialSideMapping.govTeamId === editingBallotTeamAId.value ||
+    initialSideMapping.govTeamId === editingBallotTeamBId.value
+      ? initialSideMapping.govTeamId
+      : editingBallotTeamAId.value || editingBallotTeamBId.value
   editingBallotWinnerId.value = String(payload.winnerId ?? '')
   editingBallotSubmittedEntityId.value = String(payload.submittedEntityId ?? '')
   editingBallotComment.value = typeof payload.comment === 'string' ? payload.comment : ''
@@ -1970,17 +2041,6 @@ function buildFeedbackPayloadFromForm() {
   return payload
 }
 
-function onBallotTeamChanged(teamSlot: 'A' | 'B') {
-  const targetRows = teamSlot === 'A' ? editingBallotRowsA.value : editingBallotRowsB.value
-  targetRows.forEach((row) => {
-    row.speakerId = ''
-  })
-  const winner = editingBallotWinnerId.value.trim()
-  if (winner && winner !== editingBallotTeamAId.value && winner !== editingBallotTeamBId.value) {
-    editingBallotWinnerId.value = ''
-  }
-}
-
 function buildBallotPayloadFromTable(): Record<string, unknown> | null {
   const fail = (message: string) => {
     editError.value = message
@@ -1993,9 +2053,14 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
     return fail(t('チームを確認してください。'))
   }
 
+  const govTeamId = editingBallotGovTeamId.value.trim()
+  if (govTeamId !== teamAId && govTeamId !== teamBId) {
+    return fail(t('{side} 側のチームを選択してください。', { side: govLabel.value }))
+  }
+
   const winner = editingBallotWinnerId.value.trim()
   if (winner && winner !== teamAId && winner !== teamBId) {
-    return fail(t('勝者はチームA/チームBのいずれかを指定してください。'))
+    return fail(t('勝者は対戦チームのいずれかを指定してください。'))
   }
 
   const payload: Record<string, unknown> = {
@@ -2070,9 +2135,9 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
     return { ok: true as const, speakerIds, scores, matter, manner, best, poi }
   }
 
-  const sideA = parseSideRows(editingBallotRowsA.value, t('チーム A'))
+  const sideA = parseSideRows(editingBallotRowsA.value, teamName(teamAId))
   if (!sideA.ok) return fail(sideA.message)
-  const sideB = parseSideRows(editingBallotRowsB.value, t('チーム B'))
+  const sideB = parseSideRows(editingBallotRowsB.value, teamName(teamBId))
   if (!sideB.ok) return fail(sideB.message)
 
   payload.speakerIdsA = sideA.speakerIds
@@ -2456,6 +2521,44 @@ watch(
 
 .row-actions {
   gap: var(--space-2);
+}
+
+.submission-summary-row.is-expanded > td {
+  background: rgba(37, 99, 235, 0.08);
+  border-bottom-color: rgba(37, 99, 235, 0.25);
+}
+
+.submission-summary-row.is-expanded + .submission-detail-row > td {
+  border-top-color: rgba(37, 99, 235, 0.25);
+}
+
+.submission-detail-row > td {
+  background: #f3f6ff;
+  padding: var(--space-3);
+  box-shadow: inset 4px 0 0 rgba(37, 99, 235, 0.28);
+}
+
+.submission-detail-row .stack {
+  gap: var(--space-3);
+}
+
+.submission-detail-row .ballot-card,
+.submission-detail-row .feedback-card {
+  background: var(--color-surface);
+  border: 1px solid #dbe5ff;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+}
+
+.submission-detail-row .speaker-table {
+  background: var(--color-surface);
+}
+
+.submission-detail-row .speaker-table thead th {
+  background: #eef3ff;
+}
+
+.submission-detail-row .speaker-table tbody tr:nth-child(even) td {
+  background: #f8faff;
 }
 
 .section-header-actions {

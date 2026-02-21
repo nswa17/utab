@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   listCompiled,
   createCompiled,
+  createCompiledPreview,
   listCompiledTeams,
   createCompiledTeams,
   listCompiledSpeakers,
@@ -31,39 +32,53 @@ const listSchema = {
   }),
 }
 
-const createSchema = {
-  body: z.object({
-    tournamentId: z.string().min(1),
-    source: z.enum(['submissions', 'raw']).optional(),
-    rounds: z.array(z.number().int().min(1)).optional(),
-    options: z
+const compileOptionsSchema = z
+  .object({
+    ranking_priority: z
       .object({
-        ranking_priority: z
-          .object({
-            preset: z.enum(compileRankingPresets).optional(),
-            order: z.array(z.enum(compileRankingMetrics)).min(1).optional(),
-          })
-          .optional(),
-        winner_policy: z.enum(compileWinnerPolicies).optional(),
-        tie_points: z.number().min(0).optional(),
-        duplicate_normalization: z
-          .object({
-            merge_policy: z.enum(compileDuplicateMergePolicies).optional(),
-            poi_aggregation: z.enum(compileAggregationPolicies).optional(),
-            best_aggregation: z.enum(compileAggregationPolicies).optional(),
-          })
-          .optional(),
-        missing_data_policy: z.enum(compileMissingDataPolicies).optional(),
-        include_labels: z.array(z.enum(compileIncludeLabels)).min(1).optional(),
-        diff_baseline: z
-          .discriminatedUnion('mode', [
-            z.object({ mode: z.literal('latest') }),
-            z.object({ mode: z.literal('compiled'), compiled_id: z.string().min(1) }),
-          ])
-          .optional(),
+        preset: z.enum(compileRankingPresets).optional(),
+        order: z.array(z.enum(compileRankingMetrics)).min(1).optional(),
       })
       .optional(),
+    winner_policy: z.enum(compileWinnerPolicies).optional(),
+    tie_points: z.number().min(0).optional(),
+    duplicate_normalization: z
+      .object({
+        merge_policy: z.enum(compileDuplicateMergePolicies).optional(),
+        poi_aggregation: z.enum(compileAggregationPolicies).optional(),
+        best_aggregation: z.enum(compileAggregationPolicies).optional(),
+      })
+      .optional(),
+    missing_data_policy: z.enum(compileMissingDataPolicies).optional(),
+    include_labels: z.array(z.enum(compileIncludeLabels)).min(1).optional(),
+    diff_baseline: z
+      .discriminatedUnion('mode', [
+        z.object({ mode: z.literal('latest') }),
+        z.object({ mode: z.literal('compiled'), compiled_id: z.string().min(1) }),
+      ])
+      .optional(),
+  })
+  .optional()
+
+const compileBodySchema = z.object({
+  tournamentId: z.string().min(1),
+  source: z.enum(['submissions', 'raw']).optional(),
+  rounds: z.array(z.number().int().min(1)).optional(),
+  options: compileOptionsSchema,
+})
+
+const createSchema = {
+  body: z.object({
+    ...compileBodySchema.shape,
+    snapshot_name: z.string().max(200).optional(),
+    snapshot_memo: z.string().max(2000).optional(),
+    preview_signature: z.string().min(1).optional(),
+    revision: z.string().min(1).optional(),
   }),
+}
+
+const previewSchema = {
+  body: compileBodySchema,
 }
 
 router.get(
@@ -72,6 +87,7 @@ router.get(
   validateRequest(listSchema),
   listCompiled
 )
+router.post('/preview', requireTournamentAdmin(), validateRequest(previewSchema), createCompiledPreview)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createCompiled)
 router.get(
   '/teams',

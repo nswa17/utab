@@ -1,9 +1,9 @@
 <template>
-  <div ref="container" class="chart" />
+  <div v-show="isVisible" ref="container" class="chart" />
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
 import { buildScoreChangeRounds, buildScoreChangeSeries } from '@/utils/score-change'
@@ -15,6 +15,7 @@ const props = withDefaults(
     tournament?: any
     score?: string
     marker?: { key: string; value: unknown }
+    roundFilter?: number[]
   }>(),
   { score: 'average' }
 )
@@ -22,13 +23,14 @@ const props = withDefaults(
 const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
+const isVisible = ref(false)
 
 function render() {
-  if (!container.value) return
   const rounds = buildScoreChangeRounds({
     tournament: props.tournament,
     results: props.results,
     roundLabel: (round) => t('ラウンド {round}', { round }),
+    roundFilter: props.roundFilter,
   })
   const { rounds: safeRounds, series } = buildScoreChangeSeries({
     results: props.results,
@@ -37,6 +39,11 @@ function render() {
     fallbackRoundName: t('合計'),
     entryName: (result) => String(result?.name ?? result?.id ?? t('エントリー')),
   })
+  isVisible.value = safeRounds.length > 1
+  if (!isVisible.value) {
+    if (container.value) container.value.innerHTML = ''
+    return
+  }
 
   const options = {
     chart: { type: 'line', backgroundColor: 'transparent' },
@@ -56,12 +63,15 @@ function render() {
     series,
   }
 
-  Highcharts.chart(container.value as HTMLElement, options as any)
+  nextTick(() => {
+    if (!container.value || !isVisible.value) return
+    Highcharts.chart(container.value as HTMLElement, options as any)
+  })
 }
 
 onMounted(render)
 watch(
-  () => [props.results, props.tournament, props.score, locale.value],
+  () => [props.results, props.tournament, props.score, props.roundFilter, locale.value],
   () => render(),
   { deep: true }
 )

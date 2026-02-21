@@ -79,7 +79,21 @@ export function createAppRouter(options: RouterOptions = {}): Router {
         { path: 'submissions', redirect: redirectToOperationsSubmissions },
         { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
         {
+          path: 'reports/presentation',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/reports`,
+            query: to.query,
+          }),
+        },
+        {
           path: 'compiled',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/reports`,
+            query: to.query,
+          }),
+        },
+        {
+          path: 'compiled/presentation',
           redirect: (to: any) => ({
             path: `/admin/${String(to.params.tournamentId ?? '')}/reports`,
             query: to.query,
@@ -101,6 +115,20 @@ export function createAppRouter(options: RouterOptions = {}): Router {
         { path: 'submissions', redirect: redirectToOperationsSubmissions },
         { path: 'compiled', component: routeComponent(AdminTournamentCompiled) },
         { path: 'reports', component: routeComponent(AdminTournamentCompiled) },
+        {
+          path: 'compiled/presentation',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/compiled`,
+            query: to.query,
+          }),
+        },
+        {
+          path: 'reports/presentation',
+          redirect: (to: any) => ({
+            path: `/admin/${String(to.params.tournamentId ?? '')}/reports`,
+            query: to.query,
+          }),
+        },
       ]
   return createRouter({
     history: options.history ?? createWebHistory(),
@@ -122,6 +150,14 @@ export function createAppRouter(options: RouterOptions = {}): Router {
       {
         path: '/admin-embed/:tournamentId/reports',
         component: routeComponent(AdminTournamentCompiled),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/admin-embed/:tournamentId/reports/presentation',
+        redirect: (to: any) => ({
+          path: `/admin-embed/${String(to.params.tournamentId ?? '')}/reports`,
+          query: to.query,
+        }),
         meta: { requiresAuth: true },
       },
       {

@@ -899,14 +899,7 @@ function teamSpeakerIds(teamId: string, roundNumber: number) {
   if (!team) return []
   const detail = team.details?.find((item: any) => Number(item.r) === Number(roundNumber))
   const detailSpeakerIds = (detail?.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) return detailSpeakerIds
-  return (team.speakers ?? [])
-    .map((speaker: any) => {
-      const name = String(speaker?.name ?? '')
-      if (!name) return ''
-      return speakersStore.speakers.find((item) => item.name === name)?._id ?? ''
-    })
-    .filter(Boolean)
+  return detailSpeakerIds
 }
 
 function submittedIds(roundNumber: number, type: 'ballot' | 'feedback') {

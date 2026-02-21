@@ -1,5 +1,16 @@
 <template>
-  <div ref="container" class="chart" />
+  <div class="score-range-stack">
+    <div ref="container" class="chart" />
+    <div v-if="legendItems.length > 0" class="win-color-legend">
+      <p class="muted small win-color-legend-title">{{ $t('凡例') }} ({{ $t('勝利数') }})</p>
+      <div class="win-color-legend-items">
+        <span v-for="item in legendItems" :key="item.key" class="win-color-legend-item">
+          <span class="win-color-legend-swatch" :style="{ backgroundColor: item.color }" />
+          <span>{{ item.label }}</span>
+        </span>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -14,6 +25,12 @@ const props = defineProps<{
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
+type WinColorLegendItem = {
+  key: string
+  label: string
+  color: string
+}
+const legendItems = ref<WinColorLegendItem[]>([])
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
 
@@ -63,11 +80,21 @@ function render() {
 
   const categories = rows.map((row) => row.name)
   const maxWinCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.win), 0)
+  const numericMins = rows
+    .map((row) => row.min)
+    .filter((value): value is number => typeof value === 'number')
+  const numericMaxes = rows
+    .map((row) => row.max)
+    .filter((value): value is number => typeof value === 'number')
+  const chartMin = numericMins.length > 0 ? Math.min(...numericMins) : 0
+  const chartMax = numericMaxes.length > 0 ? Math.max(...numericMaxes) : chartMin + 1
+  const epsilon = Math.max(0.05, (chartMax - chartMin) * 0.008)
   const data = rows.map((row) => {
     if (typeof row.min === 'number' && typeof row.max === 'number') {
+      const highValue = row.max === row.min ? row.max + epsilon : row.max
       return {
         low: row.min,
-        high: row.max,
+        high: highValue,
         color: colorByWins(row.win, maxWinCount, defaultBarColor),
       }
     }
@@ -80,8 +107,10 @@ function render() {
     xAxis: { categories },
     yAxis: { title: { text: t('スコア') } },
     legend: { enabled: false },
-    series: [{ name: t('スコア'), data, type: 'columnrange' }],
+    series: [{ name: t('スコア'), data, type: 'columnrange', minPointLength: 3 }],
   }
+
+  legendItems.value = buildLegendItems(rows, maxWinCount, defaultBarColor, t)
 
   Highcharts.chart(container.value as HTMLElement, options as any)
 }
@@ -112,6 +141,32 @@ function colorByWins(winCount: number, maxWinCount: number, fallbackColor: strin
   return `hsl(${hue} ${saturation}% ${lightness}%)`
 }
 
+function buildLegendItems(
+  rows: Array<{ win: number }>,
+  maxWinCount: number,
+  fallbackColor: string,
+  t: (key: string) => string
+): WinColorLegendItem[] {
+  const wins = Array.from(
+    new Set(
+      rows
+        .map((row) => row.win)
+        .filter((value) => Number.isFinite(value))
+    )
+  ).sort((left, right) => right - left)
+  return wins.map((winCount) => ({
+    key: String(winCount),
+    label: `${t('勝利数')}: ${formatWinCount(winCount)}`,
+    color: colorByWins(winCount, maxWinCount, fallbackColor),
+  }))
+}
+
+function formatWinCount(value: number): string {
+  if (Number.isInteger(value)) return String(value)
+  const rounded = Math.round(value * 100) / 100
+  return String(rounded)
+}
+
 onMounted(render)
 watch(
   () => [props.results, props.score, locale.value],
@@ -121,8 +176,43 @@ watch(
 </script>
 
 <style scoped>
+.score-range-stack {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .chart {
   width: 100%;
   min-height: 280px;
+}
+
+.win-color-legend {
+  display: grid;
+  gap: 6px;
+}
+
+.win-color-legend-title {
+  margin: 0;
+}
+
+.win-color-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.win-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.win-color-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
 }
 </style>

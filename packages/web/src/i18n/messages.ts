@@ -154,13 +154,43 @@ const en = {
   '同順位件数: {count}': 'Same-rank count: {count}',
   'Bubble Pressure: {level}（スコア {score}）':
     'Bubble Pressure: {level} (score {score})',
-  'Gov勝率 {gov}% / Opp勝率 {opp}%': 'Gov win rate {gov}% / Opp win rate {opp}%',
+  'Gov勝率 {gov}%': 'Gov win rate {gov}%',
   '出場差分: {gap}%': 'Exposure gap: {gap}%',
   '再戦ペア {pairs} / 追加再戦 {extra}': 'Repeat pairs {pairs} / Extra repeats {extra}',
   '最大再戦回数: {max}': 'Max repeat count: {max}',
-  '担当平均 {avg} / ばらつき {spread}': 'Average assignments {avg} / Spread {spread}',
+  'ジャッジ担当回数': 'Adjudicator assignment count',
+  '担当平均 {avg}': 'Average assignments {avg}',
   '最小 {min} / 最大 {max}': 'Min {min} / Max {max}',
   '偏差outlier {count}名': 'Strictness outliers: {count}',
+  'ジャッジフィードバック順位': 'Adjudicator feedback ranking',
+  'ジャッジフィードバックの平均スコアの偏差を比較します。':
+    'Compares deviation of adjudicator feedback average scores.',
+  'ジャッジ評価の平均スコアの偏差を比較します。':
+    'Compares deviation of adjudicator evaluation average scores.',
+  'フィードバックスコアの相対位置を表示': 'Shows relative positions of feedback scores.',
+  '評価スコアの相対位置を表示': 'Shows relative positions of evaluation scores.',
+  '偏差が大きい順': 'Sorted by larger deviation',
+  'フィードバック平均': 'Feedback average',
+  'ジャッジフィードバック順位データがありません': 'No adjudicator feedback ranking data.',
+  'ジャッジフィードバックを含めて再計算すると表示できます。':
+    'Recompute including adjudicator feedback to display this section.',
+  'ジャッジ評価データがありません': 'No adjudicator evaluation data.',
+  'ジャッジ評価を含めて再計算すると表示できます。':
+    'Recompute including adjudicator evaluations to display this section.',
+  'チーム評価の厳しさ': 'Ballot strictness',
+  'チーム評価の平均スコアの偏差から厳しさを推定します。2試合以上で表示。':
+    'Estimates strictness from deviations of ballot average scores. Requires 2+ matches.',
+  '対象 {matches}試合 / outlier {count}名': 'Coverage {matches} matches / outliers {count}',
+  'ラウンド平均との差の偏差を表示': 'Displays deviation from round mean',
+  'ラウンド平均との差の偏差を比較（2試合以上）':
+    'Compare deviation from round mean (2+ matches)',
+  '試合数': 'Matches',
+  'チーム評価平均': 'Ballot average',
+  '相対差': 'Relative delta',
+  'チーム評価の厳しさデータが不足しています': 'Insufficient ballot strictness data.',
+  'チーム評価が2試合以上あるラウンドで表示されます。':
+    'Shown when there are rounds with at least 2 ballot submissions.',
+  'データ不足': 'Insufficient data',
   '中央値 {median}分 / P90 {p90}分': 'Median {median} min / P90 {p90} min',
   '遅延率 {rate}%（{rounds}ラウンド）': 'Delay rate {rate}% ({rounds} rounds)',
   '遅延率 {rate}%': 'Delay rate {rate}%',
@@ -253,8 +283,8 @@ const en = {
     'If raw-result corrections are needed, reflect them in submission edits and recompile.',
   '提出データソースに戻して再計算し、確定snapshotを選択して出力します。':
     'Switch back to submission source, recompile, then output from a finalized snapshot.',
-  '表示中スナップショットは「生結果データ」です（例外モード）。':
-    'The displayed snapshot was compiled from raw results (exception mode).',
+  '表示中の大会結果は例外モードで生成されました。':
+    'The displayed tournament results were generated in exception mode.',
   'ラウンド運営へ': 'Open round operations',
   '次ラウンド対戦生成': 'Next-round pairing',
   '公開設定': 'Publication settings',
@@ -326,8 +356,8 @@ const en = {
   '対戦生成に失敗しました。': 'Failed to generate draw.',
   '公開設定の保存に失敗しました。': 'Failed to save publication settings.',
   '読み込みに失敗しました。': 'Failed to load data.',
-  '未提出のチーム評価があります（提出 {submitted}/{expected}）。提出状況タブを確認してください。':
-    'Some ballots are still missing (submitted {submitted}/{expected}). Check the submissions tab.',
+  '未提出のチーム評価があります（提出 {submitted}/{expected}）。':
+    'Some ballots are still missing (submitted {submitted}/{expected}).',
   '提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。':
     '{count} ballots have missing submitter information. Fill submitter IDs in the submissions tab.',
   '提出者情報不足: {count}': 'Missing submitter info: {count}',
@@ -1027,11 +1057,52 @@ const en = {
     'These settings apply to the entire report and are shared across rankings, fairness, and announcements.',
   'この設定はレポート全体に適用されます。カテゴリ別順位一覧・公平性・発表出力の各表示で共通です。':
     'These settings apply to the entire report and are shared across category rankings, fairness, and announcement outputs.',
+  'このタブは選択ラウンドのみを対象に集計します。':
+    'This tab only aggregates statistics for the selected round.',
+  '集計ワークフロー': 'Compile workflow',
+  '条件設定': 'Configure conditions',
+  '対象ラウンドと集計オプションを確認します。':
+    'Confirm target rounds and compile options.',
+  'プレビュー更新': 'Refresh preview',
+  '設定変更により要再プレビュー': 'Settings changed. Refresh preview.',
+  '更新済み': 'Up to date',
+  '未実行': 'Not run',
+  'スナップショット保存': 'Save snapshot',
+  '保存可能': 'Ready to save',
+  'プレビュー後に保存可能': 'Save becomes available after preview',
+  '保存時のみ履歴を作成します。必要に応じて名前とメモを編集してください。':
+    'History is created only on save. Edit snapshot name and memo as needed.',
+  'スナップショット名': 'Snapshot name',
+  '自動生成名': 'Auto-generated name',
+  'メモ (任意)': 'Memo (optional)',
+  '必要な場合のみ記録してください。': 'Add notes only when needed.',
+  'スナップショットを保存': 'Save snapshot',
+  '設定が変更されました。保存前にプレビューを更新してください。':
+    'Settings changed. Refresh preview before saving.',
+  'プレビューを更新してから保存してください。':
+    'Refresh preview before saving.',
+  'プレビューを更新しました。内容を確認して保存してください。':
+    'Preview updated. Review and save the snapshot.',
+  'スナップショットを保存しました。': 'Snapshot saved.',
   '新規レポートを生成します。': 'Generate a new report.',
   '集計区分ごとの順位と差分を確認': 'Check rankings and deltas by entity category.',
   '偏り・割当と分析指標をまとめて確認': 'Review bias, allocations, and analytics together.',
   'スライドと表彰出力を確認': 'Review slides and award exports.',
   '発表出力': 'Announcement outputs',
+  '発表モード': 'Presentation mode',
+  '発表モードを開く': 'Open presentation mode',
+  'レポートへ戻る': 'Back to reports',
+  '発表モードを開始できませんでした。': 'Could not start presentation mode.',
+  '表示対象のスナップショットIDが必要です。':
+    'A target compiled snapshot ID is required.',
+  '指定したスナップショットが見つかりません。': 'The specified snapshot was not found.',
+  '発表用データを読み込めませんでした。': 'Failed to load presentation data.',
+  '固定スナップショット: {id}': 'Pinned snapshot: {id}',
+  'カテゴリ: {label}': 'Category: {label}',
+  '同率{count}名': 'Tie {count} entries',
+  'フルスクリーンで表示': 'Show fullscreen',
+  'フルスクリーン': 'Fullscreen',
+  'フルスクリーン終了': 'Exit fullscreen',
   '提出状況を確認': 'Check submission status',
   '公平性で詳細を見る': 'View details in fairness',
   '公平性データがありません': 'Fairness data is unavailable',
@@ -1089,6 +1160,7 @@ const en = {
   '上に移動': 'Move up',
   '下に移動': 'Move down',
   '会場名で検索': 'Search by venue name',
+  '全ラウンド': 'All rounds',
   '全ラウンドを対象': 'All rounds are targeted',
   '前のスライド': 'Previous slide',
   '戻る': 'Back',
@@ -1114,6 +1186,10 @@ const en = {
   'チーム名またはIDで検索': 'Search by team name or ID',
   'チーム名またはジャッジ名で検索': 'Search by team or adjudicator name',
   '次の一致': 'Next match',
+  'スライドを表示': 'Show slides',
+  '個別': 'Individual',
+  'スライドスタイル': 'Slide style',
+  '簡易': 'Simple',
   '構造化編集に切替': 'Switch to structured editor',
   '機関名で検索': 'Search by institution name',
   '例: institution / region / league': 'e.g. institution / region / league',
@@ -1250,6 +1326,7 @@ const en = {
     'Please select a winner when the scores are not tied.',
   'サイド別スコア': 'Scores by side',
   'チームの成績': 'Team performance',
+  'チーム成績': 'Team performance',
   'チーム成績（勝利数）': 'Team performance (wins)',
   'チーム成績（得点）': 'Team performance (points)',
   '得点': 'Points',

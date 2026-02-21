@@ -255,7 +255,7 @@ pnpm build
 pnpm -C packages/server start
 ```
 
-#### 4. Phase 8 セキュリティ移行の実行（必須）
+#### 4. Phase 8 セキュリティ移行
 
 既存データに対して、以下を一括で移行します。
 
@@ -263,9 +263,7 @@ pnpm -C packages/server start
 - 旧形式 `auth.access.password` を `passwordHash` に変換し、平文パスワードを削除
 - `User.tournaments` と `Tournament.createdBy` から `TournamentMember` をバックフィル
 
-```bash
-pnpm -C packages/server migrate-security-phase8
-```
+この移行はサーバー起動時に自動で実行されます。
 
 #### 5. スタイルの再seed（既存スタイルを更新したい場合）
 

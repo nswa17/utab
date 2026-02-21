@@ -75,4 +75,20 @@ describe('score-change utilities', () => {
     expect(safeRounds).toEqual([{ r: 1, name: 'Total' }])
     expect(series[0]?.data).toEqual([123])
   })
+
+  it('respects round filters when explicit tournament rounds exist', () => {
+    const rounds = buildScoreChangeRounds({
+      tournament: {
+        rounds: [
+          { round: 1, name: 'Round 1' },
+          { round: 2, name: 'Round 2' },
+          { round: 3, name: 'Round 3' },
+        ],
+      },
+      results: [],
+      roundLabel: (round) => `Round ${round}`,
+      roundFilter: [2],
+    })
+    expect(rounds).toEqual([{ r: 2, name: 'Round 2' }])
+  })
 })

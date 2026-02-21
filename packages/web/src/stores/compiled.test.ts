@@ -87,4 +87,85 @@ describe('compiled store', () => {
     expect(store.error).toBe('Compile failed')
     expect(store.loading).toBe(false)
   })
+
+  it('stores preview state without creating a compiled snapshot', async () => {
+    const store = useCompiledStore()
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            rounds: [{ r: 1, name: 'Round 1' }],
+            compiled_team_results: [{ id: 'team-1' }],
+          },
+          preview_signature: 'sig-001',
+          revision: 'rev-001',
+        },
+      },
+    })
+
+    const preview = await store.runPreview('tournament-1', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/compiled/preview', {
+      tournamentId: 'tournament-1',
+      source: 'submissions',
+      rounds: [1],
+    })
+    expect(preview).toEqual({
+      compile_source: 'submissions',
+      rounds: [{ r: 1, name: 'Round 1' }],
+      compiled_team_results: [{ id: 'team-1' }],
+    })
+    expect(store.previewState).toEqual({
+      preview: {
+        compile_source: 'submissions',
+        rounds: [{ r: 1, name: 'Round 1' }],
+        compiled_team_results: [{ id: 'team-1' }],
+      },
+      previewSignature: 'sig-001',
+      revision: 'rev-001',
+      source: 'submissions',
+    })
+  })
+
+  it('includes snapshot metadata and preview tokens when saving compiled results', async () => {
+    const store = useCompiledStore()
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'snapshot-002',
+          payload: {
+            compiled_team_results: [{ id: 'team-1' }],
+          },
+        },
+      },
+    })
+
+    const saved = await store.saveCompiled('tournament-1', {
+      source: 'raw',
+      rounds: [1, 2],
+      snapshotName: 'Round 1-2 / raw / 2026-02-20 18:00',
+      snapshotMemo: 'manual note',
+      previewSignature: 'sig-001',
+      revision: 'rev-001',
+    })
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/compiled', {
+      tournamentId: 'tournament-1',
+      source: 'raw',
+      rounds: [1, 2],
+      snapshot_name: 'Round 1-2 / raw / 2026-02-20 18:00',
+      snapshot_memo: 'manual note',
+      preview_signature: 'sig-001',
+      revision: 'rev-001',
+    })
+    expect(saved).toEqual({
+      _id: 'snapshot-002',
+      compiled_team_results: [{ id: 'team-1' }],
+    })
+    expect(store.previewState).toBeNull()
+  })
 })

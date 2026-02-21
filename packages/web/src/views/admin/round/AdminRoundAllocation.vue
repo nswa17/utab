@@ -1509,6 +1509,7 @@ type CompiledSnapshotOption = {
   rounds: number[]
   roundNames: string[]
   createdAt?: string
+  snapshotName?: string
   payload: Record<string, any>
 }
 const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
@@ -1528,6 +1529,7 @@ const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
           .map((entry: any) => String(entry?.name ?? '').trim())
           .filter((value: string) => value.length > 0),
         createdAt: item?.createdAt ? String(item.createdAt) : undefined,
+        snapshotName: String(normalizedPayload?.snapshot_name ?? '').trim() || undefined,
         payload: normalizedPayload,
       }
     })
@@ -2075,10 +2077,6 @@ function normalizeInstitutions(values: string[] = []) {
     const token = String(value)
     if (!token) return
     mapped.add(token)
-    const match = institutions.institutions.find(
-      (inst) => inst._id === token || inst.name === token
-    )
-    if (match) mapped.add(match._id)
   })
   return Array.from(mapped)
 }
@@ -2086,7 +2084,7 @@ function normalizeInstitutions(values: string[] = []) {
 function institutionCategoryById(value: string): ConflictGroupCategory {
   const token = String(value ?? '').trim()
   if (!token) return 'institution'
-  const match = institutions.institutions.find((inst) => inst._id === token || inst.name === token)
+  const match = institutions.institutions.find((inst) => inst._id === token)
   return normalizeInstitutionCategory(match?.category)
 }
 
@@ -2187,30 +2185,14 @@ function teamSpeakerNames(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
   const detailSpeakerIds = (detail.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) {
-    return detailSpeakerIds.map((id: string) => speakerNameById(id))
-  }
-  if (Array.isArray(team.speakers)) {
-    return team.speakers.map((speaker: any) => speaker?.name ?? '').filter(Boolean)
-  }
-  return []
+  return detailSpeakerIds.map((id: string) => speakerNameById(id))
 }
 
 function teamSpeakerIds(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
   const detailSpeakerIds = (detail.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) return detailSpeakerIds
-  if (Array.isArray(team.speakers)) {
-    return team.speakers
-      .map((speaker: any) => {
-        const name = speaker?.name
-        if (!name) return ''
-        return speakersStore.speakers.find((item) => item.name === name)?._id ?? ''
-      })
-      .filter(Boolean)
-  }
-  return []
+  return detailSpeakerIds
 }
 
 type DragKind = 'team' | 'adjudicator' | 'venue'

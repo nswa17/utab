@@ -59,6 +59,28 @@ export interface CompileOptionsInput {
   diff_baseline?: { mode: 'latest' } | { mode: 'compiled'; compiled_id: string }
 }
 
+export type CompileSource = 'submissions' | 'raw'
+
+export type CompileRunRequest = {
+  source?: CompileSource
+  rounds?: number[]
+  options?: CompileOptions
+}
+
+export type CompileSaveRequest = CompileRunRequest & {
+  snapshotName?: string
+  snapshotMemo?: string
+  previewSignature?: string
+  revision?: string
+}
+
+export type CompiledPreviewState = {
+  preview: Record<string, any>
+  previewSignature: string
+  revision: string
+  source: CompileSource
+}
+
 export const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
   ranking_priority: {
     preset: 'current',

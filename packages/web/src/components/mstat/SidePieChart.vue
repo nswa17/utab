@@ -27,7 +27,7 @@ function collectSides() {
   const ids = new Set<string>()
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      if (Number(detail.r) !== props.round) return
+      if (detail.r !== props.round) return
       ids.add(String(detail.id))
       if (detail.side === 'gov' && detail.win === 1) {
         counts.gov += 1

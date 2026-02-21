@@ -20,15 +20,14 @@ const { t, locale } = useI18n({ useScope: 'global' })
 const roundList = computed(() => {
   if (props.rounds && props.rounds.length > 0) {
     return props.rounds
-      .filter((item) => Number.isInteger(Number(item.round)) && Number(item.round) >= 1)
+      .filter((item) => Number.isInteger(item.round) && item.round >= 1)
       .slice()
       .sort((a, b) => a.round - b.round)
   }
   const set = new Set<number>()
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      const r = Number(detail.r)
-      if (Number.isInteger(r) && r >= 1) set.add(r)
+      if (Number.isInteger(detail.r) && detail.r >= 1) set.add(detail.r)
     })
   })
   return Array.from(set)
@@ -46,8 +45,7 @@ function render() {
   const oppData: Array<[number, number]> = []
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      const roundValue = Number(detail.r)
-      const index = roundIndex(roundValue)
+      const index = roundIndex(detail.r)
       if (index < 0) return
       if (typeof detail.sum !== 'number') return
       if (detail.side === 'gov') {

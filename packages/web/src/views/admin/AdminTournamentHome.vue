@@ -2408,18 +2408,14 @@ function resolveInstitutionNames(ids: string[]) {
 function institutionLabel(value?: string) {
   if (!value) return ''
   const token = String(value)
-  const matched = institutions.institutions.find(
-    (inst) => inst._id === token || inst.name === token
-  )
+  const matched = institutions.institutions.find((inst) => inst._id === token)
   return matched?.name ?? token
 }
 
 function resolveInstitutionId(value?: string) {
   if (!value) return ''
   const token = String(value)
-  const matched = institutions.institutions.find(
-    (inst) => inst._id === token || inst.name === token
-  )
+  const matched = institutions.institutions.find((inst) => inst._id === token)
   return matched?._id ?? ''
 }
 
@@ -2432,8 +2428,8 @@ function resolveTeamInstitutionIds(entity: any): string[] {
   const detailIds = Array.from(new Set(idsFromDetails.filter(Boolean)))
   if (detailIds.length > 0) return detailIds
 
-  const legacyId = resolveInstitutionId(entity?.institution)
-  return legacyId ? [legacyId] : []
+  const directId = resolveInstitutionId(entity?.institution)
+  return directId ? [directId] : []
 }
 
 function teamInstitutionLabel(entity: any) {
@@ -2528,16 +2524,7 @@ function resolveTeamSpeakerIds(entity: any): string[] {
     ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
     : []
   const normalizedDetailIds = Array.from(new Set(detailIds.filter(Boolean)))
-  if (normalizedDetailIds.length > 0) return normalizedDetailIds
-
-  const nameBasedIds: string[] = (entity.speakers ?? [])
-    .map((speaker: any) => {
-      const name = speaker?.name
-      if (!name) return ''
-      return speakers.speakers.find((item) => item.name === name)?._id ?? ''
-    })
-    .filter(Boolean)
-  return Array.from(new Set(nameBasedIds))
+  return normalizedDetailIds
 }
 
 function resolveAdjudicatorInstitutionIds(entity: any): string[] {
@@ -2562,7 +2549,6 @@ async function handleCreateTeam() {
   const speakersList = Array.from(new Set(selectedNames)).map((name) => ({
     name,
   }))
-  const institutionNames = resolveInstitutionNames(teamInstitutionIds.value)
   const details = buildTeamDetailsPayload({
     selectedInstitutionIds: teamInstitutionIds.value,
     selectedSpeakerIds: teamSelectedSpeakerIds.value,
@@ -2571,7 +2557,7 @@ async function handleCreateTeam() {
   await teams.createTeam({
     tournamentId: tournamentId.value,
     name: teamForm.name,
-    institution: institutionNames[0] || undefined,
+    institution: teamInstitutionIds.value[0] || undefined,
     speakers: speakersList,
     details,
   })
@@ -2782,7 +2768,6 @@ async function saveEntityEdit() {
   if (editingEntity.value.type === 'team') {
     const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
     const speakersList = Array.from(new Set(selectedNames)).map((name: string) => ({ name }))
-    const institutionNames = resolveInstitutionNames(editTeamInstitutionIds.value)
     const existingTeam = teams.teams.find((item) => item._id === id)
     const details = buildTeamDetailsPayload({
       selectedInstitutionIds: editTeamInstitutionIds.value,
@@ -2794,7 +2779,7 @@ async function saveEntityEdit() {
       tournamentId: tournamentId.value,
       teamId: id,
       name: entityForm.name,
-      institution: institutionNames[0] || undefined,
+      institution: editTeamInstitutionIds.value[0] || undefined,
       speakers: speakersList,
       details,
     })
