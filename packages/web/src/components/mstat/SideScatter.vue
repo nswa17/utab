@@ -8,10 +8,16 @@ import type { Options } from 'highcharts'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
 
-const props = defineProps<{
-  results: any[]
-  rounds?: Array<{ round: number; name?: string }>
-}>()
+const props = withDefaults(
+  defineProps<{
+    results: any[]
+    rounds?: Array<{ round: number; name?: string }>
+    showTitle?: boolean
+  }>(),
+  {
+    showTitle: true,
+  }
+)
 
 const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
@@ -72,7 +78,11 @@ function render() {
 
   Highcharts.chart(container.value as HTMLElement, {
     chart: { type: 'scatter', backgroundColor: 'transparent', zoomType: 'xy' },
-    title: { text: t('サイド別スコア') },
+    title: {
+      text: props.showTitle ? t('サイド別スコア') : undefined,
+      align: 'center',
+      style: { fontSize: '1.2rem', fontWeight: '700' as const },
+    },
     xAxis: {
       title: { text: '' },
       categories,

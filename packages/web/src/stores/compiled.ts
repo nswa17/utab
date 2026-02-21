@@ -116,6 +116,29 @@ export const useCompiledStore = defineStore('compiled', () => {
     return saveCompiled(tournamentId, options)
   }
 
+  async function deleteCompiled(tournamentId: string, compiledId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const targetId = String(compiledId).trim()
+      if (!targetId) {
+        error.value = 'Invalid compiled result id'
+        return null
+      }
+      const res = await api.delete(`/compiled/${targetId}`, { params: { tournamentId } })
+      const deletedPayload = extractPayload(res.data?.data)
+      if (compiled.value && String(compiled.value._id ?? '').trim() === targetId) {
+        compiled.value = null
+      }
+      return deletedPayload
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete compiled result'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   function clearPreview() {
     previewState.value = null
   }
@@ -129,6 +152,7 @@ export const useCompiledStore = defineStore('compiled', () => {
     runPreview,
     saveCompiled,
     runCompile,
+    deleteCompiled,
     clearPreview,
   }
 })

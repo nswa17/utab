@@ -87,7 +87,11 @@ function renderChart(
 
   Highcharts.chart(container, {
     chart: { type: 'bar', backgroundColor: 'transparent', height: config.chartHeight },
-    title: { text: config.title },
+    title: {
+      text: config.title,
+      align: 'center',
+      style: { fontSize: '1.2rem', fontWeight: '700' as const },
+    },
     xAxis: {
       categories,
       labels: { step: 1 },

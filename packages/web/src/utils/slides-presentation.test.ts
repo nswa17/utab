@@ -25,6 +25,19 @@ describe('slides-presentation utils', () => {
     expect(parsed.rightCredit).toBe('')
   })
 
+  it('parses language from presentation query and defaults to english', () => {
+    const { parsed: parsedJa } = parsePresentationQuery({
+      compiledId: 'compiled-2',
+      language: 'ja',
+    })
+    const { parsed: parsedDefault } = parsePresentationQuery({
+      compiledId: 'compiled-3',
+    })
+
+    expect(parsedJa.language).toBe('ja')
+    expect(parsedDefault.language).toBe('en')
+  })
+
   it('keeps fallback max when value is empty', () => {
     expect(normalizeSlideMax(undefined, 7)).toBe(7)
     expect(normalizeSlideMax('', 5)).toBe(5)

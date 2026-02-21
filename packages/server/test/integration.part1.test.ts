@@ -773,6 +773,18 @@ describe('Server integration', () => {
     expect(typeof previewRes.body.data.preview_signature).toBe('string')
     expect(typeof previewRes.body.data.revision).toBe('string')
 
+    const emptyRoundsPreviewRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [],
+      options: {
+        include_labels: ['teams'],
+      },
+    })
+    expect(emptyRoundsPreviewRes.status).toBe(200)
+    expect(emptyRoundsPreviewRes.body.data.preview.rounds).toEqual([])
+    expect(emptyRoundsPreviewRes.body.data.preview.compiled_team_results).toEqual([])
+
     const compiledAfterPreview = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
     expect(compiledAfterPreview.status).toBe(200)
     expect(compiledAfterPreview.body.data).toHaveLength(0)
@@ -808,6 +820,25 @@ describe('Server integration', () => {
     expect(compiledAfterSave.status).toBe(200)
     expect(compiledAfterSave.body.data).toHaveLength(1)
     expect(compiledAfterSave.body.data[0].payload.snapshot_name).toBe('Round 1 / raw / save-test')
+
+    const savedCompiledId = compiledAfterSave.body.data[0]?._id as string
+    expect(typeof savedCompiledId).toBe('string')
+    expect(savedCompiledId.length).toBeGreaterThan(0)
+
+    const deleteCompiledRes = await agent
+      .delete(`/api/compiled/${savedCompiledId}`)
+      .query({ tournamentId })
+    expect(deleteCompiledRes.status).toBe(200)
+    expect(deleteCompiledRes.body.data._id).toBe(savedCompiledId)
+
+    const compiledAfterDelete = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
+    expect(compiledAfterDelete.status).toBe(200)
+    expect(compiledAfterDelete.body.data).toHaveLength(0)
+
+    const deleteMissingCompiledRes = await agent
+      .delete(`/api/compiled/${savedCompiledId}`)
+      .query({ tournamentId })
+    expect(deleteMissingCompiledRes.status).toBe(404)
   })
 
   it('previews and saves break participants while syncing team availability', async () => {

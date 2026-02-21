@@ -278,6 +278,7 @@
                         v-model:no-speaker-score="setupRoundEditForm.userDefinedData.no_speaker_score"
                         v-model:allow-low-tie-win="setupRoundEditForm.userDefinedData.allow_low_tie_win"
                         v-model:score-by-matter-manner="setupRoundEditForm.userDefinedData.score_by_matter_manner"
+                        v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
                         v-model:poi="setupRoundEditForm.userDefinedData.poi"
                         v-model:best="setupRoundEditForm.userDefinedData.best"
                         :disabled="isLoading"
@@ -294,7 +295,9 @@
                         v-model:poi-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.poi_aggregation"
                         v-model:best-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.best_aggregation"
                         v-model:missing-data-policy="setupRoundEditForm.compile.options.missing_data_policy"
-                        :show-source-rounds="true"
+                        :show-winner-scoring="false"
+                        :show-source-rounds="false"
+                        :show-merge-and-missing="false"
                         :source-round-options="compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))"
                         :disabled="isLoading"
                       />
@@ -977,6 +980,7 @@
             v-model:no-speaker-score="roundDefaultsForm.userDefinedData.no_speaker_score"
             v-model:allow-low-tie-win="roundDefaultsForm.userDefinedData.allow_low_tie_win"
             v-model:score-by-matter-manner="roundDefaultsForm.userDefinedData.score_by_matter_manner"
+            v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
             v-model:poi="roundDefaultsForm.userDefinedData.poi"
             v-model:best="roundDefaultsForm.userDefinedData.best"
             :disabled="isLoading"
@@ -993,6 +997,9 @@
             v-model:poi-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation"
             v-model:best-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation"
             v-model:missing-data-policy="roundDefaultsForm.compile.options.missing_data_policy"
+            :show-winner-scoring="false"
+            :show-source-rounds="false"
+            :show-merge-and-missing="false"
             :disabled="isLoading"
           />
         </section>

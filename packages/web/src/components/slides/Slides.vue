@@ -1,6 +1,7 @@
 <template>
   <component
     :is="component"
+    :language="language"
     :max-ranking-rewarded="maxRankingRewarded"
     :type="type"
     :slide-style="slideStyle"
@@ -15,6 +16,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { SlideLanguage } from '@/utils/slides-presentation'
 import TeamSlides from './TeamSlides.vue'
 import SpeakerSlides from './SpeakerSlides.vue'
 import AdjudicatorSlides from './AdjudicatorSlides.vue'
@@ -24,6 +26,7 @@ import BestSlides from './BestSlides.vue'
 const props = withDefaults(
   defineProps<{
     label: 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
+    language?: SlideLanguage
     maxRankingRewarded?: number
     type?: 'listed' | 'single'
     slideStyle?: 'pretty' | 'simple'
@@ -34,6 +37,7 @@ const props = withDefaults(
     entities?: Record<string, string>
   }>(),
   {
+    language: 'en',
     maxRankingRewarded: 3,
     type: 'listed',
     slideStyle: 'pretty',

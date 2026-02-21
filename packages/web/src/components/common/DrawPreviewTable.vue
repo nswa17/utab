@@ -28,26 +28,33 @@
             </th>
             <th>
               <SortHeaderButton
-                :label="$t('Win')"
+                :label="winColumnLabel"
                 :indicator="sortIndicator('win')"
                 @click="setSort('win')"
               />
             </th>
-            <th>
+            <th v-if="showScoreColumn">
+              <SortHeaderButton
+                :label="scoreColumnLabel"
+                :indicator="sortIndicator('score')"
+                @click="setSort('score')"
+              />
+            </th>
+            <th class="draw-col-chair">
               <SortHeaderButton
                 :label="$t('チェア')"
                 :indicator="sortIndicator('chair')"
                 @click="setSort('chair')"
               />
             </th>
-            <th>
+            <th class="draw-col-panel">
               <SortHeaderButton
                 :label="$t('パネル')"
                 :indicator="sortIndicator('panel')"
                 @click="setSort('panel')"
               />
             </th>
-            <th>
+            <th class="draw-col-trainee">
               <SortHeaderButton
                 :label="$t('トレーニー')"
                 :indicator="sortIndicator('trainee')"
@@ -68,7 +75,7 @@
                 @click="setSort('judgeSubmission')"
               />
             </th>
-            <th v-if="showDetailColumn">
+            <th v-if="showDetailColumn" class="draw-col-detail">
               {{ $t('詳細') }}
             </th>
           </tr>
@@ -79,17 +86,60 @@
               <td>{{ row.venueLabel }}</td>
               <td>{{ teamVisible ? row.govName : $t('非公開') }}</td>
               <td>{{ teamVisible ? row.oppName : $t('非公開') }}</td>
-              <td>{{ teamVisible ? row.winLabel : '—' }}</td>
-              <td>{{ adjudicatorVisible ? row.chairsLabel : $t('非公開') }}</td>
-              <td>{{ adjudicatorVisible ? row.panelsLabel : $t('非公開') }}</td>
-              <td>{{ adjudicatorVisible ? row.traineesLabel : $t('非公開') }}</td>
+              <td>
+                <template v-if="teamVisible">
+                  <div class="draw-win-cell">
+                    <span class="draw-win-main">
+                      <span class="draw-win-value">{{ row.winLabel }}</span>
+                      <span
+                        v-if="row.winStatusLabel"
+                        class="draw-win-status"
+                        :class="`draw-win-status--${row.winStatus ?? 'insufficient'}`"
+                      >
+                        {{ row.winStatusLabel }}
+                      </span>
+                    </span>
+                    <span v-if="row.winMetaLabel" class="muted tiny draw-win-meta">{{ row.winMetaLabel }}</span>
+                  </div>
+                </template>
+                <template v-else>—</template>
+              </td>
+              <td v-if="showScoreColumn">
+                <template v-if="teamVisible">{{ row.scoreLabel ?? '—' }}</template>
+                <template v-else>—</template>
+              </td>
+              <td class="draw-col-chair draw-wrap-cell">
+                {{ adjudicatorVisible ? row.chairsLabel : $t('非公開') }}
+              </td>
+              <td class="draw-col-panel draw-wrap-cell">
+                {{ adjudicatorVisible ? row.panelsLabel : $t('非公開') }}
+              </td>
+              <td class="draw-col-trainee draw-wrap-cell">
+                {{ adjudicatorVisible ? row.traineesLabel : $t('非公開') }}
+              </td>
               <td v-if="showSubmissionColumns">
-                {{ submissionCountText(row.teamSubmissionCount, row.teamSubmissionExpectedCount) }}
+                <span
+                  class="submission-count-chip"
+                  :class="`submission-count-chip--${submissionCountTone(
+                    row.teamSubmissionCount,
+                    row.teamSubmissionExpectedCount
+                  )}`"
+                >
+                  {{ submissionCountText(row.teamSubmissionCount, row.teamSubmissionExpectedCount) }}
+                </span>
               </td>
               <td v-if="showJudgeSubmissionColumn">
-                {{ submissionCountText(row.judgeSubmissionCount, row.judgeSubmissionExpectedCount) }}
+                <span
+                  class="submission-count-chip"
+                  :class="`submission-count-chip--${submissionCountTone(
+                    row.judgeSubmissionCount,
+                    row.judgeSubmissionExpectedCount
+                  )}`"
+                >
+                  {{ submissionCountText(row.judgeSubmissionCount, row.judgeSubmissionExpectedCount) }}
+                </span>
               </td>
-              <td v-if="showDetailColumn">
+              <td v-if="showDetailColumn" class="draw-col-detail">
                 <button
                   type="button"
                   class="preview-detail-toggle"
@@ -189,6 +239,7 @@ type PreviewSortKey =
   | 'gov'
   | 'opp'
   | 'win'
+  | 'score'
   | 'chair'
   | 'panel'
   | 'trainee'
@@ -208,6 +259,9 @@ const props = withDefaults(
     showJudgeSubmissionColumn?: boolean
     teamSubmissionLabel?: string
     judgeSubmissionLabel?: string
+    winColumnLabel?: string
+    showScoreColumn?: boolean
+    scoreColumnLabel?: string
   }>(),
   {
     govLabel: 'Gov',
@@ -218,6 +272,9 @@ const props = withDefaults(
     showJudgeSubmissionColumn: true,
     teamSubmissionLabel: 'チーム評価',
     judgeSubmissionLabel: 'ジャッジ評価',
+    winColumnLabel: 'Win',
+    showScoreColumn: false,
+    scoreColumnLabel: 'SCORE合計',
   }
 )
 const emit = defineEmits<{
@@ -239,25 +296,31 @@ const showJudgeSubmissionColumn = computed(
   () => showSubmissionColumns.value && props.showJudgeSubmissionColumn
 )
 const showDetailColumn = computed(() => showSubmissionColumns.value || showJudgeSubmissionColumn.value)
+const showScoreColumn = computed(() => props.showScoreColumn)
 const teamSubmissionLabel = computed(() => props.teamSubmissionLabel)
 const judgeSubmissionLabel = computed(() => props.judgeSubmissionLabel)
+const winColumnLabel = computed(() => props.winColumnLabel)
+const scoreColumnLabel = computed(() => props.scoreColumnLabel)
 const columnCount = computed(() => {
+  const scoreColumn = Number(showScoreColumn.value)
   const submissionColumns = Number(showSubmissionColumns.value) + Number(showJudgeSubmissionColumn.value)
   const detailColumn = Number(showDetailColumn.value)
-  return 7 + submissionColumns + detailColumn
+  return 7 + scoreColumn + submissionColumns + detailColumn
 })
 
 function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
-  if (!props.teamVisible && (key === 'gov' || key === 'opp' || key === 'win')) return ''
+  if (!props.teamVisible && (key === 'gov' || key === 'opp' || key === 'win' || key === 'score')) return ''
   if (!props.adjudicatorVisible && (key === 'chair' || key === 'panel' || key === 'trainee')) {
     return ''
   }
+  if (key === 'score' && !showScoreColumn.value) return -1
   if (key === 'teamSubmission' && !showSubmissionColumns.value) return 0
   if (key === 'judgeSubmission' && !showJudgeSubmissionColumn.value) return 0
   if (key === 'venue') return row.venueLabel
   if (key === 'gov') return row.govName
   if (key === 'opp') return row.oppName
   if (key === 'win') return row.winTotal
+  if (key === 'score') return row.scoreTotal ?? -1
   if (key === 'chair') return row.chairsLabel
   if (key === 'panel') return row.panelsLabel
   if (key === 'teamSubmission') return row.teamSubmissionCount ?? 0
@@ -283,6 +346,9 @@ const sortedRows = computed(() => {
         const diff = sortCollator.compare(String(leftValue), String(rightValue))
         if (diff !== 0) return direction * diff
       }
+      if (state.key === 'score' && (left.scoreGap ?? 0) !== (right.scoreGap ?? 0)) {
+        return (left.scoreGap ?? 0) - (right.scoreGap ?? 0)
+      }
       if (left.winGap !== right.winGap) return left.winGap - right.winGap
       return left.matchIndex - right.matchIndex
     })
@@ -298,7 +364,7 @@ function setSort(key: PreviewSortKey) {
   }
   sortState.value = {
     key,
-    direction: key === 'win' ? 'desc' : 'asc',
+    direction: key === 'win' || key === 'score' ? 'desc' : 'asc',
   }
 }
 
@@ -343,6 +409,15 @@ function submissionCountText(actual?: number, expected?: number) {
   return `${left}/${right}`
 }
 
+function submissionCountTone(actual?: number, expected?: number) {
+  const left = Number.isFinite(actual) ? Math.max(0, Number(actual)) : 0
+  if (!Number.isFinite(expected)) return 'neutral'
+  const right = Math.max(0, Number(expected))
+  if (right <= 0) return 'neutral'
+  if (left < right) return 'missing'
+  return 'complete'
+}
+
 function onEditSubmission(submissionId?: string) {
   const normalized = String(submissionId ?? '').trim()
   if (!normalized) return
@@ -380,6 +455,107 @@ function onEditSubmission(submissionId?: string) {
   border-bottom: none;
 }
 
+.draw-col-chair,
+.draw-col-panel,
+.draw-col-trainee {
+  width: auto;
+}
+
+.draw-col-chair {
+  min-width: 180px;
+}
+
+.draw-col-panel,
+.draw-col-trainee {
+  width: 1%;
+  min-width: 72px;
+}
+
+.draw-col-detail {
+  width: 74px;
+  white-space: nowrap;
+}
+
+.draw-wrap-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.draw-win-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.draw-win-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.draw-win-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.draw-win-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 18px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.draw-win-status--confirmed {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.draw-win-status--provisional {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.draw-win-status--insufficient {
+  color: #475569;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.draw-win-meta {
+  line-height: 1.25;
+}
+
+.submission-count-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.submission-count-chip--neutral {
+  color: var(--color-text);
+  background: transparent;
+}
+
+.submission-count-chip--complete {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.submission-count-chip--missing {
+  color: #9a3412;
+  background: #ffedd5;
+}
+
 .preview-detail-toggle,
 .preview-detail-edit-button {
   appearance: none;
@@ -393,6 +569,9 @@ function onEditSubmission(submissionId?: string) {
   cursor: pointer;
   font-weight: 400;
   min-height: auto;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
 }
 
 .preview-detail-toggle:disabled,

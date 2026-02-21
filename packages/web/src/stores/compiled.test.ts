@@ -5,6 +5,7 @@ vi.mock('@/utils/api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
@@ -16,6 +17,7 @@ import type { CompileOptions } from '@/types/compiled'
 type MockedApi = {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
 }
 
 const mockedApi = api as unknown as MockedApi
@@ -25,6 +27,7 @@ describe('compiled store', () => {
     setActivePinia(createPinia())
     mockedApi.get.mockReset()
     mockedApi.post.mockReset()
+    mockedApi.delete.mockReset()
   })
 
   it('submits compile options payload', async () => {
@@ -167,5 +170,30 @@ describe('compiled store', () => {
       compiled_team_results: [{ id: 'team-1' }],
     })
     expect(store.previewState).toBeNull()
+  })
+
+  it('deletes a compiled snapshot by id', async () => {
+    const store = useCompiledStore()
+    mockedApi.delete.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'snapshot-003',
+          payload: {
+            compiled_team_results: [{ id: 'team-1' }],
+          },
+        },
+      },
+    })
+
+    const deleted = await store.deleteCompiled('tournament-1', 'snapshot-003')
+
+    expect(mockedApi.delete).toHaveBeenCalledWith('/compiled/snapshot-003', {
+      params: { tournamentId: 'tournament-1' },
+    })
+    expect(deleted).toEqual({
+      _id: 'snapshot-003',
+      compiled_team_results: [{ id: 'team-1' }],
+    })
+    expect(store.error).toBeNull()
   })
 })

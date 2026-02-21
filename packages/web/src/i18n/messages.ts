@@ -41,6 +41,7 @@ const en = {
   'フォーム': 'Form',
   '提出者ID': 'Submitted entity ID',
   '合計スコア': 'Total score',
+  'SCORE合計': 'Score SUM',
   'チーム A Matter': 'Team A Matter',
   'チーム A Manner': 'Team A Manner',
   'チーム B Matter': 'Team B Matter',
@@ -112,7 +113,9 @@ const en = {
   'このラウンドはスピーカースコアを入力しません。': 'No speaker scores for this round.',
   'この役割はログインが必要です。': 'Login is required for this role.',
   'この結果を削除しますか？': 'Delete this result?',
+  'この集計結果を削除しますか？': 'Delete this compiled result?',
   'この評価を削除しますか？': 'Delete this evaluation?',
+  '削除した集計結果は元に戻せません。': 'Deleted compiled results cannot be restored.',
   '削除した評価は元に戻せません。': 'Deleted evaluations cannot be restored.',
   '更新内容を保存しますか？': 'Save these updates?',
   '現在の入力内容でこの評価を更新します。': 'This updates the evaluation with the current inputs.',
@@ -187,7 +190,7 @@ const en = {
     'Estimates strictness from deviations of ballot average scores. Requires 2+ matches.',
   '対象 {matches}試合 / outlier {count}名': 'Coverage {matches} matches / outliers {count}',
   'ラウンド平均との差の偏差を表示': 'Displays deviation from round mean',
-  'ラウンド平均との差の偏差を比較（担当した試合によって偏りが発生します）':
+  'ラウンド平均との差の偏差を比較（担当したマッチによって偏りが発生します）':
     'Compare deviation from round mean (assignment-dependent bias may occur)',
   '試合数': 'Matches',
   'チーム評価平均': 'Ballot average',
@@ -249,12 +252,17 @@ const en = {
     'You can choose a reference compile result for automatic generation.',
   '対戦生成では参照集計結果を選択できます。未選択でも自動生成できます。':
     'You can select a reference compile result for draw generation. Auto-generation also works without selecting one.',
+  '対戦表作成では参照集計結果を選択できます。未選択でも自動生成できます。':
+    'You can select a reference compile result while building pairings. Auto-generation also works without selecting one.',
   '公開後に提出を回収します。先に公開設定で公開してください。':
     'Collect submissions after publication. Publish first in publication settings.',
+  '公開後に提出を回収します。先にラウンド公開設定で公開してください。':
+    'Collect submissions after publication. Publish first in round publication settings.',
   '提出回収後に集計を実行します。': 'Run compile after collecting submissions.',
   '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。':
     'Compile submissions to finalize standings. Confirm which rounds are included before running.',
   '集計設定': 'Compile settings',
+  'ラウンド結果集計': 'Round results compile',
   '表示集計結果': 'Displayed compile result',
   '参照集計結果': 'Reference compile result',
   '日時': 'Date/time',
@@ -291,6 +299,7 @@ const en = {
   'ラウンド運営へ': 'Open round operations',
   '次ラウンド対戦生成': 'Next-round pairing',
   '公開設定': 'Publication settings',
+  'ラウンド公開設定': 'Round publication settings',
   'レポートを開く': 'Open reports',
   '対戦表設定を開く': 'Open draw settings',
   '生結果を開く': 'Open raw results',
@@ -369,9 +378,15 @@ const en = {
   '読み込みに失敗しました。': 'Failed to load data.',
   '未提出のチーム評価があります（提出 {submitted}/{expected}）。':
     'Some ballots are still missing (submitted {submitted}/{expected}).',
+  'SUM算出 {calculated}/{expected}': 'Calculated SUM {calculated}/{expected}',
+  'SUM算出 {count}件': 'Calculated SUM {count} submissions',
   '提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。':
     '{count} ballots have missing submitter information. Fill submitter IDs in the submissions tab.',
   '提出者情報不足: {count}': 'Missing submitter info: {count}',
+  '提出SUM': 'Submitted SUM',
+  '提出累計': 'Submitted cumulative',
+  '暫定': 'Provisional',
+  '未算出': 'Not calculated',
   '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
     'Cannot run compile because selected round ballots are incomplete.',
   '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
@@ -441,6 +456,7 @@ const en = {
   'スピーカースコア無し': 'No speaker scores',
   'スピーカー名': 'Speaker name',
   'スライド': 'Slides',
+  'スライド言語': 'Slide language',
   'ソース': 'Source',
   'ソート': 'Sort',
   'ソートなし': 'No sort',
@@ -579,6 +595,10 @@ const en = {
   '低勝ち/同点勝ちは許可されていません。': 'Low win/tie win is not allowed.',
   '低勝ち・同点勝ちを許可します。': 'Allow low-win and tie-win decisions.',
   '低勝ち/同点勝ち許可': 'Allow low/tie win',
+  '引き分け許可': 'Allow draw',
+  '引き分け入力と低勝ち・同点勝ちを許可します。':
+    'Allow draw input and low-win/tie-win decisions.',
+  '右へ移動': 'Move to right',
   '作成': 'Create',
   '作成者: {name}': 'Created by: {name}',
   '保存': 'Save',
@@ -612,6 +632,7 @@ const en = {
   '利用不可 (出欠/利用設定)': 'Unavailable (attendance/settings)',
   '利用可': 'Available',
   '削除': 'Delete',
+  '集計結果を削除': 'Delete compiled result',
   '評価を削除': 'Delete evaluation',
   '割り当て': 'Allocation',
   '割り当てられたジャッジがいません': 'No adjudicators assigned',
@@ -765,6 +786,7 @@ const en = {
   '参加': 'Include',
   '提出一覧': 'Submissions',
   '提出状況': 'Submission status',
+  '提出状況確認': 'Submission status review',
   '提出がありません。': 'No submissions.',
   '提出数': 'Submissions',
   '提出数（ラウンド別）': 'Submissions by round',
@@ -866,6 +888,7 @@ const en = {
   'マッチ': 'Match',
   '対戦表': 'Draw',
   '対戦表作成': 'Draw Builder',
+  '配置': 'Placement',
   'マッチ番号': 'Match number',
   'マッチ番号 {index}': 'Match #{index}',
   'マッチ番号シャッフル': 'Shuffle match numbers',
@@ -1003,10 +1026,14 @@ const en = {
   '引き分け時ポイント': 'Draw points',
   '重複マージ': 'Duplicate merge',
   '最新を採用': 'Use latest',
+  '統合': 'Merge',
   '平均で統合': 'Merge by average',
   '重複時はエラー': 'Error on duplicate',
+  '同一スピーカーPOI処理': 'Same-speaker POI handling',
+  '同一スピーカーBest Debater処理': 'Same-speaker Best Debater handling',
   'POI集計': 'POI aggregation',
   'Best集計': 'Best aggregation',
+  'Best Speaker集計': 'Best Speaker aggregation',
   '欠損データ': 'Missing data',
   '警告のみ': 'Warn only',
   '欠損を除外': 'Exclude missing',
@@ -1040,12 +1067,33 @@ const en = {
   '最新集計（ID: {id}）': 'Latest compiled (ID: {id})',
   '提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。':
     'Submissions compiles submitted forms. Raw uses values edited directly in the raw results screen.',
+  'ここで選んだラウンドだけを集計します。':
+    'Only selected rounds are compiled.',
   'ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。':
     'Only selected rounds are compiled. If none are selected, all rounds are included.',
   '順位が同点のときにどの指標を先に比較するかを決めます。':
     'Defines which metric breaks ties first when ranks are tied.',
+  '勝敗判定・引き分け時ポイント・順位優先度を設定します。':
+    'Configure winner policy, draw points, and ranking priority.',
+  '順位優先度設定': 'Ranking priority settings',
+  '使用する基準を左列に並べてください。':
+    'Arrange the criteria used for comparison in the left column.',
   '勝敗判定の方法を選択します。スコア整合を必須にするか、勝敗入力を優先するか、勝者未指定を引き分け扱いにするかを選べます。':
     'Choose winner-policy mode: require score consistency, prioritize winner input, or treat missing winner as draw.',
+  '勝敗判定と引き分け時の勝敗点を設定します。':
+    'Configure winner policy and the win points used for draws.',
+  '順位優先度（上から優先）': 'Ranking priority (top = higher priority)',
+  '順位優先度（左から優先）': 'Ranking priority (left = higher priority)',
+  '使用する基準': 'Criteria used for comparison',
+  '不使用': 'Not used',
+  'ドラッグ&ドロップで順序を並び替え、使わない項目は右へ移動します。':
+    'Reorder by drag-and-drop, and move unused metrics to the right.',
+  '比較に使う指標を上から順に並べます。不要な指標は除外してください。':
+    'Sort active metrics from top to bottom. Remove metrics you do not need.',
+  'ここより左を比較に使用': 'Use metrics on the left side for comparison',
+  'ドラッグで順序を変更します。区切りより左が比較対象で、右は無視されます。':
+    'Drag to reorder. Metrics left of the divider are used; right side is ignored.',
+  '比較に使わない（右）': 'Unused metrics (right)',
   'Ballotの winnerId とスコアのどちらを優先して勝敗を判定するかを決めます。':
     'Chooses whether selected winner input or score inference is prioritized when determining winners from ballots.',
   '提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。':
@@ -1054,6 +1102,10 @@ const en = {
     'Points assigned to each team when a draw is allowed.',
   '同じ提出者から複数提出がある場合の扱いです。':
     'How duplicate submissions from the same submitter are handled.',
+  '同一スピーカーへのPOI複数入力を平均か最大でまとめます。':
+    'How multiple POI inputs for the same speaker are merged (average or maximum).',
+  '同一スピーカーへのBest Debater複数入力を平均か最大でまとめます。':
+    'How multiple Best Debater inputs for the same speaker are merged (average or maximum).',
   'POIの重複値を平均か最大でまとめます。':
     'How duplicate POI values are merged (average or maximum).',
   'Best Speakerの重複値を平均か最大でまとめます。':
@@ -1241,6 +1293,8 @@ const en = {
   '詳細設定を隠す': 'Hide advanced settings',
   '評価提出設定': 'Evaluation submission settings',
   'スコア設定': 'Scoring settings',
+  'ジャッジ評価設定': 'Adjudicator evaluation settings',
+  'チーム評価設定': 'Team evaluation settings',
   '賞設定': 'Award settings',
   '詳細を表示': 'Show details',
   '詳細を隠す': 'Hide details',

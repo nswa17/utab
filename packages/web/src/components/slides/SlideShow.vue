@@ -16,7 +16,7 @@
         </component>
       </div>
     </div>
-    <div v-else class="empty">{{ $t('スライドがありません。') }}</div>
+    <div v-else class="empty">{{ emptyLabel }}</div>
 
     <div class="footer">
       <div class="credit credit-left">{{ leftCredit }}</div>
@@ -26,7 +26,7 @@
           <Button
             variant="ghost"
             size="sm"
-            :aria-label="$t('前のスライド')"
+            :aria-label="previousSlideLabel"
             @click="prev"
             :disabled="currentIndex === 0 || !hasSlides"
           >
@@ -35,7 +35,7 @@
           <Button
             variant="ghost"
             size="sm"
-            :aria-label="$t('次のスライド')"
+            :aria-label="nextSlideLabel"
             @click="next"
             :disabled="!hasSlides || currentIndex === slides.length - 1"
           >
@@ -62,8 +62,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
+import { normalizeSlideLanguage, type SlideLanguage } from '@/utils/slides-presentation'
 
 export type SlidePhrase = { tag: string; text: string }
 export type SlideParagraph = SlidePhrase[]
@@ -73,19 +73,34 @@ const props = withDefaults(
   defineProps<{
     slides: SlidePage[]
     title: string
+    language?: SlideLanguage
     leftCredit?: string
     rightCredit?: string
     styleMode?: 'pretty' | 'simple'
     presentationMode?: boolean
   }>(),
-  { leftCredit: '', rightCredit: '', styleMode: 'pretty', presentationMode: false }
+  {
+    language: 'en',
+    leftCredit: '',
+    rightCredit: '',
+    styleMode: 'pretty',
+    presentationMode: false,
+  }
 )
-
-const { t } = useI18n({ useScope: 'global' })
 
 const currentIndex = ref(0)
 const currentSlide = computed(() => props.slides[currentIndex.value] ?? [])
 const hasSlides = computed(() => props.slides.length > 0)
+const language = computed(() => normalizeSlideLanguage(props.language))
+const emptyLabel = computed(() =>
+  language.value === 'ja' ? 'スライドがありません。' : 'No slides available.'
+)
+const previousSlideLabel = computed(() =>
+  language.value === 'ja' ? '前のスライド' : 'Previous slide'
+)
+const nextSlideLabel = computed(() =>
+  language.value === 'ja' ? '次のスライド' : 'Next slide'
+)
 const paginationLabel = computed(() => {
   if (!hasSlides.value) return '0 / 0'
   return `${currentIndex.value + 1} / ${props.slides.length}`
@@ -93,9 +108,12 @@ const paginationLabel = computed(() => {
 const root = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 const slideshowClass = computed(() => `slideshow--${props.styleMode}`)
-const fullscreenButtonLabel = computed(() =>
-  isFullscreen.value ? t('フルスクリーン終了') : t('フルスクリーンで表示')
-)
+const fullscreenButtonLabel = computed(() => {
+  if (isFullscreen.value) {
+    return language.value === 'ja' ? 'フルスクリーン終了' : 'Exit fullscreen'
+  }
+  return language.value === 'ja' ? 'フルスクリーンで表示' : 'Show fullscreen'
+})
 
 function next() {
   if (!hasSlides.value) return

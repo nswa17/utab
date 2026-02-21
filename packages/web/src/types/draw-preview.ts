@@ -21,6 +21,12 @@ export type DrawPreviewRow = {
   winLabel: string
   winTotal: number
   winGap: number
+  winStatus?: 'confirmed' | 'provisional' | 'insufficient'
+  winStatusLabel?: string
+  winMetaLabel?: string
+  scoreLabel?: string
+  scoreTotal?: number
+  scoreGap?: number
   chairsLabel: string
   panelsLabel: string
   traineesLabel: string

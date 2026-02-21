@@ -119,12 +119,13 @@ describe('AdminTournamentCompiled V2', () => {
 
   it('integrates analysis charts into fairness section with lazy readiness and empty state', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('分析（公平性タブ統合）')
-    expect(source).toContain('分析は公平性タブで確認できます。')
+    expect(source).not.toContain('分析（公平性タブ統合）')
+    expect(source).not.toContain('分析は公平性タブで確認できます。')
     expect(source).toContain('analysisChartsReady')
     expect(source).toContain('canShowAnalysisCharts')
     expect(source).toContain('analysisEmptyState')
     expect(source).not.toContain('showAnalysisSection')
+    expect(source).toContain(':use-cards="true"')
     expect(source).toContain('<EmptyState')
   })
 
@@ -191,6 +192,8 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('<option value="single">{{ $t(\'個別\') }}</option>')
     expect(source).toContain("$t('スライドスタイル')")
     expect(source).toContain('<option value="simple">{{ $t(\'簡易\') }}</option>')
+    expect(source).toContain("$t('スライド言語')")
+    expect(source).toContain(':language="slideLanguage"')
     expect(source).toContain(':slide-style="slideStyle"')
   })
 
@@ -228,6 +231,10 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('selectedCompiledId')
     expect(source).toContain('showExistingReport')
     expect(source).toContain("$t('表示中')")
+    expect(source).toContain('openDeleteCompiledModal')
+    expect(source).toContain('confirmDeleteCompiled')
+    expect(source).toContain("$t('集計結果を削除')")
+    expect(source).toContain("$t('この集計結果を削除しますか？')")
   })
 
   it('opens recomputation options in the detailed settings modal', () => {

@@ -226,8 +226,11 @@ function resolveRounds(
   rawSpeakerResults: Array<{ r?: number }>,
   rawAdjudicatorResults: Array<{ r?: number }>
 ): number[] {
-  if (Array.isArray(provided) && provided.length > 0) {
-    return Array.from(new Set(provided)).filter(Number.isFinite).sort((a, b) => a - b)
+  if (Array.isArray(provided)) {
+    return Array.from(new Set(provided))
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 1)
+      .sort((a, b) => a - b)
   }
   const roundsSet = new Set<number>()
   rawTeamResults.forEach((result) => {
@@ -250,8 +253,11 @@ function resolveRoundsFromSubmissions(
   submissions: Array<{ round?: number }>,
   draws: Array<{ round?: number }>
 ): number[] {
-  if (Array.isArray(provided) && provided.length > 0) {
-    return Array.from(new Set(provided)).filter(Number.isFinite).sort((a, b) => a - b)
+  if (Array.isArray(provided)) {
+    return Array.from(new Set(provided))
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 1)
+      .sort((a, b) => a - b)
   }
   const roundsSet = new Set<number>()
   submissions.forEach((submission) => {
@@ -1660,6 +1666,29 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       notFound(res, 'Tournament not found')
       return
     }
+    next(err)
+  }
+}
+
+export const deleteCompiled: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { tournamentId } = req.query as { tournamentId?: string }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!isValidObjectId(id)) {
+      badRequest(res, 'Invalid compiled id')
+      return
+    }
+
+    const connection = await getTournamentConnection(tournamentId)
+    const CompiledModel = getCompiledModel(connection)
+    const deleted = await CompiledModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+    if (!deleted) {
+      notFound(res, 'Compiled result not found')
+      return
+    }
+    res.json({ data: deleted, errors: [] })
+  } catch (err) {
     next(err)
   }
 }

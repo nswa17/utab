@@ -86,7 +86,7 @@ function render() {
     .sort((a, b) => {
       const leftMax = typeof a.high === 'number' ? a.high : Number.NEGATIVE_INFINITY
       const rightMax = typeof b.high === 'number' ? b.high : Number.NEGATIVE_INFINITY
-      if (leftMax !== rightMax) return leftMax - rightMax
+      if (leftMax !== rightMax) return rightMax - leftMax
       const nameDiff = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
       return nameDiff !== 0 ? nameDiff : a.index - b.index
     })
@@ -141,9 +141,15 @@ function render() {
       backgroundColor: 'transparent',
       height: chartHeight,
     },
-    title: { text: t('スコア範囲') },
+    title: {
+      text: t('スコア範囲'),
+      align: 'center',
+      style: { fontSize: '1.2rem', fontWeight: '700' as const },
+    },
     xAxis: {
       categories,
+      // Keep category direction aligned with sorted rows (high score first).
+      reversed: false,
       labels: { step: 1 },
     },
     yAxis: {

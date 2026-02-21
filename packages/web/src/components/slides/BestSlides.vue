@@ -1,6 +1,7 @@
 <template>
   <SlidesWrapper
-    title="Best Debater Results"
+    :title="title"
+    :language="language"
     :organized-results="organizedResults"
     :max-ranking-rewarded="maxRankingRewarded"
     :type="type"
@@ -14,11 +15,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { SlideLanguage } from '@/utils/slides-presentation'
 import { resolveSubNames } from '@/utils/slides-presentation'
 import SlidesWrapper from './SlidesWrapper.vue'
 
 const props = withDefaults(
   defineProps<{
+    language?: SlideLanguage
     maxRankingRewarded?: number
     type?: 'listed' | 'single'
     slideStyle?: 'pretty' | 'simple'
@@ -29,6 +32,7 @@ const props = withDefaults(
     entities?: Record<string, string>
   }>(),
   {
+    language: 'en',
     maxRankingRewarded: 3,
     type: 'listed',
     slideStyle: 'pretty',
@@ -39,6 +43,10 @@ const props = withDefaults(
 )
 
 defineEmits<{ (event: 'close'): void }>()
+
+const title = computed(() =>
+  props.language === 'ja' ? 'ベストスピーカー結果' : 'Best Debater Results'
+)
 
 const organizedResults = computed(() => {
   const results = props.tournament?.compiled_best_results ?? []

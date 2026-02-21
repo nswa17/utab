@@ -49,6 +49,7 @@ function render() {
     props.roundName ??
     (props.round !== undefined ? t('ラウンド {round}', { round: props.round }) : '')
   const titleText = props.round !== undefined ? t('スコアヒストグラム（{round}）', { round: roundLabel }) : t('スコアヒストグラム')
+  const titleStyle = { fontSize: '1.2rem', fontWeight: '700' as const }
 
   const styles = getComputedStyle(document.documentElement)
   const palette = [
@@ -60,7 +61,7 @@ function render() {
 
   Highcharts.chart(container.value, {
     chart: { type: 'column', backgroundColor: 'transparent' },
-    title: { text: titleText },
+    title: { text: titleText, align: 'center', style: titleStyle },
     xAxis: { categories: keys.map((key) => key.toString()), title: { text: t('スコア') } },
     yAxis: { title: { text: t('件数') }, allowDecimals: false },
     colors: palette,

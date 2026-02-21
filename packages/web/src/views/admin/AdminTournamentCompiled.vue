@@ -11,10 +11,12 @@
       />
     </div>
 
-    <LoadingState v-if="isLoading" />
-    <p v-else-if="compiledStore.error" class="error">{{ compiledStore.error }}</p>
+    <div class="report-content-shell">
+      <LoadingState v-if="!hasLoaded && isLoading" />
+      <div v-else class="report-body">
+        <p v-if="compiledStore.error" class="error">{{ compiledStore.error }}</p>
 
-    <div v-else class="stack">
+        <div v-else class="stack">
       <section class="card stack report-setup-card">
         <div class="row report-setup-head">
           <h4>{{ $t('既存レポートの選択') }}</h4>
@@ -25,7 +27,6 @@
             <tr>
               <th>{{ $t('作成日時') }}</th>
               <th>{{ $t('集計結果名') }}</th>
-              <th>{{ $t('ソース') }}</th>
               <th>{{ $t('勝敗判定') }}</th>
               <th>{{ $t('欠損データ') }}</th>
               <th>{{ $t('重複マージ') }}</th>
@@ -36,19 +37,28 @@
             <tr v-for="row in reportSnapshotRows" :key="row.compiledId">
               <td>{{ row.createdAtLabel }}</td>
               <td>{{ row.snapshotLabel }}</td>
-              <td>{{ row.sourceLabel }}</td>
               <td>{{ row.winnerPolicyLabel }}</td>
               <td>{{ row.missingDataLabel }}</td>
               <td>{{ row.mergePolicyLabel }}</td>
               <td>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  :disabled="row.isSelected"
-                  @click="showExistingReport(row.compiledId)"
-                >
-                  {{ row.isSelected ? $t('表示中') : $t('表示') }}
-                </Button>
+                <div class="row report-snapshot-actions">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="row.isSelected || isLoading"
+                    @click="showExistingReport(row.compiledId)"
+                  >
+                    {{ row.isSelected ? $t('表示中') : $t('表示') }}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    :disabled="isLoading"
+                    @click="openDeleteCompiledModal(row)"
+                  >
+                    {{ $t('削除') }}
+                  </Button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -60,51 +70,9 @@
             <h4>{{ $t('新規レポート生成') }}</h4>
           </div>
           <p class="muted small">{{ $t('新規レポートを生成します。') }}</p>
-          <div v-if="compileRounds.length > 0" class="stack compile-warning-list">
-            <div v-for="r in compileRounds" :key="r">
-              <p v-if="missingBallotByRound(r).length > 0" class="muted warning">
-                {{ roundName(r) }}:
-                {{ $t('スコアシート未提出: {names}', { names: missingBallotByRound(r).map(adjudicatorName).join(', ') }) }}
-              </p>
-              <p v-if="missingFeedbackTeamsByRound(r).length > 0" class="muted warning">
-                {{ roundName(r) }}:
-                {{
-                  $t('評価未提出（{label}）: {names}', {
-                    label: feedbackTeamLabel(r),
-                    names: missingFeedbackTeamsByRound(r)
-                      .map((item) => item.name)
-                      .join(', '),
-                  })
-                }}
-              </p>
-              <p v-if="missingFeedbackAdjudicatorsByRound(r).length > 0" class="muted warning">
-                {{ roundName(r) }}:
-                {{
-                  $t('評価未提出（ジャッジ）: {names}', {
-                    names: missingFeedbackAdjudicatorsByRound(r)
-                      .map(adjudicatorName)
-                      .join(', '),
-                  })
-                }}
-              </p>
-              <p
-                v-if="
-                  unknownCountsByRound(r).ballot > 0 || unknownCountsByRound(r).feedback > 0
-                "
-                class="muted"
-              >
-                {{ roundName(r) }}:
-                {{
-                  $t('提出者情報不足: Ballot {ballot} / Feedback {feedback}', {
-                    ballot: unknownCountsByRound(r).ballot,
-                    feedback: unknownCountsByRound(r).feedback,
-                  })
-                }}
-              </p>
-            </div>
-          </div>
           <div class="row compile-actions">
             <Button
+              variant="secondary"
               @click="compileManualSaveEnabled ? runPreviewWithSource('submissions') : runCompile()"
               :disabled="isLoading || !canRunCompile"
             >
@@ -119,7 +87,6 @@
             </Button>
             <Button
               v-if="compileManualSaveEnabled"
-              variant="secondary"
               @click="openSaveSnapshotModal"
               :disabled="isLoading || !canSavePreview"
             >
@@ -132,11 +99,51 @@
           <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
             {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
           </p>
-          <div v-if="compileWarnings.length > 0" class="stack compile-warning-list">
-            <p v-for="warning in compileWarnings" :key="warning" class="muted warning">
-              {{ warning }}
-            </p>
-          </div>
+          <section v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary-card">
+            <div class="row submission-summary-header">
+              <h4>{{ $t('提出状況サマリー') }}</h4>
+              <div class="row submission-summary-actions">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  @click="downloadCommentSheetCsv"
+                  :disabled="commentSheetRows.length === 0"
+                >
+                  {{ $t('コメントシートCSV') }}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  @click="downloadParticipantCsv"
+                  :disabled="participantExportRows.length === 0"
+                >
+                  {{ $t('参加者CSV') }}
+                </Button>
+              </div>
+            </div>
+            <Table hover striped>
+              <thead>
+                <tr>
+                  <th>{{ $t('ラウンド') }}</th>
+                  <th>Ballot</th>
+                  <th>Feedback</th>
+                  <th>{{ $t('操作') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
+                  <td>{{ roundName(summary.round) }}</td>
+                  <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
+                  <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
+                  <td>
+                    <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
+                      {{ $t('提出状況を確認') }}
+                    </RouterLink>
+                  </td>
+                </tr>
+              </tbody>
+            </Table>
+          </section>
           <div v-if="isRawModeActive" class="card stack migration-guide">
             <h5>{{ $t('提出データ一本化ガイド') }}</h5>
             <ol class="migration-guide-list">
@@ -151,52 +158,6 @@
             </div>
           </div>
         </section>
-      </section>
-
-      <section v-if="roundSubmissionSummaries.length > 0" class="card stack submission-summary-card">
-        <div class="row submission-summary-header">
-          <h4>{{ $t('提出状況サマリー') }}</h4>
-          <div class="row submission-summary-actions">
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="downloadCommentSheetCsv"
-              :disabled="commentSheetRows.length === 0"
-            >
-              {{ $t('コメントシートCSV') }}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="downloadParticipantCsv"
-              :disabled="participantExportRows.length === 0"
-            >
-              {{ $t('参加者CSV') }}
-            </Button>
-          </div>
-        </div>
-        <Table hover striped>
-          <thead>
-            <tr>
-              <th>{{ $t('ラウンド') }}</th>
-              <th>Ballot</th>
-              <th>Feedback</th>
-              <th>{{ $t('操作') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
-              <td>{{ roundName(summary.round) }}</td>
-              <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
-              <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
-              <td>
-                <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
-                  {{ $t('提出状況を確認') }}
-                </RouterLink>
-              </td>
-            </tr>
-          </tbody>
-        </Table>
       </section>
 
       <template v-if="compiled">
@@ -299,10 +260,6 @@
         </section>
 
         <section v-if="showFairnessSection" class="card stack">
-          <div class="row result-list-head">
-            <h4>{{ $t('公平性') }}</h4>
-            <p class="muted small">{{ $t('要確認: {count}件', { count: fairnessAlertCount }) }}</p>
-          </div>
           <template v-if="teamResults.length > 0">
           <div class="fairness-summary-grid">
             <article class="overview-item">
@@ -459,9 +416,8 @@
             </article>
           </div>
           <section class="stack strictness-card">
-            <div class="row result-list-head">
-              <h5>{{ $t('ジャッジ評価') }}</h5>
-              <p class="muted small">{{ $t('偏差が大きい順') }}</p>
+            <div class="stack strictness-head">
+              <h5 class="fairness-panel-title">{{ $t('ジャッジ評価') }}</h5>
             </div>
             <Table v-if="judgeFeedbackRankingPreview.length > 0" hover striped>
               <thead>
@@ -506,9 +462,11 @@
             />
           </section>
           <section class="stack strictness-card">
-            <div class="row result-list-head">
-              <h5>{{ $t('チーム評価の厳しさ') }}</h5>
-              <p class="muted small">{{ $t('ラウンド平均との差の偏差を比較（担当した試合によって偏りが発生します）') }}</p>
+            <div class="stack strictness-head">
+              <h5 class="fairness-panel-title">{{ $t('チーム評価の厳しさ') }}</h5>
+              <p class="muted small strictness-subtitle">
+                {{ $t('ラウンド平均との差の偏差を比較（担当したマッチによって偏りが発生します）') }}
+              </p>
             </div>
             <template v-if="canShowJudgeBallotStrictness">
               <Table hover striped>
@@ -556,8 +514,26 @@
               :message="$t('チーム評価が2試合以上あるラウンドで表示されます。')"
             />
           </section>
-          <SideScatter v-if="teamHasScores" :results="teamResults" :rounds="sortedRounds" />
-          <div v-for="round in sortedRounds" :key="round.round" class="fairness-round-visual-grid">
+          <section class="stack strictness-card fairness-chart-card">
+            <h5 class="fairness-panel-title">{{ $t('サイド別スコア') }}</h5>
+            <SideScatter
+              v-if="teamHasScores && scoreEnabledFairnessRounds.length > 0"
+              :results="teamResults"
+              :rounds="scoreEnabledFairnessRounds"
+              :show-title="false"
+            />
+            <EmptyState
+              v-else-if="fairnessVisualRounds.length > 0 && scoreEnabledFairnessRounds.length === 0"
+              :title="$t('サイド別スコア')"
+              :message="$t('このラウンドはスピーカースコアを入力しません。')"
+            />
+            <EmptyState
+              v-else
+              :title="$t('サイド別スコア')"
+              :message="$t('データが不足しています。')"
+            />
+          </section>
+          <div v-for="round in fairnessVisualRounds" :key="round.round" class="fairness-round-visual-grid">
             <div class="fairness-round-visual-card">
               <SidePieChart
                 :results="teamResults"
@@ -568,11 +544,16 @@
             </div>
             <div class="fairness-round-visual-card">
               <ScoreHistogram
-                v-if="canShowAnalysisCharts"
+                v-if="canShowAnalysisCharts && isSpeakerScoreEnabledRound(round.round)"
                 :results="activeResults"
                 :score="scoreKey"
                 :round="round.round"
                 :round-name="round.name"
+              />
+              <EmptyState
+                v-else-if="!isSpeakerScoreEnabledRound(round.round)"
+                :title="$t('スコアヒストグラム')"
+                :message="$t('このラウンドはスピーカースコアを入力しません。')"
               />
               <EmptyState
                 v-else
@@ -588,10 +569,6 @@
             :message="$t('チーム集計を含めて再計算すると公平性指標を表示できます。')"
           />
           <section class="stack fairness-analysis">
-            <div class="row result-list-head">
-              <h5>{{ $t('分析（公平性タブ統合）') }} ({{ labelDisplay(activeLabel) }})</h5>
-              <p class="muted small">{{ $t('分析は公平性タブで確認できます。') }}</p>
-            </div>
             <EmptyState
               v-if="!canShowAnalysisCharts"
               :title="analysisEmptyState.title"
@@ -602,9 +579,10 @@
                 :results="activeResults"
                 :tournament="compiled"
                 :score-key="scoreKey"
-                :round-filter="summaryTargetRounds"
+                :round-filter="fairnessVisualRoundNumbers"
                 :show-score-range="true"
                 :show-team-performance="activeLabel === 'teams'"
+                :use-cards="true"
               />
             </template>
           </section>
@@ -651,6 +629,13 @@
                     <option value="simple">{{ $t('簡易') }}</option>
                   </select>
                 </label>
+                <label class="stack slide-setting-field slide-setting-field-compact">
+                  <span class="muted">{{ $t('スライド言語') }}</span>
+                  <select v-model="slideLanguage">
+                    <option value="en">{{ $t('English') }}</option>
+                    <option value="ja">{{ $t('日本語') }}</option>
+                  </select>
+                </label>
               </div>
               <div class="slide-settings-credits">
                 <label class="stack slide-setting-field slide-setting-field-credit">
@@ -670,6 +655,7 @@
               :max-ranking-rewarded="maxRankingRewarded"
               :type="slideType"
               :slide-style="slideStyle"
+              :language="slideLanguage"
               :left-credit="slideLeftCredit"
               :right-credit="slideRightCredit"
               :presentation-mode="true"
@@ -694,6 +680,17 @@
           </section>
         </section>
       </template>
+    </div>
+      </div>
+      <div
+        v-if="hasLoaded && isLoading"
+        class="reload-overlay"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <LoadingState />
+      </div>
     </div>
 
     <div
@@ -723,6 +720,8 @@
             v-model:poi-aggregation="compilePoiAggregation"
             v-model:best-aggregation="compileBestAggregation"
             v-model:missing-data-policy="compileMissingDataPolicy"
+            :show-winner-scoring="false"
+            :show-ranking-priority="false"
             :show-source-rounds="true"
             :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
             :disabled="isLoading"
@@ -734,6 +733,34 @@
           </Button>
           <Button size="sm" :disabled="isLoading" @click="applyRecomputeOptions">
             {{ $t('設定を保存') }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="deleteTargetCompiledId"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closeDeleteCompiledModal"
+    >
+      <div class="modal card stack report-modal delete-compiled-modal" role="dialog" aria-modal="true">
+        <div class="row report-modal-head">
+          <strong>{{ $t('集計結果を削除') }}</strong>
+          <Button variant="ghost" size="sm" @click="closeDeleteCompiledModal">
+            {{ $t('閉じる') }}
+          </Button>
+        </div>
+        <p class="muted">{{ $t('この集計結果を削除しますか？') }} {{ $t('削除した集計結果は元に戻せません。') }}</p>
+        <p class="small">
+          <strong>{{ deleteTargetSnapshotLabel }}</strong>
+        </p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closeDeleteCompiledModal">
+            {{ $t('取消') }}
+          </Button>
+          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteCompiled">
+            {{ $t('削除') }}
           </Button>
         </div>
       </div>
@@ -833,6 +860,7 @@ import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-teleme
 import {
   buildSubPrizeResultsFromCompiled,
   DEFAULT_SLIDE_SETTINGS,
+  type SlideLanguage,
   type SlideLabel,
   type SlideStyle,
   type SlideType,
@@ -875,6 +903,7 @@ const isLoading = computed(
     draws.loading ||
     submissions.loading
 )
+const hasLoaded = ref(false)
 const maxRankingRewarded = computed({
   get: () => currentSlideSettings.value?.maxRankingRewarded ?? 3,
   set: (value: number) => {
@@ -893,18 +922,25 @@ const slideStyle = computed<SlideStyle>({
     updateSlideSettings(slideLabel.value, { style: value })
   },
 })
+const slideLanguage = computed<SlideLanguage>({
+  get: () => currentSlideSettings.value?.language ?? DEFAULT_SLIDE_SETTINGS.language,
+  set: (value) => {
+    updateSlideSettings(slideLabel.value, { language: value })
+  },
+})
 const defaultSlideLeftCredit = computed(() => {
   const tournamentName = String(currentTournament.value?.name ?? '').trim()
   return tournamentName.length > 0 ? tournamentName : DEFAULT_SLIDE_SETTINGS.leftCredit
 })
+const slideCreditLocaleTag = computed(() => (slideLanguage.value === 'ja' ? 'ja-JP' : 'en-US'))
 const defaultSlideRightCredit = computed(() => {
   const now = new Date()
-  const datePart = new Intl.DateTimeFormat(locale.value, {
+  const datePart = new Intl.DateTimeFormat(slideCreditLocaleTag.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(now)
-  const timePart = new Intl.DateTimeFormat(locale.value, {
+  const timePart = new Intl.DateTimeFormat(slideCreditLocaleTag.value, {
     hour: '2-digit',
     minute: '2-digit',
   }).format(now)
@@ -976,6 +1012,8 @@ const recomputeSnapshot = ref<RecomputeOptionsSnapshot | null>(null)
 const compileDiffBaselineSelection = ref<string>('')
 const compiledHistory = ref<any[]>([])
 const selectedCompiledId = ref('')
+const deleteTargetCompiledId = ref('')
+const deleteTargetSnapshotLabel = ref('')
 const compileDefaultsHydrated = ref(false)
 const compiled = computed<Record<string, any> | null>(() => {
   if (compileManualSaveEnabled && compiledStore.previewState?.preview) {
@@ -1006,7 +1044,6 @@ type ReportSnapshotRow = {
   compiledId: string
   createdAtLabel: string
   snapshotLabel: string
-  sourceLabel: string
   winnerPolicyLabel: string
   missingDataLabel: string
   mergePolicyLabel: string
@@ -1060,6 +1097,18 @@ const sortedRounds = computed<RoundSummary[]>(() => {
     .filter((round: any) => Number.isInteger(round.round) && round.round >= 1)
     .sort((a: any, b: any) => a.round - b.round)
 })
+function normalizeRoundSelection(roundNumbers: number[]): number[] {
+  return Array.from(
+    new Set(
+      roundNumbers
+        .map((round) => Number(round))
+        .filter((round) => Number.isInteger(round) && round >= 1)
+    )
+  ).sort((left, right) => left - right)
+}
+const availableCompileRoundNumbers = computed(() =>
+  normalizeRoundSelection(sortedRounds.value.map((round) => round.round))
+)
 const teamResults = computed<any[]>(() => compiled.value?.compiled_team_results ?? [])
 const teamHasScores = computed(() =>
   teamResults.value.some((result) =>
@@ -1134,7 +1183,7 @@ function summarizeRounds(rounds: number[]): string {
   const normalized = Array.from(
     new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
   ).sort((left, right) => left - right)
-  if (normalized.length === 0) return t('全ラウンド')
+  if (normalized.length === 0) return t('未選択')
   if (normalized.length <= 3) return normalized.map((round) => `R${round}`).join(', ')
   return `R${normalized[0]}-R${normalized[normalized.length - 1]} (${normalized.length}${t('ラウンド')})`
 }
@@ -1161,7 +1210,7 @@ function summarizeMergePolicy(
   policy: CompileOptions['duplicate_normalization']['merge_policy']
 ): string {
   if (policy === 'latest') return t('最新を採用')
-  if (policy === 'average') return t('平均で統合')
+  if (policy === 'average') return t('統合')
   return t('重複時はエラー')
 }
 
@@ -1186,7 +1235,6 @@ const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
     compiledId: option.compiledId,
     createdAtLabel: formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value),
     snapshotLabel: summarizeSnapshotLabel(option),
-    sourceLabel: option.compileSource === 'raw' ? t('生結果') : t('提出'),
     winnerPolicyLabel: summarizeWinnerPolicy(option.compileOptions.winner_policy),
     missingDataLabel: summarizeMissingDataPolicy(option.compileOptions.missing_data_policy),
     mergePolicyLabel: summarizeMergePolicy(option.compileOptions.duplicate_normalization.merge_policy),
@@ -1199,6 +1247,17 @@ function showExistingReport(compiledId: string) {
   if (!targetId || targetId === selectedCompiledId.value) return
   selectedCompiledId.value = targetId
   emitReportMetric('cta_click', { cta: 'select_existing_report' })
+}
+
+function openDeleteCompiledModal(row: ReportSnapshotRow) {
+  deleteTargetCompiledId.value = String(row.compiledId).trim()
+  deleteTargetSnapshotLabel.value = String(row.snapshotLabel).trim()
+  emitReportMetric('cta_click', { cta: 'open_delete_snapshot_confirm' })
+}
+
+function closeDeleteCompiledModal() {
+  deleteTargetCompiledId.value = ''
+  deleteTargetSnapshotLabel.value = ''
 }
 
 const selectedDiffBaselineCompiledId = computed(() =>
@@ -1275,18 +1334,7 @@ const isDisplayedRawSource = computed(() => displayedCompileSource.value === 'ra
 const isRawModeActive = computed(
   () => isDisplayedRawSource.value
 )
-const compileTargetRoundNumbers = computed(() => {
-  const baseRounds =
-    compileRounds.value.length > 0
-      ? compileRounds.value
-      : sortedRounds.value.map((round) => round.round)
-  return Array.from(
-    new Set(
-      baseRounds
-        .filter((round) => Number.isInteger(round) && round >= 1)
-    )
-  ).sort((left, right) => left - right)
-})
+const compileTargetRoundNumbers = computed(() => normalizeRoundSelection(compileRounds.value))
 const compileIncludeLabelsFromRounds = computed(() =>
   includeLabelsFromRoundDetailsAny(
     rounds.rounds.map((round) => ({
@@ -1367,7 +1415,7 @@ function compileRoundRangeLabel(rounds: number[]): string {
   const normalized = Array.from(
     new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
   ).sort((left, right) => left - right)
-  if (normalized.length === 0) return t('全ラウンド')
+  if (normalized.length === 0) return t('未選択')
   if (normalized.length === 1) return roundName(normalized[0])
   return `${roundName(normalized[0])}-${roundName(normalized[normalized.length - 1])}`
 }
@@ -1381,9 +1429,6 @@ function buildDefaultSnapshotName(source: CompileSource): string {
 
 const manualCompileInputKey = computed(() =>
   buildCompileInputKey(manualCompileSource.value, manualCompileOptionOverrides.value)
-)
-const compileWarnings = computed<string[]>(() =>
-  Array.isArray(compiled.value?.compile_warnings) ? compiled.value.compile_warnings : []
 )
 const compileDiffMeta = computed<any | null>(() =>
   compiled.value?.compile_diff_meta && typeof compiled.value.compile_diff_meta === 'object'
@@ -1724,7 +1769,7 @@ function applyCompileDefaultsFromTournament() {
   compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
-  compileRounds.value = []
+  compileRounds.value = [...availableCompileRoundNumbers.value]
   compileDiffBaselineSelection.value = ''
 }
 
@@ -1838,14 +1883,36 @@ const roundConfigByRound = computed(() => {
   })
   return map
 })
-const summaryTargetRounds = computed(() => {
-  const baseRounds =
-    compileRounds.value.length > 0
-      ? compileRounds.value
-      : sortedRounds.value.map((round) => round.round)
-  return Array.from(new Set(baseRounds))
-    .filter((round) => Number.isInteger(round) && round >= 1)
-    .sort((a, b) => a - b)
+function isSpeakerScoreEnabledRound(roundNumber: number): boolean {
+  const config = roundConfigByRound.value.get(roundNumber)
+  return config?.userDefinedData?.no_speaker_score !== true
+}
+const summaryTargetRounds = computed(() => [...compileTargetRoundNumbers.value])
+const fairnessVisualRoundNumbers = computed(() => {
+  const compiledRounds = Array.isArray(compiled.value?.rounds) ? compiled.value.rounds : []
+  const selectedRounds = normalizeRoundSelection(
+    compiledRounds.map((entry: any) => entry?.r ?? entry?.round ?? entry)
+  )
+  if (selectedRounds.length > 0) return selectedRounds
+
+  const roundsFromTeamDetails = normalizeRoundSelection(
+    teamResults.value.flatMap((result) =>
+      Array.isArray(result?.details) ? result.details.map((detail: any) => detail?.r) : []
+    )
+  )
+  if (roundsFromTeamDetails.length > 0) return roundsFromTeamDetails
+  return [...summaryTargetRounds.value]
+})
+const fairnessVisualRounds = computed<RoundSummary[]>(() => {
+  const roundSet = new Set(fairnessVisualRoundNumbers.value)
+  return sortedRounds.value.filter((round) => roundSet.has(round.round))
+})
+const scoreEnabledFairnessRoundNumbers = computed(() =>
+  fairnessVisualRoundNumbers.value.filter((round) => isSpeakerScoreEnabledRound(round))
+)
+const scoreEnabledFairnessRounds = computed<RoundSummary[]>(() => {
+  const roundSet = new Set(scoreEnabledFairnessRoundNumbers.value)
+  return fairnessVisualRounds.value.filter((round) => roundSet.has(round.round))
 })
 
 function expectedIdsForRound(r: number) {
@@ -1912,40 +1979,6 @@ function unknownCountsByRound(r: number) {
     (item: any) => item.type === 'feedback' && !(item.payload as any)?.submittedEntityId
   ).length
   return { ballot, feedback }
-}
-
-function missingBallotByRound(r: number) {
-  const { expectedAdjudicators } = expectedIdsForRound(r)
-  const submitted = ballotSubmittedIds(r)
-  return Array.from(expectedAdjudicators).filter((id) => !submitted.has(id))
-}
-
-function missingFeedbackTeamsByRound(r: number) {
-  const config = roundConfigByRound.value.get(r)
-  if (config?.userDefinedData?.evaluate_from_teams === false) return []
-  const submitted = feedbackSubmittedIds(r)
-  if (config?.userDefinedData?.evaluator_in_team === 'speaker') {
-    return Array.from(expectedSpeakerIdsForRound(r))
-      .filter((id) => !submitted.has(id))
-      .map((id) => ({ id, name: speakerName(id) }))
-  }
-  const { expectedTeams } = expectedIdsForRound(r)
-  return Array.from(expectedTeams)
-    .filter((id) => !submitted.has(id))
-    .map((id) => ({ id, name: teamName(id) }))
-}
-
-function missingFeedbackAdjudicatorsByRound(r: number) {
-  const config = roundConfigByRound.value.get(r)
-  if (config?.userDefinedData?.evaluate_from_adjudicators === false) return []
-  const { expectedAdjudicators } = expectedIdsForRound(r)
-  const submitted = feedbackSubmittedIds(r)
-  return Array.from(expectedAdjudicators).filter((id) => !submitted.has(id))
-}
-
-function feedbackTeamLabel(r: number) {
-  const config = roundConfigByRound.value.get(r)
-  return config?.userDefinedData?.evaluator_in_team === 'speaker' ? t('スピーカー') : t('チーム')
 }
 
 function duplicateSubmitterCountByRound(r: number, type: 'ballot' | 'feedback') {
@@ -2052,7 +2085,7 @@ const submissionOperationsLinkLabel = computed(() =>
 function submissionOperationsLinkForRound(roundNumber: number): string {
   return `/admin/${tournamentId.value}/operations?task=submissions&round=${roundNumber}`
 }
-const fairnessTargetRounds = computed(() => new Set(summaryTargetRounds.value))
+const fairnessTargetRounds = computed(() => new Set(fairnessVisualRoundNumbers.value))
 const fairnessSideSummary = computed(() => {
   let govAppearances = 0
   let oppAppearances = 0
@@ -2395,13 +2428,13 @@ function rankingPlainValue(value: unknown): string {
 function optionHelp(key: string) {
   const map: Record<string, string> = {
     source: t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。'),
-    rounds: t('ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。'),
+    rounds: t('ここで選んだラウンドだけを集計します。'),
     ranking: t('順位が同点のときにどの指標を先に比較するかを決めます。'),
     winner: t('提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。'),
     tie: t('引き分けを許可する設定のときに、各チームへ与える勝敗点です。'),
     merge: t('同じ提出者から複数提出がある場合の扱いです。'),
-    poi: t('POIの重複値を平均か最大でまとめます。'),
-    best: t('Best Speakerの重複値を平均か最大でまとめます。'),
+    poi: t('同一スピーカーへのPOI複数入力を平均か最大でまとめます。'),
+    best: t('同一スピーカーへのBest Debater複数入力を平均か最大でまとめます。'),
     missing: t('必要データが欠けていた場合に、警告で続行するか、除外するか、エラー停止するかを選びます。'),
     include: t('生成するランキングの種類を選びます。'),
     diff: t('差分比較の基準です。前回集計、または具体的な過去集計を選んで比較できます。'),
@@ -2782,34 +2815,41 @@ function downloadCsv() {
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
-  await Promise.all([
-    compiledStore.fetchLatest(tournamentId.value),
-    tournamentStore.fetchTournaments(),
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    rounds.fetchRounds(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
-    institutions.fetchInstitutions(tournamentId.value),
-    draws.fetchDraws(tournamentId.value),
-    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
-  ])
-  if (!compileDefaultsHydrated.value) {
-    applyCompileDefaultsFromTournament()
-    compileDefaultsHydrated.value = true
+  if (!tournamentId.value) {
+    hasLoaded.value = true
+    return
   }
-  await refreshCompiledHistory()
-  const currentCompiledId = String(compiledStore.compiled?._id ?? '').trim()
-  if (currentCompiledId) {
-    selectedCompiledId.value = currentCompiledId
-  } else if (baselineCompiledOptions.value.length > 0) {
-    selectedCompiledId.value = baselineCompiledOptions.value[0].compiledId
-    applyCompiledSnapshot(selectedCompiledId.value)
-  } else {
-    selectedCompiledId.value = ''
+  try {
+    await Promise.all([
+      compiledStore.fetchLatest(tournamentId.value),
+      tournamentStore.fetchTournaments(),
+      teams.fetchTeams(tournamentId.value),
+      adjudicators.fetchAdjudicators(tournamentId.value),
+      rounds.fetchRounds(tournamentId.value),
+      speakers.fetchSpeakers(tournamentId.value),
+      institutions.fetchInstitutions(tournamentId.value),
+      draws.fetchDraws(tournamentId.value),
+      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+    ])
+    if (!compileDefaultsHydrated.value) {
+      applyCompileDefaultsFromTournament()
+      compileDefaultsHydrated.value = true
+    }
+    await refreshCompiledHistory()
+    const currentCompiledId = String(compiledStore.compiled?._id ?? '').trim()
+    if (currentCompiledId) {
+      selectedCompiledId.value = currentCompiledId
+    } else if (baselineCompiledOptions.value.length > 0) {
+      selectedCompiledId.value = baselineCompiledOptions.value[0].compiledId
+      applyCompiledSnapshot(selectedCompiledId.value)
+    } else {
+      selectedCompiledId.value = ''
+    }
+    compileExecuted.value = Boolean(compiled.value)
+    applyDefaultDiffBaselineSelection(selectedCompiledId.value)
+  } finally {
+    hasLoaded.value = true
   }
-  compileExecuted.value = Boolean(compiled.value)
-  applyDefaultDiffBaselineSelection(selectedCompiledId.value)
 }
 
 function closeForceCompileModal() {
@@ -2824,7 +2864,7 @@ async function executeCompile(
 ) {
   if (!tournamentId.value) return
   if (!canRunCompile.value) return
-  const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
+  const roundsPayload = [...compileTargetRoundNumbers.value]
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
     source,
     rounds: roundsPayload,
@@ -2862,7 +2902,7 @@ async function runPreviewWithSource(
 ) {
   if (!compileManualSaveEnabled) return
   if (!tournamentId.value || !canRunCompile.value) return
-  const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
+  const roundsPayload = [...compileTargetRoundNumbers.value]
   manualCompileSource.value = source
   manualCompileOptionOverrides.value = optionOverrides
   const inputKey = buildCompileInputKey(source, optionOverrides)
@@ -2930,7 +2970,7 @@ async function saveCompiledSnapshot() {
     return
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
-  const roundsPayload = compileRounds.value.length > 0 ? compileRounds.value : undefined
+  const roundsPayload = [...compileTargetRoundNumbers.value]
   const snapshotName = compileWorkflow.snapshotNameDraft.trim() || buildDefaultSnapshotName(source)
   const saved = await compiledStore.saveCompiled(tournamentId.value, {
     source,
@@ -2997,6 +3037,33 @@ async function refreshCompiledHistory() {
   } catch {
     compiledHistory.value = []
   }
+}
+
+async function confirmDeleteCompiled() {
+  const targetId = String(deleteTargetCompiledId.value).trim()
+  if (!targetId || !tournamentId.value) return
+  const deletedWasSelected = targetId === selectedCompiledId.value
+  const deleted = await compiledStore.deleteCompiled(tournamentId.value, targetId)
+  if (!deleted) return
+  emitReportMetric('cta_click', { cta: 'confirm_delete_snapshot' })
+  closeDeleteCompiledModal()
+  await refreshCompiledHistory()
+  if (baselineCompiledOptions.value.length === 0) {
+    selectedCompiledId.value = ''
+    compiledStore.compiled = null
+    compileExecuted.value = false
+    compileDiffBaselineSelection.value = ''
+    return
+  }
+
+  const selectedExists = baselineCompiledOptions.value.some(
+    (option) => option.compiledId === selectedCompiledId.value
+  )
+  if (deletedWasSelected || !selectedExists) {
+    selectedCompiledId.value = baselineCompiledOptions.value[0].compiledId
+    return
+  }
+  applyDefaultDiffBaselineSelection(selectedCompiledId.value)
 }
 
 onMounted(() => {
@@ -3091,6 +3158,7 @@ watch(tournamentId, () => {
   compileDefaultsHydrated.value = false
   manualCompileSource.value = 'submissions'
   manualCompileOptionOverrides.value = undefined
+  closeDeleteCompiledModal()
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
   refresh()
@@ -3104,6 +3172,22 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 </script>
 
 <style scoped>
+.report-content-shell {
+  position: relative;
+  min-height: 120px;
+}
+
+.reload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  pointer-events: none;
+}
+
 .error {
   color: var(--color-danger);
 }
@@ -3188,6 +3272,11 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .report-snapshot-table {
   overflow-x: auto;
+}
+
+.report-snapshot-actions {
+  gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
 .report-generate-block {
@@ -3317,6 +3406,28 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   padding: var(--space-3);
 }
 
+.strictness-head {
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1);
+}
+
+.strictness-subtitle {
+  margin: 0;
+}
+
+.fairness-panel-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.fairness-chart-card {
+  gap: var(--space-2);
+}
+
 .strictness-bar-track {
   position: relative;
   width: 140px;
@@ -3375,9 +3486,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 }
 
 .fairness-analysis {
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-3);
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .fairness-severity {
@@ -3557,6 +3666,10 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .recompute-modal {
   width: min(980px, 100%);
+}
+
+.delete-compiled-modal {
+  width: min(540px, 100%);
 }
 
 .report-modal-head {

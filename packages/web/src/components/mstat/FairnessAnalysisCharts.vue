@@ -1,21 +1,27 @@
 <template>
   <section class="stack fairness-analysis-charts">
-    <ScoreChange
-      v-if="showScoreChangeChart"
-      :results="results"
-      :tournament="tournament"
-      :score="scoreKey"
-      :round-filter="roundFilter"
-    />
-    <ScoreRange v-if="showScoreRange" :results="results" :score="scoreKey" />
-    <ScoreHistogram
-      v-if="showScoreHistogram"
-      :results="results"
-      :score="scoreKey"
-      :round="histogramRound ?? undefined"
-      :round-name="histogramRoundName"
-    />
-    <TeamPerformance v-if="showTeamPerformance" :results="results" />
+    <div v-if="showScoreChangeChart" :class="{ 'fairness-analysis-chart-card': useCards }">
+      <ScoreChange
+        :results="results"
+        :tournament="tournament"
+        :score="scoreKey"
+        :round-filter="roundFilter"
+      />
+    </div>
+    <div v-if="showScoreRange" :class="{ 'fairness-analysis-chart-card': useCards }">
+      <ScoreRange :results="results" :score="scoreKey" />
+    </div>
+    <div v-if="showScoreHistogram" :class="{ 'fairness-analysis-chart-card': useCards }">
+      <ScoreHistogram
+        :results="results"
+        :score="scoreKey"
+        :round="histogramRound ?? undefined"
+        :round-name="histogramRoundName"
+      />
+    </div>
+    <div v-if="showTeamPerformance" :class="{ 'fairness-analysis-chart-card': useCards }">
+      <TeamPerformance :results="results" />
+    </div>
   </section>
 </template>
 
@@ -39,6 +45,7 @@ const props = withDefaults(
     histogramRound?: number | null
     histogramRoundName?: string
     hideScoreChangeWhenSingleRound?: boolean
+    useCards?: boolean
   }>(),
   {
     roundFilter: () => [],
@@ -46,6 +53,7 @@ const props = withDefaults(
     showTeamPerformance: false,
     showScoreHistogram: false,
     hideScoreChangeWhenSingleRound: true,
+    useCards: false,
   }
 )
 
@@ -61,3 +69,16 @@ const showScoreChangeChart = computed(() => {
   return rounds.length > 1
 })
 </script>
+
+<style scoped>
+.fairness-analysis-charts {
+  gap: var(--space-2);
+}
+
+.fairness-analysis-chart-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-2);
+}
+</style>

@@ -2,7 +2,7 @@
   <div class="stack round-option-editor">
     <section class="stack option-group">
       <div class="row option-group-head">
-        <h6 class="option-group-title">{{ $t('評価提出設定') }}</h6>
+        <h6 class="option-group-title">{{ $t('ジャッジ評価設定') }}</h6>
         <HelpTip :text="$t('ジャッジ・チームのどちらから評価を受け付けるかを設定します。')" />
       </div>
       <div class="grid option-grid">
@@ -37,7 +37,7 @@
 
     <section class="stack option-group">
       <div class="row option-group-head">
-        <h6 class="option-group-title">{{ $t('スコア設定') }}</h6>
+        <h6 class="option-group-title">{{ $t('チーム評価設定') }}</h6>
         <HelpTip :text="$t('勝敗判定や入力フォーマットに関する設定です。')" />
       </div>
       <div class="grid option-grid">
@@ -48,23 +48,14 @@
         </label>
         <label class="row small option-item">
           <input v-model="allowLowTieWin" type="checkbox" :disabled="disabled" />
-          <span>{{ $t('低勝ち/同点勝ち許可') }}</span>
-          <HelpTip :text="$t('低勝ち・同点勝ちを許可します。')" />
+          <span>{{ $t('引き分け許可') }}</span>
+          <HelpTip :text="$t('引き分け入力と低勝ち・同点勝ちを許可します。')" />
         </label>
         <label class="row small option-item">
           <input v-model="scoreByMatterManner" type="checkbox" :disabled="disabled" />
           <span>{{ $t('Matter/Manner採点') }}</span>
           <HelpTip :text="$t('Matter/Manner の個別入力を有効にします。')" />
         </label>
-      </div>
-    </section>
-
-    <section class="stack option-group">
-      <div class="row option-group-head">
-        <h6 class="option-group-title">{{ $t('賞設定') }}</h6>
-        <HelpTip :text="$t('POI賞とベストスピーカー賞の入力有無を設定します。')" />
-      </div>
-      <div class="grid option-grid">
         <label class="row small option-item">
           <input v-model="poi" type="checkbox" :disabled="disabled" />
           <span>{{ $t('POI賞') }}</span>
@@ -75,8 +66,25 @@
           <span>{{ $t('Best Speaker賞') }}</span>
           <HelpTip :text="$t('ベストスピーカー賞の入力を有効にします。')" />
         </label>
+        <Field :label="$t('引き分け時ポイント')">
+          <template #default="{ id, describedBy }">
+            <input
+              v-model.number="tiePoints"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              min="0"
+              step="0.5"
+              :disabled="disabled"
+            />
+          </template>
+          <template #label-suffix>
+            <HelpTip :text="$t('引き分けを許可する設定のときに、各チームへ与える勝敗点です。')" />
+          </template>
+        </Field>
       </div>
     </section>
+
   </div>
 </template>
 
@@ -100,6 +108,7 @@ const evaluatorInTeam = defineModel<'team' | 'speaker'>('evaluatorInTeam', { req
 const noSpeakerScore = defineModel<boolean>('noSpeakerScore', { required: true })
 const allowLowTieWin = defineModel<boolean>('allowLowTieWin', { required: true })
 const scoreByMatterManner = defineModel<boolean>('scoreByMatterManner', { required: true })
+const tiePoints = defineModel<number>('tiePoints', { required: true })
 const poi = defineModel<boolean>('poi', { required: true })
 const best = defineModel<boolean>('best', { required: true })
 </script>

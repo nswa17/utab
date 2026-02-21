@@ -4,462 +4,534 @@
       <h3 class="page-title">{{ $t('ラウンド運営ハブ') }}</h3>
     </div>
 
-    <LoadingState v-if="sectionLoading" />
-    <p v-else-if="loadError" class="error">{{ loadError }}</p>
-    <div v-else class="stack">
-      <section class="card stack">
-        <div class="row round-bar-head">
-          <strong>{{ $t('ラウンド一覧') }}</strong>
-        </div>
-        <p v-if="sortedRounds.length === 0" class="muted small">{{ $t('ラウンドがまだありません。') }}</p>
-        <div v-else class="round-bar" role="tablist" :aria-label="$t('ラウンド一覧')">
-          <button
-            v-for="round in sortedRounds"
-            :key="round._id"
-            type="button"
-            class="round-pill"
-            :class="{ active: selectedRound === round.round }"
-            role="tab"
-            :aria-selected="selectedRound === round.round"
-            @click="selectRound(round.round)"
-          >
-            <div class="row round-pill-head">
-              <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
-              <span class="status-chip" :class="`status-${roundStatus(round.round)}`">
-                {{ roundStatusLabel(roundStatus(round.round)) }}
-              </span>
+    <div class="operations-content-shell">
+      <LoadingState v-if="!hasLoaded && sectionLoading" />
+      <template v-else>
+        <p v-if="loadError" class="error">{{ loadError }}</p>
+        <div v-else class="stack">
+          <section class="card stack">
+            <div class="row round-bar-head">
+              <strong>{{ $t('ラウンド一覧') }}</strong>
             </div>
-            <div class="muted small round-pill-step">
-              <template v-if="isRoundStepCompleted(round.round)">
-                <span class="step-complete-badge">{{ $t('完了') }}</span>
-              </template>
-              <template v-else>
-                {{ $t('運営ステップ') }}: {{ roundCurrentStepLabel(round.round) }}
-              </template>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      <section class="card stack">
-        <div class="row step-head">
-          <h4>{{ $t('運営ステップ') }}</h4>
-        </div>
-        <p v-if="selectedRound === null" class="muted small">{{ $t('ラウンドを選択してください。') }}</p>
-        <template v-else>
-          <p class="muted small flow-caption">
-            {{ $t('運営は左から順に進みます。後続ステップは前段の完了後に実行してください。') }}
-          </p>
-          <div class="task-flow" role="tablist" :aria-label="$t('運営ステップ')">
-            <template v-for="(task, index) in operationTasks" :key="task.key">
+            <p v-if="sortedRounds.length === 0" class="muted small">
+              {{ $t('ラウンドがまだありません。') }}
+            </p>
+            <div v-else class="round-bar" role="tablist" :aria-label="$t('ラウンド一覧')">
               <button
+                v-for="round in sortedRounds"
+                :key="round._id"
                 type="button"
-                class="task-tab"
-                :class="[`state-${task.state}`, { active: activeTask === task.key }]"
+                class="round-pill"
+                :class="{ active: selectedRound === round.round }"
                 role="tab"
-                :aria-selected="activeTask === task.key"
-                @click="selectTask(task.key)"
+                :aria-selected="selectedRound === round.round"
+                @click="selectRound(round.round)"
               >
-                <div class="row task-tab-head">
-                  <div class="row task-tab-title">
-                    <span class="task-order">{{ task.order }}.</span>
-                    <span>{{ task.label }}</span>
-                  </div>
-                  <span class="task-state-chip">{{ task.stateLabel }}</span>
+                <div class="row round-pill-head">
+                  <strong>{{
+                    round.name || $t('ラウンド {round}', { round: round.round })
+                  }}</strong>
+                  <span class="status-chip" :class="`status-${roundStatus(round.round)}`">
+                    {{ roundStatusLabel(roundStatus(round.round)) }}
+                  </span>
+                </div>
+                <div class="muted small round-pill-step">
+                  <template v-if="isRoundStepCompleted(round.round)">
+                    <span class="step-complete-badge">{{ $t('完了') }}</span>
+                  </template>
+                  <template v-else>
+                    {{ $t('運営ステップ') }}: {{ roundCurrentStepLabel(round.round) }}
+                  </template>
                 </div>
               </button>
-              <span v-if="index < operationTasks.length - 1" class="task-flow-arrow" aria-hidden="true">›</span>
-            </template>
-          </div>
-
-          <section v-if="activeTask === 'draw'" class="stack step-content">
-            <AdminRoundAllocation
-              v-if="selectedRound !== null"
-              :embedded="true"
-              :embedded-round="selectedRound"
-            />
+            </div>
           </section>
 
-          <section v-else-if="activeTask === 'publish'" class="stack step-content">
-            <p v-if="!selectedRoundHasDraw" class="muted small">{{ $t('まず対戦表を生成してください。') }}</p>
-            <div class="publish-switch-grid">
-              <section class="publish-switch-card motion-publish-card">
-                <RoundMotionEditor
-                  v-if="selectedRoundData"
-                  :tournament-id="tournamentId"
-                  :round-id="String(selectedRoundData._id)"
-                  :saved-motion="selectedMotion"
-                  :disabled="publicationSwitchBusy"
-                >
-                  <template #status>
-                    <label class="row publish-switch-inline publish-switch-inline-compact">
-                      <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
-                      <ToggleSwitch
-                        class="publish-switch-toggle"
-                        :model-value="motionOpenedValue"
-                        :disabled="publicationSwitchBusy"
-                        :aria-label="$t('モーション公開')"
-                        @update:model-value="onMotionPublishToggle"
-                      />
-                    </label>
-                    <label class="row publish-switch-inline publish-switch-inline-compact">
-                      <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
-                      <ToggleSwitch
-                        class="publish-switch-toggle"
-                        :model-value="drawOpenedValue"
-                        :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                        :aria-label="$t('チーム割り当て')"
-                        @update:model-value="(checked) => onPublishToggle('drawOpened', checked)"
-                      />
-                    </label>
-                    <label class="row publish-switch-inline publish-switch-inline-compact">
-                      <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
-                      <ToggleSwitch
-                        class="publish-switch-toggle"
-                        :model-value="allocationOpenedValue"
-                        :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                        :aria-label="$t('ジャッジ割り当て')"
-                        @update:model-value="(checked) => onPublishToggle('allocationOpened', checked)"
-                      />
-                    </label>
-                  </template>
-                </RoundMotionEditor>
-              </section>
+          <section class="card stack">
+            <div class="row step-head">
+              <h4>{{ $t('運営ステップ') }}</h4>
             </div>
-            <section class="stack publish-preview-section">
-              <div class="row preview-head">
-                <h4>{{ $t('対戦表プレビュー') }}</h4>
-                <div class="row preview-visibility-chip-list">
-                  <span class="preview-visibility-chip" :class="drawOpenedValue ? 'is-open' : 'is-closed'">
-                    {{ $t('チーム') }}: {{ drawOpenedValue ? $t('公開') : $t('非公開') }}
-                  </span>
-                  <span
-                    class="preview-visibility-chip"
-                    :class="allocationOpenedValue ? 'is-open' : 'is-closed'"
+            <p v-if="selectedRound === null" class="muted small">
+              {{ $t('ラウンドを選択してください。') }}
+            </p>
+            <template v-else>
+              <p class="muted small flow-caption">
+                {{ $t('運営は左から順に進みます。後続ステップは前段の完了後に実行してください。') }}
+              </p>
+              <div class="task-flow" role="tablist" :aria-label="$t('運営ステップ')">
+                <template v-for="(task, index) in operationTasks" :key="task.key">
+                  <button
+                    type="button"
+                    class="task-tab"
+                    :class="[`state-${task.state}`, { active: activeTask === task.key }]"
+                    role="tab"
+                    :aria-selected="activeTask === task.key"
+                    @click="selectTask(task.key)"
                   >
-                    {{ $t('ジャッジ') }}: {{ allocationOpenedValue ? $t('公開') : $t('非公開') }}
-                  </span>
-                </div>
-              </div>
-              <DrawPreviewTable
-                :rows="publishPreviewRows"
-                :gov-label="$t('政府')"
-                :opp-label="$t('反対')"
-                :team-visible="drawOpenedValue"
-                :adjudicator-visible="allocationOpenedValue"
-              />
-            </section>
-            <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
-          </section>
-
-          <section v-else-if="activeTask === 'submissions'" class="stack step-content">
-            <div class="row step-section-head">
-              <h5>{{ $t('提出状況') }}</h5>
-              <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
-                {{ $t('再読み込み') }}
-              </Button>
-            </div>
-            <div class="grid submission-overview-grid">
-              <div class="card soft stack submission-overview-card">
-                <span class="muted small">{{ $t('提出数') }}</span>
-                <strong>{{ totalSubmittedCount(selectedRound) }} / {{ totalExpectedCount(selectedRound) }}</strong>
-                <span class="muted small">
-                  {{
-                    $t('提出者情報不足: Ballot {ballot} / Feedback {feedback}', {
-                      ballot: unknownSubmissionCount(selectedRound, 'ballot'),
-                      feedback: unknownSubmissionCount(selectedRound, 'feedback'),
-                    })
-                  }}
-                </span>
-              </div>
-              <div class="card soft stack submission-overview-card">
-                <span class="muted small">{{ $t('スコアシート') }}</span>
-                <strong>{{ ballotSubmittedCount(selectedRound) }} / {{ ballotExpectedCount(selectedRound) }}</strong>
-                <span class="muted small">
-                  {{ $t('提出者情報不足: {count}', { count: unknownSubmissionCount(selectedRound, 'ballot') }) }}
-                </span>
-              </div>
-              <div class="card soft stack submission-overview-card">
-                <span class="muted small">{{ $t('フィードバック') }}</span>
-                <strong>{{ feedbackSubmittedCount(selectedRound) }} / {{ feedbackExpectedCount(selectedRound) }}</strong>
-                <span class="muted small">
-                  {{ $t('提出者情報不足: {count}', { count: unknownSubmissionCount(selectedRound, 'feedback') }) }}
-                </span>
-              </div>
-            </div>
-            <section class="card soft stack submission-speed-panel">
-              <div class="row submission-speed-head">
-                <h5>{{ $t('提出スピード詳細') }}</h5>
-                <span
-                  v-if="selectedRoundSubmissionSpeed"
-                  class="speed-status-chip"
-                  :class="`speed-status-${selectedRoundSubmissionSpeed.status}`"
-                >
-                  {{ speedStatusLabel(selectedRoundSubmissionSpeed.status) }}
-                </span>
-              </div>
-              <p v-if="selectedRoundSubmissionSpeed" class="muted small">
-                {{
-                  $t('中央値 {median}分 / P90 {p90}分', {
-                    median: selectedRoundSubmissionSpeed.medianMinutes,
-                    p90: selectedRoundSubmissionSpeed.p90Minutes,
-                  })
-                }}
-              </p>
-              <p v-if="selectedRoundSubmissionSpeed" class="muted small">
-                {{ $t('遅延率 {rate}%', { rate: Math.round(selectedRoundSubmissionSpeed.delayedRate * 1000) / 10 }) }}
-              </p>
-              <p v-else class="muted small">{{ $t('提出時刻データがありません。') }}</p>
-              <section class="stack">
-                <div class="row submission-delay-head">
-                  <h5>{{ $t('遅延上位提出者') }}</h5>
-                  <p class="muted small">{{ $t('30分超の提出のみ表示') }}</p>
-                </div>
-                <Table v-if="selectedRoundSubmissionDelayRows.length > 0" hover striped>
-                  <thead>
-                    <tr>
-                      <th>{{ $t('提出者') }}</th>
-                      <th>{{ $t('種別') }}</th>
-                      <th>{{ $t('経過(分)') }}</th>
-                      <th>{{ $t('提出時刻') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="row in selectedRoundSubmissionDelayRows"
-                      :key="`delay-${row.round}-${row.id}-${row.createdAt}`"
-                    >
-                      <td>{{ row.id ? submissionEntityName(row.id) : '—' }}</td>
-                      <td>{{ submissionTypeLabel(row.type) }}</td>
-                      <td>{{ row.elapsedMinutes }}</td>
-                      <td>{{ formatSubmissionTimestamp(row.createdAt) }}</td>
-                    </tr>
-                  </tbody>
-                </Table>
-                <p v-else class="muted small">{{ $t('遅延提出は検出されませんでした。') }}</p>
-              </section>
-            </section>
-            <p v-if="selectedRoundBallotGapWarning" class="muted warning">
-              {{ selectedRoundBallotGapWarning }}
-            </p>
-            <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
-              {{ selectedRoundUnknownBallotWarning }}
-            </p>
-            <section v-if="selectedRoundHasDraw" class="stack submission-preview-section">
-              <div class="row preview-head submission-preview-head">
-                <h4>{{ $t('会場別提出状況') }}</h4>
-                <div class="stack submission-preview-search">
-                  <input
-                    v-model="submissionPreviewSearchQuery"
-                    :placeholder="$t('会場・チーム・提出者で検索')"
-                  />
-                </div>
-              </div>
-              <DrawPreviewTable
-                :rows="filteredSubmissionPreviewRows"
-                :gov-label="$t('政府')"
-                :opp-label="$t('反対')"
-                :team-visible="true"
-                :adjudicator-visible="true"
-                :show-submission-columns="true"
-                :show-judge-submission-column="submissionPreviewShowJudgeColumn"
-                :team-submission-label="submissionPreviewTeamColumnLabel"
-                :judge-submission-label="submissionPreviewJudgeColumnLabel"
-                @edit-submission="openSubmissionEditorModal"
-              />
-            </section>
-          </section>
-
-          <section v-else class="stack step-content">
-            <div class="row step-section-head">
-              <h5>{{ $t('大会結果レポート') }}</h5>
-              <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
-                {{ $t('再読み込み') }}
-              </Button>
-            </div>
-            <p class="muted small">
-              {{
-                $t(
-                  '提出結果を集計して、このラウンド終了時点の成績を確定します。成績に含めるラウンドを下で選択してください。未選択のラウンドはこの時点の成績に反映されません。'
-                )
-              }}
-            </p>
-            <div v-if="compileTargetRounds.length > 0" class="compile-round-picker">
-              <label
-                v-for="roundNumber in compileTargetRounds"
-                :key="`compile-round-${roundNumber}`"
-                class="compile-round-option"
-              >
-                <input
-                  type="checkbox"
-                  :checked="selectedCompileRounds.includes(roundNumber)"
-                  :disabled="isLoading || !selectedRoundPublished"
-                  @change="onCompileRoundToggle(roundNumber, $event)"
-                />
-                <span>{{ roundLabel(roundNumber) }}</span>
-              </label>
-            </div>
-            <section class="card soft stack compile-option-panel">
-              <h5>{{ $t('集計オプション') }}</h5>
-              <CompileOptionsEditor
-                v-model:ranking-preset="rankingPriorityPreset"
-                v-model:ranking-order="rankingPriorityOrder"
-                v-model:winner-policy="compileWinnerPolicy"
-                v-model:tie-points="compileTiePoints"
-                v-model:merge-policy="compileDuplicateMergePolicy"
-                v-model:poi-aggregation="compilePoiAggregation"
-                v-model:best-aggregation="compileBestAggregation"
-                v-model:missing-data-policy="compileMissingDataPolicy"
-                :disabled="isLoading"
-              />
-            </section>
-            <p v-if="selectedRoundBallotGapWarning" class="muted warning">
-              {{ selectedRoundBallotGapWarning }}
-            </p>
-            <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
-              {{ selectedRoundUnknownBallotWarning }}
-            </p>
-            <div class="row step-actions">
-              <Button
-                size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished || shouldBlockSubmissionCompile"
-                @click="compileManualSaveEnabled ? runPreviewWithSource('submissions') : runCompileWithSource('submissions')"
-              >
-                {{ compileManualSaveEnabled ? $t('仮集計') : $t('集計を実行') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                :disabled="isLoading || effectiveCompileTargetRounds.length === 0 || !selectedRoundPublished"
-                @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
-              >
-                {{ $t('強制集計') }}
-              </Button>
-              <Button
-                v-if="compileManualSaveEnabled"
-                variant="secondary"
-                size="sm"
-                :disabled="!canSavePreview || isLoading"
-                @click="openSaveSnapshotModal"
-              >
-                {{ $t('集計結果を保存') }}
-              </Button>
-              <span v-if="compileMessage" class="muted small">{{ compileMessage }}</span>
-            </div>
-            <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
-              {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
-            </p>
-            <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
-              <div class="row compile-result-head">
-                <div class="stack tight">
-                  <strong>{{ $t('集計レポート') }}</strong>
-                  <div class="compile-report-tabs" role="tablist" :aria-label="$t('レポートセクション')">
-                    <button
-                      type="button"
-                      class="compile-report-tab"
-                      :class="{ active: compileReportTab === 'rankings' }"
-                      role="tab"
-                      :aria-selected="compileReportTab === 'rankings'"
-                      @click="setCompileReportTab('rankings')"
-                    >
-                      {{ $t('カテゴリ別順位一覧') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="compile-report-tab"
-                      :class="{ active: compileReportTab === 'fairness' }"
-                      role="tab"
-                      :aria-selected="compileReportTab === 'fairness'"
-                      @click="setCompileReportTab('fairness')"
-                    >
-                      {{ $t('公平性') }}
-                    </button>
-                  </div>
-                </div>
-                <CompiledSnapshotSelect
-                  v-if="compileReportTab === 'rankings' && diffBaselineCompiledOptions.length > 0"
-                  v-model="compileDiffBaselineCompiledId"
-                  class="compile-result-baseline-select"
-                  :label="$t('差分比較')"
-                  :options="compileDiffBaselineSelectOptions"
-                  :placeholder="$t('未選択')"
-                />
-              </div>
-              <template v-if="compileReportTab === 'rankings'">
-                <div class="row diff-legend">
-                  <span class="diff-legend-item">
-                    <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
-                  </span>
-                  <span class="diff-legend-item">
-                    <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
-                  </span>
-                  <span class="diff-legend-item">
-                    <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
-                  </span>
-                  <span class="diff-legend-item">
-                    <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
-                  </span>
-                </div>
-                <CategoryRankingTable
-                  :rows="sortedCompileRows"
-                  :columns="compileColumns"
-                  identity-key="team"
-                  :identity-label="compileTeamLabel"
-                  :row-key="compileRowKey"
-                  :column-label="compileColumnLabel"
-                  :sort-indicator="compileSortIndicator"
-                  :on-sort="setCompileSort"
-                  :value-formatter="formatCompileValue"
-                  :ranking-class="rankingTrendClass"
-                  :ranking-text="rankingTrendText"
-                  :ranking-symbol="compileRankingSymbolForRow"
-                  :ranking-delta="rankingDeltaText"
-                  :metric-delta="metricDeltaText"
-                />
-              </template>
-              <template v-else>
-                <p class="muted small">{{ $t('このタブは選択ラウンドのみを対象に集計します。') }}</p>
-                <p v-if="compileFairnessResults.length === 0" class="muted small">
-                  {{ $t('公平性データがありません') }}
-                </p>
-                <template v-else>
-                  <div v-if="compileFairnessRoundNumber !== null" class="compile-fairness-visual-grid">
-                    <div class="compile-fairness-visual-card">
-                      <SidePieChart
-                        :results="compileFairnessResults"
-                        :round="compileFairnessRoundNumber"
-                        :round-name="compileFairnessRoundName"
-                        :total-teams="compileFairnessTotalTeams"
-                      />
+                    <div class="row task-tab-head">
+                      <div class="row task-tab-title">
+                        <span class="task-order">{{ task.order }}.</span>
+                        <span>{{ task.label }}</span>
+                      </div>
+                      <span class="task-state-chip">{{ task.stateLabel }}</span>
                     </div>
-                    <div class="compile-fairness-visual-card">
-                      <ScoreHistogram
-                        :results="compileFairnessResults"
-                        score="sum"
-                        :round="compileFairnessRoundNumber"
-                        :round-name="compileFairnessRoundName"
-                      />
-                    </div>
-                  </div>
-                  <FairnessAnalysisCharts
-                    :results="compileFairnessResults"
-                    :tournament="compileFairnessTournament"
-                    score-key="sum"
-                    :round-filter="compileFairnessRoundFilter"
-                    :show-score-range="false"
-                    :show-team-performance="true"
-                    :show-score-histogram="false"
-                  />
+                  </button>
+                  <span
+                    v-if="index < operationTasks.length - 1"
+                    class="task-flow-arrow"
+                    aria-hidden="true"
+                    >›</span
+                  >
                 </template>
-              </template>
-            </section>
-            <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
-              {{ $t('集計結果を表示するデータがありません。') }}
-            </p>
+              </div>
+
+              <section v-if="activeTask === 'draw'" class="stack step-content">
+                <AdminRoundAllocation
+                  v-if="selectedRound !== null"
+                  :embedded="true"
+                  :embedded-round="selectedRound"
+                />
+              </section>
+
+              <section v-else-if="activeTask === 'publish'" class="stack step-content">
+                <p v-if="!selectedRoundHasDraw" class="muted small">
+                  {{ $t('まず対戦表を生成してください。') }}
+                </p>
+                <div class="publish-switch-grid">
+                  <section class="publish-switch-card motion-publish-card">
+                    <RoundMotionEditor
+                      v-if="selectedRoundData"
+                      :tournament-id="tournamentId"
+                      :round-id="String(selectedRoundData._id)"
+                      :saved-motion="selectedMotion"
+                      :disabled="publicationSwitchBusy"
+                    >
+                      <template #status>
+                        <label class="row publish-switch-inline publish-switch-inline-compact">
+                          <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
+                          <ToggleSwitch
+                            class="publish-switch-toggle"
+                            :model-value="motionOpenedValue"
+                            :disabled="publicationSwitchBusy"
+                            :aria-label="$t('モーション公開')"
+                            @update:model-value="onMotionPublishToggle"
+                          />
+                        </label>
+                        <label class="row publish-switch-inline publish-switch-inline-compact">
+                          <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
+                          <ToggleSwitch
+                            class="publish-switch-toggle"
+                            :model-value="drawOpenedValue"
+                            :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                            :aria-label="$t('チーム割り当て')"
+                            @update:model-value="
+                              (checked) => onPublishToggle('drawOpened', checked)
+                            "
+                          />
+                        </label>
+                        <label class="row publish-switch-inline publish-switch-inline-compact">
+                          <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
+                          <ToggleSwitch
+                            class="publish-switch-toggle"
+                            :model-value="allocationOpenedValue"
+                            :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                            :aria-label="$t('ジャッジ割り当て')"
+                            @update:model-value="
+                              (checked) => onPublishToggle('allocationOpened', checked)
+                            "
+                          />
+                        </label>
+                      </template>
+                    </RoundMotionEditor>
+                  </section>
+                </div>
+                <section class="stack publish-preview-section">
+                  <div class="row preview-head">
+                    <h4>{{ $t('対戦表プレビュー') }}</h4>
+                    <div class="row preview-visibility-chip-list">
+                      <span
+                        class="preview-visibility-chip"
+                        :class="drawOpenedValue ? 'is-open' : 'is-closed'"
+                      >
+                        {{ $t('チーム') }}: {{ drawOpenedValue ? $t('公開') : $t('非公開') }}
+                      </span>
+                      <span
+                        class="preview-visibility-chip"
+                        :class="allocationOpenedValue ? 'is-open' : 'is-closed'"
+                      >
+                        {{ $t('ジャッジ') }}:
+                        {{ allocationOpenedValue ? $t('公開') : $t('非公開') }}
+                      </span>
+                    </div>
+                  </div>
+                  <DrawPreviewTable
+                    :rows="publishPreviewRows"
+                    :gov-label="$t('政府')"
+                    :opp-label="$t('反対')"
+                    :team-visible="drawOpenedValue"
+                    :adjudicator-visible="allocationOpenedValue"
+                  />
+                </section>
+                <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
+              </section>
+
+              <section v-else-if="activeTask === 'submissions'" class="stack step-content">
+                <div class="row step-section-head">
+                  <h5>{{ $t('提出状況確認') }}</h5>
+                  <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
+                    {{ $t('再読み込み') }}
+                  </Button>
+                </div>
+                <div class="grid submission-overview-grid">
+                  <div class="card soft stack submission-overview-card">
+                    <span class="muted small">{{ $t('提出数') }}</span>
+                    <strong
+                      >{{ totalSubmittedCount(selectedRound) }} /
+                      {{ totalExpectedCount(selectedRound) }}</strong
+                    >
+                  </div>
+                  <div class="card soft stack submission-overview-card">
+                    <span class="muted small">{{ $t('スコアシート') }}</span>
+                    <strong
+                      >{{ ballotSubmittedCount(selectedRound) }} /
+                      {{ ballotExpectedCount(selectedRound) }}</strong
+                    >
+                    <span class="muted small">
+                      {{
+                        $t('提出者情報不足: {count}', {
+                          count: unknownSubmissionCount(selectedRound, 'ballot'),
+                        })
+                      }}
+                    </span>
+                  </div>
+                  <div class="card soft stack submission-overview-card">
+                    <span class="muted small">{{ $t('フィードバック') }}</span>
+                    <strong
+                      >{{ feedbackSubmittedCount(selectedRound) }} /
+                      {{ feedbackExpectedCount(selectedRound) }}</strong
+                    >
+                    <span class="muted small">
+                      {{
+                        $t('提出者情報不足: {count}', {
+                          count: unknownSubmissionCount(selectedRound, 'feedback'),
+                        })
+                      }}
+                    </span>
+                  </div>
+                </div>
+                <section class="card soft stack submission-speed-panel">
+                  <div class="row submission-speed-head">
+                    <h5>{{ $t('提出スピード詳細') }}</h5>
+                    <span
+                      v-if="selectedRoundSubmissionSpeed"
+                      class="speed-status-chip"
+                      :class="`speed-status-${selectedRoundSubmissionSpeed.status}`"
+                    >
+                      {{ speedStatusLabel(selectedRoundSubmissionSpeed.status) }}
+                    </span>
+                  </div>
+                  <p v-if="selectedRoundSubmissionSpeed" class="muted small">
+                    {{
+                      $t('中央値 {median}分 / P90 {p90}分', {
+                        median: selectedRoundSubmissionSpeed.medianMinutes,
+                        p90: selectedRoundSubmissionSpeed.p90Minutes,
+                      })
+                    }}
+                  </p>
+                  <p v-if="selectedRoundSubmissionSpeed" class="muted small">
+                    {{
+                      $t('遅延率 {rate}%', {
+                        rate: Math.round(selectedRoundSubmissionSpeed.delayedRate * 1000) / 10,
+                      })
+                    }}
+                  </p>
+                  <p v-else class="muted small">{{ $t('提出時刻データがありません。') }}</p>
+                  <section class="stack">
+                    <div class="row submission-delay-head">
+                      <h5>{{ $t('遅延上位提出者') }}</h5>
+                      <p class="muted small">{{ $t('30分超の提出のみ表示') }}</p>
+                    </div>
+                    <Table v-if="selectedRoundSubmissionDelayRows.length > 0" hover striped>
+                      <thead>
+                        <tr>
+                          <th>{{ $t('提出者') }}</th>
+                          <th>{{ $t('種別') }}</th>
+                          <th>{{ $t('経過(分)') }}</th>
+                          <th>{{ $t('提出時刻') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="row in selectedRoundSubmissionDelayRows"
+                          :key="`delay-${row.round}-${row.id}-${row.createdAt}`"
+                        >
+                          <td>{{ row.id ? submissionEntityName(row.id) : '—' }}</td>
+                          <td>{{ submissionTypeLabel(row.type) }}</td>
+                          <td>{{ row.elapsedMinutes }}</td>
+                          <td>{{ formatSubmissionTimestamp(row.createdAt) }}</td>
+                        </tr>
+                      </tbody>
+                    </Table>
+                    <p v-else class="muted small">{{ $t('遅延提出は検出されませんでした。') }}</p>
+                  </section>
+                </section>
+                <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
+                  {{ selectedRoundUnknownBallotWarning }}
+                </p>
+                <section v-if="selectedRoundHasDraw" class="stack submission-preview-section">
+                  <div class="row preview-head submission-preview-head">
+                    <h4>{{ $t('会場別提出状況') }}</h4>
+                    <div class="stack submission-preview-search">
+                      <input
+                        v-model="submissionPreviewSearchQuery"
+                        :placeholder="$t('会場・チーム・提出者で検索')"
+                      />
+                    </div>
+                  </div>
+                  <DrawPreviewTable
+                    :rows="filteredSubmissionPreviewRows"
+                    :gov-label="$t('政府')"
+                    :opp-label="$t('反対')"
+                    :win-column-label="$t('提出累計')"
+                    :team-visible="true"
+                    :adjudicator-visible="true"
+                    :show-submission-columns="true"
+                    :show-judge-submission-column="submissionPreviewShowJudgeColumn"
+                    :team-submission-label="submissionPreviewTeamColumnLabel"
+                    :judge-submission-label="submissionPreviewJudgeColumnLabel"
+                    @edit-submission="openSubmissionEditorModal"
+                  />
+                </section>
+              </section>
+
+              <section v-else class="stack step-content">
+                <div class="row step-section-head">
+                  <h5>{{ $t('大会結果レポート') }}</h5>
+                  <Button variant="secondary" size="sm" :loading="isLoading" @click="refresh">
+                    {{ $t('再読み込み') }}
+                  </Button>
+                </div>
+                <p class="muted small">
+                  {{
+                    $t(
+                      '提出結果を集計して、このラウンド終了時点の成績を確定します。成績に含めるラウンドを下で選択してください。未選択のラウンドはこの時点の成績に反映されません。'
+                    )
+                  }}
+                </p>
+                <section class="card soft stack compile-option-panel">
+                  <h5>{{ $t('集計オプション') }}</h5>
+                  <CompileOptionsEditor
+                    v-model:source-rounds="selectedCompileRounds"
+                    v-model:ranking-preset="rankingPriorityPreset"
+                    v-model:ranking-order="rankingPriorityOrder"
+                    v-model:winner-policy="compileWinnerPolicy"
+                    v-model:tie-points="compileTiePoints"
+                    v-model:merge-policy="compileDuplicateMergePolicy"
+                    v-model:poi-aggregation="compilePoiAggregation"
+                    v-model:best-aggregation="compileBestAggregation"
+                    v-model:missing-data-policy="compileMissingDataPolicy"
+                    :show-winner-scoring="false"
+                    :show-ranking-priority="false"
+                    :show-source-rounds="true"
+                    :source-round-options="compileSourceRoundOptions"
+                    :disabled="isLoading"
+                  />
+                </section>
+                <p v-if="selectedRoundBallotGapWarning" class="muted warning">
+                  {{ selectedRoundBallotGapWarning }}
+                </p>
+                <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
+                  {{ selectedRoundUnknownBallotWarning }}
+                </p>
+                <div class="row step-actions">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="
+                      isLoading ||
+                      effectiveCompileTargetRounds.length === 0 ||
+                      !selectedRoundPublished ||
+                      shouldBlockSubmissionCompile
+                    "
+                    @click="
+                      compileManualSaveEnabled
+                        ? runPreviewWithSource('submissions')
+                        : runCompileWithSource('submissions')
+                    "
+                  >
+                    {{ compileManualSaveEnabled ? $t('仮集計') : $t('集計を実行') }}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="
+                      isLoading ||
+                      effectiveCompileTargetRounds.length === 0 ||
+                      !selectedRoundPublished
+                    "
+                    @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
+                  >
+                    {{ $t('強制集計') }}
+                  </Button>
+                  <Button
+                    v-if="compileManualSaveEnabled"
+                    size="sm"
+                    :disabled="!canSavePreview || isLoading"
+                    @click="openSaveSnapshotModal"
+                  >
+                    {{ $t('集計結果を保存') }}
+                  </Button>
+                  <span v-if="compileMessage" class="muted small">{{ compileMessage }}</span>
+                </div>
+                <p
+                  v-if="compileManualSaveEnabled && compileWorkflow.previewStale"
+                  class="muted warning"
+                >
+                  {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
+                </p>
+                <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
+                  <div class="row compile-result-head">
+                    <div class="stack tight">
+                      <strong>{{ $t('集計レポート') }}</strong>
+                      <div
+                        class="compile-report-tabs"
+                        role="tablist"
+                        :aria-label="$t('レポートセクション')"
+                      >
+                        <button
+                          type="button"
+                          class="compile-report-tab"
+                          :class="{ active: compileReportTab === 'rankings' }"
+                          role="tab"
+                          :aria-selected="compileReportTab === 'rankings'"
+                          @click="setCompileReportTab('rankings')"
+                        >
+                          {{ $t('カテゴリ別順位一覧') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="compile-report-tab"
+                          :class="{ active: compileReportTab === 'fairness' }"
+                          role="tab"
+                          :aria-selected="compileReportTab === 'fairness'"
+                          @click="setCompileReportTab('fairness')"
+                        >
+                          {{ $t('公平性') }}
+                        </button>
+                      </div>
+                    </div>
+                    <CompiledSnapshotSelect
+                      v-if="
+                        compileReportTab === 'rankings' && diffBaselineCompiledOptions.length > 0
+                      "
+                      v-model="compileDiffBaselineCompiledId"
+                      class="compile-result-baseline-select"
+                      :label="$t('差分比較')"
+                      :options="compileDiffBaselineSelectOptions"
+                      :placeholder="$t('未選択')"
+                    />
+                  </div>
+                  <template v-if="compileReportTab === 'rankings'">
+                    <div class="row diff-legend">
+                      <span class="diff-legend-item">
+                        <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
+                      </span>
+                      <span class="diff-legend-item">
+                        <span class="diff-marker diff-worsened">▼</span>{{ $t('悪化') }}
+                      </span>
+                      <span class="diff-legend-item">
+                        <span class="diff-marker diff-unchanged">◆</span>{{ $t('変化なし') }}
+                      </span>
+                      <span class="diff-legend-item">
+                        <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
+                      </span>
+                    </div>
+                    <CategoryRankingTable
+                      :rows="sortedCompileRows"
+                      :columns="compileColumns"
+                      identity-key="team"
+                      :identity-label="compileTeamLabel"
+                      :row-key="compileRowKey"
+                      :column-label="compileColumnLabel"
+                      :sort-indicator="compileSortIndicator"
+                      :on-sort="setCompileSort"
+                      :value-formatter="formatCompileValue"
+                      :ranking-class="rankingTrendClass"
+                      :ranking-text="rankingTrendText"
+                      :ranking-symbol="compileRankingSymbolForRow"
+                      :ranking-delta="rankingDeltaText"
+                      :metric-delta="metricDeltaText"
+                    />
+                    <div class="row compile-download-row">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        :disabled="sortedCompileRows.length === 0"
+                        @click="downloadCompileReportCsv"
+                      >
+                        {{ $t('CSVダウンロード') }}
+                      </Button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <p class="muted small">
+                      {{ $t('このタブは選択ラウンドのみを対象に集計します。') }}
+                    </p>
+                    <p v-if="compileFairnessResults.length === 0" class="muted small">
+                      {{ $t('公平性データがありません') }}
+                    </p>
+                    <template v-else>
+                      <div
+                        v-if="compileFairnessRoundNumber !== null"
+                        class="compile-fairness-visual-grid"
+                      >
+                        <div class="compile-fairness-visual-card">
+                          <SidePieChart
+                            :results="compileFairnessResults"
+                            :round="compileFairnessRoundNumber"
+                            :round-name="compileFairnessRoundName"
+                            :total-teams="compileFairnessTotalTeams"
+                          />
+                        </div>
+                        <div class="compile-fairness-visual-card">
+                          <ScoreHistogram
+                            :results="compileFairnessResults"
+                            score="sum"
+                            :round="compileFairnessRoundNumber"
+                            :round-name="compileFairnessRoundName"
+                          />
+                        </div>
+                      </div>
+                      <FairnessAnalysisCharts
+                        :results="compileFairnessResults"
+                        :tournament="compileFairnessTournament"
+                        score-key="sum"
+                        :round-filter="compileFairnessRoundFilter"
+                        :show-score-range="false"
+                        :show-team-performance="true"
+                        :show-score-histogram="false"
+                      />
+                    </template>
+                  </template>
+                </section>
+                <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
+                  {{ $t('集計結果を表示するデータがありません。') }}
+                </p>
+              </section>
+              <p v-if="activeTaskHint" class="small task-hint-bottom">{{ activeTaskHint }}</p>
+            </template>
           </section>
-          <p v-if="activeTaskHint" class="small task-hint-bottom">{{ activeTaskHint }}</p>
-        </template>
-      </section>
+        </div>
+      </template>
+      <div
+        v-if="hasLoaded && isLoading"
+        class="reload-overlay"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <LoadingState />
+      </div>
     </div>
 
     <div
@@ -554,7 +626,11 @@ import {
   toFiniteNumber,
 } from '@/utils/diff-indicator'
 import { applyClientBaselineDiff } from '@/utils/compiled-diff'
-import { countSubmissionActors, resolveRoundOperationStatus, type RoundOperationStatus } from '@/stores/round-operations'
+import {
+  countSubmissionActors,
+  resolveRoundOperationStatus,
+  type RoundOperationStatus,
+} from '@/stores/round-operations'
 import { buildSubmissionDelayRows, buildSubmissionSpeedRows } from '@/utils/insights'
 import {
   formatCompiledSnapshotOptionLabel,
@@ -587,6 +663,7 @@ const hubTaskOrder: HubTask[] = ['draw', 'publish', 'submissions', 'compile']
 const activeTask = ref<HubTask>('draw')
 const roundTaskSelection = ref<Record<number, HubTask>>({})
 const sectionLoading = ref(true)
+const hasLoaded = ref(false)
 const actionError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
@@ -661,28 +738,34 @@ const loadError = computed(
     ''
 )
 
-const selectedRoundData = computed(() =>
-  sortedRounds.value.find((round) => round.round === selectedRound.value) ?? null
+const selectedRoundData = computed(
+  () => sortedRounds.value.find((round) => round.round === selectedRound.value) ?? null
 )
-const selectedDraw = computed(() =>
-  drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
+const selectedDraw = computed(
+  () => drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
 const motionOpenedValue = computed(() => Boolean(selectedRoundData.value?.motionOpened))
 const selectedMotion = computed(() => {
-  const motions = Array.isArray(selectedRoundData.value?.motions) ? selectedRoundData.value?.motions : []
+  const motions = Array.isArray(selectedRoundData.value?.motions)
+    ? selectedRoundData.value?.motions
+    : []
   return motions[0] ? String(motions[0]) : ''
 })
 const drawOpenedValue = computed(() => Boolean(selectedDraw.value?.drawOpened))
 const allocationOpenedValue = computed(() => Boolean(selectedDraw.value?.allocationOpened))
 const lockedValue = computed(() => Boolean(selectedDraw.value?.locked))
-const selectedRoundHasDraw = computed(
-  () => Boolean(selectedDraw.value && Array.isArray(selectedDraw.value.allocation) && selectedDraw.value.allocation.length > 0)
+const selectedRoundHasDraw = computed(() =>
+  Boolean(
+    selectedDraw.value &&
+    Array.isArray(selectedDraw.value.allocation) &&
+    selectedDraw.value.allocation.length > 0
+  )
 )
 const publicationSwitchBusy = computed(
   () => publicationSaving.value || roundsStore.loading || drawsStore.loading
 )
-const selectedRoundPublished = computed(
-  () => Boolean(selectedDraw.value?.drawOpened && selectedDraw.value?.allocationOpened)
+const selectedRoundPublished = computed(() =>
+  Boolean(selectedDraw.value?.drawOpened && selectedDraw.value?.allocationOpened)
 )
 const compileTargetRounds = computed(() => {
   if (selectedRound.value === null) return []
@@ -690,8 +773,19 @@ const compileTargetRounds = computed(() => {
     .filter((round) => round.round <= selectedRound.value!)
     .map((round) => round.round)
 })
+const compileSourceRoundOptions = computed(() =>
+  sortedRounds.value.map((round) => ({
+    value: round.round,
+    label: roundLabel(round.round),
+    disabled:
+      selectedRound.value === null ||
+      round.round > selectedRound.value,
+  }))
+)
 const effectiveCompileTargetRounds = computed(() =>
-  compileTargetRounds.value.filter((roundNumber) => selectedCompileRounds.value.includes(roundNumber))
+  compileTargetRounds.value.filter((roundNumber) =>
+    selectedCompileRounds.value.includes(roundNumber)
+  )
 )
 const canSavePreview = computed(() => compileManualSaveEnabled && compileWorkflow.canSave)
 const manualCompileInputKey = computed(() =>
@@ -725,7 +819,9 @@ const compileDisplayPayload = computed<Record<string, any> | null>(() => {
 })
 
 const compiledSnapshotRoundSet = computed(() => {
-  const rounds = Array.isArray(compileDisplayPayload.value?.rounds) ? compileDisplayPayload.value.rounds : []
+  const rounds = Array.isArray(compileDisplayPayload.value?.rounds)
+    ? compileDisplayPayload.value.rounds
+    : []
   return new Set(
     rounds
       .map((item: any) => item?.r ?? item?.round)
@@ -778,7 +874,10 @@ const selectedCompileDiffBaselineRows = computed<any[]>(() =>
     : []
 )
 const compileRows = computed<any[]>(() => {
-  if (!compileDiffBaselineCompiledId.value.trim() || selectedCompileDiffBaselineRows.value.length === 0) {
+  if (
+    !compileDiffBaselineCompiledId.value.trim() ||
+    selectedCompileDiffBaselineRows.value.length === 0
+  ) {
     return compileRowsBase.value
   }
   return applyClientBaselineDiff(compileRowsBase.value, selectedCompileDiffBaselineRows.value)
@@ -820,8 +919,14 @@ const compileFairnessResults = computed<any[]>(() => {
         ? row.details.filter((detail: any) => detail.r === selectedRound.value)
         : []
       if (details.length === 0) return null
-      const win = details.reduce((total: number, detail: any) => total + (toFiniteNumber(detail?.win) ?? 0), 0)
-      const sum = details.reduce((total: number, detail: any) => total + (toFiniteNumber(detail?.sum) ?? 0), 0)
+      const win = details.reduce(
+        (total: number, detail: any) => total + (toFiniteNumber(detail?.win) ?? 0),
+        0
+      )
+      const sum = details.reduce(
+        (total: number, detail: any) => total + (toFiniteNumber(detail?.sum) ?? 0),
+        0
+      )
       const averageValues = details
         .map((detail: any) => toFiniteNumber(detail?.average))
         .filter((value: number | null): value is number => value !== null)
@@ -1074,7 +1179,8 @@ const submissionPreviewJudgeColumnLabel = computed(() => {
 })
 
 const selectedRoundBallotGap = computed(() => {
-  if (selectedRound.value === null) return { expected: 0, submitted: 0, unknown: 0, missing: 0, hasGap: false }
+  if (selectedRound.value === null)
+    return { expected: 0, submitted: 0, unknown: 0, missing: 0, hasGap: false }
   const expected = ballotExpectedCount(selectedRound.value)
   const submitted = ballotSubmittedCount(selectedRound.value)
   const unknown = unknownSubmissionCount(selectedRound.value, 'ballot')
@@ -1094,9 +1200,12 @@ const selectedRoundBallotGapWarning = computed(() => {
 
 const selectedRoundUnknownBallotWarning = computed(() => {
   if (selectedRoundBallotGap.value.unknown <= 0) return ''
-  return t('提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。', {
-    count: selectedRoundBallotGap.value.unknown,
-  })
+  return t(
+    '提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。',
+    {
+      count: selectedRoundBallotGap.value.unknown,
+    }
+  )
 })
 
 const shouldBlockSubmissionCompile = computed(() => selectedRoundBallotGap.value.hasGap)
@@ -1145,7 +1254,9 @@ function taskStateLabel(state: HubTaskState) {
   return t('実行可能')
 }
 
-const operationTasks = computed<Array<{ key: HubTask; order: number; label: string; state: HubTaskState; stateLabel: string }>>(() => {
+const operationTasks = computed<
+  Array<{ key: HubTask; order: number; label: string; state: HubTaskState; stateLabel: string }>
+>(() => {
   const states =
     selectedRound.value === null
       ? {
@@ -1160,28 +1271,28 @@ const operationTasks = computed<Array<{ key: HubTask; order: number; label: stri
     {
       key: 'draw',
       order: 1,
-      label: t('対戦生成'),
+      label: t('対戦表作成'),
       state: states.draw,
       stateLabel: taskStateLabel(states.draw),
     },
     {
       key: 'publish',
       order: 2,
-      label: t('公開設定'),
+      label: t('ラウンド公開設定'),
       state: states.publish,
       stateLabel: taskStateLabel(states.publish),
     },
     {
       key: 'submissions',
       order: 3,
-      label: t('提出状況'),
+      label: t('提出状況確認'),
       state: states.submissions,
       stateLabel: taskStateLabel(states.submissions),
     },
     {
       key: 'compile',
       order: 4,
-      label: t('集計設定'),
+      label: t('ラウンド結果集計'),
       state: states.compile,
       stateLabel: taskStateLabel(states.compile),
     },
@@ -1191,19 +1302,18 @@ const operationTasks = computed<Array<{ key: HubTask; order: number; label: stri
 const activeTaskHint = computed(() => {
   if (selectedRound.value === null) return ''
   if (activeTask.value === 'draw') {
-    return t('対戦生成では参照集計結果を選択できます。未選択でも自動生成できます。')
+    return t('対戦表作成では参照集計結果を選択できます。未選択でも自動生成できます。')
   }
   if (activeTask.value === 'publish' && !selectedRoundHasDraw.value) {
     return t('まず対戦表を生成してください。')
   }
   if (activeTask.value === 'submissions' && !selectedRoundPublished.value) {
-    return t('公開後に提出を回収します。先に公開設定で公開してください。')
+    return t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
   }
   if (activeTask.value === 'compile') {
     if (!selectedRoundPublished.value) {
-      return t('公開後に提出を回収します。先に公開設定で公開してください。')
+      return t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
     }
-    if (selectedRoundBallotGapWarning.value) return selectedRoundBallotGapWarning.value
     return t(
       '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。'
     )
@@ -1223,10 +1333,10 @@ function roundStatus(roundNumber: number): RoundOperationStatus {
 
 function roundCurrentStepLabel(roundNumber: number) {
   const nextTask = recommendedTaskForRound(roundNumber)
-  if (nextTask === 'draw') return `1. ${t('対戦生成')}`
-  if (nextTask === 'publish') return `2. ${t('公開設定')}`
-  if (nextTask === 'submissions') return `3. ${t('提出状況')}`
-  return `4. ${t('集計設定')}`
+  if (nextTask === 'draw') return `1. ${t('対戦表作成')}`
+  if (nextTask === 'publish') return `2. ${t('ラウンド公開設定')}`
+  if (nextTask === 'submissions') return `3. ${t('提出状況確認')}`
+  return `4. ${t('ラウンド結果集計')}`
 }
 
 function isRoundStepCompleted(roundNumber: number) {
@@ -1279,9 +1389,10 @@ function applyCompileDraftFromRound() {
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
   const allowedRounds = compileTargetRounds.value
-  const configuredRounds = normalizeCompileSourceRounds(rawCompile.source_rounds, selectedRound.value).filter(
-    (roundNumber) => allowedRounds.includes(roundNumber)
-  )
+  const configuredRounds = normalizeCompileSourceRounds(
+    rawCompile.source_rounds,
+    selectedRound.value
+  ).filter((roundNumber) => allowedRounds.includes(roundNumber))
   selectedCompileRounds.value =
     configuredRounds.length > 0 ? configuredRounds : allowedRounds.slice()
 }
@@ -1454,6 +1565,46 @@ function formatCompileValue(value: unknown) {
   }
   if (value === null || value === undefined || value === '') return '—'
   return String(value)
+}
+
+function formatCompileCsvValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(',')
+  if (value === null || value === undefined || value === '') return ''
+  return String(value)
+}
+
+function escapeCsv(value: string) {
+  if (value.includes('"') || value.includes(',') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function downloadCompileReportCsv() {
+  if (sortedCompileRows.value.length === 0) return
+  const headerKeys = [...compileColumns.value]
+  const headerLabels = headerKeys.map((key) => compileColumnLabel(key))
+  const rows = sortedCompileRows.value.map((row) =>
+    headerKeys.map((key) => {
+      const raw = key === 'team' ? teamName(String(row?.id ?? '')) : row?.[key]
+      return escapeCsv(formatCompileCsvValue(raw))
+    })
+  )
+  const csv = [
+    headerLabels.map((label) => escapeCsv(label)).join(','),
+    ...rows.map((row) => row.join(',')),
+  ].join('\n')
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  const round = selectedRound.value
+  link.download =
+    round === null ? 'round_compiled_results.csv' : `round_${round}_compiled_results.csv`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function compileRowKey(row: any, index: number): string {
@@ -1641,7 +1792,9 @@ function buildSubmissionPreviewEntry(item: any, index: number): SubmissionPrevie
   }
 }
 
-function sortSubmissionPreviewEntries(entries: SubmissionPreviewEntry[]): DrawPreviewSubmissionRow[] {
+function sortSubmissionPreviewEntries(
+  entries: SubmissionPreviewEntry[]
+): DrawPreviewSubmissionRow[] {
   return entries
     .slice()
     .sort((left, right) => right.sortValue - left.sortValue)
@@ -1650,16 +1803,174 @@ function sortSubmissionPreviewEntries(entries: SubmissionPreviewEntry[]): DrawPr
 
 function normalizedUniqueIds(values: unknown[]) {
   return Array.from(
-    new Set(
-      values
-        .map((id) => String(id ?? '').trim())
-        .filter((id) => id.length > 0)
-    )
+    new Set(values.map((id) => String(id ?? '').trim()).filter((id) => id.length > 0))
   )
 }
 
+function toFiniteNumberList(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => toFiniteNumber(entry))
+    .filter((entry: number | null): entry is number => entry !== null)
+}
+
+function sideScoreTotalFromPayload(payload: Record<string, unknown>, side: 'A' | 'B'): number | null {
+  const scores = toFiniteNumberList(payload[`scores${side}`])
+  if (scores.length > 0) {
+    return scores.reduce((total, score) => total + score, 0)
+  }
+  const matter = toFiniteNumberList(payload[`matter${side}`])
+  const manner = toFiniteNumberList(payload[`manner${side}`])
+  const length = Math.max(matter.length, manner.length)
+  if (length === 0) return null
+  let hasAny = false
+  let total = 0
+  for (let index = 0; index < length; index += 1) {
+    const matterValue = matter[index]
+    const mannerValue = manner[index]
+    if (matterValue !== undefined || mannerValue !== undefined) hasAny = true
+    total += (matterValue ?? 0) + (mannerValue ?? 0)
+  }
+  return hasAny ? total : null
+}
+
+function resolveBallotSidesForRow(
+  ballot: Submission,
+  row: HubDrawPreviewRow
+): { payload: Record<string, unknown>; govIsA: boolean } | null {
+  const payload = (ballot?.payload ?? {}) as Record<string, unknown>
+  const teamAId = String(payload.teamAId ?? '').trim()
+  const teamBId = String(payload.teamBId ?? '').trim()
+  if (!teamAId || !teamBId) return null
+  if (teamAId === row.govId && teamBId === row.oppId) {
+    return { payload, govIsA: true }
+  }
+  if (teamAId === row.oppId && teamBId === row.govId) {
+    return { payload, govIsA: false }
+  }
+  return null
+}
+
+function ballotScoreSumBySideForRow(
+  ballot: Submission,
+  row: HubDrawPreviewRow
+): { gov: number; opp: number } | null {
+  const resolved = resolveBallotSidesForRow(ballot, row)
+  if (!resolved) return null
+  const { payload, govIsA } = resolved
+  const sumA = sideScoreTotalFromPayload(payload, 'A')
+  const sumB = sideScoreTotalFromPayload(payload, 'B')
+  if (sumA === null || sumB === null) return null
+  return govIsA ? { gov: sumA, opp: sumB } : { gov: sumB, opp: sumA }
+}
+
+function ballotWinSumBySideForRow(
+  ballot: Submission,
+  row: HubDrawPreviewRow
+): { gov: number; opp: number } | null {
+  const resolved = resolveBallotSidesForRow(ballot, row)
+  if (!resolved) return null
+  const winnerId = String(resolved.payload.winnerId ?? '').trim()
+  if (winnerId) {
+    if (winnerId === row.govId) return { gov: 1, opp: 0 }
+    if (winnerId === row.oppId) return { gov: 0, opp: 1 }
+    return null
+  }
+  const score = ballotScoreSumBySideForRow(ballot, row)
+  if (!score) return null
+  if (score.gov > score.opp) return { gov: 1, opp: 0 }
+  if (score.opp > score.gov) return { gov: 0, opp: 1 }
+  return { gov: 0, opp: 0 }
+}
+
+function formatSubmissionSumValue(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000
+  return String(rounded)
+}
+
+function buildSubmissionWinDisplay(
+  row: HubDrawPreviewRow,
+  ballots: Submission[],
+  expectedCount: number
+): Pick<
+  DrawPreviewRow,
+  | 'winLabel'
+  | 'winTotal'
+  | 'winGap'
+  | 'winStatus'
+  | 'winStatusLabel'
+  | 'winMetaLabel'
+  | 'scoreLabel'
+  | 'scoreTotal'
+  | 'scoreGap'
+> {
+  let govWinTotal = 0
+  let oppWinTotal = 0
+  let calculatedWinCount = 0
+  let govScoreTotal = 0
+  let oppScoreTotal = 0
+  let calculatedScoreCount = 0
+
+  ballots.forEach((ballot) => {
+    const win = ballotWinSumBySideForRow(ballot, row)
+    if (win) {
+      govWinTotal += win.gov
+      oppWinTotal += win.opp
+      calculatedWinCount += 1
+    }
+    const score = ballotScoreSumBySideForRow(ballot, row)
+    if (score) {
+      govScoreTotal += score.gov
+      oppScoreTotal += score.opp
+      calculatedScoreCount += 1
+    }
+  })
+
+  const hasExpected = expectedCount > 0
+  const denominator = hasExpected ? expectedCount : Math.max(calculatedWinCount, ballots.length)
+  const scorePairLabel =
+    calculatedScoreCount > 0
+      ? `${formatSubmissionSumValue(govScoreTotal)}-${formatSubmissionSumValue(oppScoreTotal)}`
+      : t('未算出')
+  const scorePairWithUnitLabel = calculatedScoreCount > 0 ? `${scorePairLabel} pts` : t('未算出')
+  const scoreLabel =
+    calculatedScoreCount > 0 ? scorePairLabel : t('未算出')
+  const scoreTotal = calculatedScoreCount > 0 ? govScoreTotal + oppScoreTotal : -1
+  const scoreGap = calculatedScoreCount > 0 ? Math.abs(govScoreTotal - oppScoreTotal) : 0
+
+  if (calculatedWinCount === 0) {
+    const winLabel =
+      calculatedScoreCount > 0 ? `${t('未算出')} (${scorePairWithUnitLabel})` : t('未算出')
+    return {
+      winLabel,
+      winTotal: -1,
+      winGap: 0,
+      winStatus: 'insufficient',
+      winStatusLabel: t('未算出'),
+      scoreLabel,
+      scoreTotal,
+      scoreGap,
+    }
+  }
+
+  const winPairLabel = `${formatSubmissionSumValue(govWinTotal)}-${formatSubmissionSumValue(oppWinTotal)}`
+  const confirmed = denominator > 0 && calculatedWinCount >= denominator
+  return {
+    winLabel: `${winPairLabel} (${scorePairWithUnitLabel})`,
+    winTotal: govWinTotal + oppWinTotal,
+    winGap: Math.abs(govWinTotal - oppWinTotal),
+    winStatus: confirmed ? 'confirmed' : 'provisional',
+    winStatusLabel: confirmed ? t('確定') : t('暫定'),
+    scoreLabel,
+    scoreTotal,
+    scoreGap,
+  }
+}
+
 const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
-  const allocation = Array.isArray(selectedDraw.value?.allocation) ? selectedDraw.value?.allocation : []
+  const allocation = Array.isArray(selectedDraw.value?.allocation)
+    ? selectedDraw.value?.allocation
+    : []
   return allocation.map((row: any, index: number) => {
     const govId = String(row?.teams?.gov ?? '')
     const oppId = String(row?.teams?.opp ?? '')
@@ -1735,23 +2046,32 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
 
   const teamPairToRowKey = new Map<string, string>()
   const adjudicatorToRowKey = new Map<string, string>()
-  const bucketByRowKey = new Map<string, { team: SubmissionPreviewEntry[]; judge: SubmissionPreviewEntry[] }>()
+  const bucketByRowKey = new Map<
+    string,
+    { team: SubmissionPreviewEntry[]; teamBallots: Submission[]; judge: SubmissionPreviewEntry[] }
+  >()
 
   rows.forEach((row) => {
     if (row.pairKey) teamPairToRowKey.set(row.pairKey, row.key)
     row.adjudicatorIds.forEach((adjudicatorId) => {
       if (!adjudicatorToRowKey.has(adjudicatorId)) adjudicatorToRowKey.set(adjudicatorId, row.key)
     })
-    bucketByRowKey.set(row.key, { team: [], judge: [] })
+    bucketByRowKey.set(row.key, { team: [], teamBallots: [], judge: [] })
   })
 
   selectedRoundSubmissions.value.forEach((item, index) => {
     const payload = (item?.payload ?? {}) as Record<string, unknown>
     if (item?.type === 'ballot') {
-      const pairKey = normalizeTeamPairKey(String(payload.teamAId ?? ''), String(payload.teamBId ?? ''))
+      const pairKey = normalizeTeamPairKey(
+        String(payload.teamAId ?? ''),
+        String(payload.teamBId ?? '')
+      )
       const rowKey = teamPairToRowKey.get(pairKey)
       if (!rowKey) return
-      bucketByRowKey.get(rowKey)?.team.push(buildSubmissionPreviewEntry(item, index))
+      const bucket = bucketByRowKey.get(rowKey)
+      if (!bucket) return
+      bucket.team.push(buildSubmissionPreviewEntry(item, index))
+      bucket.teamBallots.push(item as Submission)
       return
     }
     if (item?.type === 'feedback') {
@@ -1764,11 +2084,14 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
   })
 
   return rows.map((row) => {
-    const bucket = bucketByRowKey.get(row.key) ?? { team: [], judge: [] }
+    const bucket = bucketByRowKey.get(row.key) ?? { team: [], teamBallots: [], judge: [] }
+    const expectedBallotCount = row.adjudicatorIds.length
+    const winDisplay = buildSubmissionWinDisplay(row, bucket.teamBallots, expectedBallotCount)
     return {
       ...row,
+      ...winDisplay,
       teamSubmissionCount: bucket.team.length,
-      teamSubmissionExpectedCount: row.adjudicatorIds.length,
+      teamSubmissionExpectedCount: expectedBallotCount,
       judgeSubmissionCount: bucket.judge.length,
       judgeSubmissionExpectedCount: feedbackExpectedCountForPreviewRow(row),
       submissionDetail: {
@@ -1807,7 +2130,10 @@ const filteredSubmissionPreviewRows = computed<DrawPreviewRow[]>(() => {
 })
 
 async function refresh() {
-  if (!tournamentId.value) return
+  if (!tournamentId.value) {
+    hasLoaded.value = true
+    return
+  }
   sectionLoading.value = true
   actionError.value = ''
   try {
@@ -1853,6 +2179,7 @@ async function refresh() {
   } catch (err: any) {
     actionError.value = err?.response?.data?.errors?.[0]?.message ?? t('読み込みに失敗しました。')
   } finally {
+    hasLoaded.value = true
     sectionLoading.value = false
   }
 }
@@ -1904,7 +2231,7 @@ async function runCompileWithSource(
   actionError.value = ''
   closeForceCompileModal()
   if (!selectedRoundPublished.value) {
-    actionError.value = t('公開後に提出を回収します。先に公開設定で公開してください。')
+    actionError.value = t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
     return
   }
   if (source === 'submissions' && shouldBlockSubmissionCompile.value) {
@@ -1943,7 +2270,7 @@ async function runPreviewWithSource(
   actionError.value = ''
   closeForceCompileModal()
   if (!selectedRoundPublished.value) {
-    actionError.value = t('公開後に提出を回収します。先に公開設定で公開してください。')
+    actionError.value = t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
     return
   }
   if (source === 'submissions' && shouldBlockSubmissionCompile.value) {
@@ -1977,15 +2304,6 @@ async function runPreviewWithSource(
   compileMessage.value = t('仮集計を実行しました。内容を確認して保存してください。')
   trackCompileMetric('preview_run', source)
   applyDefaultCompileDiffBaseline()
-}
-
-function onCompileRoundToggle(roundNumber: number, event: Event) {
-  const input = event.target as HTMLInputElement | null
-  const checked = Boolean(input?.checked)
-  const current = new Set(selectedCompileRounds.value)
-  if (checked) current.add(roundNumber)
-  else current.delete(roundNumber)
-  selectedCompileRounds.value = compileTargetRounds.value.filter((round) => current.has(round))
 }
 
 function openForceCompileModal(action: 'compile' | 'preview' | 'save' = 'compile') {
@@ -2156,10 +2474,7 @@ async function saveRoundPublication(nextState: { motionOpened: boolean }): Promi
   }
 }
 
-async function onPublishToggle(
-  key: 'drawOpened' | 'allocationOpened',
-  checked: boolean
-) {
+async function onPublishToggle(key: 'drawOpened' | 'allocationOpened', checked: boolean) {
   if (!selectedRoundHasDraw.value) return
   const current = key === 'drawOpened' ? drawOpenedValue.value : allocationOpenedValue.value
   if (current === checked) return
@@ -2224,7 +2539,7 @@ watch(
   compileColumns,
   (columns) => {
     if (!columns.includes(compileSortKey.value)) {
-      compileSortKey.value = columns.includes('ranking') ? 'ranking' : columns[0] ?? 'ranking'
+      compileSortKey.value = columns.includes('ranking') ? 'ranking' : (columns[0] ?? 'ranking')
       compileSortDirection.value = compileSortKey.value === 'ranking' ? 'asc' : 'desc'
     }
   },
@@ -2256,14 +2571,11 @@ watch(
   { immediate: true }
 )
 
-watch(
-  submissionEditorTarget,
-  (target) => {
-    if (!submissionEditorModalOpen.value) return
-    if (target) return
-    closeSubmissionEditorModal()
-  }
-)
+watch(submissionEditorTarget, (target) => {
+  if (!submissionEditorModalOpen.value) return
+  if (target) return
+  closeSubmissionEditorModal()
+})
 
 watch(
   diffBaselineCompiledOptions,
@@ -2301,6 +2613,22 @@ watch(
 </script>
 
 <style scoped>
+.operations-content-shell {
+  position: relative;
+  min-height: 120px;
+}
+
+.reload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  pointer-events: none;
+}
+
 .section-header {
   align-items: center;
   gap: var(--space-2);
@@ -2733,6 +3061,10 @@ watch(
   font-size: 12px;
 }
 
+.compile-download-row {
+  justify-content: flex-end;
+}
+
 .compile-fairness-visual-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2793,24 +3125,6 @@ watch(
 
 .diff-delta {
   font-size: 0.75rem;
-}
-
-.compile-round-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.compile-round-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: var(--color-surface);
-  font-size: 12px;
-  color: var(--color-text);
 }
 
 .compile-option-panel {

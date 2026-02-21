@@ -47,7 +47,11 @@ function render() {
 
   const options = {
     chart: { type: 'line', backgroundColor: 'transparent' },
-    title: { text: t('スコア推移') },
+    title: {
+      text: t('スコア推移'),
+      align: 'center',
+      style: { fontSize: '1.2rem', fontWeight: '700' as const },
+    },
     xAxis: { categories: safeRounds.map((round) => round.name) },
     yAxis: { title: { text: t('スコア') } },
     legend: { enabled: true },

@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue'
 import {
   DEFAULT_SLIDE_SETTINGS,
   normalizeSlideLabel,
+  normalizeSlideLanguage,
   normalizeSlideMax,
   normalizeSlideStyle,
   normalizeSlideType,
@@ -22,6 +23,7 @@ function cloneDefaultSettings(): SlideSettings {
     maxRankingRewarded: DEFAULT_SLIDE_SETTINGS.maxRankingRewarded,
     type: DEFAULT_SLIDE_SETTINGS.type,
     style: DEFAULT_SLIDE_SETTINGS.style,
+    language: DEFAULT_SLIDE_SETTINGS.language,
     leftCredit: DEFAULT_SLIDE_SETTINGS.leftCredit,
     rightCredit: DEFAULT_SLIDE_SETTINGS.rightCredit,
   }
@@ -48,6 +50,7 @@ function normalizeSettings(value: unknown): SlideSettings {
     maxRankingRewarded: normalizeSlideMax(source.maxRankingRewarded),
     type: normalizeSlideType(source.type),
     style: normalizeSlideStyle(source.style, legacyStyle ?? DEFAULT_SLIDE_SETTINGS.style),
+    language: normalizeSlideLanguage(source.language),
     leftCredit:
       leftCredit.length > 0
         ? leftCredit
@@ -137,6 +140,7 @@ export function useReportSlideSettings(tournamentId: Ref<string>) {
         ),
         type: normalizeSlideType(patch.type, current.type),
         style: normalizeSlideStyle(patch.style, current.style),
+        language: normalizeSlideLanguage(patch.language, current.language),
         leftCredit:
           typeof patch.leftCredit === 'string' ? patch.leftCredit.trim() : current.leftCredit,
         rightCredit:

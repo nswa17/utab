@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   listCompiled,
   createCompiled,
+  deleteCompiled,
   createCompiledPreview,
   listCompiledTeams,
   createCompiledTeams,
@@ -81,6 +82,11 @@ const previewSchema = {
   body: compileBodySchema,
 }
 
+const deleteSchema = {
+  params: z.object({ id: z.string().min(1) }),
+  query: z.object({ tournamentId: z.string().min(1) }),
+}
+
 router.get(
   '/',
   requireTournamentView(),
@@ -89,6 +95,7 @@ router.get(
 )
 router.post('/preview', requireTournamentAdmin(), validateRequest(previewSchema), createCompiledPreview)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createCompiled)
+router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteCompiled)
 router.get(
   '/teams',
   requireTournamentView(),

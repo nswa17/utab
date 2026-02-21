@@ -50,7 +50,7 @@
         <section class="stack board-block">
           <div class="row board-head">
             <div class="row board-title-row">
-              <h4>{{ $t('対戦表作成') }}</h4>
+              <h4>{{ isEmbeddedRoute ? $t('配置') : $t('対戦表作成') }}</h4>
               <div class="warning-legend" role="status" aria-live="polite">
                 <span class="warning-legend-title">{{ $t('警告凡例') }}</span>
                 <span class="warning-legend-item warning-legend-item--critical">

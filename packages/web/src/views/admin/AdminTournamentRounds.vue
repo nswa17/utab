@@ -198,127 +198,23 @@
           </div>
 
           <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('評価提出設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.evaluate_from_adjudicators"
-                  type="checkbox"
-                />
-                <span>{{ $t('評価をジャッジから') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('ジャッジからのフィードバック入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.evaluate_from_teams" type="checkbox" />
-                <span>{{ $t('評価をチームから') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('チーム/スピーカーからのフィードバック入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.chairs_always_evaluated"
-                  type="checkbox"
-                />
-                <span>{{ $t('チェアを常に評価') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('チェア評価を必須にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
-                <select
-                  v-model="roundDraft(round).userDefined.evaluator_in_team"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                >
-                  <option value="team">{{ $t('チーム') }}</option>
-                  <option value="speaker">{{ $t('スピーカー') }}</option>
-                </select>
-                <p class="muted small">
-                  {{ $t('評価者の単位をチームかスピーカーから選択します。') }}
-                </p>
-              </Field>
-            </div>
+            <RoundOptionEditor
+              v-model:evaluate-from-adjudicators="roundDraft(round).userDefined.evaluate_from_adjudicators"
+              v-model:evaluate-from-teams="roundDraft(round).userDefined.evaluate_from_teams"
+              v-model:chairs-always-evaluated="roundDraft(round).userDefined.chairs_always_evaluated"
+              v-model:evaluator-in-team="roundDraft(round).userDefined.evaluator_in_team"
+              v-model:no-speaker-score="roundDraft(round).userDefined.no_speaker_score"
+              v-model:allow-low-tie-win="roundDraft(round).userDefined.allow_low_tie_win"
+              v-model:score-by-matter-manner="roundDraft(round).userDefined.score_by_matter_manner"
+              v-model:tie-points="roundDraft(round).compile.options.tie_points"
+              v-model:poi="roundDraft(round).userDefined.poi"
+              v-model:best="roundDraft(round).userDefined.best"
+              :disabled="isLoading"
+            />
           </section>
 
           <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('スコア設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.no_speaker_score" type="checkbox" />
-                <span>{{ $t('スピーカースコア無し') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('スピーカースコア入力を無効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.allow_low_tie_win" type="checkbox" />
-                <span>{{ $t('低勝ち/同点勝ち許可') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('低勝ち・同点勝ちを許可します。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.score_by_matter_manner"
-                  type="checkbox"
-                />
-                <span>{{ $t('Matter/Manner採点') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('Matter/Manner の個別入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-            </div>
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('賞設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.poi" type="checkbox" />
-                <span>{{ $t('POI賞') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('POI賞の入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.best" type="checkbox" />
-                <span>{{ $t('Best Speaker賞') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('ベストスピーカー賞の入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-            </div>
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('集計設定') }}</h5>
+            <h5 class="settings-group-title">{{ $t('ラウンド結果集計') }}</h5>
             <CompileOptionsEditor
               v-model:source-rounds="roundDraft(round).compile.source_rounds"
               v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
@@ -329,7 +225,9 @@
               v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
               v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
               v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
-              :show-source-rounds="true"
+              :show-winner-scoring="false"
+              :show-source-rounds="false"
+              :show-merge-and-missing="false"
               :source-round-options="compileSourceRoundSelectOptions(round.round)"
               :disabled="isLoading"
             />
@@ -606,6 +504,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import CollapseHeader from '@/components/common/CollapseHeader.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useRoundsStore } from '@/stores/rounds'

@@ -52,13 +52,16 @@ export function includeLabelsFromRoundDetailsAny(
   targetRounds: number[]
 ): CompileIncludeLabel[] {
   const normalizedTargets = normalizeRounds(targetRounds)
+  if (normalizedTargets.length === 0) {
+    return includeLabelsFromRoundDetails(undefined)
+  }
   const targetRoundSet = new Set<number>(normalizedTargets)
   const labels = new Set<CompileIncludeLabel>()
 
   rounds.forEach((round) => {
     const roundNumber = Number(round?.round)
     if (!Number.isInteger(roundNumber) || roundNumber < 1) return
-    if (targetRoundSet.size > 0 && !targetRoundSet.has(roundNumber)) return
+    if (!targetRoundSet.has(roundNumber)) return
     mergeIncludeLabels(labels, round?.userDefinedData ?? undefined)
   })
 

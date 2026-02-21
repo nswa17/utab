@@ -1,11 +1,13 @@
 export type SlideLabel = 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
 export type SlideType = 'listed' | 'single'
 export type SlideStyle = 'pretty' | 'simple'
+export type SlideLanguage = 'en' | 'ja'
 
 export type SlideSettings = {
   maxRankingRewarded: number
   type: SlideType
   style: SlideStyle
+  language: SlideLanguage
   leftCredit: string
   rightCredit: string
 }
@@ -15,6 +17,7 @@ export type PresentationQuery = {
   label: SlideLabel
   type: SlideType
   style: SlideStyle
+  language: SlideLanguage
   max: number
   leftCredit: string
   rightCredit: string
@@ -45,11 +48,13 @@ export type SlideResultInput = {
 const SLIDE_LABELS: SlideLabel[] = ['teams', 'speakers', 'adjudicators', 'poi', 'best']
 const SLIDE_TYPES: SlideType[] = ['listed', 'single']
 const SLIDE_STYLES: SlideStyle[] = ['pretty', 'simple']
+const SLIDE_LANGUAGES: SlideLanguage[] = ['en', 'ja']
 
 export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {
   maxRankingRewarded: 3,
   type: 'listed',
   style: 'pretty',
+  language: 'en',
   leftCredit: 'UTab',
   rightCredit: '',
 }
@@ -81,6 +86,15 @@ export function normalizeSlideStyle(
   return SLIDE_STYLES.includes(token) ? token : fallback
 }
 
+export function normalizeSlideLanguage(
+  value: unknown,
+  fallback: SlideLanguage = DEFAULT_SLIDE_SETTINGS.language
+): SlideLanguage {
+  const raw = firstQueryValue(value).trim()
+  const token = raw as SlideLanguage
+  return SLIDE_LANGUAGES.includes(token) ? token : fallback
+}
+
 export function normalizeSlideMax(value: unknown, fallback = DEFAULT_SLIDE_SETTINGS.maxRankingRewarded): number {
   const raw = firstQueryValue(value).trim()
   if (!raw) return fallback
@@ -100,6 +114,7 @@ export function parsePresentationQuery(query: Record<string, unknown>): {
     label: normalizeSlideLabel(query.label),
     type: normalizeSlideType(query.type),
     style: normalizeSlideStyle(query.style),
+    language: normalizeSlideLanguage(query.language),
     max: normalizeSlideMax(query.max),
     leftCredit: firstQueryValue(query.leftCredit).trim() || fallbackLeftCredit,
     rightCredit: firstQueryValue(query.rightCredit).trim() || DEFAULT_SLIDE_SETTINGS.rightCredit,

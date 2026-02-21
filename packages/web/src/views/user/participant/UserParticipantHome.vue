@@ -9,14 +9,16 @@
         :target="isAudience ? $t('対戦表') : $t('参加者ダッシュボード')"
       />
     </div>
-    <LoadingState v-if="isLoading" />
-    <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <div v-else-if="visibleRounds.length === 0" class="muted">
-      {{ $t('ラウンドがまだありません。') }}
-    </div>
+    <div class="participant-home-content-shell">
+      <LoadingState v-if="!hasLoaded && isLoading" />
+      <div v-else class="participant-home-body">
+        <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+        <div v-else-if="visibleRounds.length === 0" class="muted">
+          {{ $t('ラウンドがまだありません。') }}
+        </div>
 
-    <div v-else class="stack">
-      <div v-if="isSpeaker || isAdjudicator" class="card stack">
+        <div v-else class="stack">
+          <div v-if="isSpeaker || isAdjudicator" class="card stack">
         <h4>{{ $t('あなたの情報') }}</h4>
         <label v-if="isSpeaker" class="field">
           <span>{{ $t('ジャッジ名') }}</span>
@@ -154,7 +156,7 @@
         </p>
       </div>
 
-      <template v-if="isAudience">
+          <div v-if="isAudience" class="stack audience-rounds">
         <div class="card stack audience-tools">
           <input
             v-model.trim="audienceTeamQuery"
@@ -360,9 +362,19 @@
               </table>
             </div>
           </div>
+          </div>
         </div>
-      </template>
-
+      </div>
+      <div
+        v-if="hasLoaded && isLoading"
+        class="reload-overlay"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <LoadingState />
+      </div>
+    </div>
     </div>
   </section>
 </template>
@@ -497,6 +509,7 @@ const isLoading = computed(
     speakersStore.loading ||
     venuesStore.loading
 )
+const hasLoaded = ref(false)
 
 const errorMessage = computed(
   () =>
@@ -1147,17 +1160,24 @@ function venueName(id?: string) {
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
-  await Promise.all([
-    tournamentStore.fetchTournaments(),
-    stylesStore.fetchStyles(),
-    roundsStore.fetchRounds(tournamentId.value, { forcePublic: true }),
-    drawsStore.fetchDraws(tournamentId.value, undefined, { forcePublic: true }),
-    teamsStore.fetchTeams(tournamentId.value),
-    adjudicatorsStore.fetchAdjudicators(tournamentId.value),
-    speakersStore.fetchSpeakers(tournamentId.value),
-    venuesStore.fetchVenues(tournamentId.value),
-  ])
+  if (!tournamentId.value) {
+    hasLoaded.value = true
+    return
+  }
+  try {
+    await Promise.all([
+      tournamentStore.fetchTournaments(),
+      stylesStore.fetchStyles(),
+      roundsStore.fetchRounds(tournamentId.value, { forcePublic: true }),
+      drawsStore.fetchDraws(tournamentId.value, undefined, { forcePublic: true }),
+      teamsStore.fetchTeams(tournamentId.value),
+      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
+      speakersStore.fetchSpeakers(tournamentId.value),
+      venuesStore.fetchVenues(tournamentId.value),
+    ])
+  } finally {
+    hasLoaded.value = true
+  }
 }
 
 function audienceTeamQueryStorageKey() {
@@ -1330,6 +1350,22 @@ select {
 
 .error {
   color: #ef4444;
+}
+
+.participant-home-content-shell {
+  position: relative;
+  min-height: 120px;
+}
+
+.reload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  pointer-events: none;
 }
 
 .participant-home-header {
