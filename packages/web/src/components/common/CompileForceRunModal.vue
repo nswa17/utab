@@ -33,6 +33,7 @@
           </select>
         </label>
       </section>
+      <p v-if="error" class="error small">{{ error }}</p>
       <div class="row modal-actions">
         <Button variant="ghost" size="sm" @click="close">
           {{ $t('取消') }}
@@ -51,6 +52,7 @@ import type { CompileMissingDataPolicy } from '@/types/compiled'
 
 defineProps<{
   loading?: boolean
+  error?: string | null
 }>()
 
 defineEmits<{
@@ -130,5 +132,9 @@ function close() {
 
 .modal-actions {
   justify-content: flex-end;
+}
+
+.error {
+  color: var(--color-danger);
 }
 </style>

@@ -865,7 +865,7 @@ describe('Server integration', () => {
     })
     expect(secondBallot.status).toBe(409)
     expect(String(secondBallot.body.errors?.[0]?.message ?? '')).toContain(
-      'すでにチーム評価が送信されています。運営に報告してください。'
+      'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
     )
 
     const submissionsRes = await agent.get(

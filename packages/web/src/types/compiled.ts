@@ -84,7 +84,7 @@ export type CompiledPreviewState = {
 export const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
   ranking_priority: {
     preset: 'current',
-    order: [...compileRankingMetrics],
+    order: ['win', 'sum', 'margin'],
   },
   winner_policy: 'winner_id_then_score',
   tie_points: 0.5,
@@ -106,12 +106,21 @@ export function normalizeCompileOptions(
   input?: CompileOptionsInput,
   fallback: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): CompileOptions {
-  const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order)
+  const rankingPreset = input?.ranking_priority?.preset ?? fallback.ranking_priority.preset
+  const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order).filter(
+    (metric): metric is CompileRankingMetric => compileRankingMetrics.includes(metric as CompileRankingMetric)
+  )
+  const resolvedRankingOrder =
+    rankingPreset === 'current'
+      ? [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order]
+      : rankingOrder.length > 0
+        ? rankingOrder
+        : [...fallback.ranking_priority.order]
   const includeLabels = dedupe(input?.include_labels ?? fallback.include_labels)
   return {
     ranking_priority: {
-      preset: input?.ranking_priority?.preset ?? fallback.ranking_priority.preset,
-      order: rankingOrder.length > 0 ? rankingOrder : [...fallback.ranking_priority.order],
+      preset: rankingPreset,
+      order: resolvedRankingOrder,
     },
     winner_policy: input?.winner_policy ?? fallback.winner_policy,
     tie_points:

@@ -25,7 +25,6 @@ const tournamentId = computed(() => {
   const value = route.params.tournamentId
   return typeof value === 'string' ? value.trim() : ''
 })
-const participant = computed(() => route.params.participant as string)
 const listPath = computed(() => '/user')
 
 const checking = ref(true)
@@ -64,7 +63,7 @@ onMounted(() => {
   evaluateAccess()
 })
 
-watch([tournamentId, participant], () => {
+watch(tournamentId, () => {
   evaluateAccess()
 })
 </script>

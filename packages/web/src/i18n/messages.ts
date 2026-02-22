@@ -549,6 +549,7 @@ const en = {
   'ラウンド一覧': 'Rounds list',
   'ラウンド名': 'Round name',
   '提出種別': 'Submission type',
+  '提出者タイプ': 'Submitter type',
   '対戦': 'Match',
   '対象ジャッジ': 'Target adjudicator',
   'ロール': 'Role',

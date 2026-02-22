@@ -23,6 +23,7 @@
           :disabled="loading"
         />
       </label>
+      <p v-if="error" class="error small">{{ error }}</p>
       <div class="row modal-actions">
         <Button variant="ghost" size="sm" @click="close">
           {{ $t('取消') }}
@@ -40,6 +41,7 @@ import Button from '@/components/common/Button.vue'
 
 defineProps<{
   loading?: boolean
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -92,6 +94,10 @@ function close() {
 
 .modal-actions {
   justify-content: flex-end;
+}
+
+.error {
+  color: var(--color-danger);
 }
 
 textarea {

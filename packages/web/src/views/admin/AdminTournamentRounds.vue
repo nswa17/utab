@@ -14,7 +14,7 @@
     </div>
 
     <LoadingState v-if="sectionLoading" />
-    <p v-else-if="roundsStore.error" class="error">{{ roundsStore.error }}</p>
+    <p v-else-if="roundsLoadError" class="error">{{ roundsLoadError }}</p>
     <p v-else-if="displayRounds.length === 0" class="muted">
       {{ $t('ラウンドがまだありません。') }}
     </p>
@@ -487,6 +487,7 @@
             })
           }}
         </p>
+        <p v-if="roundDeleteError" class="error small">{{ roundDeleteError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeRoundDeleteModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRound">
@@ -564,6 +565,8 @@ const expandedRounds = ref<Record<string, boolean>>({})
 const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
 const roundDeleteModalId = ref<string | null>(null)
+const roundsLoadError = ref('')
+const roundDeleteError = ref('')
 const sectionLoading = ref(true)
 const isLoading = computed(
   () =>
@@ -1156,6 +1159,7 @@ async function saveRoundBreak(round: any) {
 async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
+  roundsLoadError.value = ''
   try {
     await Promise.all([
       roundsStore.fetchRounds(tournamentId.value),
@@ -1165,6 +1169,7 @@ async function refresh() {
       speakersStore.fetchSpeakers(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
     ])
+    roundsLoadError.value = roundsStore.error ?? ''
   } finally {
     sectionLoading.value = false
   }
@@ -1253,26 +1258,31 @@ async function onAdjudicatorAllocationChange(round: any, event: Event) {
 }
 
 function requestRemoveRound(id: string) {
+  roundDeleteError.value = ''
   roundDeleteModalId.value = id
 }
 
 function closeRoundDeleteModal() {
+  roundDeleteError.value = ''
   roundDeleteModalId.value = null
 }
 
 async function confirmRemoveRound() {
   const id = roundDeleteModalId.value
   if (!id) return
-  closeRoundDeleteModal()
+  roundDeleteError.value = ''
   const deleted = await roundsStore.deleteRound(tournamentId.value, id)
-  if (deleted) {
-    const next = { ...expandedRounds.value }
-    delete next[id]
-    expandedRounds.value = next
-    const nextAdvanced = { ...advancedSettingsExpanded.value }
-    delete nextAdvanced[id]
-    advancedSettingsExpanded.value = nextAdvanced
+  if (!deleted) {
+    roundDeleteError.value = roundsStore.error ?? t('ラウンドの削除に失敗しました。')
+    return
   }
+  closeRoundDeleteModal()
+  const next = { ...expandedRounds.value }
+  delete next[id]
+  expandedRounds.value = next
+  const nextAdvanced = { ...advancedSettingsExpanded.value }
+  delete nextAdvanced[id]
+  advancedSettingsExpanded.value = nextAdvanced
 }
 
 watch(

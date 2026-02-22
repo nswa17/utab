@@ -89,6 +89,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
+import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 import { getSideShortLabel } from '@/utils/side-labels'
 
 const route = useRoute()
@@ -102,10 +103,10 @@ const roundsStore = useRoundsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 const round = computed(() => route.params.round as string)
 
-const { identityId: adjudicatorIdentityId } = useParticipantIdentity(tournamentId, participant)
+const { identityId: adjudicatorIdentityId } = useParticipantIdentity(tournamentId, participantMode)
 
 const teamA = ref('')
 const teamB = ref('')
@@ -166,15 +167,21 @@ function venueName(id?: string) {
 
 function startBallot() {
   if (!canStart.value) return
-  router.push(
-    `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/ballot/entry?teamA=${teamA.value}&teamB=${teamB.value}`
-  )
+  const query = new URLSearchParams({
+    teamA: teamA.value,
+    teamB: teamB.value,
+  })
+  appendParticipantMode(query, participantMode.value)
+  router.push(`/user/${tournamentId.value}/rounds/${round.value}/ballot/entry?${query.toString()}`)
 }
 
 function startBallotWith(teamAId: string, teamBId: string) {
-  router.push(
-    `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/ballot/entry?teamA=${teamAId}&teamB=${teamBId}`
-  )
+  const query = new URLSearchParams({
+    teamA: teamAId,
+    teamB: teamBId,
+  })
+  appendParticipantMode(query, participantMode.value)
+  router.push(`/user/${tournamentId.value}/rounds/${round.value}/ballot/entry?${query.toString()}`)
 }
 
 onMounted(() => {

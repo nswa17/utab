@@ -77,7 +77,11 @@
         <div class="grid ranking-columns">
           <section
             class="stack ranking-column ranking-column--active"
-            @dragover.prevent
+            :class="{
+              'ranking-column--drop-active': rankingDropZone === 'active',
+              'ranking-column--drop-disabled': isRankingDragActive && !canDropToActive,
+            }"
+            @dragover.prevent="onRankingActiveColumnDragOver"
             @drop.prevent="dropRankingMetricToActiveEnd"
           >
             <div class="row ranking-column-head">
@@ -91,16 +95,19 @@
                 'ranking-chip--dragging':
                   draggingRankingMetric?.metric === metric &&
                   draggingRankingMetric?.source === 'active',
+                'ranking-chip--drop-target':
+                  rankingDropZone === 'active' && rankingDropTargetMetric === metric,
               }"
               :draggable="!props.disabled"
               @dragstart="startRankingDrag(metric, 'active', $event)"
-              @dragover.prevent
+              @dragover.prevent.stop="onRankingActiveChipDragOver(metric)"
               @drop.prevent.stop="dropRankingMetricToActive(metric)"
               @dragend="endRankingDrag"
             >
               <span class="ranking-rank">{{ index + 1 }}</span>
               <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
               <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
+              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -114,7 +121,11 @@
           </section>
           <section
             class="stack ranking-column ranking-column--inactive"
-            @dragover.prevent
+            :class="{
+              'ranking-column--drop-active': rankingDropZone === 'inactive',
+              'ranking-column--drop-disabled': isRankingDragActive && !canDropToInactive,
+            }"
+            @dragover.prevent="onRankingInactiveColumnDragOver"
             @drop.prevent="dropRankingMetricToInactive"
           >
             <div class="row ranking-column-head">
@@ -138,6 +149,7 @@
             >
               <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
               <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
+              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
             </div>
           </section>
         </div>
@@ -262,6 +274,14 @@ type RankingDragState = {
   source: 'active' | 'inactive'
 }
 const draggingRankingMetric = ref<RankingDragState | null>(null)
+const rankingDropZone = ref<'active' | 'inactive' | null>(null)
+const rankingDropTargetMetric = ref<CompileRankingMetric | null>(null)
+
+const isRankingDragActive = computed(() => draggingRankingMetric.value !== null)
+const canDropToActive = computed(() => isRankingDragActive.value && !props.disabled)
+const canDropToInactive = computed(
+  () => isRankingDragActive.value && draggingRankingMetric.value?.source === 'active' && !props.disabled
+)
 
 const activeRankingMetrics = computed(() => normalizeRankingOrder(rankingOrder.value))
 const inactiveRankingMetrics = computed(() =>
@@ -308,6 +328,8 @@ function startRankingDrag(
 ) {
   if (props.disabled) return
   draggingRankingMetric.value = { metric, source }
+  rankingDropZone.value = null
+  rankingDropTargetMetric.value = null
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.dropEffect = 'move'
@@ -317,6 +339,26 @@ function startRankingDrag(
 
 function endRankingDrag() {
   draggingRankingMetric.value = null
+  rankingDropZone.value = null
+  rankingDropTargetMetric.value = null
+}
+
+function onRankingActiveColumnDragOver() {
+  if (!canDropToActive.value) return
+  rankingDropZone.value = 'active'
+  rankingDropTargetMetric.value = null
+}
+
+function onRankingActiveChipDragOver(metric: CompileRankingMetric) {
+  if (!canDropToActive.value) return
+  rankingDropZone.value = 'active'
+  rankingDropTargetMetric.value = metric
+}
+
+function onRankingInactiveColumnDragOver() {
+  if (!canDropToInactive.value) return
+  rankingDropZone.value = 'inactive'
+  rankingDropTargetMetric.value = null
 }
 
 function dropRankingMetricToActive(targetMetric: CompileRankingMetric) {
@@ -393,14 +435,26 @@ function dropRankingMetricToInactive() {
 
 function rankingMetricLabel(metric: CompileRankingMetric) {
   const labels: Record<CompileRankingMetric, string> = {
-    win: t('勝利数'),
-    sum: t('合計'),
-    margin: t('マージン'),
-    vote: t('票'),
-    average: t('平均'),
-    sd: t('標準偏差'),
+    win: t('勝敗ポイント'),
+    sum: t('総得点'),
+    margin: t('得失点差'),
+    vote: t('ジャッジ支持数'),
+    average: t('平均得点'),
+    sd: t('得点の安定性'),
   }
   return labels[metric]
+}
+
+function rankingMetricDescription(metric: CompileRankingMetric) {
+  const descriptions: Record<CompileRankingMetric, string> = {
+    win: t('勝ち=1点、引き分けは設定ポイント'),
+    sum: t('得点の合計値'),
+    margin: t('得点−失点の差分合計'),
+    vote: t('勝者に選ばれた票数'),
+    average: t('1試合あたりの平均点'),
+    sd: t('得点のばらつき（小さいほど安定）'),
+  }
+  return descriptions[metric]
 }
 
 function isSourceRoundSelected(roundNumber: number) {
@@ -499,6 +553,14 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 .ranking-column {
   gap: var(--space-1);
   min-height: 48px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  background: var(--color-surface-soft);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .ranking-column-head {
@@ -533,6 +595,30 @@ function toggleSourceRound(roundNumber: number, event: Event) {
   opacity: 0.6;
 }
 
+.ranking-chip--drop-target {
+  border-color: #1d4ed8;
+  background: #e0ecff;
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.25);
+}
+
+.ranking-column--drop-active {
+  border-color: #1d4ed8;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(59, 130, 246, 0.12) 0 8px,
+      rgba(59, 130, 246, 0.22) 8px 16px
+    ),
+    #e0ecff;
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
+}
+
+.ranking-column--drop-disabled {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  opacity: 0.92;
+}
+
 .compile-ranking-field :deep(.ranking-exclude) {
   min-height: 28px;
   padding: 0 8px;
@@ -559,8 +645,16 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 }
 
 .ranking-chip-label {
+  flex: 0 0 auto;
+  min-width: fit-content;
+}
+
+.ranking-chip-help {
   flex: 1;
   min-width: 0;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 </style>

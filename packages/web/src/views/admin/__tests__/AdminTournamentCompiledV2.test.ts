@@ -64,6 +64,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('カテゴリ別順位一覧')
     expect(source).toContain('rankingLabels')
     expect(source).toContain('CSVダウンロード（コメントシートのみ）')
+    expect(source).toContain("v-if=\"activeLabel === 'adjudicators'\"")
     expect(source).toContain('参加者CSVダウンロード')
     expect(source).not.toContain('コメントシートCSV')
     expect(source).not.toContain("{{ $t('参加者CSV') }}")

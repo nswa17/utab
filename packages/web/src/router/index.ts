@@ -196,11 +196,10 @@ export function createAppRouter(options: RouterOptions = {}): Router {
           { path: 'home', component: routeComponent(UserTournamentHome) },
           { path: 'results', component: routeComponent(UserTournamentResults) },
           {
-            path: ':participant(audience|speaker|adjudicator)',
+            path: '',
             component: routeComponent(UserParticipantLayout),
             children: [
-              { path: '', redirect: 'home' },
-              { path: 'home', component: routeComponent(UserParticipantHome) },
+              { path: 'dashboard', component: routeComponent(UserParticipantHome) },
               {
                 path: 'rounds/:round',
                 component: routeComponent(UserParticipantRoundLayout),
@@ -210,7 +209,9 @@ export function createAppRouter(options: RouterOptions = {}): Router {
                   {
                     path: 'draw',
                     redirect: (to: any) => ({
-                      path: `/user/${String(to.params.tournamentId ?? '')}/${String(to.params.participant ?? '')}/home`,
+                      path: `/user/${String(to.params.tournamentId ?? '')}/rounds/${String(
+                        to.params.round ?? ''
+                      )}/home`,
                       query: to.query,
                     }),
                   },

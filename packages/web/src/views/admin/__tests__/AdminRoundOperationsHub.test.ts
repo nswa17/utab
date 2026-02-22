@@ -69,6 +69,16 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('task: nextTask')
   })
 
+  it('isolates preview payload by current round input and clears unsaved preview on round switch', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('shouldUseCompilePreviewPayload')
+    expect(source).toContain('compileWorkflow.hasPreview')
+    expect(source).toContain('!compileWorkflow.previewStale')
+    expect(source).toContain('if (nextRound !== previousRound)')
+    expect(source).toContain('compileWorkflow.clearPreview()')
+    expect(source).toContain('compiledStore.clearPreview()')
+  })
+
   it('adds strict submission guards before compile and draw generation', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
     expect(source).toContain('shouldBlockSubmissionCompile')

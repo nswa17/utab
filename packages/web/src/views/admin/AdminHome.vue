@@ -21,7 +21,7 @@
           {{ $t('大会を非公開') }}
         </label>
         <Button type="submit" :loading="tournament.loading">{{ $t('作成') }}</Button>
-        <p v-if="tournament.error" class="error">{{ tournament.error }}</p>
+        <p v-if="createError" class="error">{{ createError }}</p>
       </form>
     </div>
     <div class="card stack">
@@ -35,7 +35,7 @@
         />
       </Field>
       <LoadingState v-if="tournament.loading || styles.loading" />
-      <p v-else-if="tournament.error" class="error">{{ tournament.error }}</p>
+      <p v-else-if="tournamentsLoadError" class="error">{{ tournamentsLoadError }}</p>
       <template v-else>
         <p v-if="downloadError" class="error">{{ downloadError }}</p>
         <EmptyState
@@ -94,6 +94,7 @@
         <h4>{{ $t('削除') }}</h4>
         <p class="muted">{{ $t('大会を削除しますか？関連データも削除されます。') }}</p>
         <p class="muted small">{{ deleteModalTournament.name }}</p>
+        <p v-if="deleteModalError" class="error small">{{ deleteModalError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeDeleteModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="tournament.loading" @click="confirmDeleteTournament">
@@ -124,6 +125,9 @@ const auth = useAuthStore()
 const { t } = useI18n({ useScope: 'global' })
 const downloadError = ref<string | null>(null)
 const downloadLoadingMap = ref<Record<string, boolean>>({})
+const createError = ref<string | null>(null)
+const tournamentsLoadError = ref<string | null>(null)
+const deleteModalError = ref<string | null>(null)
 
 const visibleTournaments = computed(() => {
   if (auth.role === 'superuser') return tournament.tournaments
@@ -176,6 +180,7 @@ onMounted(() => {
 
 async function handleCreate() {
   if (!form.name) return
+  createError.value = null
   const created = await tournament.createTournament({
     name: form.name,
     style: form.style,
@@ -184,6 +189,10 @@ async function handleCreate() {
       hidden: form.hidden,
     },
   })
+  if (!created) {
+    createError.value = tournament.error ?? t('大会の作成に失敗しました。')
+    return
+  }
   if (created) {
     form.name = ''
     form.style = styles.styles[0]?.id ?? 1
@@ -209,7 +218,9 @@ function formatDate(raw?: string) {
 }
 
 async function refresh() {
+  tournamentsLoadError.value = null
   await Promise.all([tournament.fetchTournaments(), styles.fetchStyles()])
+  tournamentsLoadError.value = tournament.error
   if (!form.style && styles.styles.length > 0) {
     form.style = styles.styles[0].id
   }
@@ -300,18 +311,25 @@ async function downloadTournamentBundle(tournamentId: string, tournamentName: st
 }
 
 function remove(id: string) {
+  deleteModalError.value = null
   deleteModalTournamentId.value = id
 }
 
 function closeDeleteModal() {
+  deleteModalError.value = null
   deleteModalTournamentId.value = ''
 }
 
 async function confirmDeleteTournament() {
   if (!deleteModalTournament.value) return
   const id = deleteModalTournament.value._id
+  deleteModalError.value = null
+  const deleted = await tournament.deleteTournament(id)
+  if (!deleted) {
+    deleteModalError.value = tournament.error ?? t('大会の削除に失敗しました。')
+    return
+  }
   closeDeleteModal()
-  await tournament.deleteTournament(id)
 }
 </script>
 

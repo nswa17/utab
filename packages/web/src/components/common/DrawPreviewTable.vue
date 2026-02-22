@@ -75,9 +75,7 @@
                 @click="setSort('judgeSubmission')"
               />
             </th>
-            <th v-if="showDetailColumn" class="draw-col-detail">
-              {{ $t('詳細') }}
-            </th>
+            <th v-if="showDetailColumn" class="draw-col-detail"></th>
           </tr>
         </thead>
         <tbody>
@@ -146,7 +144,7 @@
                   :disabled="!hasSubmissionDetail(row)"
                   @click="toggleRowDetail(row.key)"
                 >
-                  {{ isExpandedRow(row.key) ? $t('隠す') : $t('表示') }}
+                  {{ isExpandedRow(row.key) ? $t('隠す') : $t('詳細') }}
                 </button>
               </td>
             </tr>

@@ -1040,6 +1040,7 @@
             })
           }}
         </p>
+        <p v-if="setupRoundDeleteError" class="error small">{{ setupRoundDeleteError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeSetupRoundDeleteModal">
             {{ $t('キャンセル') }}
@@ -1332,6 +1333,7 @@
       <div class="modal card stack" role="dialog" aria-modal="true">
         <h4>{{ $t('削除') }}</h4>
         <p class="muted">{{ deleteEntityPrompt }}</p>
+        <p v-if="deleteEntityModalError" class="error small">{{ deleteEntityModalError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
@@ -1609,6 +1611,7 @@ const institutionLimit = ref(20)
 const editingEntity = ref<{ type: string; id: string } | null>(null)
 type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institution'
 const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
+const deleteEntityModalError = ref('')
 const entityForm = reactive<any>({
   name: '',
   strength: 5,
@@ -1640,6 +1643,7 @@ const deleteEntityPrompt = computed(() => {
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
 const setupRoundDeleteId = ref<string | null>(null)
+const setupRoundDeleteError = ref('')
 const setupRoundDeleteTarget = computed(() => {
   const id = String(setupRoundDeleteId.value ?? '').trim()
   if (!id) return null
@@ -2271,19 +2275,26 @@ async function createRoundFromSetup() {
 
 function requestRemoveRoundFromSetup(roundId: string) {
   if (!roundId) return
+  setupRoundDeleteError.value = ''
   setupRoundDeleteId.value = roundId
 }
 
 function closeSetupRoundDeleteModal() {
+  setupRoundDeleteError.value = ''
   setupRoundDeleteId.value = null
 }
 
 async function confirmRemoveRoundFromSetup() {
   const roundId = String(setupRoundDeleteId.value ?? '').trim()
   if (!roundId) return
-  closeSetupRoundDeleteModal()
+  setupRoundDeleteError.value = ''
   const deleted = await rounds.deleteRound(tournamentId.value, roundId)
-  if (!deleted) return
+  if (!deleted) {
+    setupRoundDeleteError.value = rounds.error ?? t('ラウンドの削除に失敗しました。')
+    rounds.error = null
+    return
+  }
+  closeSetupRoundDeleteModal()
   const next = { ...setupRoundDetailsOpen.value }
   delete next[roundId]
   setupRoundDetailsOpen.value = next
@@ -2688,34 +2699,66 @@ async function handleEntityImportFile(event: Event) {
 
 function openDeleteEntityModal(type: DeleteEntityType, id: string) {
   if (!id) return
+  deleteEntityModalError.value = ''
   deleteEntityModal.value = { type, id }
 }
 
 function closeDeleteEntityModal() {
+  deleteEntityModalError.value = ''
   deleteEntityModal.value = null
 }
 
 async function confirmDeleteEntity() {
   const modal = deleteEntityModal.value
   if (!modal) return
-  closeDeleteEntityModal()
+  deleteEntityModalError.value = ''
   if (modal.type === 'team') {
-    await teams.deleteTeam(tournamentId.value, modal.id)
+    const deleted = await teams.deleteTeam(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = teams.error ?? t('チームの削除に失敗しました。')
+      teams.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'adjudicator') {
-    await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    const deleted = await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = adjudicators.error ?? t('ジャッジの削除に失敗しました。')
+      adjudicators.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'venue') {
-    await venues.deleteVenue(tournamentId.value, modal.id)
+    const deleted = await venues.deleteVenue(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = venues.error ?? t('会場の削除に失敗しました。')
+      venues.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'speaker') {
-    await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    const deleted = await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = speakers.error ?? t('スピーカーの削除に失敗しました。')
+      speakers.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
-  await institutions.deleteInstitution(tournamentId.value, modal.id)
+  const deleted = await institutions.deleteInstitution(tournamentId.value, modal.id)
+  if (!deleted) {
+    deleteEntityModalError.value = institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
+    institutions.error = null
+    return
+  }
+  closeDeleteEntityModal()
 }
 
 function removeTeam(id: string) {

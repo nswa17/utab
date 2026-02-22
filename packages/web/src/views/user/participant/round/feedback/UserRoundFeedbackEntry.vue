@@ -64,7 +64,6 @@
           {{ $t('送信') }}
         </Button>
         <p v-if="submitError" class="error">{{ submitError }}</p>
-        <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
         <p v-if="!identityReady" class="muted">{{ identityHint }}</p>
         <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
       </div>
@@ -136,6 +135,7 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import { defaultAdjudicatorRange, normalizeSingleRange } from '@/utils/score'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
+import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 
 const route = useRoute()
 const router = useRouter()
@@ -149,25 +149,29 @@ const speakersStore = useSpeakersStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 const round = computed(() => route.params.round as string)
 const adjudicatorId = computed(() => route.params.adjudicatorId as string)
-const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
-const { identityId: speakerIdentityId } = useParticipantIdentity(tournamentId, participant, 'speaker')
+const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participantMode)
+const { identityId: speakerIdentityId } = useParticipantIdentity(
+  tournamentId,
+  participantMode,
+  'speaker'
+)
 const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
   tournamentId,
-  participant,
+  participantMode,
   'team-feedback-team'
 )
 const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
   tournamentId,
-  participant,
+  participantMode,
   'team-feedback-speaker'
 )
 const filter = computed(() => (typeof route.query.filter === 'string' ? route.query.filter : ''))
 const actorMode = computed<'team' | 'adjudicator'>(() => {
   if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
-  if (participant.value === 'speaker') return 'team'
+  if (participantMode.value === 'speaker') return 'team'
   return 'adjudicator'
 })
 
@@ -175,14 +179,12 @@ const homePath = computed(() => {
   const query = new URLSearchParams()
   if (filter.value) query.set('filter', filter.value)
   query.set('actor', actorMode.value)
+  appendParticipantMode(query, participantMode.value)
   const suffix = query.toString()
-  return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/feedback/home${
+  return `/user/${tournamentId.value}/rounds/${round.value}/feedback/home${
     suffix ? `?${suffix}` : ''
   }`
 })
-const drawPath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/home`
-)
 const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
 
 const score = ref(8)
@@ -210,7 +212,7 @@ const adjudicatorFeedbackEnabled = computed(
   () => roundConfig.value?.userDefinedData?.evaluate_from_adjudicators !== false
 )
 const actorOptions = computed<Array<{ value: 'adjudicator' | 'team'; label: string }>>(() => {
-  if (participant.value !== 'adjudicator') return []
+  if (participantMode.value !== 'adjudicator') return []
   const options: Array<{ value: 'adjudicator' | 'team'; label: string }> = []
   if (adjudicatorFeedbackEnabled.value) {
     options.push({ value: 'adjudicator', label: t('ジャッジとして提出') })
@@ -246,10 +248,10 @@ const maxScore = computed(() =>
   useMatterManner.value ? range.value.to * 2 : range.value.to
 )
 const submittedEntityId = computed(() => {
-  if (participant.value === 'speaker') {
+  if (participantMode.value === 'speaker') {
     return evaluatorMode.value === 'speaker' ? speakerIdentityId.value : teamIdentityId.value
   }
-  if (participant.value === 'adjudicator') {
+  if (participantMode.value === 'adjudicator') {
     if (actorMode.value === 'team') {
       return evaluatorMode.value === 'speaker'
         ? judgeFeedbackSpeakerIdentityId.value
@@ -260,10 +262,10 @@ const submittedEntityId = computed(() => {
   return ''
 })
 const selectedIdentityType = computed<'adjudicator' | 'team' | 'speaker' | 'unknown'>(() => {
-  if (participant.value === 'speaker') {
+  if (participantMode.value === 'speaker') {
     return evaluatorMode.value === 'speaker' ? 'speaker' : 'team'
   }
-  if (participant.value === 'adjudicator') {
+  if (participantMode.value === 'adjudicator') {
     if (actorMode.value === 'team') {
       return evaluatorMode.value === 'speaker' ? 'speaker' : 'team'
     }
@@ -292,12 +294,12 @@ const selectedIdentityName = computed(() => {
   return selectedId
 })
 const identityReady = computed(() => {
-  if (participant.value === 'speaker') {
+  if (participantMode.value === 'speaker') {
     return evaluatorMode.value === 'speaker'
       ? Boolean(teamIdentityId.value) && Boolean(speakerIdentityId.value)
       : Boolean(teamIdentityId.value)
   }
-  if (participant.value === 'adjudicator') {
+  if (participantMode.value === 'adjudicator') {
     if (actorMode.value === 'team') {
       return evaluatorMode.value === 'speaker'
         ? Boolean(judgeFeedbackTeamIdentityId.value) && Boolean(judgeFeedbackSpeakerIdentityId.value)
@@ -308,12 +310,12 @@ const identityReady = computed(() => {
   return true
 })
 const identityHint = computed(() => {
-  if (participant.value === 'speaker') {
+  if (participantMode.value === 'speaker') {
     return evaluatorMode.value === 'speaker'
       ? t('参加者ホームでチームとスピーカーを選択してください。')
       : t('参加者ホームでチームを選択してください。')
   }
-  if (participant.value === 'adjudicator') {
+  if (participantMode.value === 'adjudicator') {
     if (actorMode.value === 'team') {
       return evaluatorMode.value === 'speaker'
         ? t('参加者ホームでチームとスピーカーを選択してください。')
@@ -336,7 +338,7 @@ const confirmButtonLabel = computed(() =>
 )
 
 function setActorMode(mode: 'adjudicator' | 'team') {
-  const nextQuery = { ...route.query, actor: mode }
+  const nextQuery = { ...route.query, actor: mode, mode: participantMode.value }
   router.replace({ query: nextQuery })
 }
 
@@ -383,6 +385,7 @@ function validateBeforeSubmit() {
 
 function requestSubmit() {
   saved.value = false
+  submissions.clearError()
   if (!validateBeforeSubmit()) return
   confirmOpen.value = true
   startCountdown(3)
@@ -391,6 +394,7 @@ function requestSubmit() {
 function closeConfirm() {
   confirmOpen.value = false
   clearCountdown()
+  submissions.clearError()
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -415,7 +419,6 @@ async function submitConfirmed() {
     adjudicatorId: adjudicatorId.value,
     score: computedScore.value,
     comment: comment.value,
-    role: participant.value,
     submittedEntityId: submittedEntityId.value || undefined,
     matter: useMatterManner.value ? matter.value : undefined,
     manner: useMatterManner.value ? manner.value : undefined,
@@ -429,7 +432,7 @@ async function submitConfirmed() {
 
 function goToDraw() {
   successOpen.value = false
-  router.push(drawPath.value)
+  router.push(homePath.value)
 }
 
 function goToTournamentHome() {
@@ -463,9 +466,9 @@ watch(range, (next) => {
 }, { immediate: true })
 
 watch(
-  [participant, actorOptions],
+  [participantMode, actorOptions],
   () => {
-    if (participant.value !== 'adjudicator') return
+    if (participantMode.value !== 'adjudicator') return
     if (actorOptions.value.length === 0) return
     const current = actorMode.value
     if (actorOptions.value.some((option) => option.value === current)) return
@@ -477,6 +480,7 @@ watch(
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   clearCountdown()
+  submissions.clearError()
 })
 </script>
 

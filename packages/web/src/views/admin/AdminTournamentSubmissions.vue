@@ -1260,6 +1260,7 @@ const splitSortStates = reactive<
 })
 const DRAW_WINNER_OPTION_VALUE = '__draw__'
 const sectionLoading = ref(true)
+const submissionsLoadError = ref<string | null>(null)
 const expandedIds = ref<Set<string>>(new Set())
 const editingSubmissionId = ref<string | null>(null)
 const editingRound = ref(1)
@@ -1284,7 +1285,6 @@ const editingFeedbackScore = ref('')
 const editingFeedbackMatter = ref('')
 const editingFeedbackManner = ref('')
 const editingFeedbackComment = ref('')
-const editingFeedbackRole = ref('')
 type SubmissionAction = 'save' | 'delete'
 type SubmissionActionConfirm = {
   action: SubmissionAction
@@ -1313,7 +1313,7 @@ const isLoading = computed(
 )
 const loadError = computed(
   () =>
-    submissions.error ||
+    submissionsLoadError.value ||
     draws.error ||
     teams.error ||
     speakers.error ||
@@ -2179,7 +2179,6 @@ function resetFeedbackEditor() {
   editingFeedbackMatter.value = ''
   editingFeedbackManner.value = ''
   editingFeedbackComment.value = ''
-  editingFeedbackRole.value = ''
 }
 
 function parseWinnerPolicyToken(
@@ -2363,7 +2362,6 @@ function hydrateFeedbackEditor(payload: Record<string, unknown>) {
   const mannerValue = Number(payload.manner)
   editingFeedbackManner.value = Number.isFinite(mannerValue) ? String(mannerValue) : ''
   editingFeedbackComment.value = typeof payload.comment === 'string' ? payload.comment : ''
-  editingFeedbackRole.value = typeof payload.role === 'string' ? payload.role : ''
 }
 
 function parseOptionalNumber(value: string, label: string): NumberParseResult | { ok: true; value: undefined } {
@@ -2413,10 +2411,6 @@ function buildFeedbackPayloadFromForm() {
   const submittedEntityId = editingFeedbackSubmittedEntityId.value.trim()
   if (submittedEntityId) payload.submittedEntityId = submittedEntityId
   else delete payload.submittedEntityId
-
-  const role = editingFeedbackRole.value.trim()
-  if (role) payload.role = role
-  else delete payload.role
 
   return payload
 }
@@ -2709,6 +2703,7 @@ async function deleteCurrentSubmission(item: Submission) {
 async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
+  submissionsLoadError.value = null
   try {
     await Promise.all([
       submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
@@ -2720,6 +2715,7 @@ async function refresh() {
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
     ])
+    submissionsLoadError.value = submissions.error ?? null
   } finally {
     sectionLoading.value = false
   }

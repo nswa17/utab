@@ -585,6 +585,7 @@ const roundTaskSelection = ref<Record<number, HubTask>>({})
 const sectionLoading = ref(true)
 const hasLoaded = ref(false)
 const actionError = ref('')
+const submissionsLoadError = ref('')
 const compileMessage = ref('')
 const publishMessage = ref('')
 const compileManualSaveEnabled = true
@@ -648,7 +649,7 @@ const loadError = computed(
     actionError.value ||
     roundsStore.error ||
     drawsStore.error ||
-    submissionsStore.error ||
+    submissionsLoadError.value ||
     teamsStore.error ||
     adjudicatorsStore.error ||
     speakersStore.error ||
@@ -710,6 +711,13 @@ const canSavePreview = computed(() => compileManualSaveEnabled && compileWorkflo
 const manualCompileInputKey = computed(() =>
   buildCompileInputKey(manualCompileSource.value, manualCompileOptionOverrides.value)
 )
+const shouldUseCompilePreviewPayload = computed(
+  () =>
+    compileManualSaveEnabled &&
+    Boolean(compiledStore.previewState?.preview) &&
+    compileWorkflow.hasPreview &&
+    !compileWorkflow.previewStale
+)
 type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
@@ -731,7 +739,7 @@ function normalizeCompiledDoc(doc: any): Record<string, any> | null {
   return normalized
 }
 const compileDisplayPayload = computed<Record<string, any> | null>(() => {
-  if (compileManualSaveEnabled && compiledStore.previewState?.preview) {
+  if (shouldUseCompilePreviewPayload.value) {
     return compiledStore.previewState.preview
   }
   return compiledStore.compiled
@@ -1783,19 +1791,18 @@ function buildSubmissionWinDisplay(
 
   const hasExpected = expectedCount > 0
   const denominator = hasExpected ? expectedCount : Math.max(calculatedWinCount, ballots.length)
+  const zeroPairLabel = '0-0'
   const scorePairLabel =
     calculatedScoreCount > 0
       ? `${formatSubmissionSumValue(govScoreTotal)}-${formatSubmissionSumValue(oppScoreTotal)}`
-      : t('未算出')
-  const scorePairWithUnitLabel = calculatedScoreCount > 0 ? `${scorePairLabel} pts` : t('未算出')
-  const scoreLabel =
-    calculatedScoreCount > 0 ? scorePairLabel : t('未算出')
+      : zeroPairLabel
+  const scorePairWithUnitLabel = calculatedScoreCount > 0 ? `${scorePairLabel} pts` : scorePairLabel
+  const scoreLabel = scorePairLabel
   const scoreTotal = calculatedScoreCount > 0 ? govScoreTotal + oppScoreTotal : -1
   const scoreGap = calculatedScoreCount > 0 ? Math.abs(govScoreTotal - oppScoreTotal) : 0
 
   if (calculatedWinCount === 0) {
-    const winLabel =
-      calculatedScoreCount > 0 ? `${t('未算出')} (${scorePairWithUnitLabel})` : t('未算出')
+    const winLabel = `0-0(${scorePairLabel})`
     return {
       winLabel,
       winTotal: -1,
@@ -1991,6 +1998,7 @@ async function refresh() {
   }
   sectionLoading.value = true
   actionError.value = ''
+  submissionsLoadError.value = ''
   try {
     await Promise.all([
       roundsStore.fetchRounds(tournamentId.value),
@@ -2003,6 +2011,7 @@ async function refresh() {
       compiledStore.fetchLatest(tournamentId.value),
       refreshCompiledHistory(),
     ])
+    submissionsLoadError.value = submissionsStore.error ?? ''
     const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
     if (!selectedBaselineId) {
       applyDefaultCompileDiffBaseline()
@@ -2416,7 +2425,11 @@ watch(
 
 watch(
   selectedRound,
-  () => {
+  (nextRound, previousRound) => {
+    if (nextRound !== previousRound) {
+      compileWorkflow.clearPreview()
+      compiledStore.clearPreview()
+    }
     manualCompileSource.value = 'submissions'
     manualCompileOptionOverrides.value = undefined
     applyCompileDraftFromRound()

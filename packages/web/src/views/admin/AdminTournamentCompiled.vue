@@ -3,7 +3,7 @@
     <div class="report-content-shell">
       <LoadingState v-if="!hasLoaded && isLoading" />
       <div v-else class="report-body">
-        <p v-if="compiledStore.error" class="error">{{ compiledStore.error }}</p>
+        <p v-if="loadError" class="error">{{ loadError }}</p>
 
         <div v-else class="stack">
           <section class="card stack report-setup-card">
@@ -96,7 +96,7 @@
           <div class="row compile-actions">
             <Button
               variant="secondary"
-              @click="compileManualSaveEnabled ? runPreviewWithSource('submissions') : runCompile()"
+              @click="compileManualSaveEnabled ? runDefaultPreview() : runCompile()"
               :disabled="isLoading || !canRunCompile"
             >
               {{ compileManualSaveEnabled ? $t('仮集計') : $t('レポート生成') }}
@@ -119,6 +119,7 @@
               {{ $t('詳細設定') }}
             </Button>
           </div>
+          <p v-if="compileActionError" class="error small">{{ compileActionError }}</p>
           <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
             {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
           </p>
@@ -249,7 +250,7 @@
                 {{ $t('CSVダウンロード') }}
               </Button>
             </div>
-            <div class="row section-download-row">
+            <div v-if="activeLabel === 'adjudicators'" class="row section-download-row">
               <Button
                 variant="secondary"
                 class="section-download-button"
@@ -789,6 +790,7 @@
         <p class="small">
           <strong>{{ deleteTargetSnapshotLabel }}</strong>
         </p>
+        <p v-if="deleteCompiledError" class="error small">{{ deleteCompiledError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeDeleteCompiledModal">
             {{ $t('取消') }}
@@ -804,6 +806,7 @@
       v-model:open="forceCompileModalOpen"
       v-model:missing-data-policy="forceCompileMissingDataPolicy"
       :loading="isLoading"
+      :error="forceCompileError"
       @confirm="confirmForcedCompile"
     />
     <CompileSaveSnapshotModal
@@ -811,6 +814,7 @@
       v-model:snapshot-name="compileWorkflow.snapshotNameDraft"
       v-model:snapshot-memo="compileWorkflow.snapshotMemoDraft"
       :loading="isLoading"
+      :error="saveSnapshotError"
       @confirm="saveCompiledSnapshot"
       @cancel="onSaveSnapshotModalCancel"
     />
@@ -939,6 +943,24 @@ const isLoading = computed(
     submissions.loading
 )
 const hasLoaded = ref(false)
+const compiledLoadError = ref('')
+const compileActionError = ref('')
+const forceCompileError = ref('')
+const saveSnapshotError = ref('')
+const deleteCompiledError = ref('')
+const loadError = computed(
+  () =>
+    compiledLoadError.value ||
+    tournamentStore.error ||
+    teams.error ||
+    adjudicators.error ||
+    rounds.error ||
+    speakers.error ||
+    institutions.error ||
+    draws.error ||
+    submissions.error ||
+    ''
+)
 const maxRankingRewarded = computed({
   get: () => currentSlideSettings.value?.maxRankingRewarded ?? 3,
   set: (value: number) => {
@@ -1282,12 +1304,14 @@ function showExistingReport(compiledId: string) {
 }
 
 function openDeleteCompiledModal(row: ReportSnapshotRow) {
+  deleteCompiledError.value = ''
   deleteTargetCompiledId.value = String(row.compiledId).trim()
   deleteTargetSnapshotLabel.value = String(row.snapshotLabel).trim()
   emitReportMetric('cta_click', { cta: 'open_delete_snapshot_confirm' })
 }
 
 function closeDeleteCompiledModal() {
+  deleteCompiledError.value = ''
   deleteTargetCompiledId.value = ''
   deleteTargetSnapshotLabel.value = ''
 }
@@ -2717,7 +2741,7 @@ function downloadCommentSheetCsv() {
     winner: t('勝者'),
     adjudicator: t('対象ジャッジ'),
     score: t('スコア'),
-    role: t('ロール'),
+    role: t('提出者タイプ'),
     comment: t('コメント'),
     created_at: t('作成日時'),
     updated_at: t('更新日時'),
@@ -2861,6 +2885,7 @@ async function refresh() {
     hasLoaded.value = true
     return
   }
+  compiledLoadError.value = ''
   try {
     await Promise.all([
       compiledStore.fetchLatest(tournamentId.value),
@@ -2873,6 +2898,7 @@ async function refresh() {
       draws.fetchDraws(tournamentId.value),
       submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
     ])
+    compiledLoadError.value = compiledStore.error ?? ''
     if (!compileDefaultsHydrated.value) {
       applyCompileDefaultsFromTournament()
       compileDefaultsHydrated.value = true
@@ -2895,6 +2921,7 @@ async function refresh() {
 }
 
 function closeForceCompileModal() {
+  forceCompileError.value = ''
   forceCompileModalOpen.value = false
 }
 
@@ -2903,9 +2930,9 @@ async function executeCompile(
   optionOverrides?: {
     missing_data_policy?: CompileOptions['missing_data_policy']
   }
-) {
-  if (!tournamentId.value) return
-  if (!canRunCompile.value) return
+): Promise<boolean> {
+  if (!tournamentId.value) return false
+  if (!canRunCompile.value) return false
   const roundsPayload = [...compileTargetRoundNumbers.value]
   const compiledResult = await compiledStore.runCompile(tournamentId.value, {
     source,
@@ -2916,9 +2943,8 @@ async function executeCompile(
   manualCompileOptionOverrides.value = optionOverrides
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
-  if (compiledResult) {
-    compileExecuted.value = true
-  }
+  if (!compiledResult) return false
+  compileExecuted.value = true
   await Promise.all([
     teams.fetchTeams(tournamentId.value),
     adjudicators.fetchAdjudicators(tournamentId.value),
@@ -2934,6 +2960,7 @@ async function executeCompile(
     selectedCompiledId.value = latestCompiledId
   }
   applyDefaultDiffBaselineSelection(latestCompiledId)
+  return true
 }
 
 async function runPreviewWithSource(
@@ -2941,9 +2968,9 @@ async function runPreviewWithSource(
   optionOverrides?: {
     missing_data_policy?: CompileOptions['missing_data_policy']
   }
-) {
-  if (!compileManualSaveEnabled) return
-  if (!tournamentId.value || !canRunCompile.value) return
+): Promise<boolean> {
+  if (!compileManualSaveEnabled) return false
+  if (!tournamentId.value || !canRunCompile.value) return false
   const roundsPayload = [...compileTargetRoundNumbers.value]
   manualCompileSource.value = source
   manualCompileOptionOverrides.value = optionOverrides
@@ -2955,7 +2982,7 @@ async function runPreviewWithSource(
     options: buildCompileOptions(optionOverrides),
   })
   const previewState = compiledStore.previewState
-  if (!preview || !previewState) return
+  if (!preview || !previewState) return false
   compileWorkflow.applyPreview(
     {
       previewSignature: previewState.previewSignature,
@@ -2966,16 +2993,30 @@ async function runPreviewWithSource(
   )
   compileExecuted.value = true
   trackCompileMetric('preview_run', source)
+  return true
+}
+
+async function runDefaultPreview() {
+  compileActionError.value = ''
+  const success = await runPreviewWithSource('submissions')
+  if (!success) {
+    compileActionError.value = compiledStore.error ?? t('仮集計に失敗しました。')
+  }
 }
 
 async function runCompile() {
   if (!tournamentId.value || !canRunCompile.value) return
   emitReportMetric('cta_click', { cta: 'run_compile' })
-  await executeCompile('submissions')
+  compileActionError.value = ''
+  const success = await executeCompile('submissions')
+  if (!success) {
+    compileActionError.value = compiledStore.error ?? t('レポート生成に失敗しました。')
+  }
 }
 
 function openForceCompileModal(action: 'compile' | 'preview' | 'save' = 'compile') {
   if (!tournamentId.value || !canRunCompile.value || isLoading.value) return
+  forceCompileError.value = ''
   forceCompileAction.value = action
   forceCompileMissingDataPolicy.value = compileMissingDataPolicy.value
   forceCompileModalOpen.value = true
@@ -2984,6 +3025,7 @@ function openForceCompileModal(action: 'compile' | 'preview' | 'save' = 'compile
 
 function openSaveSnapshotModal(rawConfirmed = false) {
   if (!compileManualSaveEnabled) return
+  saveSnapshotError.value = ''
   if (!compileWorkflow.canSave) {
     const source = manualCompileSource.value
     const reason = compileWorkflow.previewStale ? 'stale' : 'preview_required'
@@ -3000,6 +3042,7 @@ function openSaveSnapshotModal(rawConfirmed = false) {
 
 function onSaveSnapshotModalCancel() {
   if (!compileManualSaveEnabled) return
+  saveSnapshotError.value = ''
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
   trackCompileMetric('save_cancelled', source)
 }
@@ -3007,6 +3050,7 @@ function onSaveSnapshotModalCancel() {
 async function saveCompiledSnapshot() {
   if (!compileManualSaveEnabled) return
   if (!tournamentId.value || !canRunCompile.value) return
+  saveSnapshotError.value = ''
   if (!compileWorkflow.canSave) {
     openSaveSnapshotModal()
     return
@@ -3024,6 +3068,7 @@ async function saveCompiledSnapshot() {
     revision: compileWorkflow.previewRevision,
   })
   if (!saved) {
+    saveSnapshotError.value = compiledStore.error ?? t('集計結果の保存に失敗しました。')
     const isPreviewStale = (compiledStore.error ?? '').toLowerCase().includes('preview is stale')
     if (isPreviewStale) {
       trackCompileMetric('save_blocked_stale', source, 'server_stale')
@@ -3052,6 +3097,7 @@ async function saveCompiledSnapshot() {
 
 async function confirmForcedCompile() {
   emitReportMetric('cta_click', { cta: 'confirm_raw_compile' })
+  forceCompileError.value = ''
   const action = forceCompileAction.value
   if (compileManualSaveEnabled && action === 'save') {
     closeForceCompileModal()
@@ -3059,16 +3105,24 @@ async function confirmForcedCompile() {
     return
   }
   if (compileManualSaveEnabled && action === 'preview') {
-    closeForceCompileModal()
-    await runPreviewWithSource('raw', {
+    const previewed = await runPreviewWithSource('raw', {
       missing_data_policy: forceCompileMissingDataPolicy.value,
     })
+    if (!previewed) {
+      forceCompileError.value = compiledStore.error ?? t('強制集計に失敗しました。')
+      return
+    }
+    closeForceCompileModal()
+    return
+  }
+  const compiled = await executeCompile('raw', {
+    missing_data_policy: forceCompileMissingDataPolicy.value,
+  })
+  if (!compiled) {
+    forceCompileError.value = compiledStore.error ?? t('強制集計に失敗しました。')
     return
   }
   closeForceCompileModal()
-  await executeCompile('raw', {
-    missing_data_policy: forceCompileMissingDataPolicy.value,
-  })
 }
 
 async function refreshCompiledHistory() {
@@ -3085,8 +3139,12 @@ async function confirmDeleteCompiled() {
   const targetId = String(deleteTargetCompiledId.value).trim()
   if (!targetId || !tournamentId.value) return
   const deletedWasSelected = targetId === selectedCompiledId.value
+  deleteCompiledError.value = ''
   const deleted = await compiledStore.deleteCompiled(tournamentId.value, targetId)
-  if (!deleted) return
+  if (!deleted) {
+    deleteCompiledError.value = compiledStore.error ?? t('集計結果の削除に失敗しました。')
+    return
+  }
   emitReportMetric('cta_click', { cta: 'confirm_delete_snapshot' })
   closeDeleteCompiledModal()
   await refreshCompiledHistory()

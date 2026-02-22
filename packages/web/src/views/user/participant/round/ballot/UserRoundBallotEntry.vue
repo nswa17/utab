@@ -195,7 +195,6 @@
       <p v-if="!scoreInputReady" class="muted">{{
         $t('採点設定を読み込み中です。通信状況を確認して再度お試しください。')
       }}</p>
-      <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
       <p v-if="prefillNotice" class="muted">{{ prefillNotice }}</p>
         <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
       </div>
@@ -263,6 +262,7 @@ import { useStylesStore } from '@/stores/styles'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
+import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import { getSideShortLabel } from '@/utils/side-labels'
@@ -285,17 +285,17 @@ const adjudicatorsStore = useAdjudicatorsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 const round = computed(() => route.params.round as string)
 
-const homePath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/ballot/home`
-)
-const drawPath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/home`
-)
+const homePath = computed(() => {
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/rounds/${round.value}/ballot/home${suffix ? `?${suffix}` : ''}`
+})
 const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
-const { identityId } = useParticipantIdentity(tournamentId, participant)
+const { identityId } = useParticipantIdentity(tournamentId, participantMode)
 
 const teamAId = ref('')
 const teamBId = ref('')
@@ -926,6 +926,7 @@ function validateBeforeSubmit() {
 
 function requestSubmit() {
   saved.value = false
+  submissions.clearError()
   if (!validateBeforeSubmit()) return
   confirmOpen.value = true
   startCountdown(3)
@@ -934,6 +935,7 @@ function requestSubmit() {
 function closeConfirm() {
   confirmOpen.value = false
   clearCountdown()
+  submissions.clearError()
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -965,7 +967,6 @@ async function submitConfirmed() {
     scoresA: noSpeakerScore.value ? [] : effectiveScoresA.value,
     scoresB: noSpeakerScore.value ? [] : effectiveScoresB.value,
     comment: comment.value,
-    role: participant.value,
     matterA: useMatterManner.value ? matterA.value : undefined,
     mannerA: useMatterManner.value ? mannerA.value : undefined,
     matterB: useMatterManner.value ? matterB.value : undefined,
@@ -984,7 +985,7 @@ async function submitConfirmed() {
 
 function goToDraw() {
   successOpen.value = false
-  router.push(drawPath.value)
+  router.push(homePath.value)
 }
 
 function goToTournamentHome() {
@@ -1057,6 +1058,7 @@ watch(tournamentId, () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   clearCountdown()
+  submissions.clearError()
 })
 </script>
 
