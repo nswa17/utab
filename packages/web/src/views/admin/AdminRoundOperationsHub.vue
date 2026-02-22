@@ -137,10 +137,28 @@
                             "
                           />
                         </label>
+                        <label
+                          v-if="canShowPriorRoundsHideSwitch"
+                          class="row publish-switch-inline publish-switch-inline-compact"
+                        >
+                          <span class="publish-switch-label">
+                            {{ $t('このラウンドより前を一括非公開') }}
+                          </span>
+                          <ToggleSwitch
+                            class="publish-switch-toggle"
+                            :model-value="priorRoundsFullyHidden"
+                            :disabled="publicationSwitchBusy || priorRoundsFullyHidden"
+                            :aria-label="$t('このラウンドより前を一括非公開')"
+                            @update:model-value="onPriorRoundsHideToggle"
+                          />
+                        </label>
                       </template>
                     </RoundMotionEditor>
                   </section>
                 </div>
+                <p v-if="canShowPriorRoundsHideSwitch" class="muted small">
+                  {{ $t('このラウンドより前のモーション・チーム割り当て・ジャッジ割り当てを同時に非公開にします。') }}
+                </p>
                 <section class="stack publish-preview-section">
                   <div class="row preview-head">
                     <h4>{{ $t('対戦表プレビュー') }}</h4>
@@ -664,6 +682,20 @@ const selectedRoundData = computed(
 const selectedDraw = computed(
   () => drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
+const priorRounds = computed(() => {
+  if (selectedRound.value === null) return []
+  return sortedRounds.value.filter((round) => round.round < selectedRound.value!)
+})
+const priorRoundNumberSet = computed(() => new Set(priorRounds.value.map((round) => round.round)))
+const priorRoundDrawMap = computed(() => {
+  const map = new Map<number, any>()
+  drawsStore.draws.forEach((draw) => {
+    if (!priorRoundNumberSet.value.has(draw.round)) return
+    map.set(draw.round, draw)
+  })
+  return map
+})
+const canShowPriorRoundsHideSwitch = computed(() => priorRounds.value.length > 0)
 const motionOpenedValue = computed(() => Boolean(selectedRoundData.value?.motionOpened))
 const selectedMotion = computed(() => {
   const motions = Array.isArray(selectedRoundData.value?.motions)
@@ -674,6 +706,19 @@ const selectedMotion = computed(() => {
 const drawOpenedValue = computed(() => Boolean(selectedDraw.value?.drawOpened))
 const allocationOpenedValue = computed(() => Boolean(selectedDraw.value?.allocationOpened))
 const lockedValue = computed(() => Boolean(selectedDraw.value?.locked))
+const priorRoundsFullyHidden = computed(() => {
+  if (priorRounds.value.length === 0) return false
+  return priorRounds.value.every((round) => {
+    const draw = priorRoundDrawMap.value.get(round.round)
+    return (
+      !Boolean(round.motionOpened) &&
+      !Boolean(round.teamAllocationOpened) &&
+      !Boolean(round.adjudicatorAllocationOpened) &&
+      !Boolean(draw?.drawOpened) &&
+      !Boolean(draw?.allocationOpened)
+    )
+  })
+})
 const selectedRoundHasDraw = computed(() =>
   Boolean(
     selectedDraw.value &&
@@ -740,7 +785,7 @@ function normalizeCompiledDoc(doc: any): Record<string, any> | null {
 }
 const compileDisplayPayload = computed<Record<string, any> | null>(() => {
   if (shouldUseCompilePreviewPayload.value) {
-    return compiledStore.previewState.preview
+    return compiledStore.previewState?.preview ?? compiledStore.compiled
   }
   return compiledStore.compiled
 })
@@ -2348,6 +2393,60 @@ async function onPublishToggle(key: 'drawOpened' | 'allocationOpened', checked: 
 async function onMotionPublishToggle(checked: boolean) {
   if (motionOpenedValue.value === checked) return
   await saveRoundPublication({ motionOpened: checked })
+}
+
+async function onPriorRoundsHideToggle(checked: boolean) {
+  if (!checked) return
+  if (priorRoundsFullyHidden.value) return
+  if (!tournamentId.value || priorRounds.value.length === 0) return
+  const targetRounds = priorRounds.value.map((round) => ({
+    roundNumber: round.round,
+    roundId: String(round._id),
+  }))
+  publishMessage.value = ''
+  actionError.value = ''
+  publicationSaving.value = true
+  try {
+    for (const target of targetRounds) {
+      const updatedRound = await roundsStore.updateRound({
+        tournamentId: tournamentId.value,
+        roundId: target.roundId,
+        motionOpened: false,
+        teamAllocationOpened: false,
+        adjudicatorAllocationOpened: false,
+      })
+      if (!updatedRound) {
+        actionError.value = roundsStore.error ?? t('公開設定の保存に失敗しました。')
+        return
+      }
+    }
+
+    for (const target of targetRounds) {
+      const previousDraw = priorRoundDrawMap.value.get(target.roundNumber)
+      if (!previousDraw) continue
+      const updatedDraw = await drawsStore.upsertDraw({
+        tournamentId: tournamentId.value,
+        round: target.roundNumber,
+        allocation: previousDraw.allocation,
+        userDefinedData: previousDraw.userDefinedData,
+        drawOpened: false,
+        allocationOpened: false,
+        locked: previousDraw.locked ?? false,
+      })
+      if (!updatedDraw) {
+        actionError.value = drawsStore.error ?? t('公開設定の保存に失敗しました。')
+        return
+      }
+    }
+
+    publishMessage.value = t('前ラウンドを一括非公開にしました。')
+    await Promise.all([
+      roundsStore.fetchRounds(tournamentId.value),
+      drawsStore.fetchDraws(tournamentId.value),
+    ])
+  } finally {
+    publicationSaving.value = false
+  }
 }
 
 watch(

@@ -50,6 +50,7 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('setupRoundEditForm.userDefinedData')
     expect(source).toContain('setup-round-motion-panel')
     expect(source).toContain('onSetupMotionOpenedChange')
+    expect(source).not.toContain('このラウンドより前を一括非公開')
     expect(source).not.toContain('<iframe')
     expect(source).not.toContain('ラウンド詳細設定へ')
     expect(source).not.toContain('対戦表設定')

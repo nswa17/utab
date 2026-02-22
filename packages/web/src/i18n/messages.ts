@@ -300,6 +300,9 @@ const en = {
   '次ラウンド対戦生成': 'Next-round pairing',
   '公開設定': 'Publication settings',
   'ラウンド公開設定': 'Round publication settings',
+  'このラウンドより前を一括非公開': 'Hide all earlier rounds',
+  'このラウンドより前のモーション・チーム割り当て・ジャッジ割り当てを同時に非公開にします。':
+    'Hide motion, team allocations, and adjudicator allocations for all earlier rounds at once.',
   'レポートを開く': 'Open reports',
   '対戦表設定を開く': 'Open draw settings',
   '生結果を開く': 'Open raw results',
@@ -369,6 +372,7 @@ const en = {
   '集計が完了しました。': 'Compilation completed.',
   '対戦を生成しました。': 'Draw generated.',
   '公開状態を更新しました。': 'Publication status updated.',
+  '前ラウンドを一括非公開にしました。': 'Earlier rounds hidden.',
   '集計に失敗しました。': 'Compilation failed.',
   '集計結果がありません。先に集計を実行してください。':
     'No compile result is available. Run compilation first.',
