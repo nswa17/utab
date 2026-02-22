@@ -1026,6 +1026,266 @@ describe('Server integration', () => {
     expect('locked' in forcedPublic.body.data[0]).toBe(false)
   })
 
+  it('fills setup data deficits up to requested targets without deleting existing rows', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-setup-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-setup-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Setup Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const fillRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-setup`)
+      .send({
+        targetTeams: 3,
+        targetAdjudicators: 2,
+        targetVenues: 2,
+        speakersPerTeam: 2,
+      })
+    expect(fillRes.status).toBe(200)
+    expect(fillRes.body.data.after.teams).toBeGreaterThanOrEqual(3)
+    expect(fillRes.body.data.after.adjudicators).toBeGreaterThanOrEqual(2)
+    expect(fillRes.body.data.after.venues).toBeGreaterThanOrEqual(2)
+    expect(fillRes.body.data.after.speakers).toBeGreaterThanOrEqual(6)
+    expect(fillRes.body.data.after.institutions).toBeGreaterThanOrEqual(1)
+    expect(fillRes.body.data.after.rounds).toBeGreaterThanOrEqual(1)
+
+    const teamsRes = await organizer.get(`/api/teams?tournamentId=${tournamentId}`)
+    const adjudicatorsRes = await organizer.get(`/api/adjudicators?tournamentId=${tournamentId}`)
+    const venuesRes = await organizer.get(`/api/venues?tournamentId=${tournamentId}`)
+    const speakersRes = await organizer.get(`/api/speakers?tournamentId=${tournamentId}`)
+    expect(teamsRes.status).toBe(200)
+    expect(adjudicatorsRes.status).toBe(200)
+    expect(venuesRes.status).toBe(200)
+    expect(speakersRes.status).toBe(200)
+    expect(teamsRes.body.data.length).toBeGreaterThanOrEqual(3)
+    expect(adjudicatorsRes.body.data.length).toBeGreaterThanOrEqual(2)
+    expect(venuesRes.body.data.length).toBeGreaterThanOrEqual(2)
+    expect(speakersRes.body.data.length).toBeGreaterThanOrEqual(6)
+
+    const lowerTargetRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-setup`)
+      .send({
+        targetTeams: 1,
+        targetAdjudicators: 1,
+        targetVenues: 1,
+        speakersPerTeam: 1,
+      })
+    expect(lowerTargetRes.status).toBe(200)
+    expect(lowerTargetRes.body.data.created.teams).toBe(0)
+    expect(lowerTargetRes.body.data.created.adjudicators).toBe(0)
+    expect(lowerTargetRes.body.data.created.venues).toBe(0)
+    expect(lowerTargetRes.body.data.after.teams).toBe(fillRes.body.data.after.teams)
+    expect(lowerTargetRes.body.data.after.adjudicators).toBe(fillRes.body.data.after.adjudicators)
+    expect(lowerTargetRes.body.data.after.venues).toBe(fillRes.body.data.after.venues)
+  })
+
+  it('fills only missing round submissions and converges to idempotent state', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-round-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-round-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'DevTools Round Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: true,
+        evaluator_in_team: 'team',
+        chairs_always_evaluated: false,
+        no_speaker_score: false,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamRows: string[] = []
+    for (const name of ['Team A', 'Team B', 'Team C', 'Team D']) {
+      const teamRes = await organizer.post('/api/teams').send({ tournamentId, name })
+      expect(teamRes.status).toBe(201)
+      teamRows.push(String(teamRes.body.data._id))
+    }
+
+    const adjudicatorRows: string[] = []
+    for (const name of ['Judge A', 'Judge B', 'Judge C', 'Judge D']) {
+      const adjudicatorRes = await organizer
+        .post('/api/adjudicators')
+        .send({ tournamentId, name, strength: 5 })
+      expect(adjudicatorRes.status).toBe(201)
+      adjudicatorRows.push(String(adjudicatorRes.body.data._id))
+    }
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: 'Room A',
+          teams: { gov: teamRows[0], opp: teamRows[1] },
+          chairs: [adjudicatorRows[0]],
+          panels: [adjudicatorRows[1]],
+          trainees: [],
+        },
+        {
+          venue: 'Room B',
+          teams: { gov: teamRows[2], opp: teamRows[3] },
+          chairs: [adjudicatorRows[2]],
+          panels: [adjudicatorRows[3]],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const firstBallot = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamRows[0],
+      teamBId: teamRows[1],
+      winnerId: teamRows[0],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: adjudicatorRows[0],
+    })
+    expect(firstBallot.status).toBe(201)
+
+    const firstFeedback = await organizer.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: adjudicatorRows[0],
+      score: 8,
+      submittedEntityId: teamRows[0],
+    })
+    expect(firstFeedback.status).toBe(201)
+
+    const fillRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1 })
+    expect(fillRes.status).toBe(200)
+    expect(fillRes.body.data.expected.ballot).toBe(4)
+    expect(fillRes.body.data.expected.feedback).toBe(12)
+    expect(fillRes.body.data.before.ballot).toBe(1)
+    expect(fillRes.body.data.before.feedback).toBe(1)
+    expect(fillRes.body.data.created.ballot).toBe(3)
+    expect(fillRes.body.data.created.feedback).toBe(11)
+    expect(fillRes.body.data.after.ballot).toBe(4)
+    expect(fillRes.body.data.after.feedback).toBe(12)
+
+    const secondFillRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1 })
+    expect(secondFillRes.status).toBe(200)
+    expect(secondFillRes.body.data.created.ballot).toBe(0)
+    expect(secondFillRes.body.data.created.feedback).toBe(0)
+    expect(secondFillRes.body.data.after.ballot).toBe(4)
+    expect(secondFillRes.body.data.after.feedback).toBe(12)
+
+    const ballotRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+    )
+    const feedbackRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=feedback&round=1`
+    )
+    expect(ballotRows.status).toBe(200)
+    expect(feedbackRows.status).toBe(200)
+    expect(ballotRows.body.data.length).toBe(4)
+    expect(feedbackRows.body.data.length).toBe(12)
+  })
+
+  it('returns bad request when round submission fill runs without draw allocation', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-missing-draw', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-missing-draw', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Missing Draw Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const fillRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1 })
+    expect(fillRes.status).toBe(400)
+  })
+
+  it('requires tournament admin membership for dev-tools endpoints', async () => {
+    const owner = request.agent(app)
+    const ownerRegister = await owner
+      .post('/api/auth/register')
+      .send({ username: 'devtools-owner', password: 'password123', role: 'organizer' })
+    expect(ownerRegister.status).toBe(201)
+    const ownerLogin = await owner
+      .post('/api/auth/login')
+      .send({ username: 'devtools-owner', password: 'password123' })
+    expect(ownerLogin.status).toBe(200)
+
+    const tournamentRes = await owner
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Access Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const outsider = request.agent(app)
+    const outsiderRegister = await outsider
+      .post('/api/auth/register')
+      .send({ username: 'devtools-outsider', password: 'password123', role: 'organizer' })
+    expect(outsiderRegister.status).toBe(201)
+    const outsiderLogin = await outsider
+      .post('/api/auth/login')
+      .send({ username: 'devtools-outsider', password: 'password123' })
+    expect(outsiderLogin.status).toBe(200)
+
+    const forbiddenSetup = await outsider
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-setup`)
+      .send({
+        targetTeams: 1,
+        targetAdjudicators: 1,
+        targetVenues: 1,
+        speakersPerTeam: 2,
+      })
+    expect(forbiddenSetup.status).toBe(403)
+  })
+
   it('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
     const statuses: number[] = []
     const agent = request.agent(app)
