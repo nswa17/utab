@@ -73,12 +73,14 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('task: nextTask')
   })
 
-  it('isolates preview payload by current round input and clears unsaved preview on round switch', () => {
+  it('isolates preview payload by current round input and clears unsaved preview on round/task switch', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
     expect(source).toContain('shouldUseCompilePreviewPayload')
     expect(source).toContain('compileWorkflow.hasPreview')
     expect(source).toContain('!compileWorkflow.previewStale')
+    expect(source).toContain("previousTask === 'compile' && nextTask !== 'compile'")
     expect(source).toContain('if (nextRound !== previousRound)')
+    expect(source).toContain('clearUnsavedCompilePreview()')
     expect(source).toContain('compileWorkflow.clearPreview()')
     expect(source).toContain('compiledStore.clearPreview()')
   })

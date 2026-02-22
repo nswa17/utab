@@ -142,7 +142,7 @@ function render() {
       height: chartHeight,
     },
     title: {
-      text: t('スコア範囲'),
+      text: t('チームスコア範囲'),
       align: 'center',
       style: { fontSize: '1.2rem', fontWeight: '700' as const },
     },

@@ -2430,6 +2430,13 @@ async function onPriorRoundsHideToggle(checked: boolean) {
   }
 }
 
+function clearUnsavedCompilePreview() {
+  if (!compileManualSaveEnabled) return
+  if (!compileWorkflow.hasPreview) return
+  compileWorkflow.clearPreview()
+  compiledStore.clearPreview()
+}
+
 watch(
   manualCompileInputKey,
   (nextKey) => {
@@ -2437,6 +2444,16 @@ watch(
     compileWorkflow.setCurrentInputKey(nextKey)
   },
   { immediate: true }
+)
+
+watch(
+  activeTask,
+  (nextTask, previousTask) => {
+    if (nextTask === previousTask) return
+    if (previousTask === 'compile' && nextTask !== 'compile') {
+      clearUnsavedCompilePreview()
+    }
+  }
 )
 
 watch(
@@ -2507,8 +2524,7 @@ watch(
   selectedRound,
   (nextRound, previousRound) => {
     if (nextRound !== previousRound) {
-      compileWorkflow.clearPreview()
-      compiledStore.clearPreview()
+      clearUnsavedCompilePreview()
     }
     manualCompileSource.value = 'submissions'
     manualCompileOptionOverrides.value = undefined

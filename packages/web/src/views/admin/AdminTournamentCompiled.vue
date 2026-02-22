@@ -10,9 +10,6 @@
             <div class="row report-setup-head">
               <h4>{{ $t('既存レポートの選択') }}</h4>
               <div class="row report-setup-actions">
-                <span v-if="isDisplayedRawSource" class="raw-source-badge">{{
-                  $t('例外モード')
-                }}</span>
                 <ReloadButton
                   class="report-reload"
                   variant="secondary"
@@ -28,18 +25,23 @@
             <tr>
               <th>{{ $t('作成日時') }}</th>
               <th>{{ $t('集計結果名') }}</th>
-              <th>{{ $t('勝敗判定') }}</th>
+              <th>{{ $t('考慮ラウンド') }}</th>
               <th>{{ $t('順位優先度設定') }}</th>
-              <th>{{ $t('操作') }}</th>
+              <th class="report-snapshot-actions-col"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in reportSnapshotRows" :key="row.compiledId">
               <td>{{ row.createdAtLabel }}</td>
-              <td>{{ row.snapshotLabel }}</td>
-              <td>{{ row.winnerPolicyLabel }}</td>
-              <td>{{ row.rankingPriorityLabel }}</td>
               <td>
+                <div class="row snapshot-label-cell">
+                  <span>{{ row.snapshotLabel }}</span>
+                  <span v-if="row.isRawSource" class="raw-source-badge">{{ $t('強制実行') }}</span>
+                </div>
+              </td>
+              <td>{{ row.roundsLabel }}</td>
+              <td>{{ row.rankingPriorityLabel }}</td>
+              <td class="report-snapshot-actions-col">
                 <div class="row report-snapshot-actions">
                   <Button
                     variant="secondary"
@@ -47,7 +49,7 @@
                     :disabled="row.isSelected || isLoading"
                     @click="showExistingReport(row.compiledId)"
                   >
-                    {{ row.isSelected ? $t('表示中') : $t('表示') }}
+                    {{ $t('表示') }}
                   </Button>
                   <Button
                     variant="danger"
@@ -176,7 +178,7 @@
                 :options="diffBaselineCompiledOptions"
               />
               <span v-else class="muted small">{{ $t('基準なし') }}</span>
-              <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
+              <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('強制実行') }}</span>
             </div>
           </div>
           <div v-if="showCategoryTabs" class="row ranking-category-toolbar">
@@ -215,7 +217,7 @@
             <span class="diff-legend-item">
               <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
             </span>
-            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('例外モード') }}</span>
+            <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('強制実行') }}</span>
           </div>
           <div v-if="activeResults.length === 0" class="muted">
             {{ $t('このカテゴリの順位データがありません。') }}
@@ -556,12 +558,12 @@
               />
               <EmptyState
                 v-else-if="!isSpeakerScoreEnabledRound(round.round)"
-                :title="$t('スコアヒストグラム')"
+                :title="$t('チームスコア分布')"
                 :message="$t('このラウンドはスピーカースコアを入力しません。')"
               />
               <EmptyState
                 v-else
-                :title="$t('スコアヒストグラム')"
+                :title="$t('チームスコア分布')"
                 :message="$t('集計を実行すると分析を表示できます。')"
               />
             </div>
@@ -1095,7 +1097,8 @@ type ReportSnapshotRow = {
   compiledId: string
   createdAtLabel: string
   snapshotLabel: string
-  winnerPolicyLabel: string
+  isRawSource: boolean
+  roundsLabel: string
   rankingPriorityLabel: string
   isSelected: boolean
 }
@@ -1245,22 +1248,36 @@ function summarizeRounds(rounds: number[]): string {
   return `R${normalized[0]}-R${normalized[normalized.length - 1]} (${normalized.length}${t('ラウンド')})`
 }
 
+function summarizeRoundNames(rounds: number[]): string {
+  const normalized = Array.from(
+    new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
+  ).sort((left, right) => left - right)
+  if (normalized.length === 0) return t('未選択')
+  return normalized.map((round) => roundName(round)).join(', ')
+}
+
 function summarizeSnapshotLabel(option: BaselineCompiledOption): string {
   const snapshotName = String(option.snapshotName ?? '').trim()
   if (snapshotName.length > 0) return snapshotName
   return summarizeRounds(option.rounds)
 }
 
-function summarizeWinnerPolicy(policy: CompileOptions['winner_policy']): string {
-  if (policy === 'score_only') return t('スコア推定のみ')
-  if (policy === 'draw_on_missing') return t('未指定は引き分け')
-  return t('winnerId優先')
-}
-
 function summarizeRankingPriority(priority: CompileOptions['ranking_priority']): string {
   const defaultOrder = DEFAULT_COMPILE_OPTIONS.ranking_priority.order
   const order = Array.isArray(priority?.order) && priority.order.length > 0 ? priority.order : defaultOrder
-  return order.map((metric) => columnLabel(metric)).join(' → ')
+  return order.map((metric) => rankingPriorityMetricLabel(metric)).join(' → ')
+}
+
+function rankingPriorityMetricLabel(metric: CompileRankingMetric): string {
+  const labels: Record<CompileRankingMetric, string> = {
+    win: t('勝敗ポイント'),
+    sum: t('総得点'),
+    margin: t('得失点差'),
+    vote: t('ジャッジ支持数'),
+    average: t('平均得点'),
+    sd: t('得点の安定性'),
+  }
+  return labels[metric]
 }
 
 const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
@@ -1284,7 +1301,8 @@ const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
     compiledId: option.compiledId,
     createdAtLabel: formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value),
     snapshotLabel: summarizeSnapshotLabel(option),
-    winnerPolicyLabel: summarizeWinnerPolicy(option.compileOptions.winner_policy),
+    isRawSource: option.compileSource === 'raw',
+    roundsLabel: summarizeRoundNames(option.rounds),
     rankingPriorityLabel: summarizeRankingPriority(option.compileOptions.ranking_priority),
     isSelected: option.compiledId === selectedCompiledId.value,
   }))
@@ -3361,6 +3379,18 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .report-snapshot-actions {
   gap: var(--space-1);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.report-snapshot-actions-col {
+  text-align: right;
+}
+
+.snapshot-label-cell {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   flex-wrap: wrap;
 }
 

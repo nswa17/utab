@@ -48,7 +48,10 @@ function render() {
   const roundLabel =
     props.roundName ??
     (props.round !== undefined ? t('ラウンド {round}', { round: props.round }) : '')
-  const titleText = props.round !== undefined ? t('スコアヒストグラム（{round}）', { round: roundLabel }) : t('スコアヒストグラム')
+  const titleText =
+    props.round !== undefined
+      ? t('チームスコア分布（{round}）', { round: roundLabel })
+      : t('チームスコア分布')
   const titleStyle = { fontSize: '1.2rem', fontWeight: '700' as const }
 
   const styles = getComputedStyle(document.documentElement)

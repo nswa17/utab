@@ -352,8 +352,8 @@ const en = {
   '強制集計（生結果）': 'Forced compile (raw results)',
   '強制実行では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
     'Force run uses raw-result source. Ranking may become unstable when it differs from submissions or submitter data is incomplete.',
-  '強制集計では生結果ソースを使用します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
-    'Forced compile uses raw-result source. Rankings may become unstable when it differs from submissions or submitter data is incomplete.',
+  '強制集計では生結果ソースを使用します。提出フォームで入力した勝敗は使われません。生結果の点数をもとに順位を再計算します。提出データとの差異や提出者情報不足がある場合、順位が不安定になる可能性があります。':
+    'Forced compile uses raw-result source. Win/loss input from submission forms is not used. Rankings are recalculated from raw-result scores and may become unstable when data differs from submissions or submitter data is incomplete.',
   '未提出・重複提出があると結果が偏る可能性があります。':
     'Missing or duplicate submissions may bias the results.',
   '提出者ID不足のデータは集計漏れ・誤集計の原因になります。':
@@ -437,8 +437,11 @@ const en = {
   'スコアシート未提出はありません。': 'No missing ballots.',
   'スコアシート未提出（ジャッジ）': 'Missing ballots (Adjudicators)',
   'スコア範囲': 'Score range',
+  'チームスコア範囲': 'Team score range',
   'スコア推移': 'Score trend',
+  'チームスコア推移': 'Team score trend',
   'スコアヒストグラム': 'Score histogram',
+  'チームスコア分布': 'Team score distribution',
   '件数': 'Count',
   'エントリー': 'Entry',
   'スコア入力': 'Enter scores',
@@ -1085,6 +1088,12 @@ const en = {
   '勝敗判定・引き分け時ポイント・順位優先度を設定します。':
     'Configure winner policy, draw points, and ranking priority.',
   '順位優先度設定': 'Ranking priority settings',
+  '勝敗ポイント': 'Win points',
+  '総得点': 'Total points',
+  '得失点差': 'Point differential',
+  'ジャッジ支持数': 'Judge votes',
+  '平均得点': 'Average points',
+  '得点の安定性': 'Score stability',
   '使用する基準を左列に並べてください。':
     'Arrange the criteria used for comparison in the left column.',
   '勝敗判定の方法を選択します。スコア整合を必須にするか、勝敗入力を優先するか、勝者未指定を引き分け扱いにするかを選べます。':
@@ -1426,6 +1435,7 @@ const en = {
   'チーム成績（得点）': 'Team performance (points)',
   '得点': 'Points',
   'スコアヒストグラム（{round}）': 'Score histogram ({round})',
+  'チームスコア分布（{round}）': 'Team score distribution ({round})',
   '{value} 点': '{value} pts',
   '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。':
     'Submission timed out. Check your connection and try again.',

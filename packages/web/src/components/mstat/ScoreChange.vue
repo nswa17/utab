@@ -24,6 +24,12 @@ const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
 const { t, locale } = useI18n({ useScope: 'global' })
 const isVisible = ref(false)
+const BASE_PLOT_HEIGHT = 420
+const LEGEND_ITEMS_PER_ROW = 4
+const LEGEND_ROW_HEIGHT = 24
+const LEGEND_VERTICAL_PADDING = 32
+const MIN_CHART_HEIGHT = 640
+const MAX_CHART_HEIGHT = 980
 
 function render() {
   const rounds = buildScoreChangeRounds({
@@ -39,6 +45,14 @@ function render() {
     fallbackRoundName: t('合計'),
     entryName: (result) => String(result?.name ?? result?.id ?? t('エントリー')),
   })
+  const legendRows = Math.max(1, Math.ceil(series.length / LEGEND_ITEMS_PER_ROW))
+  const chartHeight = Math.min(
+    MAX_CHART_HEIGHT,
+    Math.max(
+      MIN_CHART_HEIGHT,
+      BASE_PLOT_HEIGHT + legendRows * LEGEND_ROW_HEIGHT + LEGEND_VERTICAL_PADDING
+    )
+  )
   isVisible.value = safeRounds.length > 1
   if (!isVisible.value) {
     if (container.value) container.value.innerHTML = ''
@@ -46,9 +60,9 @@ function render() {
   }
 
   const options = {
-    chart: { type: 'line', backgroundColor: 'transparent' },
+    chart: { type: 'line', backgroundColor: 'transparent', height: chartHeight },
     title: {
-      text: t('スコア推移'),
+      text: t('チームスコア推移'),
       align: 'center',
       style: { fontSize: '1.2rem', fontWeight: '700' as const },
     },
@@ -84,6 +98,6 @@ watch(
 <style scoped>
 .chart {
   width: 100%;
-  min-height: 280px;
+  min-height: 640px;
 }
 </style>
