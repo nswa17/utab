@@ -60,7 +60,7 @@ const knownHeaderKeys = new Set([
   ...panelHeaderKeys,
   ...traineeHeaderKeys,
 ])
-const importHint = '大会データ管理で先に取り込んでください。'
+const importHint = '大会データ準備で先に取り込んでください。'
 
 function normalizeHeader(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, '_')

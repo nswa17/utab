@@ -34,6 +34,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/utils/api'
 import { useTournamentStore } from '@/stores/tournament'
+import { useRoundsStore } from '@/stores/rounds'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Field from '@/components/common/Field.vue'
 import Button from '@/components/common/Button.vue'
@@ -41,20 +42,36 @@ import Button from '@/components/common/Button.vue'
 const route = useRoute()
 const router = useRouter()
 const tournamentStore = useTournamentStore()
+const roundsStore = useRoundsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => {
   const value = route.params.tournamentId
   return typeof value === 'string' ? value.trim() : ''
 })
-const audienceHomePath = computed(() =>
-  tournamentId.value ? `/user/${tournamentId.value}/audience/home` : '/user'
-)
 const password = ref('')
 const checkingAccess = ref(true)
 const needsPassword = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
+
+async function resolveLandingPath() {
+  if (!tournamentId.value) return '/user'
+
+  await roundsStore.fetchRounds(tournamentId.value, { forcePublic: true })
+  const roundNumbers = roundsStore.rounds
+    .map((item) => Number(item.round))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  const latestRound = roundNumbers.length > 0 ? Math.max(...roundNumbers) : null
+  if (!latestRound) return `/user/${tournamentId.value}/results`
+
+  const query = new URLSearchParams()
+  if (typeof route.query.mode === 'string' && route.query.mode.trim()) {
+    query.set('mode', route.query.mode.trim())
+  }
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/rounds/${latestRound}/home${suffix ? `?${suffix}` : ''}`
+}
 
 async function ensureTournamentAccess() {
   checkingAccess.value = true
@@ -69,7 +86,7 @@ async function ensureTournamentAccess() {
   try {
     await api.get(`/tournaments/${tournamentId.value}`)
     await tournamentStore.fetchTournaments()
-    router.replace(audienceHomePath.value)
+    router.replace(await resolveLandingPath())
   } catch (err: any) {
     const status = err?.response?.status
     if (status === 401) {
@@ -103,7 +120,7 @@ async function enterTournament() {
       password: password.value,
     })
     await tournamentStore.fetchTournaments()
-    router.replace(audienceHomePath.value)
+    router.replace(await resolveLandingPath())
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
   } finally {

@@ -2,8 +2,10 @@ import mongoose from 'mongoose'
 import { env } from './environment.js'
 import { logger } from '../middleware/logging.js'
 import { seedStyles } from '../seed/styles.js'
+import { runStartupDataMaintenance } from '../services/startup-data-maintenance.service.js'
 
 let connection: typeof mongoose | null = null
+let startupMaintenanceApplied = false
 
 // Retry MongoDB connection so the server can start even if the DB container
 // is still booting when we come up under docker-compose.
@@ -31,6 +33,15 @@ export async function connectDatabase(): Promise<typeof mongoose> {
         await seedStyles()
       } catch (err) {
         logger.error({ err }, 'failed to seed styles')
+      }
+      if (!startupMaintenanceApplied) {
+        try {
+          const summary = await runStartupDataMaintenance()
+          startupMaintenanceApplied = true
+          logger.info({ summary }, 'startup data maintenance applied')
+        } catch (err) {
+          logger.error({ err }, 'failed to apply startup data maintenance')
+        }
       }
       return connection
     } catch (err) {

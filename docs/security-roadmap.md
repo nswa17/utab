@@ -294,7 +294,7 @@
 - 統合テストの更新と追加。
 
 **進捗（2026-02-08）**
-- [x] `packages/server/src/scripts/migrate-security-phase8.ts` を追加し、`migrate-security-phase8` コマンドを実装。
+- [x] 起動時データメンテナンスをサービス化し、自動実行へ移行。
 - [x] 旧形式 `auth.access.password` を `passwordHash` に移行し、パスワード未設定大会の `required` を `false` に補正。
 - [x] `User.tournaments` と `Tournament.createdBy` から `TournamentMember` をバックフィル。
 - [x] 統合テストに「Phase 8 移行（アクセス補正・パスワードハッシュ化・メンバーシップ移行・冪等性）」を追加。
@@ -303,4 +303,6 @@
 - /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
 - /Users/neon/Desktop/utab/README.md
 - /Users/neon/Desktop/utab/PLAN.md
-- /Users/neon/Desktop/utab/packages/server/src/scripts/migrate-security-phase8.ts (新規)
+- /Users/neon/Desktop/utab/packages/server/src/services/startup-data-maintenance.service.ts
+- /Users/neon/Desktop/utab/packages/server/src/services/tournament-access-maintenance.service.ts
+- /Users/neon/Desktop/utab/packages/server/src/services/tournament-membership-maintenance.service.ts

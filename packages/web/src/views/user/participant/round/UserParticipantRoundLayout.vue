@@ -13,7 +13,7 @@
       </RouterLink>
     </nav>
     <div v-else class="row task-header">
-      <Button variant="ghost" size="sm" @click="goTaskList">← {{ $t('参加者ホーム') }}</Button>
+      <Button variant="ghost" size="sm" @click="goTaskList">← {{ taskListLabel }}</Button>
       <h3>{{ currentTaskLabel }}</h3>
     </div>
     <RouterView />
@@ -26,6 +26,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRoundsStore } from '@/stores/rounds'
 import Button from '@/components/common/Button.vue'
+import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,35 +34,67 @@ const { t } = useI18n({ useScope: 'global' })
 const roundsStore = useRoundsStore()
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 const round = computed(() => route.params.round as string)
 
-const isAudience = computed(() => participant.value === 'audience')
+const isAudience = computed(() => participantMode.value === 'audience')
+const isEvaluationEntry = computed(() => {
+  if (route.path.includes('/ballot/entry')) return true
+  return /\/feedback\/[^/]+$/.test(route.path)
+})
 const roundConfig = computed(() =>
   roundsStore.rounds.find((item) => item.round === Number(round.value))
 )
+const taskListLabel = computed(() =>
+  isEvaluationEntry.value ? t('大会ホームに戻る') : t('参加者ホーム')
+)
 
 function roundPath(tab: string) {
-  return `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/${tab}`
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const querySuffix = query.toString()
+  if (tab === 'draw') {
+    return `/user/${tournamentId.value}/rounds/${round.value}/home${
+      querySuffix ? `?${querySuffix}` : ''
+    }`
+  }
+  return `/user/${tournamentId.value}/rounds/${round.value}/${tab}${querySuffix ? `?${querySuffix}` : ''}`
 }
 
 function isTabActive(tab: 'draw' | 'ballot' | 'feedback') {
+  if (tab === 'draw') {
+    return (
+      route.path.includes(`/rounds/${round.value}/draw`) ||
+      route.path.includes(`/rounds/${round.value}/home`)
+    )
+  }
   return route.path.includes(`/rounds/${round.value}/${tab}`)
 }
 
 const currentTaskLabel = computed(() => {
   if (route.path.includes('/ballot/')) return t('チーム評価')
   if (route.path.includes('/feedback/')) return t('ジャッジ評価')
+  if (isAudience.value && route.path.includes(`/rounds/${round.value}/home`)) return t('対戦表')
   if (route.path.includes('/draw')) return t('対戦表')
   return t('ラウンド {round}', { round: round.value })
 })
 
 function goBack() {
-  router.push(`/user/${tournamentId.value}/${participant.value}/home`)
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const suffix = query.toString()
+  router.push(`/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`)
 }
 
 function goTaskList() {
-  router.push(`/user/${tournamentId.value}/${participant.value}/home`)
+  if (isEvaluationEntry.value) {
+    router.push(`/user/${tournamentId.value}/home`)
+    return
+  }
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const suffix = query.toString()
+  router.push(`/user/${tournamentId.value}/rounds/${round.value}/home${suffix ? `?${suffix}` : ''}`)
 }
 
 onMounted(() => {

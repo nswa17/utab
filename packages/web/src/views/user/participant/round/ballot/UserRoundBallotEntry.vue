@@ -35,9 +35,6 @@
             <option :value="selectedTeamB?._id">{{ teamBName }}</option>
             <option v-if="allowLowTieWin" :value="DRAW_WINNER_OPTION_VALUE">{{ $t('引き分け') }}</option>
           </select>
-          <span v-if="canSubmitDrawWithoutWinner" class="muted tiny">{{
-            $t('未選択で引き分けとして送信できます。')
-          }}</span>
         </label>
       </div>
 
@@ -191,17 +188,13 @@
         <textarea v-model="comment" rows="4" />
       </label>
 
-      <Button :loading="submissions.loading" :disabled="!scoreInputReady" @click="requestSubmit">
+      <Button :loading="submissions.loading" :disabled="submitButtonDisabled" @click="requestSubmit">
         {{ $t('送信') }}
       </Button>
-      <p v-if="submitError" class="error">{{ submitError }}</p>
+      <p v-if="validationError" class="error">{{ validationError }}</p>
       <p v-if="!scoreInputReady" class="muted">{{
         $t('採点設定を読み込み中です。通信状況を確認して再度お試しください。')
       }}</p>
-      <p v-if="!identityReady" class="muted">{{ $t('参加者ホームでジャッジを選択してください。') }}</p>
-      <p v-if="winnerRequiredWarning" class="error">{{ $t('スコア差がある場合は勝者を選択してください。') }}</p>
-      <p v-if="lowTieWarning" class="error">{{ $t('低勝ち/同点勝ちは許可されていません。') }}</p>
-      <p v-if="submissions.error" class="error">{{ submissions.error }}</p>
       <p v-if="prefillNotice" class="muted">{{ prefillNotice }}</p>
         <p v-if="saved" class="muted">{{ $t('送信しました。') }}</p>
       </div>
@@ -250,7 +243,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTaskList">{{ $t('参加者ホームに戻る') }}</Button>
+          <Button size="sm" @click="goToTournamentHome">{{ $t('大会ホームに戻る') }}</Button>
         </div>
       </div>
     </div>
@@ -269,6 +262,7 @@ import { useStylesStore } from '@/stores/styles'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
+import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import { getSideShortLabel } from '@/utils/side-labels'
@@ -277,7 +271,6 @@ import {
   getRangeForIndex,
   normalizeScoreRanges,
 } from '@/utils/score'
-import { hasDecisiveBallotScores } from '@/utils/ballot'
 import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 
 const route = useRoute()
@@ -292,17 +285,17 @@ const adjudicatorsStore = useAdjudicatorsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 const round = computed(() => route.params.round as string)
 
-const homePath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/ballot/home`
-)
-const drawPath = computed(
-  () => `/user/${tournamentId.value}/${participant.value}/rounds/${round.value}/draw`
-)
-const taskListPath = computed(() => `/user/${tournamentId.value}/${participant.value}/home`)
-const { identityId } = useParticipantIdentity(tournamentId, participant)
+const homePath = computed(() => {
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/rounds/${round.value}/ballot/home${suffix ? `?${suffix}` : ''}`
+})
+const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
+const { identityId } = useParticipantIdentity(tournamentId, participantMode)
 
 const teamAId = ref('')
 const teamBId = ref('')
@@ -311,7 +304,6 @@ const winnerId = ref('')
 const winnerDrawSelected = ref(false)
 const comment = ref('')
 const saved = ref(false)
-const submitError = ref('')
 const prefillNotice = ref('')
 const confirmOpen = ref(false)
 const successOpen = ref(false)
@@ -320,6 +312,35 @@ const prefillLoadedKey = ref('')
 const prefillAppliedMatchKey = ref('')
 let countdownTimer: number | null = null
 let countdownDeadline = 0
+
+function parseWinnerPolicyToken(
+  value: unknown
+): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | '' {
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return ''
+}
+
+function roundAllowsWinnerScoreMismatch(roundUserDefinedData: unknown): boolean {
+  if (!roundUserDefinedData || typeof roundUserDefinedData !== 'object') return true
+  const userDefined = roundUserDefinedData as Record<string, unknown>
+  if (typeof userDefined.allow_score_winner_mismatch === 'boolean') {
+    return userDefined.allow_score_winner_mismatch
+  }
+  const compile =
+    userDefined.compile && typeof userDefined.compile === 'object'
+      ? (userDefined.compile as Record<string, unknown>)
+      : null
+  const compileOptions =
+    compile?.options && typeof compile.options === 'object'
+      ? (compile.options as Record<string, unknown>)
+      : compile
+  const winnerPolicy =
+    parseWinnerPolicyToken(userDefined.winner_policy) ||
+    parseWinnerPolicyToken(compileOptions?.winner_policy)
+  return winnerPolicy !== 'score_only'
+}
 
 const scoresValid = computed(() => {
   if (noSpeakerScore.value) return true
@@ -350,6 +371,9 @@ const speakerSelectionValid = computed(() => {
 const allowLowTieWin = computed(
   () => roundConfig.value?.userDefinedData?.allow_low_tie_win !== false
 )
+const allowWinnerScoreMismatch = computed(() =>
+  roundAllowsWinnerScoreMismatch(roundConfig.value?.userDefinedData)
+)
 const effectiveWinnerId = computed(() => (winnerDrawSelected.value ? '' : winnerId.value))
 const winnerSelectionValue = computed({
   get: () => (winnerDrawSelected.value ? DRAW_WINNER_OPTION_VALUE : winnerId.value),
@@ -369,24 +393,35 @@ const totalScoreA = computed(() =>
 const totalScoreB = computed(() =>
   effectiveScoresB.value.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 )
-const lowTieWarning = computed(() => {
-  if (allowLowTieWin.value) return false
-  if (noSpeakerScore.value) return false
-  if (!effectiveWinnerId.value) return true
-  if (effectiveWinnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
-  if (effectiveWinnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
-  return true
-})
-const decisiveScore = computed(() => {
-  if (noSpeakerScore.value) return false
-  return hasDecisiveBallotScores(effectiveScoresA.value, effectiveScoresB.value)
-})
-const canSubmitDrawWithoutWinner = computed(
-  () => allowLowTieWin.value && !decisiveScore.value
+const winnerSelectionMade = computed(() => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value)
+const hasComparableScores = computed(
+  () => !noSpeakerScore.value && effectiveScoresA.value.length > 0 && effectiveScoresB.value.length > 0
 )
-const winnerRequiredWarning = computed(
-  () => allowLowTieWin.value && decisiveScore.value && !effectiveWinnerId.value
+const tiedScores = computed(() => !hasComparableScores.value || totalScoreA.value === totalScoreB.value)
+const winnerRequiredMessage = computed(() =>
+  allowLowTieWin.value ? t('勝者または引き分けを選択してください。') : t('勝者を選択してください。')
 )
+const winnerDecisionError = computed(() => {
+  if (!winnerSelectionMade.value) return winnerRequiredMessage.value
+
+  if (winnerDrawSelected.value) {
+    if (!allowLowTieWin.value) return t('このラウンドでは引き分けは選択できません。')
+    if (!allowWinnerScoreMismatch.value && !tiedScores.value) {
+      return t('引き分けは同点時のみ選択できます。')
+    }
+    return ''
+  }
+
+  if (!allowWinnerScoreMismatch.value && hasComparableScores.value && !tiedScores.value) {
+    if (effectiveWinnerId.value === teamAId.value && totalScoreA.value < totalScoreB.value) {
+      return t('勝者は点数の大小と一致させてください。')
+    }
+    if (effectiveWinnerId.value === teamBId.value && totalScoreB.value < totalScoreA.value) {
+      return t('勝者は点数の大小と一致させてください。')
+    }
+  }
+  return ''
+})
 const identityReady = computed(() => Boolean(identityId.value))
 const roundConfigReady = computed(() => Boolean(roundConfig.value))
 const scoreInputReady = computed(() => {
@@ -398,12 +433,21 @@ const scoreInputReady = computed(() => {
 const canSubmit = computed(() => {
   if (!scoreInputReady.value) return false
   if (!selectedTeamA.value || !selectedTeamB.value) return false
-  if (!effectiveWinnerId.value && !canSubmitDrawWithoutWinner.value) return false
+  if (winnerDecisionError.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
-  if (!allowLowTieWin.value && lowTieWarning.value) return false
   if (!identityReady.value) return false
   return true
 })
+const validationError = computed(() => {
+  if (!scoreInputReady.value) return ''
+  if (!selectedTeamA.value || !selectedTeamB.value) return t('チーム情報が不足しています。')
+  if (!identityReady.value) return t('参加者ホームでジャッジを選択してください。')
+  if (winnerDecisionError.value) return winnerDecisionError.value
+  if (!scoresValid.value) return t('スコア入力を確認してください。')
+  if (!speakerSelectionValid.value) return t('スピーカー選択を確認してください。')
+  return ''
+})
+const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)
 const winnerName = computed(() => {
   if (effectiveWinnerId.value === teamAId.value) return teamAName.value
   if (effectiveWinnerId.value === teamBId.value) return teamBName.value
@@ -621,6 +665,7 @@ type PrefillBallotPayload = {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   comment?: string
   speakerIdsA?: string[]
   speakerIdsB?: string[]
@@ -648,13 +693,16 @@ function normalizePrefillPayload(
   if (!direct && !reverse) return null
 
   const winnerRaw = String(payload.winnerId ?? '')
-  const winnerId = reverse
-    ? winnerRaw === sourceA
-      ? sourceB
-      : winnerRaw === sourceB
-        ? sourceA
-        : ''
-    : winnerRaw
+  const drawSelected = payload.draw === true || (payload.draw === undefined && !winnerRaw)
+  const winnerId = drawSelected
+    ? ''
+    : reverse
+      ? winnerRaw === sourceA
+        ? sourceB
+        : winnerRaw === sourceB
+          ? sourceA
+          : ''
+      : winnerRaw
 
   const mapSide = <T>(aValue: T, bValue: T): [T, T] =>
     reverse ? [bValue, aValue] : [aValue, bValue]
@@ -688,6 +736,7 @@ function normalizePrefillPayload(
     teamAId: teamAId.value,
     teamBId: teamBId.value,
     winnerId: winnerId || undefined,
+    draw: drawSelected || undefined,
     comment: typeof payload.comment === 'string' ? payload.comment : undefined,
     speakerIdsA: speakerIdsAValue,
     speakerIdsB: speakerIdsBValue,
@@ -705,8 +754,8 @@ function normalizePrefillPayload(
 }
 
 function applyPrefillPayload(payload: PrefillBallotPayload) {
-  winnerDrawSelected.value = false
-  winnerId.value = payload.winnerId ?? ''
+  winnerDrawSelected.value = payload.draw === true
+  winnerId.value = payload.draw === true ? '' : (payload.winnerId ?? '')
   comment.value = payload.comment ?? ''
 
   if (noSpeakerScore.value) {
@@ -820,7 +869,9 @@ function tryApplyPrefill() {
     return
   }
   applyPrefillPayload(normalized)
-  prefillNotice.value = t('前回送信した内容を読み込みました。必要に応じて修正して再送信してください。')
+  prefillNotice.value = t(
+    '前回送信した内容を読み込みました。このラウンドの再送信はできません。修正が必要な場合は運営に報告してください。'
+  )
   prefillAppliedMatchKey.value = key
 }
 
@@ -849,41 +900,25 @@ function clearCountdown(reset = true) {
 }
 
 function validateBeforeSubmit() {
-  submitError.value = ''
   if (!scoreInputReady.value) {
-    submitError.value = t('採点設定を読み込み中です。通信状況を確認して再度お試しください。')
     return false
   }
   if (!selectedTeamA.value || !selectedTeamB.value) {
-    submitError.value = t('チーム情報が不足しています。')
     return false
   }
   if (!identityReady.value) {
-    submitError.value = t('参加者ホームでジャッジを選択してください。')
     return false
   }
-  if (!effectiveWinnerId.value && !allowLowTieWin.value) {
-    submitError.value = t('勝者を選択してください。')
-    return false
-  }
-  if (winnerRequiredWarning.value) {
-    submitError.value = t('スコア差がある場合は勝者を選択してください。')
+  if (winnerDecisionError.value) {
     return false
   }
   if (!scoresValid.value) {
-    submitError.value = t('スコア入力を確認してください。')
     return false
   }
   if (!speakerSelectionValid.value) {
-    submitError.value = t('スピーカー選択を確認してください。')
-    return false
-  }
-  if (!allowLowTieWin.value && lowTieWarning.value) {
-    submitError.value = t('低勝ち/同点勝ちは許可されていません。')
     return false
   }
   if (!canSubmit.value) {
-    submitError.value = t('入力内容を確認してください。')
     return false
   }
   return true
@@ -891,6 +926,7 @@ function validateBeforeSubmit() {
 
 function requestSubmit() {
   saved.value = false
+  submissions.clearError()
   if (!validateBeforeSubmit()) return
   confirmOpen.value = true
   startCountdown(3)
@@ -899,6 +935,7 @@ function requestSubmit() {
 function closeConfirm() {
   confirmOpen.value = false
   clearCountdown()
+  submissions.clearError()
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -923,13 +960,13 @@ async function submitConfirmed() {
     teamAId: teamAId.value,
     teamBId: teamBId.value,
     winnerId: effectiveWinnerId.value || undefined,
+    draw: winnerDrawSelected.value || undefined,
     submittedEntityId: identityId.value || undefined,
     speakerIdsA: noSpeakerScore.value ? undefined : speakerIdsA.value,
     speakerIdsB: noSpeakerScore.value ? undefined : speakerIdsB.value,
     scoresA: noSpeakerScore.value ? [] : effectiveScoresA.value,
     scoresB: noSpeakerScore.value ? [] : effectiveScoresB.value,
     comment: comment.value,
-    role: participant.value,
     matterA: useMatterManner.value ? matterA.value : undefined,
     mannerA: useMatterManner.value ? mannerA.value : undefined,
     matterB: useMatterManner.value ? matterB.value : undefined,
@@ -948,12 +985,12 @@ async function submitConfirmed() {
 
 function goToDraw() {
   successOpen.value = false
-  router.push(drawPath.value)
+  router.push(homePath.value)
 }
 
-function goToTaskList() {
+function goToTournamentHome() {
   successOpen.value = false
-  router.push(taskListPath.value)
+  router.push(tournamentHomePath.value)
 }
 
 watch([selectedTeamA, selectedTeamB, noSpeakerScore, useMatterManner, rolesA, rolesB], () => {
@@ -1021,6 +1058,7 @@ watch(tournamentId, () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   clearCountdown()
+  submissions.clearError()
 })
 </script>
 

@@ -1,3 +1,5 @@
+import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
+
 type PlainRecord = Record<string, unknown>
 
 const COMMON_BLOCKED_KEYS = new Set([
@@ -16,6 +18,8 @@ const RESULT_BLOCKED_KEYS = new Set([
   'compile_options',
   'compile_warnings',
   'compile_diff_meta',
+  'snapshot_name',
+  'snapshot_memo',
 ])
 
 function asRecord(value: unknown): PlainRecord {
@@ -59,6 +63,30 @@ function toStringToken(value: unknown): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   return ''
+}
+
+function parseWinnerPolicyToken(value: unknown): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
+  if (typeof value !== 'string') return undefined
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return undefined
+}
+
+function allowWinnerScoreMismatchForRound(userDefinedData: PlainRecord): boolean {
+  if (typeof userDefinedData.allow_score_winner_mismatch === 'boolean') {
+    return userDefinedData.allow_score_winner_mismatch
+  }
+  const compile = asRecord(userDefinedData.compile)
+  const compileCandidate = hasOwn(compile, 'options') ? asRecord(compile.options) : compile
+  const winnerPolicyToken =
+    parseWinnerPolicyToken(userDefinedData.winner_policy) ??
+    parseWinnerPolicyToken(compileCandidate.winner_policy)
+  const compileOptions = normalizeCompileOptions(
+    winnerPolicyToken ? ({ winner_policy: winnerPolicyToken } as any) : undefined,
+    DEFAULT_COMPILE_OPTIONS
+  )
+  return compileOptions.winner_policy !== 'score_only'
 }
 
 function normalizeDrawTeams(value: unknown): PlainRecord {
@@ -162,6 +190,7 @@ export function sanitizeRoundForPublic(round: unknown): PlainRecord {
       chairs_always_evaluated: userDefinedData.chairs_always_evaluated === true,
       no_speaker_score: userDefinedData.no_speaker_score === true,
       allow_low_tie_win: userDefinedData.allow_low_tie_win !== false,
+      allow_score_winner_mismatch: allowWinnerScoreMismatchForRound(userDefinedData),
       score_by_matter_manner: userDefinedData.score_by_matter_manner !== false,
       poi: userDefinedData.poi !== false,
       best: userDefinedData.best !== false,

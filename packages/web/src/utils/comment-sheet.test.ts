@@ -80,7 +80,7 @@ describe('comment sheet utility', () => {
       submitted_entity_name: 'Judge A',
       matchup: 'Team A vs Team B',
       winner: 'Team A',
-      role: 'chair',
+      role: 'adjudicator',
       comment: 'Close debate.',
     })
     expect(rows[1]).toMatchObject({

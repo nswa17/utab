@@ -5,7 +5,9 @@ import { getRoundModel } from '../models/round.js'
 import { getDrawModel } from '../models/draw.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
+import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
@@ -13,6 +15,11 @@ function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: stri
   if (submittedEntityToken) return submittedEntityToken
   return String(sessionUserId ?? '').trim()
 }
+
+const DUPLICATE_BALLOT_MESSAGE =
+  'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
+const DUPLICATE_FEEDBACK_MESSAGE =
+  'すでにジャッジ評価が送信されています。運営に報告してください。'
 
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
@@ -48,13 +55,14 @@ type NormalizedBallotPayload = {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   speakerIdsA?: string[]
   speakerIdsB?: string[]
   scoresA: number[]
   scoresB: number[]
   comment?: string
-  role?: string
   submittedEntityId?: string
+  submittedEntityType?: 'team' | 'speaker' | 'adjudicator'
   matterA?: number[]
   mannerA?: number[]
   matterB?: number[]
@@ -69,8 +77,8 @@ type NormalizedFeedbackPayload = {
   adjudicatorId: string
   score: number
   comment?: string
-  role?: string
   submittedEntityId?: string
+  submittedEntityType?: 'team' | 'speaker' | 'adjudicator'
   matter?: number
   manner?: number
 }
@@ -156,6 +164,47 @@ function parseOptionalTrimmedString(
   }
   const normalized = value.trim()
   return { ok: true, value: normalized || undefined }
+}
+
+function parseOptionalBoolean(value: unknown, key: string): ValidationOutcome<boolean | undefined> {
+  if (value === undefined) return { ok: true, value: undefined }
+  if (typeof value !== 'boolean') {
+    return { ok: false, message: `${key} must be a boolean` }
+  }
+  return { ok: true, value }
+}
+
+function parseWinnerPolicyToken(value: unknown): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
+  if (typeof value !== 'string') return undefined
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return undefined
+}
+
+function resolveRoundBallotRules(roundDoc: unknown): {
+  allowDraw: boolean
+  allowWinnerScoreMismatch: boolean
+} {
+  const userDefinedData = toPayloadRecord((roundDoc as any)?.userDefinedData) ?? {}
+  const compileRecord = toPayloadRecord(userDefinedData.compile)
+  const compileCandidate = toPayloadRecord(compileRecord?.options) ?? compileRecord ?? {}
+  const winnerPolicyToken =
+    parseWinnerPolicyToken(userDefinedData.winner_policy) ??
+    parseWinnerPolicyToken(compileCandidate.winner_policy)
+  const normalizedCompileOptions = normalizeCompileOptions(
+    winnerPolicyToken ? ({ winner_policy: winnerPolicyToken } as any) : undefined,
+    DEFAULT_COMPILE_OPTIONS
+  )
+  const allowDraw = userDefinedData.allow_low_tie_win !== false
+  const allowWinnerScoreMismatch =
+    typeof userDefinedData.allow_score_winner_mismatch === 'boolean'
+      ? userDefinedData.allow_score_winner_mismatch
+      : normalizedCompileOptions.winner_policy !== 'score_only'
+  return {
+    allowDraw,
+    allowWinnerScoreMismatch,
+  }
 }
 
 type DrawAllocationContext = {
@@ -324,6 +373,38 @@ async function loadSpeakerIdsByTeamForRound(
   return speakerIdsByTeam
 }
 
+async function resolveSubmittedEntityType(
+  connection: Connection,
+  tournamentId: string,
+  submittedEntityId?: string
+): Promise<'team' | 'speaker' | 'adjudicator' | undefined> {
+  const token = String(submittedEntityId ?? '').trim()
+  if (!token || !isValidObjectId(token)) return undefined
+
+  const TeamModel = getTeamModel(connection)
+  const team = await TeamModel.findOne({ tournamentId, _id: token })
+    .select({ _id: 1 })
+    .lean()
+    .exec()
+  if (team) return 'team'
+
+  const SpeakerModel = getSpeakerModel(connection)
+  const speaker = await SpeakerModel.findOne({ tournamentId, _id: token })
+    .select({ _id: 1 })
+    .lean()
+    .exec()
+  if (speaker) return 'speaker'
+
+  const AdjudicatorModel = getAdjudicatorModel(connection)
+  const adjudicator = await AdjudicatorModel.findOne({ tournamentId, _id: token })
+    .select({ _id: 1 })
+    .lean()
+    .exec()
+  if (adjudicator) return 'adjudicator'
+
+  return undefined
+}
+
 async function validateBallotAgainstDraw(
   connection: Connection,
   tournamentId: string,
@@ -437,7 +518,7 @@ async function normalizeBallotPayload(
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
   const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
-  const allowLowTieWin = (roundDoc as any)?.userDefinedData?.allow_low_tie_win !== false
+  const { allowDraw, allowWinnerScoreMismatch } = resolveRoundBallotRules(roundDoc)
   const noSpeakerScore = (roundDoc as any)?.userDefinedData?.no_speaker_score === true
 
   const normalizedTeamAId = String(payload.teamAId ?? '').trim()
@@ -454,6 +535,16 @@ async function normalizeBallotPayload(
   const validWinner = winnerIsTeamA || winnerIsTeamB
   if (normalizedWinner && !validWinner) {
     return { ok: false, message: 'winnerId must match teamAId or teamBId' }
+  }
+
+  const drawToken = parseOptionalBoolean(payload.draw, 'draw')
+  if (!drawToken.ok) return drawToken
+  const drawSelected = drawToken.value === true
+  if (drawSelected && normalizedWinner) {
+    return { ok: false, message: 'winnerId and draw cannot both be set' }
+  }
+  if (!drawSelected && !validWinner) {
+    return { ok: false, message: allowDraw ? 'winnerId or draw is required' : 'winnerId is required' }
   }
 
   const scoresAResult = parseOptionalFiniteNumberArray(payload.scoresA, 'scoresA')
@@ -535,10 +626,13 @@ async function normalizeBallotPayload(
 
   const commentResult = parseOptionalString(payload.comment, 'comment')
   if (!commentResult.ok) return commentResult
-  const roleResult = parseOptionalString(payload.role, 'role')
-  if (!roleResult.ok) return roleResult
   const submittedEntityResult = parseOptionalTrimmedString(payload.submittedEntityId, 'submittedEntityId')
   if (!submittedEntityResult.ok) return submittedEntityResult
+  const submittedEntityType = await resolveSubmittedEntityType(
+    connection,
+    tournamentId,
+    submittedEntityResult.value
+  )
 
   const hasScoresA = parsedScoresA.length > 0
   const hasScoresB = parsedScoresB.length > 0
@@ -570,19 +664,24 @@ async function normalizeBallotPayload(
   const hasComparableScores = parsedScoresA.length > 0 && parsedScoresB.length > 0
   const totalA = sumScores(parsedScoresA)
   const totalB = sumScores(parsedScoresB)
-  const hasDecisiveScore = hasComparableScores && totalA !== totalB
-  if (allowLowTieWin && !validWinner && hasDecisiveScore) {
-    return { ok: false, message: 'winnerId is required when scores are not tied' }
-  }
+  const tiedScore = !hasComparableScores || totalA === totalB
 
-  if (!allowLowTieWin) {
-    let invalid = !validWinner
-    if (!invalid && hasComparableScores) {
-      if (winnerIsTeamA) invalid = totalA <= totalB
-      if (winnerIsTeamB) invalid = totalB <= totalA
+  if (drawSelected) {
+    if (!allowDraw) {
+      return { ok: false, message: 'draw is not allowed in this round' }
     }
-    if (invalid) {
-      return { ok: false, message: 'low tie win is not allowed in this round' }
+    if (!allowWinnerScoreMismatch && !tiedScore) {
+      return {
+        ok: false,
+        message: 'draw is allowed only on tied scores when winner-score mismatch is disabled',
+      }
+    }
+  } else if (!allowWinnerScoreMismatch && hasComparableScores && totalA !== totalB) {
+    if (winnerIsTeamA && totalA < totalB) {
+      return { ok: false, message: 'winnerId must follow score order in this round' }
+    }
+    if (winnerIsTeamB && totalB < totalA) {
+      return { ok: false, message: 'winnerId must follow score order in this round' }
     }
   }
 
@@ -598,14 +697,15 @@ async function normalizeBallotPayload(
     value: {
       teamAId: normalizedTeamAId,
       teamBId: normalizedTeamBId,
-      winnerId: normalizedWinner || undefined,
+      winnerId: drawSelected ? undefined : normalizedWinner || undefined,
+      draw: drawSelected || undefined,
       speakerIdsA: speakerIdsAResult.value,
       speakerIdsB: speakerIdsBResult.value,
       scoresA: parsedScoresA,
       scoresB: parsedScoresB,
       comment: commentResult.value,
-      role: roleResult.value,
       submittedEntityId: submittedEntityResult.value,
+      submittedEntityType,
       bestA: bestAResult.value,
       bestB: bestBResult.value,
       poiA: poiAResult.value,
@@ -639,10 +739,13 @@ async function normalizeFeedbackPayload(
 
   const commentResult = parseOptionalString(payload.comment, 'comment')
   if (!commentResult.ok) return commentResult
-  const roleResult = parseOptionalString(payload.role, 'role')
-  if (!roleResult.ok) return roleResult
   const submittedEntityResult = parseOptionalTrimmedString(payload.submittedEntityId, 'submittedEntityId')
   if (!submittedEntityResult.ok) return submittedEntityResult
+  const submittedEntityType = await resolveSubmittedEntityType(
+    connection,
+    tournamentId,
+    submittedEntityResult.value
+  )
 
   if (
     payload.matter !== undefined &&
@@ -669,8 +772,8 @@ async function normalizeFeedbackPayload(
       adjudicatorId: normalizedAdjudicatorId,
       score,
       comment: commentResult.value,
-      role: roleResult.value,
       submittedEntityId: submittedEntityResult.value,
+      submittedEntityType,
       matter: payload.matter as number | undefined,
       manner: payload.manner as number | undefined,
     },
@@ -754,12 +857,12 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId,
       teamBId,
       winnerId,
+      draw,
       speakerIdsA,
       speakerIdsB,
       scoresA,
       scoresB,
       comment,
-      role,
       submittedEntityId,
       bestA,
       bestB,
@@ -775,10 +878,10 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId: string
       teamBId: string
       winnerId?: string
+      draw?: boolean
       scoresA: number[]
       scoresB: number[]
       comment?: string
-      role?: string
       speakerIdsA?: string[]
       speakerIdsB?: string[]
       submittedEntityId?: string
@@ -800,12 +903,12 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId,
       teamBId,
       winnerId,
+      draw,
       speakerIdsA,
       speakerIdsB,
       scoresA,
       scoresB,
       comment,
-      role,
       submittedEntityId,
       bestA,
       bestB,
@@ -827,7 +930,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
 
     const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
     if (actor) {
-      await SubmissionModel.deleteMany({
+      const duplicate = await SubmissionModel.findOne({
         tournamentId,
         round,
         type: 'ballot',
@@ -840,7 +943,16 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
             ],
           },
         ],
-      }).exec()
+      })
+        .select({ _id: 1 })
+        .lean()
+        .exec()
+      if (duplicate) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_BALLOT_MESSAGE }] })
+        return
+      }
     }
     const created = await SubmissionModel.create({
       tournamentId,
@@ -863,7 +975,6 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       adjudicatorId,
       score,
       comment,
-      role,
       submittedEntityId,
       matter,
       manner,
@@ -873,7 +984,6 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       adjudicatorId: string
       score: number
       comment?: string
-      role?: string
       submittedEntityId?: string
       matter?: number
       manner?: number
@@ -886,7 +996,6 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       adjudicatorId,
       score,
       comment,
-      role,
       submittedEntityId,
       matter,
       manner,
@@ -900,13 +1009,22 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     const SubmissionModel = getSubmissionModel(connection)
     const actor = resolveSubmissionActor(payload.submittedEntityId, req.session?.userId)
     if (actor) {
-      await SubmissionModel.deleteMany({
+      const duplicate = await SubmissionModel.findOne({
         tournamentId,
         round,
         type: 'feedback',
         'payload.adjudicatorId': payload.adjudicatorId,
         $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
-      }).exec()
+      })
+        .select({ _id: 1 })
+        .lean()
+        .exec()
+      if (duplicate) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_FEEDBACK_MESSAGE }] })
+        return
+      }
     }
     const created = await SubmissionModel.create({
       tournamentId,

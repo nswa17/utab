@@ -1,3 +1,16 @@
+export type DrawPreviewSubmissionRow = {
+  key: string
+  submissionId?: string
+  submittedByLabel: string
+  summaryLabel: string
+  submittedAtLabel: string
+}
+
+export type DrawPreviewSubmissionDetail = {
+  team: DrawPreviewSubmissionRow[]
+  judge: DrawPreviewSubmissionRow[]
+}
+
 export type DrawPreviewRow = {
   key: string
   matchIndex: number
@@ -8,7 +21,18 @@ export type DrawPreviewRow = {
   winLabel: string
   winTotal: number
   winGap: number
+  winStatus?: 'confirmed' | 'provisional' | 'insufficient'
+  winStatusLabel?: string
+  winMetaLabel?: string
+  scoreLabel?: string
+  scoreTotal?: number
+  scoreGap?: number
   chairsLabel: string
   panelsLabel: string
   traineesLabel: string
+  teamSubmissionCount?: number
+  teamSubmissionExpectedCount?: number
+  judgeSubmissionCount?: number
+  judgeSubmissionExpectedCount?: number
+  submissionDetail?: DrawPreviewSubmissionDetail
 }

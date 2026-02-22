@@ -1,78 +1,59 @@
 <template>
   <div class="stack compile-options-editor">
-    <section class="stack compile-group">
+    <section v-if="props.showSourceRounds" class="stack compile-group">
       <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('データソース') }}</h6>
-        <HelpTip :text="$t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。')" />
+        <h6 class="compile-group-title">{{ $t('集計対象ラウンド') }}</h6>
+        <HelpTip :text="$t('ここで選んだラウンドだけを集計します。')" />
       </div>
       <div class="grid compile-grid">
-        <Field v-if="showSource" :label="$t('集計に使うデータ')">
-          <template #default="{ id, describedBy }">
-            <select v-model="source" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="submissions">{{ $t('提出データ') }}</option>
-              <option value="raw">{{ $t('生結果データ') }}</option>
-            </select>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('提出データは提出フォームの内容を集計します。生結果データは「生結果編集」で手修正した値をそのまま使います。')" />
-          </template>
-        </Field>
-        <Field v-if="showSourceRounds" :label="$t('集計対象ラウンド')" class="compile-source-rounds">
+        <Field class="compile-source-rounds">
           <template #default="{ id, describedBy }">
             <div :id="id" :aria-describedby="describedBy" class="stack source-round-list">
-              <p v-if="sourceRoundOptions.length === 0" class="muted small">
+              <p v-if="props.sourceRoundOptions.length === 0" class="muted small">
                 {{ $t('このラウンドには前提となる集計ラウンドがありません。') }}
               </p>
               <label
-                v-for="option in sourceRoundOptions"
+                v-for="option in props.sourceRoundOptions"
                 :key="`compile-source-round-${option.value}`"
                 class="row small source-round-item"
               >
                 <input
                   type="checkbox"
                   :checked="isSourceRoundSelected(option.value)"
-                  :disabled="disabled"
+                  :disabled="props.disabled || option.disabled === true"
                   @change="toggleSourceRound(option.value, $event)"
                 />
                 <span>{{ option.label }}</span>
               </label>
-              <p class="muted small">{{ $t('未選択時は直前までの全ラウンドを参照します。') }}</p>
             </div>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('ここで選んだラウンドだけを集計します。未選択なら全ラウンドです。')" />
           </template>
         </Field>
       </div>
     </section>
 
-    <section class="stack compile-group">
+    <section v-if="props.showWinnerScoring || props.showRankingPriority" class="stack compile-group">
       <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('判定・順位') }}</h6>
-        <HelpTip :text="$t('順位が同点のときにどの指標を先に比較するかを決めます。')" />
+        <h6 class="compile-group-title">{{ $t('順位優先度設定') }}</h6>
+        <HelpTip :text="$t('使用する基準を左列に並べてください。')" />
       </div>
-      <div class="grid compile-grid">
-        <Field :label="$t('順位比較')">
-          <template #default="{ id, describedBy }">
-            <select v-model="rankingPreset" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="current">{{ $t('現行') }}</option>
-              <option value="custom">{{ $t('カスタム') }}</option>
-            </select>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('順位が同点のときにどの指標を先に比較するかを決めます。')" />
-          </template>
-        </Field>
+      <div v-if="props.showWinnerScoring" class="grid compile-grid">
         <Field :label="$t('勝敗判定')">
           <template #default="{ id, describedBy }">
-            <select v-model="winnerPolicy" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="winner_id_then_score">{{ $t('勝者選択を優先（未選択時はスコア判定）') }}</option>
-              <option value="score_only">{{ $t('スコア推定のみ') }}</option>
-              <option value="draw_on_missing">{{ $t('未指定は引き分け') }}</option>
+            <select
+              v-model="winnerPolicy"
+              :id="id"
+              :aria-describedby="describedBy"
+              :disabled="props.disabled"
+            >
+              <option value="score_only">{{ $t('勝者のスコアが敗者のスコアより高いことを要求') }}</option>
+              <option value="winner_id_then_score">{{ $t('勝敗とスコアの大小が違うことを許容') }}</option>
+              <option value="draw_on_missing">{{ $t('引き分けを許容（勝者未指定は引き分け扱い）') }}</option>
             </select>
           </template>
           <template #label-suffix>
-            <HelpTip :text="$t('提出フォームの「勝者」入力とスコア判定が食い違う場合、どちらを優先するかを設定します。')" />
+            <HelpTip
+              :text="$t('勝敗判定の方法を選択します。スコア整合を必須にするか、勝敗入力を優先するか、勝者未指定を引き分け扱いにするかを選べます。')"
+            />
           </template>
         </Field>
         <Field :label="$t('引き分け時ポイント')">
@@ -84,7 +65,7 @@
               type="number"
               min="0"
               step="0.5"
-              :disabled="disabled"
+              :disabled="props.disabled"
             />
           </template>
           <template #label-suffix>
@@ -92,83 +73,100 @@
           </template>
         </Field>
       </div>
-      <section v-if="rankingPreset === 'custom'" class="stack ranking-builder">
-        <div class="row ranking-builder-head">
-          <strong>{{ $t('順位比較順（上から優先）') }}</strong>
-          <HelpTip :text="$t('順位が同点のときにどの指標を先に比較するかを決めます。')" />
-        </div>
-        <div class="grid ranking-grid">
-          <div class="stack ranking-column">
-            <span class="muted small">{{ $t('比較に使う（上から優先）') }}</span>
-            <div class="stack ranking-active-list">
-              <div
-                v-for="(metric, index) in activeRankingMetrics"
-                :key="`active-metric-${metric}`"
-                class="row ranking-item"
-              >
-                <span>{{ rankingMetricLabel(metric) }}</span>
-                <div class="row ranking-actions">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    :disabled="disabled || index === 0"
-                    @click="moveRankingMetric(index, -1)"
-                  >
-                    {{ $t('上に移動') }}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    :disabled="disabled || index === activeRankingMetrics.length - 1"
-                    @click="moveRankingMetric(index, 1)"
-                  >
-                    {{ $t('下に移動') }}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    :disabled="disabled || activeRankingMetrics.length <= 1"
-                    @click="excludeRankingMetric(metric)"
-                  >
-                    {{ $t('除外') }}
-                  </Button>
-                </div>
-              </div>
+      <div v-if="props.showRankingPriority" class="stack compile-ranking-field">
+        <div class="grid ranking-columns">
+          <section
+            class="stack ranking-column ranking-column--active"
+            :class="{
+              'ranking-column--drop-active': rankingDropZone === 'active',
+              'ranking-column--drop-disabled': isRankingDragActive && !canDropToActive,
+            }"
+            @dragover.prevent="onRankingActiveColumnDragOver"
+            @drop.prevent="dropRankingMetricToActiveEnd"
+          >
+            <div class="row ranking-column-head">
+              <strong class="ranking-column-title">{{ $t('使用する基準') }}</strong>
             </div>
-          </div>
-          <div class="stack ranking-column">
-            <span class="muted small">{{ $t('比較に使わない') }}</span>
-            <div v-if="inactiveRankingMetrics.length === 0" class="muted small">
-              {{ $t('すべて使用中です。') }}
-            </div>
-            <div v-else class="row ranking-inactive-list">
+            <div
+              v-for="(metric, index) in activeRankingMetrics"
+              :key="`active-metric-${metric}`"
+              class="row ranking-chip ranking-chip--active"
+              :class="{
+                'ranking-chip--dragging':
+                  draggingRankingMetric?.metric === metric &&
+                  draggingRankingMetric?.source === 'active',
+                'ranking-chip--drop-target':
+                  rankingDropZone === 'active' && rankingDropTargetMetric === metric,
+              }"
+              :draggable="!props.disabled"
+              @dragstart="startRankingDrag(metric, 'active', $event)"
+              @dragover.prevent.stop="onRankingActiveChipDragOver(metric)"
+              @drop.prevent.stop="dropRankingMetricToActive(metric)"
+              @dragend="endRankingDrag"
+            >
+              <span class="ranking-rank">{{ index + 1 }}</span>
+              <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
+              <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
+              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
               <Button
-                v-for="metric in inactiveRankingMetrics"
-                :key="`inactive-metric-${metric}`"
-                variant="secondary"
+                variant="ghost"
                 size="sm"
-                :disabled="disabled"
-                @click="includeRankingMetric(metric)"
+                class="ranking-exclude"
+                :disabled="props.disabled || activeRankingMetrics.length <= 1"
+                @click="excludeRankingMetric(metric)"
               >
-                + {{ rankingMetricLabel(metric) }}
+                {{ $t('除外') }}
               </Button>
             </div>
-          </div>
+          </section>
+          <section
+            class="stack ranking-column ranking-column--inactive"
+            :class="{
+              'ranking-column--drop-active': rankingDropZone === 'inactive',
+              'ranking-column--drop-disabled': isRankingDragActive && !canDropToInactive,
+            }"
+            @dragover.prevent="onRankingInactiveColumnDragOver"
+            @drop.prevent="dropRankingMetricToInactive"
+          >
+            <div class="row ranking-column-head">
+              <strong class="ranking-column-title">{{ $t('不使用') }}</strong>
+            </div>
+            <p v-if="inactiveRankingMetrics.length === 0" class="muted small">
+              {{ $t('不使用の指標はありません。') }}
+            </p>
+            <div
+              v-for="metric in inactiveRankingMetrics"
+              :key="`inactive-metric-${metric}`"
+              class="row ranking-chip ranking-chip--inactive"
+              :class="{
+                'ranking-chip--dragging':
+                  draggingRankingMetric?.metric === metric &&
+                  draggingRankingMetric?.source === 'inactive',
+              }"
+              :draggable="!props.disabled"
+              @dragstart="startRankingDrag(metric, 'inactive', $event)"
+              @dragend="endRankingDrag"
+            >
+              <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
+              <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
+              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </section>
 
-    <section class="stack compile-group">
+    <section v-if="props.showMergeAndMissing" class="stack compile-group">
       <div class="row compile-group-head">
         <h6 class="compile-group-title">{{ $t('集計・欠損') }}</h6>
-        <HelpTip :text="$t('同じ提出者から複数提出がある場合の扱いです。')" />
+        <HelpTip :text="$t('重複提出、同一スピーカー入力、欠損データの扱いを設定します。')" />
       </div>
       <div class="grid compile-grid">
         <Field :label="$t('重複マージ')">
           <template #default="{ id, describedBy }">
-            <select v-model="mergePolicy" :id="id" :aria-describedby="describedBy" :disabled="disabled">
+            <select v-model="mergePolicy" :id="id" :aria-describedby="describedBy" :disabled="props.disabled">
               <option value="latest">{{ $t('最新を採用') }}</option>
-              <option value="average">{{ $t('平均で統合') }}</option>
+              <option value="average">{{ $t('統合') }}</option>
               <option value="error">{{ $t('重複時はエラー') }}</option>
             </select>
           </template>
@@ -176,31 +174,14 @@
             <HelpTip :text="$t('同じ提出者から複数提出がある場合の扱いです。')" />
           </template>
         </Field>
-        <Field :label="$t('POI集計')">
-          <template #default="{ id, describedBy }">
-            <select v-model="poiAggregation" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="average">{{ $t('平均') }}</option>
-              <option value="max">{{ $t('最大') }}</option>
-            </select>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('POIの重複値を平均か最大でまとめます。')" />
-          </template>
-        </Field>
-        <Field :label="$t('Best集計')">
-          <template #default="{ id, describedBy }">
-            <select v-model="bestAggregation" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-              <option value="average">{{ $t('平均') }}</option>
-              <option value="max">{{ $t('最大') }}</option>
-            </select>
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('Best Speakerの重複値を平均か最大でまとめます。')" />
-          </template>
-        </Field>
         <Field :label="$t('欠損データ')">
           <template #default="{ id, describedBy }">
-            <select v-model="missingDataPolicy" :id="id" :aria-describedby="describedBy" :disabled="disabled">
+            <select
+              v-model="missingDataPolicy"
+              :id="id"
+              :aria-describedby="describedBy"
+              :disabled="props.disabled"
+            >
               <option value="warn">{{ $t('警告のみ') }}</option>
               <option value="exclude">{{ $t('欠損を除外') }}</option>
               <option value="error">{{ $t('エラー停止') }}</option>
@@ -211,34 +192,41 @@
           </template>
         </Field>
       </div>
+      <div class="grid compile-grid compile-grid-aggregation">
+        <Field :label="$t('同一スピーカーPOI処理')">
+          <template #default="{ id, describedBy }">
+            <select v-model="poiAggregation" :id="id" :aria-describedby="describedBy" :disabled="props.disabled">
+              <option value="average">{{ $t('平均') }}</option>
+              <option value="max">{{ $t('最大') }}</option>
+            </select>
+          </template>
+          <template #label-suffix>
+            <HelpTip :text="$t('同一スピーカーへのPOI複数入力を平均か最大でまとめます。')" />
+          </template>
+        </Field>
+        <Field :label="$t('同一スピーカーBest Debater処理')">
+          <template #default="{ id, describedBy }">
+            <select v-model="bestAggregation" :id="id" :aria-describedby="describedBy" :disabled="props.disabled">
+              <option value="average">{{ $t('平均') }}</option>
+              <option value="max">{{ $t('最大') }}</option>
+            </select>
+          </template>
+          <template #label-suffix>
+            <HelpTip :text="$t('同一スピーカーへのBest Debater複数入力を平均か最大でまとめます。')" />
+          </template>
+        </Field>
+      </div>
     </section>
 
-    <section class="stack compile-group">
-      <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('生成対象') }}</h6>
-        <HelpTip :text="$t('生成するランキングの種類を選びます。')" />
-      </div>
-      <div class="grid include-label-grid">
-        <label
-          v-for="option in includeLabelOptions"
-          :key="`compile-include-${option.value}`"
-          class="row small include-label-item"
-        >
-          <input type="checkbox" :value="option.value" v-model="includeLabels" :disabled="disabled" />
-          <span>{{ option.label }}</span>
-        </label>
-      </div>
-    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   CompileAggregationPolicy,
   CompileDuplicateMergePolicy,
-  CompileIncludeLabel,
   CompileMissingDataPolicy,
   CompileRankingMetric,
   CompileRankingPreset,
@@ -252,19 +240,22 @@ import HelpTip from '@/components/common/HelpTip.vue'
 const props = withDefaults(
   defineProps<{
     disabled?: boolean
-    showSource?: boolean
     showSourceRounds?: boolean
-    sourceRoundOptions?: Array<{ value: number; label: string }>
+    showWinnerScoring?: boolean
+    showRankingPriority?: boolean
+    showMergeAndMissing?: boolean
+    sourceRoundOptions?: Array<{ value: number; label: string; disabled?: boolean }>
   }>(),
   {
     disabled: false,
-    showSource: true,
     showSourceRounds: false,
+    showWinnerScoring: true,
+    showRankingPriority: true,
+    showMergeAndMissing: true,
     sourceRoundOptions: () => [],
   }
 )
 
-const source = defineModel<'submissions' | 'raw'>('source', { required: true })
 const sourceRounds = defineModel<number[]>('sourceRounds', { default: () => [] })
 const rankingPreset = defineModel<CompileRankingPreset>('rankingPreset', { required: true })
 const rankingOrder = defineModel<CompileRankingMetric[]>('rankingOrder', { required: true })
@@ -274,23 +265,35 @@ const mergePolicy = defineModel<CompileDuplicateMergePolicy>('mergePolicy', { re
 const poiAggregation = defineModel<CompileAggregationPolicy>('poiAggregation', { required: true })
 const bestAggregation = defineModel<CompileAggregationPolicy>('bestAggregation', { required: true })
 const missingDataPolicy = defineModel<CompileMissingDataPolicy>('missingDataPolicy', { required: true })
-const includeLabels = defineModel<CompileIncludeLabel[]>('includeLabels', { required: true })
 
 const { t } = useI18n({ useScope: 'global' })
 
 const allRankingMetrics: CompileRankingMetric[] = [...compileRankingMetrics]
-const includeLabelOptions = computed<Array<{ value: CompileIncludeLabel; label: string }>>(() => [
-  { value: 'teams', label: t('チーム') },
-  { value: 'speakers', label: t('スピーカー') },
-  { value: 'adjudicators', label: t('ジャッジ') },
-  { value: 'poi', label: t('POI') },
-  { value: 'best', label: t('Best') },
-])
+type RankingDragState = {
+  metric: CompileRankingMetric
+  source: 'active' | 'inactive'
+}
+const draggingRankingMetric = ref<RankingDragState | null>(null)
+const rankingDropZone = ref<'active' | 'inactive' | null>(null)
+const rankingDropTargetMetric = ref<CompileRankingMetric | null>(null)
+
+const isRankingDragActive = computed(() => draggingRankingMetric.value !== null)
+const canDropToActive = computed(() => isRankingDragActive.value && !props.disabled)
+const canDropToInactive = computed(
+  () => isRankingDragActive.value && draggingRankingMetric.value?.source === 'active' && !props.disabled
+)
 
 const activeRankingMetrics = computed(() => normalizeRankingOrder(rankingOrder.value))
 const inactiveRankingMetrics = computed(() =>
   allRankingMetrics.filter((metric) => !activeRankingMetrics.value.includes(metric))
 )
+
+watchEffect(() => {
+  if (!props.showRankingPriority) return
+  if (rankingPreset.value !== 'custom') {
+    rankingPreset.value = 'custom'
+  }
+})
 
 function normalizeRankingOrder(value: CompileRankingMetric[] | undefined): CompileRankingMetric[] {
   const sourceOrder = Array.isArray(value) ? value : []
@@ -312,37 +315,146 @@ function setRankingOrder(next: CompileRankingMetric[]) {
   rankingOrder.value = normalizeRankingOrder(next)
 }
 
-function moveRankingMetric(index: number, direction: -1 | 1) {
-  const nextIndex = index + direction
-  const current = activeRankingMetrics.value
-  if (nextIndex < 0 || nextIndex >= current.length) return
-  const next = [...current]
-  const [picked] = next.splice(index, 1)
-  next.splice(nextIndex, 0, picked)
-  setRankingOrder(next)
-}
-
 function excludeRankingMetric(metric: CompileRankingMetric) {
   const next = activeRankingMetrics.value.filter((item) => item !== metric)
   if (next.length === 0) return
   setRankingOrder(next)
 }
 
-function includeRankingMetric(metric: CompileRankingMetric) {
-  if (activeRankingMetrics.value.includes(metric)) return
-  setRankingOrder([...activeRankingMetrics.value, metric])
+function startRankingDrag(
+  metric: CompileRankingMetric,
+  source: 'active' | 'inactive',
+  event: DragEvent
+) {
+  if (props.disabled) return
+  draggingRankingMetric.value = { metric, source }
+  rankingDropZone.value = null
+  rankingDropTargetMetric.value = null
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.setData('text/plain', metric)
+  }
+}
+
+function endRankingDrag() {
+  draggingRankingMetric.value = null
+  rankingDropZone.value = null
+  rankingDropTargetMetric.value = null
+}
+
+function onRankingActiveColumnDragOver() {
+  if (!canDropToActive.value) return
+  rankingDropZone.value = 'active'
+  rankingDropTargetMetric.value = null
+}
+
+function onRankingActiveChipDragOver(metric: CompileRankingMetric) {
+  if (!canDropToActive.value) return
+  rankingDropZone.value = 'active'
+  rankingDropTargetMetric.value = metric
+}
+
+function onRankingInactiveColumnDragOver() {
+  if (!canDropToInactive.value) return
+  rankingDropZone.value = 'inactive'
+  rankingDropTargetMetric.value = null
+}
+
+function dropRankingMetricToActive(targetMetric: CompileRankingMetric) {
+  if (props.disabled) return
+  const dragged = draggingRankingMetric.value
+  if (!dragged) return
+  const current = activeRankingMetrics.value
+  const targetIndex = current.indexOf(targetMetric)
+  if (targetIndex < 0) {
+    endRankingDrag()
+    return
+  }
+
+  if (dragged.source === 'active') {
+    const fromIndex = current.indexOf(dragged.metric)
+    if (fromIndex < 0 || fromIndex === targetIndex) {
+      endRankingDrag()
+      return
+    }
+    const next = [...current]
+    next.splice(fromIndex, 1)
+    const insertIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex
+    next.splice(insertIndex, 0, dragged.metric)
+    setRankingOrder(next)
+    endRankingDrag()
+    return
+  }
+
+  if (!current.includes(dragged.metric)) {
+    const next = [...current]
+    next.splice(targetIndex, 0, dragged.metric)
+    setRankingOrder(next)
+  }
+  endRankingDrag()
+}
+
+function dropRankingMetricToActiveEnd() {
+  if (props.disabled) return
+  const dragged = draggingRankingMetric.value
+  if (!dragged) return
+  const current = activeRankingMetrics.value
+
+  if (dragged.source === 'active') {
+    const fromIndex = current.indexOf(dragged.metric)
+    if (fromIndex < 0 || fromIndex === current.length - 1) {
+      endRankingDrag()
+      return
+    }
+    const next = [...current]
+    next.splice(fromIndex, 1)
+    next.push(dragged.metric)
+    setRankingOrder(next)
+    endRankingDrag()
+    return
+  }
+
+  if (!current.includes(dragged.metric)) {
+    setRankingOrder([...current, dragged.metric])
+  }
+  endRankingDrag()
+}
+
+function dropRankingMetricToInactive() {
+  if (props.disabled) return
+  const dragged = draggingRankingMetric.value
+  if (!dragged) return
+  if (dragged.source !== 'active') {
+    endRankingDrag()
+    return
+  }
+  excludeRankingMetric(dragged.metric)
+  endRankingDrag()
 }
 
 function rankingMetricLabel(metric: CompileRankingMetric) {
   const labels: Record<CompileRankingMetric, string> = {
-    win: t('勝利数'),
-    sum: t('合計'),
-    margin: t('マージン'),
-    vote: t('票'),
-    average: t('平均'),
-    sd: t('標準偏差'),
+    win: t('勝敗ポイント'),
+    sum: t('総得点'),
+    margin: t('得失点差'),
+    vote: t('ジャッジ支持数'),
+    average: t('平均得点'),
+    sd: t('得点の安定性'),
   }
   return labels[metric]
+}
+
+function rankingMetricDescription(metric: CompileRankingMetric) {
+  const descriptions: Record<CompileRankingMetric, string> = {
+    win: t('勝ち=1点、引き分けは設定ポイント'),
+    sum: t('得点の合計値'),
+    margin: t('得点−失点の差分合計'),
+    vote: t('勝者に選ばれた票数'),
+    average: t('1試合あたりの平均点'),
+    sd: t('得点のばらつき（小さいほど安定）'),
+  }
+  return descriptions[metric]
 }
 
 function isSourceRoundSelected(roundNumber: number) {
@@ -374,7 +486,7 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .compile-group-head {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
   padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--color-border);
@@ -393,10 +505,21 @@ function toggleSourceRound(roundNumber: number, event: Event) {
   gap: var(--space-2);
 }
 
+.compile-grid-aggregation {
+  padding-top: var(--space-1);
+  border-top: 1px dashed var(--color-border);
+}
+
 .compile-group :deep(.field-label) {
   font-size: 0.84rem;
   font-weight: 700;
   color: var(--color-muted);
+}
+
+.compile-group :deep(select),
+.compile-group :deep(input) {
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .compile-source-rounds {
@@ -412,66 +535,126 @@ function toggleSourceRound(roundNumber: number, event: Event) {
   gap: var(--space-2);
 }
 
-.ranking-builder {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
-  background: var(--color-surface-soft);
+.compile-ranking-field {
+  grid-column: 1 / -1;
 }
 
-.ranking-builder-head {
-  align-items: center;
-  justify-content: space-between;
+.ranking-columns {
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.9fr);
   gap: var(--space-2);
 }
 
-.ranking-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--space-2);
+@media (max-width: 900px) {
+  .ranking-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ranking-column {
-  gap: var(--space-2);
-}
-
-.ranking-active-list {
   gap: var(--space-1);
-}
-
-.ranking-item {
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  background: var(--color-surface);
-}
-
-.ranking-actions {
-  gap: var(--space-1);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.ranking-inactive-list {
-  gap: var(--space-1);
-  flex-wrap: wrap;
-}
-
-.include-label-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-1);
-}
-
-.include-label-item {
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  min-height: 48px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
   background: var(--color-surface-soft);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
+
+.ranking-column-head {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2px 2px;
+}
+
+.ranking-column-title {
+  font-size: 0.86rem;
+  color: var(--color-muted);
+}
+
+.ranking-chip {
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  padding: 6px 8px;
+}
+
+.ranking-chip--active {
+  cursor: grab;
+}
+
+.ranking-chip--inactive {
+  cursor: grab;
+}
+
+.ranking-chip--dragging {
+  opacity: 0.6;
+}
+
+.ranking-chip--drop-target {
+  border-color: #1d4ed8;
+  background: #e0ecff;
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.25);
+}
+
+.ranking-column--drop-active {
+  border-color: #1d4ed8;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(59, 130, 246, 0.12) 0 8px,
+      rgba(59, 130, 246, 0.22) 8px 16px
+    ),
+    #e0ecff;
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
+}
+
+.ranking-column--drop-disabled {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  opacity: 0.92;
+}
+
+.compile-ranking-field :deep(.ranking-exclude) {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.74rem;
+}
+
+.ranking-drag-handle {
+  color: var(--color-muted);
+  letter-spacing: -0.15em;
+  user-select: none;
+}
+
+.ranking-rank {
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ranking-chip-label {
+  flex: 0 0 auto;
+  min-width: fit-content;
+}
+
+.ranking-chip-help {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 </style>

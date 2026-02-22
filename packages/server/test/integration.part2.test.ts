@@ -535,7 +535,7 @@ describe('Server integration', () => {
     )
   })
 
-  it('rejects draw-like ballot submissions when low tie win is disabled', async () => {
+  it('enforces score order when draw and winner-score mismatch are disabled', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -563,6 +563,11 @@ describe('Server integration', () => {
       name: 'Round 1',
       userDefinedData: {
         allow_low_tie_win: false,
+        compile: {
+          options: {
+            winner_policy: 'score_only',
+          },
+        },
       },
     })
     expect(roundRes.status).toBe(201)
@@ -588,7 +593,31 @@ describe('Server integration', () => {
       scoresB: [75],
       submittedEntityId: 'judge-a',
     })
-    expect(tieScoreWinner.status).toBe(400)
+    expect(tieScoreWinner.status).toBe(201)
+
+    const drawOnTie = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      draw: true,
+      scoresA: [75],
+      scoresB: [75],
+      submittedEntityId: 'judge-b',
+    })
+    expect(drawOnTie.status).toBe(400)
+
+    const lowWinWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-b',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-c',
+    })
+    expect(lowWinWinner.status).toBe(400)
 
     const validWinner = await agent.post('/api/submissions/ballots').send({
       tournamentId,
@@ -598,12 +627,12 @@ describe('Server integration', () => {
       winnerId: 'team-a',
       scoresA: [76],
       scoresB: [75],
-      submittedEntityId: 'judge-a',
+      submittedEntityId: 'judge-d',
     })
     expect(validWinner.status).toBe(201)
   })
 
-  it('requires explicit winner when scores are non-tied', async () => {
+  it('requires explicit verdict and allows draw/score mismatch when both options are enabled', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -631,6 +660,11 @@ describe('Server integration', () => {
       name: 'Round 1',
       userDefinedData: {
         allow_low_tie_win: true,
+        compile: {
+          options: {
+            winner_policy: 'winner_id_then_score',
+          },
+        },
       },
     })
     expect(roundRes.status).toBe(201)
@@ -655,7 +689,33 @@ describe('Server integration', () => {
       scoresB: [75],
       submittedEntityId: 'judge-a',
     })
-    expect(missingWinnerOnTie.status).toBe(201)
+    expect(missingWinnerOnTie.status).toBe(400)
+
+    const drawOnDecisive = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      draw: true,
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-b',
+    })
+    expect(drawOnDecisive.status).toBe(201)
+    expect(drawOnDecisive.body.data.payload.draw).toBe(true)
+    expect('winnerId' in drawOnDecisive.body.data.payload).toBe(false)
+
+    const lowWinWinner = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-b',
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: 'judge-c',
+    })
+    expect(lowWinWinner.status).toBe(201)
 
     const invalidWinner = await agent.post('/api/submissions/ballots').send({
       tournamentId,
@@ -758,7 +818,7 @@ describe('Server integration', () => {
     expect(submissionsRes.body.data.length).toBe(2)
   })
 
-  it('treats blank submittedEntityId as session actor for dedupe', async () => {
+  it('rejects duplicate ballots when submittedEntityId is blank and actor falls back to session user', async () => {
     const agent = request.agent(app)
 
     const registerRes = await agent
@@ -803,14 +863,17 @@ describe('Server integration', () => {
       comment: 'second submission',
       submittedEntityId: '   ',
     })
-    expect(secondBallot.status).toBe(201)
+    expect(secondBallot.status).toBe(409)
+    expect(String(secondBallot.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
+    )
 
     const submissionsRes = await agent.get(
       `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
     )
     expect(submissionsRes.status).toBe(200)
     expect(submissionsRes.body.data.length).toBe(1)
-    expect(submissionsRes.body.data[0].payload.comment).toBe('second submission')
+    expect(submissionsRes.body.data[0].payload.comment).toBe('first submission')
   })
 
   it('normalizes submitted entity ids on ballot submissions', async () => {

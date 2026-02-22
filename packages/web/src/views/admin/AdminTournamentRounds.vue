@@ -14,7 +14,7 @@
     </div>
 
     <LoadingState v-if="sectionLoading" />
-    <p v-else-if="roundsStore.error" class="error">{{ roundsStore.error }}</p>
+    <p v-else-if="roundsLoadError" class="error">{{ roundsLoadError }}</p>
     <p v-else-if="displayRounds.length === 0" class="muted">
       {{ $t('ラウンドがまだありません。') }}
     </p>
@@ -198,143 +198,40 @@
           </div>
 
           <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('評価提出設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.evaluate_from_adjudicators"
-                  type="checkbox"
-                />
-                <span>{{ $t('評価をジャッジから') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('ジャッジからのフィードバック入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.evaluate_from_teams" type="checkbox" />
-                <span>{{ $t('評価をチームから') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('チーム/スピーカーからのフィードバック入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.chairs_always_evaluated"
-                  type="checkbox"
-                />
-                <span>{{ $t('チェアを常に評価') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('チェア評価を必須にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <Field :label="$t('Evaluator in Team')" v-slot="{ id, describedBy }">
-                <select
-                  v-model="roundDraft(round).userDefined.evaluator_in_team"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                >
-                  <option value="team">{{ $t('チーム') }}</option>
-                  <option value="speaker">{{ $t('スピーカー') }}</option>
-                </select>
-                <p class="muted small">
-                  {{ $t('評価者の単位をチームかスピーカーから選択します。') }}
-                </p>
-              </Field>
-            </div>
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('スコア設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.no_speaker_score" type="checkbox" />
-                <span>{{ $t('スピーカースコア無し') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('スピーカースコア入力を無効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.allow_low_tie_win" type="checkbox" />
-                <span>{{ $t('低勝ち/同点勝ち許可') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('低勝ち・同点勝ちを許可します。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input
-                  v-model="roundDraft(round).userDefined.score_by_matter_manner"
-                  type="checkbox"
-                />
-                <span>{{ $t('Matter/Manner採点') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('Matter/Manner の個別入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-            </div>
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('賞設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.poi" type="checkbox" />
-                <span>{{ $t('POI賞') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('POI賞の入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).userDefined.best" type="checkbox" />
-                <span>{{ $t('Best Speaker賞') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('ベストスピーカー賞の入力を有効にします。')"
-                  aria-hidden="true"
-                  >?</span
-                >
-              </label>
-            </div>
-          </section>
-
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('集計設定') }}</h5>
-            <CompileOptionsEditor
-              v-model:source="roundDraft(round).compile.source"
-              v-model:source-rounds="roundDraft(round).compile.source_rounds"
-              v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
-              v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
-              v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
+            <RoundOptionEditor
+              v-model:evaluate-from-adjudicators="roundDraft(round).userDefined.evaluate_from_adjudicators"
+              v-model:evaluate-from-teams="roundDraft(round).userDefined.evaluate_from_teams"
+              v-model:chairs-always-evaluated="roundDraft(round).userDefined.chairs_always_evaluated"
+              v-model:evaluator-in-team="roundDraft(round).userDefined.evaluator_in_team"
+              v-model:no-speaker-score="roundDraft(round).userDefined.no_speaker_score"
+              v-model:allow-low-tie-win="roundDraft(round).userDefined.allow_low_tie_win"
+              v-model:score-by-matter-manner="roundDraft(round).userDefined.score_by_matter_manner"
               v-model:tie-points="roundDraft(round).compile.options.tie_points"
-              v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
-              v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
-              v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
-              v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
-              v-model:include-labels="roundDraft(round).compile.options.include_labels"
-              :show-source-rounds="true"
-              :source-round-options="compileSourceRoundSelectOptions(round.round)"
+              v-model:poi="roundDraft(round).userDefined.poi"
+              v-model:best="roundDraft(round).userDefined.best"
               :disabled="isLoading"
-            />
+            >
+              <template #after-team-settings>
+                <section class="stack round-ranking-settings">
+                  <CompileOptionsEditor
+                    v-model:source-rounds="roundDraft(round).compile.source_rounds"
+                    v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
+                    v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
+                    v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
+                    v-model:tie-points="roundDraft(round).compile.options.tie_points"
+                    v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
+                    v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
+                    v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
+                    v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
+                    :show-winner-scoring="false"
+                    :show-source-rounds="false"
+                    :show-merge-and-missing="false"
+                    :source-round-options="compileSourceRoundSelectOptions(round.round)"
+                    :disabled="isLoading"
+                  />
+                </section>
+              </template>
+            </RoundOptionEditor>
           </section>
 
           <section class="stack settings-group">
@@ -590,6 +487,7 @@
             })
           }}
         </p>
+        <p v-if="roundDeleteError" class="error small">{{ roundDeleteError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeRoundDeleteModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRound">
@@ -608,6 +506,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import CollapseHeader from '@/components/common/CollapseHeader.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -666,6 +565,8 @@ const expandedRounds = ref<Record<string, boolean>>({})
 const advancedSettingsExpanded = ref<Record<string, boolean>>({})
 const missingModalRound = ref<number | null>(null)
 const roundDeleteModalId = ref<string | null>(null)
+const roundsLoadError = ref('')
+const roundDeleteError = ref('')
 const sectionLoading = ref(true)
 const isLoading = computed(
   () =>
@@ -901,14 +802,7 @@ function teamSpeakerIds(teamId: string, roundNumber: number) {
   if (!team) return []
   const detail = team.details?.find((item: any) => Number(item.r) === Number(roundNumber))
   const detailSpeakerIds = (detail?.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) return detailSpeakerIds
-  return (team.speakers ?? [])
-    .map((speaker: any) => {
-      const name = String(speaker?.name ?? '')
-      if (!name) return ''
-      return speakersStore.speakers.find((item) => item.name === name)?._id ?? ''
-    })
-    .filter(Boolean)
+  return detailSpeakerIds
 }
 
 function submittedIds(roundNumber: number, type: 'ballot' | 'feedback') {
@@ -1265,6 +1159,7 @@ async function saveRoundBreak(round: any) {
 async function refresh() {
   if (!tournamentId.value) return
   sectionLoading.value = true
+  roundsLoadError.value = ''
   try {
     await Promise.all([
       roundsStore.fetchRounds(tournamentId.value),
@@ -1274,6 +1169,7 @@ async function refresh() {
       speakersStore.fetchSpeakers(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
     ])
+    roundsLoadError.value = roundsStore.error ?? ''
   } finally {
     sectionLoading.value = false
   }
@@ -1362,26 +1258,31 @@ async function onAdjudicatorAllocationChange(round: any, event: Event) {
 }
 
 function requestRemoveRound(id: string) {
+  roundDeleteError.value = ''
   roundDeleteModalId.value = id
 }
 
 function closeRoundDeleteModal() {
+  roundDeleteError.value = ''
   roundDeleteModalId.value = null
 }
 
 async function confirmRemoveRound() {
   const id = roundDeleteModalId.value
   if (!id) return
-  closeRoundDeleteModal()
+  roundDeleteError.value = ''
   const deleted = await roundsStore.deleteRound(tournamentId.value, id)
-  if (deleted) {
-    const next = { ...expandedRounds.value }
-    delete next[id]
-    expandedRounds.value = next
-    const nextAdvanced = { ...advancedSettingsExpanded.value }
-    delete nextAdvanced[id]
-    advancedSettingsExpanded.value = nextAdvanced
+  if (!deleted) {
+    roundDeleteError.value = roundsStore.error ?? t('ラウンドの削除に失敗しました。')
+    return
   }
+  closeRoundDeleteModal()
+  const next = { ...expandedRounds.value }
+  delete next[id]
+  expandedRounds.value = next
+  const nextAdvanced = { ...advancedSettingsExpanded.value }
+  delete nextAdvanced[id]
+  advancedSettingsExpanded.value = nextAdvanced
 }
 
 watch(
@@ -1561,6 +1462,10 @@ watch(
 
 .settings-group {
   gap: var(--space-2);
+}
+
+.round-ranking-settings {
+  margin-top: var(--space-1);
 }
 
 .settings-group + .settings-group {

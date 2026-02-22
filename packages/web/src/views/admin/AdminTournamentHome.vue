@@ -3,9 +3,20 @@
     <p v-if="activeSection === 'overview'" class="muted small">
       {{ $t('大会の基本情報と公開設定を管理します。') }}
     </p>
-    <p v-else class="muted small">
-      {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
-    </p>
+    <div v-else class="stack tight data-guide-header">
+      <div class="row data-guide-row">
+        <p class="muted small">
+          {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
+        </p>
+      </div>
+      <p class="muted small">
+        {{
+          $t(
+            'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。'
+          )
+        }}
+      </p>
+    </div>
 
     <LoadingState v-if="isSectionLoading" />
 
@@ -267,6 +278,7 @@
                         v-model:no-speaker-score="setupRoundEditForm.userDefinedData.no_speaker_score"
                         v-model:allow-low-tie-win="setupRoundEditForm.userDefinedData.allow_low_tie_win"
                         v-model:score-by-matter-manner="setupRoundEditForm.userDefinedData.score_by_matter_manner"
+                        v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
                         v-model:poi="setupRoundEditForm.userDefinedData.poi"
                         v-model:best="setupRoundEditForm.userDefinedData.best"
                         :disabled="isLoading"
@@ -274,7 +286,6 @@
                     </section>
                     <section class="stack setup-round-config-group">
                       <CompileOptionsEditor
-                        v-model:source="setupRoundEditForm.compile.source"
                         v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
                         v-model:ranking-preset="setupRoundEditForm.compile.options.ranking_priority.preset"
                         v-model:ranking-order="setupRoundEditForm.compile.options.ranking_priority.order"
@@ -284,8 +295,9 @@
                         v-model:poi-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.poi_aggregation"
                         v-model:best-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.best_aggregation"
                         v-model:missing-data-policy="setupRoundEditForm.compile.options.missing_data_policy"
-                        v-model:include-labels="setupRoundEditForm.compile.options.include_labels"
-                        :show-source-rounds="true"
+                        :show-winner-scoring="false"
+                        :show-source-rounds="false"
+                        :show-merge-and-missing="false"
                         :source-round-options="compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))"
                         :disabled="isLoading"
                       />
@@ -327,18 +339,7 @@
         </div>
         <p class="muted small">{{ $t('参加者がスマホで読み取って大会ページを開けます。') }}</p>
         <div v-if="participantUrl" class="qr-grid">
-          <div class="qr-box">
-            <LoadingState v-if="qrLoading" />
-            <img
-              v-else-if="qrCodeDataUrl"
-              class="qr-image"
-              :src="qrCodeDataUrl"
-              :alt="$t('QRコード')"
-            />
-            <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
-            <p v-if="qrError" class="error">{{ qrError }}</p>
-          </div>
-          <div class="stack">
+          <div class="stack qr-content">
             <div class="muted small">{{ $t('大会アクセスURL') }}</div>
             <code class="qr-url">{{ participantUrl }}</code>
             <div class="row qr-actions">
@@ -360,6 +361,17 @@
               {{ $t('大会パスワードが必要な場合、参加者は表示された画面で入力します。') }}
             </p>
           </div>
+          <div class="qr-box">
+            <LoadingState v-if="qrLoading" />
+            <img
+              v-else-if="qrCodeDataUrl"
+              class="qr-image"
+              :src="qrCodeDataUrl"
+              :alt="$t('QRコード')"
+            />
+            <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
+            <p v-if="qrError" class="error">{{ qrError }}</p>
+          </div>
         </div>
       </article>
     </template>
@@ -376,7 +388,8 @@
           :class="{ active: activeEntityTab === tab.key }"
           @click="activeEntityTab = tab.key"
         >
-          {{ tab.label }}
+          <span class="entity-tab-step">{{ `STEP ${tab.step}` }}</span>
+          <span>{{ tab.label }}</span>
         </button>
       </div>
 
@@ -527,7 +540,7 @@
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
-            <form class="grid" @submit.prevent="handleCreateAdjudicator">
+            <form class="grid aligned-field-grid" @submit.prevent="handleCreateAdjudicator">
               <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="adjudicatorForm.name"
@@ -839,7 +852,7 @@
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
-            <form class="grid" @submit.prevent="handleCreateInstitution">
+            <form class="grid aligned-field-grid" @submit.prevent="handleCreateInstitution">
               <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="institutionForm.name"
@@ -908,7 +921,7 @@
               :key="inst._id"
               class="list-item entity-list-item"
             >
-              <div>
+              <div class="entity-primary">
                 <strong>{{ inst.name }}</strong>
                 <span class="muted small entity-inline-meta">
                   {{
@@ -967,6 +980,7 @@
             v-model:no-speaker-score="roundDefaultsForm.userDefinedData.no_speaker_score"
             v-model:allow-low-tie-win="roundDefaultsForm.userDefinedData.allow_low_tie_win"
             v-model:score-by-matter-manner="roundDefaultsForm.userDefinedData.score_by_matter_manner"
+            v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
             v-model:poi="roundDefaultsForm.userDefinedData.poi"
             v-model:best="roundDefaultsForm.userDefinedData.best"
             :disabled="isLoading"
@@ -974,7 +988,6 @@
         </section>
         <section class="stack setup-round-config-group">
           <CompileOptionsEditor
-            v-model:source="roundDefaultsForm.compile.source"
             v-model:source-rounds="roundDefaultsForm.compile.source_rounds"
             v-model:ranking-preset="roundDefaultsForm.compile.options.ranking_priority.preset"
             v-model:ranking-order="roundDefaultsForm.compile.options.ranking_priority.order"
@@ -984,7 +997,9 @@
             v-model:poi-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation"
             v-model:best-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation"
             v-model:missing-data-policy="roundDefaultsForm.compile.options.missing_data_policy"
-            v-model:include-labels="roundDefaultsForm.compile.options.include_labels"
+            :show-winner-scoring="false"
+            :show-source-rounds="false"
+            :show-merge-and-missing="false"
             :disabled="isLoading"
           />
         </section>
@@ -1025,6 +1040,7 @@
             })
           }}
         </p>
+        <p v-if="setupRoundDeleteError" class="error small">{{ setupRoundDeleteError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeSetupRoundDeleteModal">
             {{ $t('キャンセル') }}
@@ -1062,7 +1078,7 @@
           <strong>{{ editingTitle }}</strong>
           <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('閉じる') }}</Button>
         </div>
-        <div class="grid" v-if="editingEntity.type === 'team'">
+        <div class="grid aligned-field-grid" v-if="editingEntity.type === 'team'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1132,7 +1148,7 @@
             </div>
           </Field>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'adjudicator'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'adjudicator'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1229,7 +1245,7 @@
             </div>
           </div>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'venue'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'venue'">
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1240,7 +1256,7 @@
             </label>
           </div>
         </div>
-        <div class="grid" v-else-if="editingEntity.type === 'institution'">
+        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'institution'">
           <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1271,7 +1287,7 @@
             />
           </Field>
         </div>
-        <div class="grid" v-else>
+        <div class="grid aligned-field-grid" v-else>
           <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
             <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
           </Field>
@@ -1317,6 +1333,7 @@
       <div class="modal card stack" role="dialog" aria-modal="true">
         <h4>{{ $t('削除') }}</h4>
         <p class="muted">{{ deleteEntityPrompt }}</p>
+        <p v-if="deleteEntityModalError" class="error small">{{ deleteEntityModalError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
@@ -1346,6 +1363,7 @@ import { useInstitutionsStore } from '@/stores/institutions'
 import { useSubmissionsStore } from '@/stores/submissions'
 import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
+import { buildEntityImportPayload } from '@/utils/entity-csv-import'
 import {
   buildRoundUserDefinedFromDefaults,
   defaultRoundDefaults,
@@ -1504,13 +1522,13 @@ type InstitutionOptionGroup = {
 const institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
-const activeEntityTab = ref<EntityTabKey>('teams')
-const entityTabs = computed<Array<{ key: EntityTabKey; label: string }>>(() => [
-  { key: 'teams', label: t('チーム') },
-  { key: 'adjudicators', label: t('ジャッジ') },
-  { key: 'speakers', label: t('スピーカー') },
-  { key: 'institutions', label: t('コンフリクトグループ') },
-  { key: 'venues', label: t('会場') },
+const activeEntityTab = ref<EntityTabKey>('institutions')
+const entityTabs = computed<Array<{ key: EntityTabKey; label: string; step: 1 | 2 | 3 }>>(() => [
+  { key: 'institutions', label: t('コンフリクトグループ'), step: 1 },
+  { key: 'venues', label: t('会場'), step: 1 },
+  { key: 'speakers', label: t('スピーカー'), step: 2 },
+  { key: 'adjudicators', label: t('ジャッジ'), step: 2 },
+  { key: 'teams', label: t('チーム'), step: 3 },
 ])
 const showEntityImportModal = ref(false)
 const entityImportType = ref<EntityTabKey | null>(null)
@@ -1540,31 +1558,35 @@ const entityImportHelpText = computed(() =>
 )
 
 const entityImportPlaceholder = computed(() => {
-  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'teams') {
+    return t('CSV例: name,institution,speakers,available,available_r1')
+  }
   if (entityImportType.value === 'adjudicators') {
     return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
   }
-  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
   if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
   if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
   return ''
 })
 
 const entityImportDescription = computed(() => {
-  if (entityImportType.value === 'teams') return t('CSV例: Team A,Institution A,Speaker 1|Speaker 2')
+  if (entityImportType.value === 'teams') {
+    return t('CSV例: name,institution,speakers,available,available_r1')
+  }
   if (entityImportType.value === 'adjudicators') {
     return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
   }
-  if (entityImportType.value === 'venues') return t('CSV例: Room 101')
+  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
   if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
   if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
   return ''
 })
 
 const entityImportExample = computed(() => {
-  if (entityImportType.value === 'teams') return 'Team A,Institution A,Speaker 1|Speaker 2'
+  if (entityImportType.value === 'teams') return 'name,institution,speakers,available,available_r1'
   if (entityImportType.value === 'adjudicators') return 'name,strength,preev,active,available,conflicts,available_r1'
-  if (entityImportType.value === 'venues') return 'Room 101'
+  if (entityImportType.value === 'venues') return 'name,priority,available,available_r1'
   if (entityImportType.value === 'speakers') return 'Speaker A'
   if (entityImportType.value === 'institutions') return 'Institution A,region,2'
   return ''
@@ -1589,6 +1611,7 @@ const institutionLimit = ref(20)
 const editingEntity = ref<{ type: string; id: string } | null>(null)
 type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institution'
 const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
+const deleteEntityModalError = ref('')
 const entityForm = reactive<any>({
   name: '',
   strength: 5,
@@ -1620,6 +1643,7 @@ const deleteEntityPrompt = computed(() => {
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
 const setupRoundDeleteId = ref<string | null>(null)
+const setupRoundDeleteError = ref('')
 const setupRoundDeleteTarget = computed(() => {
   const id = String(setupRoundDeleteId.value ?? '').trim()
   if (!id) return null
@@ -2251,19 +2275,26 @@ async function createRoundFromSetup() {
 
 function requestRemoveRoundFromSetup(roundId: string) {
   if (!roundId) return
+  setupRoundDeleteError.value = ''
   setupRoundDeleteId.value = roundId
 }
 
 function closeSetupRoundDeleteModal() {
+  setupRoundDeleteError.value = ''
   setupRoundDeleteId.value = null
 }
 
 async function confirmRemoveRoundFromSetup() {
   const roundId = String(setupRoundDeleteId.value ?? '').trim()
   if (!roundId) return
-  closeSetupRoundDeleteModal()
+  setupRoundDeleteError.value = ''
   const deleted = await rounds.deleteRound(tournamentId.value, roundId)
-  if (!deleted) return
+  if (!deleted) {
+    setupRoundDeleteError.value = rounds.error ?? t('ラウンドの削除に失敗しました。')
+    rounds.error = null
+    return
+  }
+  closeSetupRoundDeleteModal()
   const next = { ...setupRoundDetailsOpen.value }
   delete next[roundId]
   setupRoundDetailsOpen.value = next
@@ -2407,18 +2438,14 @@ function resolveInstitutionNames(ids: string[]) {
 function institutionLabel(value?: string) {
   if (!value) return ''
   const token = String(value)
-  const matched = institutions.institutions.find(
-    (inst) => inst._id === token || inst.name === token
-  )
+  const matched = institutions.institutions.find((inst) => inst._id === token)
   return matched?.name ?? token
 }
 
 function resolveInstitutionId(value?: string) {
   if (!value) return ''
   const token = String(value)
-  const matched = institutions.institutions.find(
-    (inst) => inst._id === token || inst.name === token
-  )
+  const matched = institutions.institutions.find((inst) => inst._id === token)
   return matched?._id ?? ''
 }
 
@@ -2431,8 +2458,8 @@ function resolveTeamInstitutionIds(entity: any): string[] {
   const detailIds = Array.from(new Set(idsFromDetails.filter(Boolean)))
   if (detailIds.length > 0) return detailIds
 
-  const legacyId = resolveInstitutionId(entity?.institution)
-  return legacyId ? [legacyId] : []
+  const directId = resolveInstitutionId(entity?.institution)
+  return directId ? [directId] : []
 }
 
 function teamInstitutionLabel(entity: any) {
@@ -2527,16 +2554,7 @@ function resolveTeamSpeakerIds(entity: any): string[] {
     ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
     : []
   const normalizedDetailIds = Array.from(new Set(detailIds.filter(Boolean)))
-  if (normalizedDetailIds.length > 0) return normalizedDetailIds
-
-  const nameBasedIds: string[] = (entity.speakers ?? [])
-    .map((speaker: any) => {
-      const name = speaker?.name
-      if (!name) return ''
-      return speakers.speakers.find((item) => item.name === name)?._id ?? ''
-    })
-    .filter(Boolean)
-  return Array.from(new Set(nameBasedIds))
+  return normalizedDetailIds
 }
 
 function resolveAdjudicatorInstitutionIds(entity: any): string[] {
@@ -2561,7 +2579,6 @@ async function handleCreateTeam() {
   const speakersList = Array.from(new Set(selectedNames)).map((name) => ({
     name,
   }))
-  const institutionNames = resolveInstitutionNames(teamInstitutionIds.value)
   const details = buildTeamDetailsPayload({
     selectedInstitutionIds: teamInstitutionIds.value,
     selectedSpeakerIds: teamSelectedSpeakerIds.value,
@@ -2570,7 +2587,7 @@ async function handleCreateTeam() {
   await teams.createTeam({
     tournamentId: tournamentId.value,
     name: teamForm.name,
-    institution: institutionNames[0] || undefined,
+    institution: teamInstitutionIds.value[0] || undefined,
     speakers: speakersList,
     details,
   })
@@ -2682,34 +2699,66 @@ async function handleEntityImportFile(event: Event) {
 
 function openDeleteEntityModal(type: DeleteEntityType, id: string) {
   if (!id) return
+  deleteEntityModalError.value = ''
   deleteEntityModal.value = { type, id }
 }
 
 function closeDeleteEntityModal() {
+  deleteEntityModalError.value = ''
   deleteEntityModal.value = null
 }
 
 async function confirmDeleteEntity() {
   const modal = deleteEntityModal.value
   if (!modal) return
-  closeDeleteEntityModal()
+  deleteEntityModalError.value = ''
   if (modal.type === 'team') {
-    await teams.deleteTeam(tournamentId.value, modal.id)
+    const deleted = await teams.deleteTeam(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = teams.error ?? t('チームの削除に失敗しました。')
+      teams.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'adjudicator') {
-    await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    const deleted = await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = adjudicators.error ?? t('ジャッジの削除に失敗しました。')
+      adjudicators.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'venue') {
-    await venues.deleteVenue(tournamentId.value, modal.id)
+    const deleted = await venues.deleteVenue(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = venues.error ?? t('会場の削除に失敗しました。')
+      venues.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
   if (modal.type === 'speaker') {
-    await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    const deleted = await speakers.deleteSpeaker(tournamentId.value, modal.id)
+    if (!deleted) {
+      deleteEntityModalError.value = speakers.error ?? t('スピーカーの削除に失敗しました。')
+      speakers.error = null
+      return
+    }
+    closeDeleteEntityModal()
     return
   }
-  await institutions.deleteInstitution(tournamentId.value, modal.id)
+  const deleted = await institutions.deleteInstitution(tournamentId.value, modal.id)
+  if (!deleted) {
+    deleteEntityModalError.value = institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
+    institutions.error = null
+    return
+  }
+  closeDeleteEntityModal()
 }
 
 function removeTeam(id: string) {
@@ -2781,7 +2830,6 @@ async function saveEntityEdit() {
   if (editingEntity.value.type === 'team') {
     const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
     const speakersList = Array.from(new Set(selectedNames)).map((name: string) => ({ name }))
-    const institutionNames = resolveInstitutionNames(editTeamInstitutionIds.value)
     const existingTeam = teams.teams.find((item) => item._id === id)
     const details = buildTeamDetailsPayload({
       selectedInstitutionIds: editTeamInstitutionIds.value,
@@ -2793,7 +2841,7 @@ async function saveEntityEdit() {
       tournamentId: tournamentId.value,
       teamId: id,
       name: entityForm.name,
-      institution: institutionNames[0] || undefined,
+      institution: editTeamInstitutionIds.value[0] || undefined,
       speakers: speakersList,
       details,
     })
@@ -2893,207 +2941,30 @@ function adjudicatorInstitutionsLabel(adjudicator: any) {
   return unique.length > 0 ? unique.join(', ') : t('未設定')
 }
 
-function parseCsv(text: string) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-  if (lines.length === 0) return { headers: [], rows: [] }
-  const first = lines[0].split(',').map((cell) => cell.trim())
-  const headerKeys = [
-    'name',
-    'institution',
-    'category',
-    'kind',
-    'type',
-    'priority',
-    'speakers',
-    'strength',
-    'preev',
-    'priority',
-    'active',
-    'available',
-    'availability',
-    'conflict',
-    'conflicts',
-  ]
-  const hasHeader = first.some((cell) => {
-    const key = cell.toLowerCase()
-    return (
-      headerKeys.includes(key) ||
-      /^available_r\d+$/.test(key) ||
-      /^availability_r\d+$/.test(key) ||
-      /^conflicts?_r\d+$/.test(key)
-    )
-  })
-  const headers = hasHeader ? first.map((h) => h.toLowerCase()) : []
-  const rows = lines.slice(hasHeader ? 1 : 0).map((line) => line.split(',').map((c) => c.trim()))
-  return { headers, rows }
-}
-
-function splitList(value: string) {
-  return value
-    .split(/[;|]/)
-    .map((v) => v.trim())
-    .filter(Boolean)
-}
-
-function toBooleanCell(value: string, defaultValue: boolean) {
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return defaultValue
-  if (['true', '1', 'yes', 'y'].includes(normalized)) return true
-  if (['false', '0', 'no', 'n'].includes(normalized)) return false
-  return defaultValue
-}
-
-function findHeaderValue(headers: string[], row: string[], keyCandidates: string[]) {
-  for (const key of keyCandidates) {
-    const index = headers.indexOf(key)
-    if (index >= 0) return row[index] ?? ''
-  }
-  return ''
-}
-
 async function importEntitiesFromText(type: EntityTabKey, text: string) {
-  const { headers, rows } = parseCsv(text)
-  const payload: any[] = []
-  const get = (row: string[], key: string, fallbackIndex: number) => {
-    if (headers.length === 0) return row[fallbackIndex] ?? ''
-    const idx = headers.indexOf(key)
-    return idx >= 0 ? (row[idx] ?? '') : ''
-  }
-  const teamNameMap = new Map<string, string>()
-  teams.teams.forEach((team) => {
-    teamNameMap.set(team._id, team._id)
-    teamNameMap.set(team.name.toLowerCase(), team._id)
-  })
-  const institutionIdMap = new Map<string, string>()
-  institutions.institutions.forEach((inst) => {
-    institutionIdMap.set(inst._id, inst._id)
-    institutionIdMap.set(inst.name, inst._id)
-    institutionIdMap.set(inst.name.toLowerCase(), inst._id)
-  })
-  const resolveConflictIds = (cell: string) => {
-    const ids = splitList(cell).map((token) => {
-      const normalized = token.trim()
-      if (!normalized) return ''
-      return teamNameMap.get(normalized) ?? teamNameMap.get(normalized.toLowerCase()) ?? ''
-    })
-    return Array.from(new Set(ids.filter(Boolean)))
-  }
-  const resolveInstitutionIds = (cell: string) => {
-    const ids = splitList(cell).map((token) => {
-      const normalized = token.trim()
-      if (!normalized) return ''
-      return institutionIdMap.get(normalized) ?? institutionIdMap.get(normalized.toLowerCase()) ?? ''
-    })
-    return Array.from(new Set(ids.filter(Boolean)))
-  }
-  const hasRoundAvailabilityHeader = headers.some(
-    (header) => /^available_r\d+$/.test(header) || /^availability_r\d+$/.test(header)
-  )
-  const hasRoundConflictHeader = headers.some((header) => /^conflicts?_r\d+$/.test(header))
+  const roundNumbers = sortedRounds.value
+    .map((round) => Number(round.round))
+    .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
 
-  for (const row of rows) {
-    if (type === 'teams') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const institution = get(row, 'institution', 1)
-      const speakersCell = get(row, 'speakers', 2)
-      const speakersList = splitList(speakersCell).map((n) => ({ name: n }))
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        institution: institution || undefined,
-        speakers: speakersList,
-      })
-    } else if (type === 'adjudicators') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const strength = Number(get(row, 'strength', 1) || 0)
-      const preev = Number(get(row, 'preev', 2) || 0)
-      const activeValue = get(row, 'active', 3)
-      const active = toBooleanCell(activeValue, true)
-      const institutionCell = findHeaderValue(headers, row, ['institutions', 'institution'])
-      const baseInstitutionIds = resolveInstitutionIds(institutionCell)
-      const defaultAvailableCell =
-        headers.length === 0
-          ? (row[4] ?? '')
-          : findHeaderValue(headers, row, ['available', 'availability'])
-      const defaultAvailable = toBooleanCell(defaultAvailableCell, true)
-      const baseConflictCell =
-        headers.length === 0
-          ? (row[5] ?? '')
-          : findHeaderValue(headers, row, ['conflicts', 'conflict'])
-      const baseConflicts = resolveConflictIds(baseConflictCell)
-      const includeDetails =
-        sortedRounds.value.length > 0 &&
-        (defaultAvailable === false ||
-          baseInstitutionIds.length > 0 ||
-          baseConflicts.length > 0 ||
-          hasRoundAvailabilityHeader ||
-          hasRoundConflictHeader)
-      const details = includeDetails
-        ? sortedRounds.value.map((roundItem) => {
-            const availableCell = findHeaderValue(headers, row, [
-              `available_r${roundItem.round}`,
-              `availability_r${roundItem.round}`,
-            ])
-            const available = toBooleanCell(availableCell, defaultAvailable)
-            const conflictCell = findHeaderValue(headers, row, [
-              `conflicts_r${roundItem.round}`,
-              `conflict_r${roundItem.round}`,
-            ])
-            const conflictIds = Array.from(new Set([...baseConflicts, ...resolveConflictIds(conflictCell)]))
-            return {
-              r: roundItem.round,
-              available,
-              institutions: baseInstitutionIds,
-              conflicts: conflictIds,
-            }
-          })
-        : undefined
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        strength,
-        preev,
-        active,
-        details,
-      })
-    } else if (type === 'venues') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const priority = Number(get(row, 'priority', 1) || 1)
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        details: sortedRounds.value.map((round) => ({
-          r: round.round,
-          available: true,
-          priority,
-        })),
-      })
-    } else if (type === 'speakers') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      payload.push({ tournamentId: tournamentId.value, name })
-    } else if (type === 'institutions') {
-      const name = get(row, 'name', 0)
-      if (!name) continue
-      const category =
-        headers.length === 0
-          ? (row[1] ?? '')
-          : findHeaderValue(headers, row, ['category', 'kind', 'type'])
-      const priorityRaw =
-        headers.length === 0 ? (row[2] ?? '') : findHeaderValue(headers, row, ['priority'])
-      payload.push({
-        tournamentId: tournamentId.value,
-        name,
-        category: institutionCategoryLabel(category || undefined),
-        priority: institutionPriorityValue(Number(priorityRaw || 1)),
-      })
-    }
+  const { payload, errors } = buildEntityImportPayload({
+    type,
+    text,
+    tournamentId: tournamentId.value,
+    roundNumbers,
+    teams: teams.teams.map((team) => ({
+      _id: String(team._id),
+      name: String(team.name ?? ''),
+    })),
+    institutions: institutions.institutions.map((institution) => ({
+      _id: String(institution._id),
+      name: String(institution.name ?? ''),
+    })),
+    institutionCategoryLabel,
+    institutionPriorityValue,
+  })
+
+  if (errors.length > 0) {
+    throw new Error(errors.join('\n'))
   }
 
   if (payload.length === 0) {
@@ -3483,9 +3354,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 .qr-grid {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: minmax(0, 1fr) 240px;
   gap: var(--space-5);
   align-items: start;
+}
+
+.qr-content {
+  min-width: 0;
 }
 
 .qr-box {
@@ -3495,6 +3370,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--color-border);
   background: var(--color-surface-muted);
+  justify-self: end;
 }
 
 .qr-image {
@@ -3531,6 +3407,15 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 .grid .full {
   grid-column: 1 / -1;
+}
+
+.aligned-field-grid > :deep(.field),
+.aligned-field-grid > .availability-control {
+  min-height: 96px;
+}
+
+.aligned-field-grid > .availability-control {
+  align-items: flex-end;
 }
 
 .team-form-grid {
@@ -3597,6 +3482,9 @@ textarea {
 }
 
 .entity-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
@@ -3605,6 +3493,21 @@ textarea {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.entity-tab-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  font-weight: 700;
+  background: var(--color-surface-muted);
+  color: var(--color-muted);
 }
 
 .entity-tab:hover {
@@ -3616,6 +3519,26 @@ textarea {
   background: var(--color-secondary);
   color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+.entity-tab.active .entity-tab-step {
+  background: rgba(37, 99, 235, 0.16);
+  color: var(--color-primary);
+}
+
+.data-guide-header {
+  gap: 6px;
+}
+
+.data-guide-row {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.data-guide-row p {
+  margin: 0;
 }
 
 .entity-panel :deep(.btn--sm) {
@@ -3784,8 +3707,7 @@ textarea {
   }
 
   .qr-box {
-    width: min(320px, 100%);
-    margin: 0 auto;
+    display: none;
   }
 
   .markdown-grid {

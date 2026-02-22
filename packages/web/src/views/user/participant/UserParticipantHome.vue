@@ -9,14 +9,16 @@
         :target="isAudience ? $t('対戦表') : $t('参加者ダッシュボード')"
       />
     </div>
-    <LoadingState v-if="isLoading" />
-    <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <div v-else-if="visibleRounds.length === 0" class="muted">
-      {{ $t('ラウンドがまだありません。') }}
-    </div>
+    <div class="participant-home-content-shell">
+      <LoadingState v-if="!hasLoaded && isLoading" />
+      <div v-else class="participant-home-body">
+        <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+        <div v-else-if="visibleRounds.length === 0" class="muted">
+          {{ $t('ラウンドがまだありません。') }}
+        </div>
 
-    <div v-else class="stack">
-      <div v-if="isSpeaker || isAdjudicator" class="card stack">
+        <div v-else class="stack">
+          <div v-if="isSpeaker || isAdjudicator" class="card stack">
         <h4>{{ $t('あなたの情報') }}</h4>
         <label v-if="isSpeaker" class="field">
           <span>{{ $t('ジャッジ名') }}</span>
@@ -154,7 +156,7 @@
         </p>
       </div>
 
-      <template v-if="isAudience">
+          <div v-if="isAudience" class="stack audience-rounds">
         <div class="card stack audience-tools">
           <input
             v-model.trim="audienceTeamQuery"
@@ -164,7 +166,11 @@
           />
         </div>
 
-        <div v-for="round in visibleRounds" :key="round._id" class="card stack compact-round">
+        <div v-if="hasAudienceTeamQuery && audienceVisibleRounds.length === 0" class="card">
+          <p class="muted">{{ $t('一致 {count}件', { count: 0 }) }}</p>
+        </div>
+
+        <div v-for="round in audienceVisibleRounds" :key="round._id" class="card stack compact-round">
           <button
             type="button"
             class="round-toggle"
@@ -233,7 +239,7 @@
             </div>
             <div v-else-if="audienceViewMode === 'card'" class="stack compact-draw-list">
               <div
-                v-for="(row, index) in sortedAllocation(round.round)"
+                v-for="(row, index) in filteredAudienceAllocation(round.round)"
                 :key="`${round.round}-${index}`"
                 class="draw-row"
                 :class="{ 'match-hit': isAudienceRowMatched(row) }"
@@ -324,7 +330,7 @@
                         }}</span>
                       </button>
                     </th>
-                    <th>{{ $t('操作') }}</th>
+                    <th class="draw-actions-header">{{ $t('操作') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -360,9 +366,19 @@
               </table>
             </div>
           </div>
+          </div>
         </div>
-      </template>
-
+      </div>
+      <div
+        v-if="hasLoaded && isLoading"
+        class="reload-overlay"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <LoadingState />
+      </div>
+    </div>
     </div>
   </section>
 </template>
@@ -383,6 +399,11 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
+import {
+  useParticipantMode,
+  appendParticipantMode,
+  type ParticipantMode,
+} from '@/composables/useParticipantMode'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
 
@@ -399,23 +420,23 @@ const venuesStore = useVenuesStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const participant = computed(() => route.params.participant as string)
+const { participantMode } = useParticipantMode(route)
 
-const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participant)
+const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participantMode)
 const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
   tournamentId,
-  participant,
+  participantMode,
   'team-feedback-team'
 )
 const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
   tournamentId,
-  participant,
+  participantMode,
   'team-feedback-speaker'
 )
 
-const isAudience = computed(() => participant.value === 'audience')
-const isAdjudicator = computed(() => participant.value === 'adjudicator')
-const isSpeaker = computed(() => participant.value === 'speaker')
+const isAudience = computed(() => participantMode.value === 'audience')
+const isAdjudicator = computed(() => participantMode.value === 'adjudicator')
+const isSpeaker = computed(() => participantMode.value === 'speaker')
 const judgeEvaluationActorMode = computed<'team' | 'adjudicator'>({
   get: () => (route.query.actor === 'adjudicator' ? 'adjudicator' : 'team'),
   set: (value) => {
@@ -497,6 +518,7 @@ const isLoading = computed(
     speakersStore.loading ||
     venuesStore.loading
 )
+const hasLoaded = ref(false)
 
 const errorMessage = computed(
   () =>
@@ -525,8 +547,19 @@ const audienceViewMode = computed<'card' | 'table'>(() => {
   return audienceViewportMode.value
 })
 const audienceSortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
-const normalizedAudienceTeamQuery = computed(() => audienceTeamQuery.value.trim().toLowerCase())
+function normalizeAudienceSearchText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+}
+
+const normalizedAudienceTeamQuery = computed(() => normalizeAudienceSearchText(audienceTeamQuery.value))
 const hasAudienceTeamQuery = computed(() => normalizedAudienceTeamQuery.value.length > 0)
+const audienceVisibleRounds = computed(() => {
+  if (!isAudience.value || !hasAudienceTeamQuery.value) return visibleRounds.value
+  return visibleRounds.value.filter((round) => roundHasAudienceMatch(round.round))
+})
 
 type PendingTaskContext =
   | {
@@ -544,6 +577,17 @@ type PendingTaskContext =
       targetJudgeIds: string[]
       submitterCandidates: string[]
     }
+
+function withModePath(
+  path: string,
+  mode: ParticipantMode = participantMode.value,
+  sourceParams?: URLSearchParams
+) {
+  const params = sourceParams ? new URLSearchParams(sourceParams.toString()) : new URLSearchParams()
+  appendParticipantMode(params, mode)
+  const suffix = params.toString()
+  return suffix ? `${path}?${suffix}` : path
+}
 
 function parseQueryList(value: unknown) {
   if (typeof value !== 'string' || value.trim().length === 0) return []
@@ -839,13 +883,21 @@ const pendingTaskPrimaryPath = computed(() => {
       teamB: pendingTaskContext.value.teamB,
       submitter: teamIdentityId.value,
     })
-    return `/user/${tournamentId.value}/speaker/rounds/${pendingTaskContext.value.round}/ballot/entry?${query.toString()}`
+    return withModePath(
+      `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/ballot/entry`,
+      'speaker',
+      query
+    )
   }
   if (judgeEvaluationActorMode.value === 'adjudicator') {
     const feedbackQuery = new URLSearchParams({
       actor: 'adjudicator',
     })
-    return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/home?${feedbackQuery.toString()}`
+    return withModePath(
+      `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/home`,
+      'adjudicator',
+      feedbackQuery
+    )
   }
   const feedbackQuery = new URLSearchParams({
     filter: 'team',
@@ -854,27 +906,34 @@ const pendingTaskPrimaryPath = computed(() => {
   })
   const judgeId = pendingTaskContext.value.targetJudgeIds[0]
   if (pendingTaskContext.value.targetJudgeIds.length === 1 && judgeId) {
-    return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(judgeId)}?${feedbackQuery.toString()}`
+    return withModePath(
+      `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(judgeId)}`,
+      'adjudicator',
+      feedbackQuery
+    )
   }
-  return `/user/${tournamentId.value}/adjudicator/rounds/${pendingTaskContext.value.round}/feedback/home?${feedbackQuery.toString()}`
+  return withModePath(
+    `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/home`,
+    'adjudicator',
+    feedbackQuery
+  )
 })
 
 function audienceTeamMatchesQuery(teamId?: string) {
   const query = normalizedAudienceTeamQuery.value
   if (!query || !teamId) return false
-  const team = teamsStore.teams.find((item) => item._id === teamId)
-  if (!team) return false
-  const normalizedName = team.name.trim().toLowerCase()
-  return normalizedName.includes(query) || team._id.toLowerCase().includes(query)
+  const normalizedName = normalizeAudienceSearchText(teamName(teamId))
+  const normalizedId = normalizeAudienceSearchText(teamId)
+  return normalizedName.includes(query) || normalizedId.includes(query)
 }
 
 function audienceAdjudicatorMatchesQuery(adjudicatorId?: string) {
   const query = normalizedAudienceTeamQuery.value
   if (!query || !adjudicatorId) return false
   const adjudicator = adjudicatorsStore.adjudicators.find((item) => item._id === adjudicatorId)
-  if (!adjudicator) return false
-  const normalizedName = String(adjudicator.name ?? '').trim().toLowerCase()
-  return normalizedName.includes(query) || adjudicator._id.toLowerCase().includes(query)
+  const normalizedName = normalizeAudienceSearchText(adjudicator?.name ?? adjudicatorId)
+  const normalizedId = normalizeAudienceSearchText(adjudicatorId)
+  return normalizedName.includes(query) || normalizedId.includes(query)
 }
 
 function isAudienceRowMatched(row: DrawAllocationRow) {
@@ -887,9 +946,15 @@ function isAudienceRowMatched(row: DrawAllocationRow) {
   )
 }
 
+function filteredAudienceAllocation(roundNumber: number) {
+  const rows = sortedAllocation(roundNumber)
+  if (!hasAudienceTeamQuery.value) return rows
+  return rows.filter((row) => isAudienceRowMatched(row))
+}
+
 function roundHasAudienceMatch(roundNumber: number) {
   if (!hasAudienceTeamQuery.value) return false
-  return sortedAllocation(roundNumber).some((row) => isAudienceRowMatched(row))
+  return filteredAudienceAllocation(roundNumber).length > 0
 }
 
 function preferredTeamIdForRow(row: DrawAllocationRow) {
@@ -924,7 +989,7 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   const teamA = row?.teams?.gov
   const teamB = row?.teams?.opp
   if (!teamA || !teamB) {
-    return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/home`
+    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/home`, 'speaker')
   }
   const adjudicatorIds = rowAdjudicatorIds(row)
   if (adjudicatorIds.length === 1) {
@@ -933,7 +998,7 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
       teamB,
       submitter: adjudicatorIds[0],
     })
-    return `/user/${tournamentId.value}/speaker/rounds/${roundNumber}/ballot/entry?${query.toString()}`
+    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/entry`, 'speaker', query)
   }
   const query = new URLSearchParams({
     task: 'ballot',
@@ -944,7 +1009,7 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (adjudicatorIds.length > 0) {
     query.set('submitters', encodeList(adjudicatorIds))
   }
-  return `/user/${tournamentId.value}/speaker/home?${query.toString()}`
+  return withModePath(`/user/${tournamentId.value}/dashboard`, 'speaker', query)
 }
 
 function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
@@ -952,14 +1017,14 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   const teamOpp = String(row?.teams?.opp ?? '')
   const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
   if (!teamGov || !teamOpp || targetIds.length === 0) {
-    return `/user/${tournamentId.value}/adjudicator/home`
+    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator')
   }
   const submitterIds = rowAdjudicatorIds(row)
   const config = feedbackConfig(roundNumber)
   const canUseTeamActor = config.evaluateFromTeams
   const canUseAdjudicatorActor = config.evaluateFromAdjudicators && submitterIds.length > 1
   if (!canUseTeamActor && !canUseAdjudicatorActor) {
-    return `/user/${tournamentId.value}/adjudicator/home`
+    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator')
   }
   const defaultActor: 'team' | 'adjudicator' = canUseTeamActor ? 'team' : 'adjudicator'
 
@@ -975,7 +1040,7 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
     if (submitterIds.length > 0) {
       adjudicatorQuery.set('submitters', encodeList(submitterIds))
     }
-    return `/user/${tournamentId.value}/adjudicator/home?${adjudicatorQuery.toString()}`
+    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator', adjudicatorQuery)
   }
 
   const teamId = preferredTeamIdForRow(row)
@@ -986,9 +1051,13 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
       team: teamId,
     })
     if (targetIds.length === 1) {
-      return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}?${query.toString()}`
+      return withModePath(
+        `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
+        'adjudicator',
+        query
+      )
     }
-    return `/user/${tournamentId.value}/adjudicator/rounds/${roundNumber}/feedback/home?${query.toString()}`
+    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/feedback/home`, 'adjudicator', query)
   }
 
   const unresolvedQuery = new URLSearchParams({
@@ -1002,14 +1071,16 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (submitterIds.length > 0) {
     unresolvedQuery.set('submitters', encodeList(submitterIds))
   }
-  return `/user/${tournamentId.value}/adjudicator/home?${unresolvedQuery.toString()}`
+  return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator', unresolvedQuery)
 }
 
 function isRoundExpanded(roundNumber: number) {
+  const explicit = roundExpanded.value[roundNumber]
+  if (typeof explicit === 'boolean') return explicit
   if (isAudience.value && hasAudienceTeamQuery.value && roundHasAudienceMatch(roundNumber)) {
     return true
   }
-  return roundExpanded.value[roundNumber] !== false
+  return true
 }
 
 function toggleRound(roundNumber: number) {
@@ -1088,7 +1159,7 @@ function audienceSortState(roundNumber: number): AudienceSortState {
 
 function sortedAudienceTableAllocation(roundNumber: number) {
   const state = audienceSortState(roundNumber)
-  return sortedAllocation(roundNumber)
+  return filteredAudienceAllocation(roundNumber)
     .map((row: DrawAllocationRow, index: number) => ({ row, index }))
     .sort((a: { row: DrawAllocationRow; index: number }, b: { row: DrawAllocationRow; index: number }) => {
       const left = audienceSortValue(a.row, state.key)
@@ -1147,17 +1218,24 @@ function venueName(id?: string) {
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
-  await Promise.all([
-    tournamentStore.fetchTournaments(),
-    stylesStore.fetchStyles(),
-    roundsStore.fetchRounds(tournamentId.value, { forcePublic: true }),
-    drawsStore.fetchDraws(tournamentId.value, undefined, { forcePublic: true }),
-    teamsStore.fetchTeams(tournamentId.value),
-    adjudicatorsStore.fetchAdjudicators(tournamentId.value),
-    speakersStore.fetchSpeakers(tournamentId.value),
-    venuesStore.fetchVenues(tournamentId.value),
-  ])
+  if (!tournamentId.value) {
+    hasLoaded.value = true
+    return
+  }
+  try {
+    await Promise.all([
+      tournamentStore.fetchTournaments(),
+      stylesStore.fetchStyles(),
+      roundsStore.fetchRounds(tournamentId.value, { forcePublic: true }),
+      drawsStore.fetchDraws(tournamentId.value, undefined, { forcePublic: true }),
+      teamsStore.fetchTeams(tournamentId.value),
+      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
+      speakersStore.fetchSpeakers(tournamentId.value),
+      venuesStore.fetchVenues(tournamentId.value),
+    ])
+  } finally {
+    hasLoaded.value = true
+  }
 }
 
 function audienceTeamQueryStorageKey() {
@@ -1213,7 +1291,7 @@ onUnmounted(() => {
 })
 
 watch(
-  [participant, tournamentId],
+  [participantMode, tournamentId],
   () => {
     if (!isAudience.value) {
       audienceTeamQuery.value = ''
@@ -1249,7 +1327,7 @@ watch(
 )
 
 watch(
-  [participant, judgeEvaluationActorOptions],
+  [participantMode, judgeEvaluationActorOptions],
   () => {
     if (!isAdjudicator.value) return
     if (judgeEvaluationActorOptions.value.length === 0) return
@@ -1283,7 +1361,7 @@ watch(
 )
 
 watch(
-  [participant, judgeEvaluationActorMode, judgeFeedbackTeamOptions],
+  [participantMode, judgeEvaluationActorMode, judgeFeedbackTeamOptions],
   () => {
     if (isAdjudicator.value && judgeEvaluationActorMode.value === 'team' && judgeFeedbackTeamIdentityId.value) {
       const exists = judgeFeedbackTeamOptions.value.some(
@@ -1298,7 +1376,7 @@ watch(
 )
 
 watch(
-  [participant, judgeEvaluationActorMode, adjudicatorIdentityOptions],
+  [participantMode, judgeEvaluationActorMode, adjudicatorIdentityOptions],
   () => {
     if (!isSpeaker.value && !(isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator')) return
     if (!teamIdentityId.value) return
@@ -1311,7 +1389,7 @@ watch(
 )
 
 watch(
-  [tournamentId, participant],
+  [tournamentId, participantMode],
   () => {
     refresh()
   },
@@ -1330,6 +1408,22 @@ select {
 
 .error {
   color: #ef4444;
+}
+
+.participant-home-content-shell {
+  position: relative;
+  min-height: 120px;
+}
+
+.reload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+  pointer-events: none;
 }
 
 .participant-home-header {
@@ -1492,6 +1586,13 @@ select {
   background: color-mix(in srgb, var(--color-secondary) 52%, white);
 }
 
+.draw-actions-header,
+.draw-actions-cell {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+
 .draw-row {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -1540,6 +1641,11 @@ select {
 .draw-actions {
   gap: var(--space-1);
   flex-wrap: wrap;
+}
+
+.draw-table .draw-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
 }
 
 .compact-draw-list .draw-actions {

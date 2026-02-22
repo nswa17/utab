@@ -367,19 +367,19 @@ describe('Server integration', () => {
     expect(forbidden.status).toBe(403)
   })
 
-  it('migrates legacy tournament access and membership data (phase 8)', async () => {
-    const { runSecurityPhase8Migration } = await import('../src/scripts/migrate-security-phase8.js')
+  it('normalizes tournament access and backfills memberships through maintenance services', async () => {
+    const { runStartupDataMaintenance } = await import('../src/services/startup-data-maintenance.service.js')
 
     const organizerPassword = 'password123'
     const organizer = await UserModel.create({
-      username: 'phase8-organizer',
+      username: 'maintenance-organizer',
       role: 'organizer',
       passwordHash: await hashPassword(organizerPassword),
       tournaments: [],
     })
 
     const speaker = await UserModel.create({
-      username: 'phase8-speaker',
+      username: 'maintenance-speaker',
       role: 'speaker',
       passwordHash: await hashPassword('password123'),
       tournaments: [],
@@ -427,7 +427,7 @@ describe('Server integration', () => {
     )
     expect(openBeforeMigration.status).toBe(401)
 
-    const firstRun = await runSecurityPhase8Migration()
+    const firstRun = await runStartupDataMaintenance()
     expect(firstRun.tournamentsUpdated).toBeGreaterThan(0)
 
     const migratedOpen = await TournamentModel.findById(legacyOpenTournament._id).lean().exec()
@@ -490,7 +490,7 @@ describe('Server integration', () => {
     const organizerAgent = request.agent(app)
     const organizerLogin = await organizerAgent
       .post('/api/auth/login')
-      .send({ username: 'phase8-organizer', password: organizerPassword })
+      .send({ username: 'maintenance-organizer', password: organizerPassword })
     expect(organizerLogin.status).toBe(200)
 
     const patchByCreatorMembership = await organizerAgent
@@ -498,7 +498,7 @@ describe('Server integration', () => {
       .send({ name: 'Phase8 Creator Tournament Updated' })
     expect(patchByCreatorMembership.status).toBe(200)
 
-    const secondRun = await runSecurityPhase8Migration()
+    const secondRun = await runStartupDataMaintenance()
     expect(secondRun.tournamentsUpdated).toBe(0)
     expect(secondRun.membershipsCreatedFromUsers).toBe(0)
     expect(secondRun.membershipsCreatedFromCreatedBy).toBe(0)
@@ -587,7 +587,7 @@ describe('Server integration', () => {
     expect(invalidRoundFilter.body.errors.some((issue: any) => issue.path === 'round')).toBe(true)
   })
 
-  it('deduplicates submissions for the same submitted entity per round', async () => {
+  it('rejects duplicate ballot submissions for the same submitted entity, round, and matchup', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -630,21 +630,81 @@ describe('Server integration', () => {
       comment: 'second submission',
       submittedEntityId: 'team-a',
     })
-    expect(secondBallot.status).toBe(201)
+    expect(secondBallot.status).toBe(409)
+    expect(String(secondBallot.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
+    )
 
     const adminList = await organizer.get(
       `/api/submissions?tournamentId=${tournamentId}&round=1&type=ballot`
     )
     expect(adminList.status).toBe(200)
     expect(adminList.body.data.length).toBe(1)
-    expect(adminList.body.data[0].payload.comment).toBe('second submission')
+    expect(adminList.body.data[0].payload.comment).toBe('first submission')
 
     const participantList = await organizer.get(
       `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=ballot&submittedEntityId=team-a`
     )
     expect(participantList.status).toBe(200)
     expect(participantList.body.data.length).toBe(1)
-    expect(participantList.body.data[0].payload.winnerId).toBe('team-b')
+    expect(participantList.body.data[0].payload.winnerId).toBe('team-a')
+  })
+
+  it('rejects duplicate feedback submissions for the same submitted entity, round, and target adjudicator', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'feedback-duplicate-reject', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'feedback-duplicate-reject', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Feedback Duplicate Reject Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const firstFeedback = await organizer.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: 'judge-a',
+      score: 7,
+      comment: 'first feedback',
+      submittedEntityId: 'team-a',
+    })
+    expect(firstFeedback.status).toBe(201)
+
+    const secondFeedback = await organizer.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: 'judge-a',
+      score: 8,
+      comment: 'second feedback',
+      submittedEntityId: 'team-a',
+    })
+    expect(secondFeedback.status).toBe(409)
+    expect(String(secondFeedback.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにジャッジ評価が送信されています。運営に報告してください。'
+    )
+
+    const adminList = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=1&type=feedback`
+    )
+    expect(adminList.status).toBe(200)
+    expect(adminList.body.data.length).toBe(1)
+    expect(adminList.body.data[0].payload.comment).toBe('first feedback')
+
+    const participantList = await organizer.get(
+      `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=feedback&submittedEntityId=team-a`
+    )
+    expect(participantList.status).toBe(200)
+    expect(participantList.body.data.length).toBe(1)
+    expect(participantList.body.data[0].payload.score).toBe(7)
   })
 
   it('updates submitted ballots via admin submission API', async () => {

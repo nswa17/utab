@@ -691,6 +691,156 @@ describe('Server integration', () => {
     expect(powerpairDrawRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('powerpair')
   })
 
+  it('supports compile preview and explicit snapshot save with stale detection', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-preview-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-preview-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Compile Preview Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamResA = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Preview Team A',
+    })
+    expect(teamResA.status).toBe(201)
+    const teamIdA = teamResA.body.data._id as string
+
+    const teamResB = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Preview Team B',
+    })
+    expect(teamResB.status).toBe(201)
+    const teamIdB = teamResB.body.data._id as string
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamIdA,
+        from_id: 'preview-seed',
+        r: 1,
+        win: 1,
+        side: 'gov',
+        opponents: [teamIdB],
+      },
+      {
+        tournamentId,
+        id: teamIdB,
+        from_id: 'preview-seed',
+        r: 1,
+        win: 0,
+        side: 'opp',
+        opponents: [teamIdA],
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const compiledBeforePreview = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
+    expect(compiledBeforePreview.status).toBe(200)
+    expect(compiledBeforePreview.body.data).toHaveLength(0)
+
+    const previewRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      options: {
+        include_labels: ['teams'],
+      },
+    })
+    expect(previewRes.status).toBe(200)
+    expect(previewRes.body.data.preview.compile_source).toBe('raw')
+    expect(previewRes.body.data.preview.compiled_team_results.length).toBe(2)
+    expect(typeof previewRes.body.data.preview_signature).toBe('string')
+    expect(typeof previewRes.body.data.revision).toBe('string')
+
+    const emptyRoundsPreviewRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [],
+      options: {
+        include_labels: ['teams'],
+      },
+    })
+    expect(emptyRoundsPreviewRes.status).toBe(200)
+    expect(emptyRoundsPreviewRes.body.data.preview.rounds).toEqual([])
+    expect(emptyRoundsPreviewRes.body.data.preview.compiled_team_results).toEqual([])
+
+    const compiledAfterPreview = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
+    expect(compiledAfterPreview.status).toBe(200)
+    expect(compiledAfterPreview.body.data).toHaveLength(0)
+
+    const staleSaveRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'raw',
+      options: {
+        include_labels: ['teams'],
+      },
+      preview_signature: 'stale-signature',
+      revision: previewRes.body.data.revision,
+    })
+    expect(staleSaveRes.status).toBe(409)
+    expect(staleSaveRes.body.errors[0].name).toBe('PreviewStale')
+
+    const saveRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'raw',
+      options: {
+        include_labels: ['teams'],
+      },
+      snapshot_name: 'Round 1 / raw / save-test',
+      snapshot_memo: 'manual save memo',
+      preview_signature: previewRes.body.data.preview_signature,
+      revision: previewRes.body.data.revision,
+    })
+    expect(saveRes.status).toBe(201)
+    expect(saveRes.body.data.payload.snapshot_name).toBe('Round 1 / raw / save-test')
+    expect(saveRes.body.data.payload.snapshot_memo).toBe('manual save memo')
+
+    const compiledAfterSave = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
+    expect(compiledAfterSave.status).toBe(200)
+    expect(compiledAfterSave.body.data).toHaveLength(1)
+    expect(compiledAfterSave.body.data[0].payload.snapshot_name).toBe('Round 1 / raw / save-test')
+
+    const savedCompiledId = compiledAfterSave.body.data[0]?._id as string
+    expect(typeof savedCompiledId).toBe('string')
+    expect(savedCompiledId.length).toBeGreaterThan(0)
+
+    const deleteCompiledRes = await agent
+      .delete(`/api/compiled/${savedCompiledId}`)
+      .query({ tournamentId })
+    expect(deleteCompiledRes.status).toBe(200)
+    expect(deleteCompiledRes.body.data._id).toBe(savedCompiledId)
+
+    const compiledAfterDelete = await agent.get(`/api/compiled?tournamentId=${tournamentId}`)
+    expect(compiledAfterDelete.status).toBe(200)
+    expect(compiledAfterDelete.body.data).toHaveLength(0)
+
+    const deleteMissingCompiledRes = await agent
+      .delete(`/api/compiled/${savedCompiledId}`)
+      .query({ tournamentId })
+    expect(deleteMissingCompiledRes.status).toBe(404)
+  })
+
   it('previews and saves break participants while syncing team availability', async () => {
     const agent = request.agent(app)
 

@@ -427,13 +427,39 @@ describe('Server integration', () => {
       round: 1,
       teamAId: teamId1,
       teamBId: teamId2,
+      draw: true,
       speakerIdsA: [speakerId1],
       speakerIdsB: [speakerId2],
       scoresA: [74],
       scoresB: [74],
       submittedEntityId: 'judge-a',
     })
-    expect(ballotRes2.status).toBe(201)
+    expect(ballotRes2.status).toBe(409)
+    expect(String(ballotRes2.body.errors?.[0]?.message ?? '')).toContain(
+      'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
+    )
+
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      payload: {
+        teamAId: teamId1,
+        teamBId: teamId2,
+        speakerIdsA: [speakerId1],
+        speakerIdsB: [speakerId2],
+        scoresA: [74],
+        scoresB: [74],
+        submittedEntityId: 'judge-a',
+      },
+      submittedBy: 'judge-a',
+    })
 
     const compileWithErrorPolicy = await agent.post('/api/compiled').send({
       tournamentId,
@@ -442,7 +468,10 @@ describe('Server integration', () => {
         duplicate_normalization: { merge_policy: 'error' },
       },
     })
-    expect(compileWithErrorPolicy.status).toBe(201)
+    expect(compileWithErrorPolicy.status).toBe(400)
+    expect(String(compileWithErrorPolicy.body.errors?.[0]?.message ?? '')).toContain(
+      'Duplicate ballots detected'
+    )
 
     const compileRes = await agent.post('/api/compiled').send({
       tournamentId,
@@ -476,7 +505,12 @@ describe('Server integration', () => {
     expect(team2.win).toBe(0.5)
     expect(team1.ranking).toBe(1)
     expect(team2.ranking).toBe(1)
-    expect(compileRes.body.data.payload.compile_warnings).toEqual([])
+    expect(compileRes.body.data.payload.compile_warnings.length).toBeGreaterThan(0)
+    expect(
+      compileRes.body.data.payload.compile_warnings.some((message: string) =>
+        message.includes('winner/draw verdict is missing')
+      )
+    ).toBe(true)
 
     const compileTieRankRes = await agent.post('/api/compiled').send({
       tournamentId,

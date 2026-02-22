@@ -62,18 +62,20 @@ const describedBy = computed(() => {
   font-weight: 600;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2, 8px);
 }
 
 .field-label-main {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
 }
 
 .field-label-suffix {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
 }
 
 .field-required {

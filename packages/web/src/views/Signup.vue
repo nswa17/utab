@@ -15,14 +15,6 @@
         <Field :label="$t('パスワード')" required v-slot="{ id, describedBy }">
           <input v-model="password" :id="id" :aria-describedby="describedBy" type="password" />
         </Field>
-        <Field :label="$t('役割')" v-slot="{ id, describedBy }">
-          <select v-model="role" :id="id" :aria-describedby="describedBy">
-            <option value="organizer">{{ $t('運営') }}</option>
-            <option value="adjudicator">{{ $t('ジャッジ') }}</option>
-            <option value="speaker">{{ $t('スピーカー') }}</option>
-            <option value="audience">{{ $t('観客') }}</option>
-          </select>
-        </Field>
         <Button type="submit" :loading="loading">
           {{ loading ? $t('登録中...') : $t('登録') }}
         </Button>
@@ -46,7 +38,6 @@ const { t } = useI18n({ useScope: 'global' })
 
 const username = ref('')
 const password = ref('')
-const role = ref('organizer')
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -57,7 +48,7 @@ async function handleSubmit() {
     await api.post('/auth/register', {
       username: username.value,
       password: password.value,
-      role: role.value,
+      role: 'organizer',
     })
     router.push('/login')
   } catch (err: any) {

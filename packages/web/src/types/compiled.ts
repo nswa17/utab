@@ -59,19 +59,41 @@ export interface CompileOptionsInput {
   diff_baseline?: { mode: 'latest' } | { mode: 'compiled'; compiled_id: string }
 }
 
+export type CompileSource = 'submissions' | 'raw'
+
+export type CompileRunRequest = {
+  source?: CompileSource
+  rounds?: number[]
+  options?: CompileOptions
+}
+
+export type CompileSaveRequest = CompileRunRequest & {
+  snapshotName?: string
+  snapshotMemo?: string
+  previewSignature?: string
+  revision?: string
+}
+
+export type CompiledPreviewState = {
+  preview: Record<string, any>
+  previewSignature: string
+  revision: string
+  source: CompileSource
+}
+
 export const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
   ranking_priority: {
     preset: 'current',
-    order: [...compileRankingMetrics],
+    order: ['win', 'sum', 'margin'],
   },
   winner_policy: 'winner_id_then_score',
   tie_points: 0.5,
   duplicate_normalization: {
-    merge_policy: 'average',
-    poi_aggregation: 'average',
-    best_aggregation: 'average',
+    merge_policy: 'latest',
+    poi_aggregation: 'max',
+    best_aggregation: 'max',
   },
-  missing_data_policy: 'warn',
+  missing_data_policy: 'error',
   include_labels: [...compileIncludeLabels],
   diff_baseline: { mode: 'latest' },
 }
@@ -84,12 +106,21 @@ export function normalizeCompileOptions(
   input?: CompileOptionsInput,
   fallback: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): CompileOptions {
-  const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order)
+  const rankingPreset = input?.ranking_priority?.preset ?? fallback.ranking_priority.preset
+  const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order).filter(
+    (metric): metric is CompileRankingMetric => compileRankingMetrics.includes(metric as CompileRankingMetric)
+  )
+  const resolvedRankingOrder =
+    rankingPreset === 'current'
+      ? [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order]
+      : rankingOrder.length > 0
+        ? rankingOrder
+        : [...fallback.ranking_priority.order]
   const includeLabels = dedupe(input?.include_labels ?? fallback.include_labels)
   return {
     ranking_priority: {
-      preset: input?.ranking_priority?.preset ?? fallback.ranking_priority.preset,
-      order: rankingOrder.length > 0 ? rankingOrder : [...fallback.ranking_priority.order],
+      preset: rankingPreset,
+      order: resolvedRankingOrder,
     },
     winner_policy: input?.winner_policy ?? fallback.winner_policy,
     tie_points:

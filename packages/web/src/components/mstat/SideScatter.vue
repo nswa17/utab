@@ -8,10 +8,16 @@ import type { Options } from 'highcharts'
 import { useI18n } from 'vue-i18n'
 import { useHighcharts } from '@/composables/useHighcharts'
 
-const props = defineProps<{
-  results: any[]
-  rounds?: Array<{ round: number; name?: string }>
-}>()
+const props = withDefaults(
+  defineProps<{
+    results: any[]
+    rounds?: Array<{ round: number; name?: string }>
+    showTitle?: boolean
+  }>(),
+  {
+    showTitle: true,
+  }
+)
 
 const container = ref<HTMLDivElement | null>(null)
 const { Highcharts } = useHighcharts()
@@ -19,13 +25,15 @@ const { t, locale } = useI18n({ useScope: 'global' })
 
 const roundList = computed(() => {
   if (props.rounds && props.rounds.length > 0) {
-    return props.rounds.slice().sort((a, b) => a.round - b.round)
+    return props.rounds
+      .filter((item) => Number.isInteger(item.round) && item.round >= 1)
+      .slice()
+      .sort((a, b) => a.round - b.round)
   }
   const set = new Set<number>()
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      const r = Number(detail.r)
-      if (Number.isFinite(r)) set.add(r)
+      if (Number.isInteger(detail.r) && detail.r >= 1) set.add(detail.r)
     })
   })
   return Array.from(set)
@@ -43,8 +51,7 @@ function render() {
   const oppData: Array<[number, number]> = []
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      const roundValue = Number(detail.r)
-      const index = roundIndex(roundValue)
+      const index = roundIndex(detail.r)
       if (index < 0) return
       if (typeof detail.sum !== 'number') return
       if (detail.side === 'gov') {
@@ -71,12 +78,19 @@ function render() {
 
   Highcharts.chart(container.value as HTMLElement, {
     chart: { type: 'scatter', backgroundColor: 'transparent', zoomType: 'xy' },
-    title: { text: t('サイド別スコア') },
+    title: {
+      text: props.showTitle ? t('サイド別スコア') : undefined,
+      align: 'center',
+      style: { fontSize: '1.2rem', fontWeight: '700' as const },
+    },
     xAxis: {
       title: { text: '' },
       categories,
-      startOnTick: true,
-      endOnTick: true,
+      min: categories.length > 0 ? -0.5 : undefined,
+      max: categories.length > 0 ? categories.length - 0.5 : undefined,
+      tickPositions: categories.map((_, index) => index),
+      startOnTick: false,
+      endOnTick: false,
       showLastLabel: true,
     },
     yAxis: { title: { text: t('スコア') } },
