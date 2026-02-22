@@ -33,6 +33,7 @@ type BallotPayload = {
   teamAId?: string
   teamBId?: string
   winnerId?: string
+  draw?: boolean
   submittedEntityId?: string
   speakerIdsA?: unknown
   speakerIdsB?: unknown
@@ -88,6 +89,12 @@ type MissingDataIssue = {
   message: string
   round?: number
   submissionId?: string
+}
+
+type BallotResolution = {
+  winnerId?: string
+  draw: boolean
+  inferred: boolean
 }
 
 type DiffRankingTrend = 'improved' | 'worsened' | 'unchanged' | 'new' | 'na'
@@ -678,24 +685,24 @@ function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: Co
   const winsA = orientedPayloads.map((payload) => {
     const totalA = sumScores(toNumberArray(payload.scoresA))
     const totalB = sumScores(toNumberArray(payload.scoresB))
-    const winnerId = resolveWinnerForBallot(
+    const verdict = resolveWinnerForBallot(
       payload as BallotPayload,
       compileOptions.winner_policy,
       totalA,
       totalB
     )
-    return winnerId === teamAId ? 1 : winnerId ? 0 : compileOptions.tie_points
+    return verdict.winnerId === teamAId ? 1 : verdict.draw ? compileOptions.tie_points : 0
   })
   const winsB = orientedPayloads.map((payload) => {
     const totalA = sumScores(toNumberArray(payload.scoresA))
     const totalB = sumScores(toNumberArray(payload.scoresB))
-    const winnerId = resolveWinnerForBallot(
+    const verdict = resolveWinnerForBallot(
       payload as BallotPayload,
       compileOptions.winner_policy,
       totalA,
       totalB
     )
-    return winnerId === teamBId ? 1 : winnerId ? 0 : compileOptions.tie_points
+    return verdict.winnerId === teamBId ? 1 : verdict.draw ? compileOptions.tie_points : 0
   })
   const averagedWinA = averageFiniteNumbers(winsA)
   const averagedWinB = averageFiniteNumbers(winsB)
@@ -707,7 +714,8 @@ function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: Co
       ...orientedPayloads[0],
       teamAId,
       teamBId,
-      winnerId: '',
+      winnerId: undefined,
+      draw: undefined,
       speakerIdsA,
       speakerIdsB,
       scoresA: averagedScoresA,
@@ -731,25 +739,35 @@ function resolveWinnerForBallot(
   policy: CompileOptions['winner_policy'],
   totalA: number,
   totalB: number
-): string | undefined {
+): BallotResolution {
   const teamAId = String(payload.teamAId ?? '').trim()
   const teamBId = String(payload.teamBId ?? '').trim()
+  if (!teamAId || !teamBId || teamAId === teamBId) {
+    return { winnerId: undefined, draw: true, inferred: true }
+  }
+
+  const explicitDraw = payload.draw === true
   const explicitWinner = String(payload.winnerId ?? '').trim()
   const normalizedWinner =
     explicitWinner === teamAId || explicitWinner === teamBId ? explicitWinner : undefined
 
-  if (policy === 'score_only') {
-    if (totalA > totalB) return teamAId
-    if (totalB > totalA) return teamBId
-    return undefined
+  if (explicitDraw) {
+    return { winnerId: undefined, draw: true, inferred: false }
   }
+  if (normalizedWinner) {
+    return { winnerId: normalizedWinner, draw: false, inferred: false }
+  }
+
   if (policy === 'draw_on_missing') {
-    return normalizedWinner
+    return { winnerId: undefined, draw: true, inferred: true }
   }
-  if (normalizedWinner) return normalizedWinner
-  if (totalA > totalB) return teamAId
-  if (totalB > totalA) return teamBId
-  return undefined
+  if (totalA > totalB) {
+    return { winnerId: teamAId, draw: false, inferred: true }
+  }
+  if (totalB > totalA) {
+    return { winnerId: teamBId, draw: false, inferred: true }
+  }
+  return { winnerId: undefined, draw: true, inferred: true }
 }
 
 async function buildCompiledPayloadFromRaw(
@@ -1145,22 +1163,38 @@ async function buildCompiledPayloadFromSubmissions(
 
     const totalA = sumScores(scoresA)
     const totalB = sumScores(scoresB)
-    const winnerId = resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
     const normalizedWinA = Number((submission as any).__normalizedWinA)
     const normalizedWinB = Number((submission as any).__normalizedWinB)
     const hasNormalizedWins = Number.isFinite(normalizedWinA) && Number.isFinite(normalizedWinB)
+    const ballotVerdict =
+      hasNormalizedWins
+        ? ({ winnerId: undefined, draw: true, inferred: false } as BallotResolution)
+        : resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
+    if (!hasNormalizedWins && ballotVerdict.inferred) {
+      registerMissingIssue({
+        code: 'missing_verdict',
+        message: 'winner/draw verdict is missing in ballot submission',
+        round,
+        submissionId,
+      })
+      if (compileOptions.missing_data_policy !== 'warn') return
+    }
     const winA = hasNormalizedWins
       ? normalizedWinA
-      : winnerId === teamAId
+      : ballotVerdict.winnerId === teamAId
         ? 1
-        : winnerId
+        : ballotVerdict.draw
+          ? compileOptions.tie_points
+          : ballotVerdict.winnerId
           ? 0
           : compileOptions.tie_points
     const winB = hasNormalizedWins
       ? normalizedWinB
-      : winnerId === teamBId
+      : ballotVerdict.winnerId === teamBId
         ? 1
-        : winnerId
+        : ballotVerdict.draw
+          ? compileOptions.tie_points
+          : ballotVerdict.winnerId
           ? 0
           : compileOptions.tie_points
     const sideMap = sideByRoundTeam.get(round)

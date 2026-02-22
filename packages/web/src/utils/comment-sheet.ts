@@ -117,9 +117,14 @@ export function buildCommentSheetRows(
       const teamAId = normalizeText(payload.teamAId)
       const teamBId = normalizeText(payload.teamBId)
       const winnerId = normalizeText(payload.winnerId)
+      const draw = payload.draw === true
       const teamA = teamAId ? normalizeText(resolvers.resolveTeamName(teamAId)) : ''
       const teamB = teamBId ? normalizeText(resolvers.resolveTeamName(teamBId)) : ''
-      const winner = winnerId ? normalizeText(resolvers.resolveTeamName(winnerId)) : ''
+      const winner = draw
+        ? 'Draw'
+        : winnerId
+          ? normalizeText(resolvers.resolveTeamName(winnerId))
+          : ''
       const matchup = teamA || teamB ? `${teamA || teamAId} vs ${teamB || teamBId}` : ''
       rows.push({
         ...baseRow,

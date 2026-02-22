@@ -123,6 +123,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(submissionsView).toContain("const DRAW_WINNER_OPTION_VALUE = '__draw__'")
     expect(submissionsView).toContain('const editingBallotAllowDraw = computed(() =>')
     expect(submissionsView).toContain('allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false')
+    expect(submissionsView).toContain('allowWinnerScoreMismatch: roundAllowsWinnerScoreMismatch(found?.userDefinedData)')
     expect(submissionsView).toContain('const editingBallotWinnerOptions = computed<Array<{ value: string; label: string }>>(() => {')
     expect(submissionsView).toContain('v-for="option in editingBallotWinnerOptions"')
     expect(submissionsView).not.toMatch(

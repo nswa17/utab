@@ -12,6 +12,7 @@ export interface BallotSubmissionPayload {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   speakerIdsA?: string[]
   speakerIdsB?: string[]
   scoresA: number[]

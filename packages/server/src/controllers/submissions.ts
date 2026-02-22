@@ -6,6 +6,7 @@ import { getDrawModel } from '../models/draw.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
@@ -53,6 +54,7 @@ type NormalizedBallotPayload = {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   speakerIdsA?: string[]
   speakerIdsB?: string[]
   scoresA: number[]
@@ -161,6 +163,47 @@ function parseOptionalTrimmedString(
   }
   const normalized = value.trim()
   return { ok: true, value: normalized || undefined }
+}
+
+function parseOptionalBoolean(value: unknown, key: string): ValidationOutcome<boolean | undefined> {
+  if (value === undefined) return { ok: true, value: undefined }
+  if (typeof value !== 'boolean') {
+    return { ok: false, message: `${key} must be a boolean` }
+  }
+  return { ok: true, value }
+}
+
+function parseWinnerPolicyToken(value: unknown): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
+  if (typeof value !== 'string') return undefined
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return undefined
+}
+
+function resolveRoundBallotRules(roundDoc: unknown): {
+  allowDraw: boolean
+  allowWinnerScoreMismatch: boolean
+} {
+  const userDefinedData = toPayloadRecord((roundDoc as any)?.userDefinedData) ?? {}
+  const compileRecord = toPayloadRecord(userDefinedData.compile)
+  const compileCandidate = toPayloadRecord(compileRecord?.options) ?? compileRecord ?? {}
+  const winnerPolicyToken =
+    parseWinnerPolicyToken(userDefinedData.winner_policy) ??
+    parseWinnerPolicyToken(compileCandidate.winner_policy)
+  const normalizedCompileOptions = normalizeCompileOptions(
+    winnerPolicyToken ? ({ winner_policy: winnerPolicyToken } as any) : undefined,
+    DEFAULT_COMPILE_OPTIONS
+  )
+  const allowDraw = userDefinedData.allow_low_tie_win !== false
+  const allowWinnerScoreMismatch =
+    typeof userDefinedData.allow_score_winner_mismatch === 'boolean'
+      ? userDefinedData.allow_score_winner_mismatch
+      : normalizedCompileOptions.winner_policy !== 'score_only'
+  return {
+    allowDraw,
+    allowWinnerScoreMismatch,
+  }
 }
 
 type DrawAllocationContext = {
@@ -442,7 +485,7 @@ async function normalizeBallotPayload(
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
   const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
-  const allowLowTieWin = (roundDoc as any)?.userDefinedData?.allow_low_tie_win !== false
+  const { allowDraw, allowWinnerScoreMismatch } = resolveRoundBallotRules(roundDoc)
   const noSpeakerScore = (roundDoc as any)?.userDefinedData?.no_speaker_score === true
 
   const normalizedTeamAId = String(payload.teamAId ?? '').trim()
@@ -459,6 +502,16 @@ async function normalizeBallotPayload(
   const validWinner = winnerIsTeamA || winnerIsTeamB
   if (normalizedWinner && !validWinner) {
     return { ok: false, message: 'winnerId must match teamAId or teamBId' }
+  }
+
+  const drawToken = parseOptionalBoolean(payload.draw, 'draw')
+  if (!drawToken.ok) return drawToken
+  const drawSelected = drawToken.value === true
+  if (drawSelected && normalizedWinner) {
+    return { ok: false, message: 'winnerId and draw cannot both be set' }
+  }
+  if (!drawSelected && !validWinner) {
+    return { ok: false, message: allowDraw ? 'winnerId or draw is required' : 'winnerId is required' }
   }
 
   const scoresAResult = parseOptionalFiniteNumberArray(payload.scoresA, 'scoresA')
@@ -575,19 +628,24 @@ async function normalizeBallotPayload(
   const hasComparableScores = parsedScoresA.length > 0 && parsedScoresB.length > 0
   const totalA = sumScores(parsedScoresA)
   const totalB = sumScores(parsedScoresB)
-  const hasDecisiveScore = hasComparableScores && totalA !== totalB
-  if (allowLowTieWin && !validWinner && hasDecisiveScore) {
-    return { ok: false, message: 'winnerId is required when scores are not tied' }
-  }
+  const tiedScore = !hasComparableScores || totalA === totalB
 
-  if (!allowLowTieWin) {
-    let invalid = !validWinner
-    if (!invalid && hasComparableScores) {
-      if (winnerIsTeamA) invalid = totalA <= totalB
-      if (winnerIsTeamB) invalid = totalB <= totalA
+  if (drawSelected) {
+    if (!allowDraw) {
+      return { ok: false, message: 'draw is not allowed in this round' }
     }
-    if (invalid) {
-      return { ok: false, message: 'low tie win is not allowed in this round' }
+    if (!allowWinnerScoreMismatch && !tiedScore) {
+      return {
+        ok: false,
+        message: 'draw is allowed only on tied scores when winner-score mismatch is disabled',
+      }
+    }
+  } else if (!allowWinnerScoreMismatch && hasComparableScores && totalA !== totalB) {
+    if (winnerIsTeamA && totalA < totalB) {
+      return { ok: false, message: 'winnerId must follow score order in this round' }
+    }
+    if (winnerIsTeamB && totalB < totalA) {
+      return { ok: false, message: 'winnerId must follow score order in this round' }
     }
   }
 
@@ -603,7 +661,8 @@ async function normalizeBallotPayload(
     value: {
       teamAId: normalizedTeamAId,
       teamBId: normalizedTeamBId,
-      winnerId: normalizedWinner || undefined,
+      winnerId: drawSelected ? undefined : normalizedWinner || undefined,
+      draw: drawSelected || undefined,
       speakerIdsA: speakerIdsAResult.value,
       speakerIdsB: speakerIdsBResult.value,
       scoresA: parsedScoresA,
@@ -759,6 +818,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId,
       teamBId,
       winnerId,
+      draw,
       speakerIdsA,
       speakerIdsB,
       scoresA,
@@ -780,6 +840,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId: string
       teamBId: string
       winnerId?: string
+      draw?: boolean
       scoresA: number[]
       scoresB: number[]
       comment?: string
@@ -805,6 +866,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       teamAId,
       teamBId,
       winnerId,
+      draw,
       speakerIdsA,
       speakerIdsB,
       scoresA,

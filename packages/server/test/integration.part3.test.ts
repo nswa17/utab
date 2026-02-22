@@ -427,6 +427,7 @@ describe('Server integration', () => {
       round: 1,
       teamAId: teamId1,
       teamBId: teamId2,
+      draw: true,
       speakerIdsA: [speakerId1],
       speakerIdsB: [speakerId2],
       scoresA: [74],
@@ -504,7 +505,12 @@ describe('Server integration', () => {
     expect(team2.win).toBe(0.5)
     expect(team1.ranking).toBe(1)
     expect(team2.ranking).toBe(1)
-    expect(compileRes.body.data.payload.compile_warnings).toEqual([])
+    expect(compileRes.body.data.payload.compile_warnings.length).toBeGreaterThan(0)
+    expect(
+      compileRes.body.data.payload.compile_warnings.some((message: string) =>
+        message.includes('winner/draw verdict is missing')
+      )
+    ).toBe(true)
 
     const compileTieRankRes = await agent.post('/api/compiled').send({
       tournamentId,

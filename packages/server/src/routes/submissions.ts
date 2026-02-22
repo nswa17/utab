@@ -23,6 +23,7 @@ const ballotSchema = {
       teamAId: z.string().trim().min(1),
       teamBId: z.string().trim().min(1),
       winnerId: z.string().trim().min(1).optional(),
+      draw: z.boolean().optional(),
       speakerIdsA: z.array(z.string().trim().min(1)).optional(),
       speakerIdsB: z.array(z.string().trim().min(1)).optional(),
       scoresA: z.array(finiteScoreSchema),

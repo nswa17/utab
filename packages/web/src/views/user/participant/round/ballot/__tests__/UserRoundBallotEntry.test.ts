@@ -10,9 +10,11 @@ describe('UserRoundBallotEntry winner selection rules', () => {
   it('requires explicit winner or draw selection before submit', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain('const winnerSelectionMade = computed(() => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value)')
-    expect(source).toContain('if (!winnerSelectionMade.value) return false')
-    expect(source).toContain('if (!winnerSelectionMade.value) {')
+    expect(source).toContain('const winnerDecisionError = computed(() => {')
+    expect(source).toContain('if (!winnerSelectionMade.value) return winnerRequiredMessage.value')
     expect(source).toContain("allowLowTieWin.value ? t('勝者または引き分けを選択してください。') : t('勝者を選択してください。')")
+    expect(source).toContain("return t('引き分けは同点時のみ選択できます。')")
+    expect(source).toContain("return t('勝者は点数の大小と一致させてください。')")
   })
 
   it('does not show implicit draw hint text', () => {

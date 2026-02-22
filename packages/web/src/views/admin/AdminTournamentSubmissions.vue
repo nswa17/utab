@@ -1551,6 +1551,7 @@ type BallotPayload = {
   teamAId?: string
   teamBId?: string
   winnerId?: string
+  draw?: boolean
   speakerIdsA?: unknown
   speakerIdsB?: unknown
   scoresA?: unknown
@@ -2181,12 +2182,42 @@ function resetFeedbackEditor() {
   editingFeedbackRole.value = ''
 }
 
+function parseWinnerPolicyToken(
+  value: unknown
+): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | '' {
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return ''
+}
+
+function roundAllowsWinnerScoreMismatch(roundUserDefinedData: unknown): boolean {
+  if (!roundUserDefinedData || typeof roundUserDefinedData !== 'object') return true
+  const userDefined = roundUserDefinedData as Record<string, unknown>
+  if (typeof userDefined.allow_score_winner_mismatch === 'boolean') {
+    return userDefined.allow_score_winner_mismatch
+  }
+  const compile =
+    userDefined.compile && typeof userDefined.compile === 'object'
+      ? (userDefined.compile as Record<string, unknown>)
+      : null
+  const compileOptions =
+    compile?.options && typeof compile.options === 'object'
+      ? (compile.options as Record<string, unknown>)
+      : compile
+  const winnerPolicy =
+    parseWinnerPolicyToken(userDefined.winner_policy) ||
+    parseWinnerPolicyToken(compileOptions?.winner_policy)
+  return winnerPolicy !== 'score_only'
+}
+
 function roundScoreSettings(roundNumber: number) {
   const found = rounds.rounds.find((item) => Number(item.round) === Number(roundNumber))
   return {
     noSpeakerScore: found?.userDefinedData?.no_speaker_score === true,
     scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
     allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false,
+    allowWinnerScoreMismatch: roundAllowsWinnerScoreMismatch(found?.userDefinedData),
   }
 }
 
@@ -2260,7 +2291,9 @@ function hydrateBallotEditor(payload: Record<string, unknown>) {
     initialSideMapping.govTeamId === editingBallotTeamBId.value
       ? initialSideMapping.govTeamId
       : editingBallotTeamAId.value || editingBallotTeamBId.value
-  normalizeEditingBallotWinnerSelection(String(payload.winnerId ?? ''))
+  normalizeEditingBallotWinnerSelection(
+    payload.draw === true ? DRAW_WINNER_OPTION_VALUE : String(payload.winnerId ?? '')
+  )
   editingBallotSubmittedEntityId.value = String(payload.submittedEntityId ?? '')
   editingBallotComment.value = typeof payload.comment === 'string' ? payload.comment : ''
 
@@ -2414,7 +2447,23 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
         : t('勝者を選択してください。')
     )
   }
-  const winner = winnerSelection === DRAW_WINNER_OPTION_VALUE ? '' : winnerSelection
+  const settings = roundScoreSettings(editingRound.value)
+  const winnerIsDraw = winnerSelection === DRAW_WINNER_OPTION_VALUE
+  const winner = winnerIsDraw ? '' : winnerSelection
+  const validateWinnerDecision = (totalA: number, totalB: number, hasComparableScores: boolean) => {
+    if (winnerIsDraw) {
+      if (!settings.allowLowTieWin) return t('このラウンドでは引き分けは選択できません。')
+      if (!settings.allowWinnerScoreMismatch && hasComparableScores && totalA !== totalB) {
+        return t('引き分けは同点時のみ選択できます。')
+      }
+      return ''
+    }
+    if (!settings.allowWinnerScoreMismatch && hasComparableScores && totalA !== totalB) {
+      if (winner === teamAId && totalA < totalB) return t('勝者は点数の大小と一致させてください。')
+      if (winner === teamBId && totalB < totalA) return t('勝者は点数の大小と一致させてください。')
+    }
+    return ''
+  }
 
   const payload: Record<string, unknown> = {
     ...editingBallotBasePayload.value,
@@ -2423,8 +2472,13 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
     comment: editingBallotComment.value,
   }
 
-  if (winner) payload.winnerId = winner
-  else delete payload.winnerId
+  if (winnerIsDraw) {
+    payload.draw = true
+    delete payload.winnerId
+  } else {
+    payload.winnerId = winner
+    delete payload.draw
+  }
 
   const submittedEntityId = editingBallotSubmittedEntityId.value.trim()
   if (
@@ -2437,6 +2491,9 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
   else delete payload.submittedEntityId
 
   if (editingBallotNoSpeakerScore.value) {
+    const winnerDecisionMessage = validateWinnerDecision(0, 0, false)
+    if (winnerDecisionMessage) return fail(winnerDecisionMessage)
+
     payload.scoresA = []
     payload.scoresB = []
     payload.speakerIdsA = []
@@ -2452,7 +2509,22 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
     return payload
   }
 
-  const parseSideRows = (sideRows: EditableBallotRow[], sideLabel: string) => {
+  type ParsedSideRows =
+    | {
+        ok: true
+        speakerIds: string[]
+        scores: number[]
+        matter: number[]
+        manner: number[]
+        best: boolean[]
+        poi: boolean[]
+      }
+    | {
+        ok: false
+        message: string
+      }
+
+  const parseSideRows = (sideRows: EditableBallotRow[], sideLabel: string): ParsedSideRows => {
     const speakerIds: string[] = []
     const scores: number[] = []
     const matter: number[] = []
@@ -2472,15 +2544,15 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
 
       if (editingBallotScoreMode.value === 'matter_manner') {
         const matterResult = parseRequiredNumber(row.matter, `${sideLabel} ${index + 1} Matter`)
-        if (!matterResult.ok) return matterResult
+        if (!matterResult.ok) return { ok: false as const, message: matterResult.message }
         const mannerResult = parseRequiredNumber(row.manner, `${sideLabel} ${index + 1} Manner`)
-        if (!mannerResult.ok) return mannerResult
+        if (!mannerResult.ok) return { ok: false as const, message: mannerResult.message }
         matter.push(matterResult.value)
         manner.push(mannerResult.value)
         scores.push(matterResult.value + mannerResult.value)
       } else {
         const scoreResult = parseRequiredNumber(row.score, `${sideLabel} ${index + 1} ${t('スコア')}`)
-        if (!scoreResult.ok) return scoreResult
+        if (!scoreResult.ok) return { ok: false as const, message: scoreResult.message }
         scores.push(scoreResult.value)
       }
     }
@@ -2492,6 +2564,10 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
   if (!sideA.ok) return fail(sideA.message)
   const sideB = parseSideRows(editingBallotRowsB.value, teamName(teamBId))
   if (!sideB.ok) return fail(sideB.message)
+  const totalA = sideA.scores.reduce((sum, value) => sum + value, 0)
+  const totalB = sideB.scores.reduce((sum, value) => sum + value, 0)
+  const winnerDecisionMessage = validateWinnerDecision(totalA, totalB, true)
+  if (winnerDecisionMessage) return fail(winnerDecisionMessage)
 
   payload.speakerIdsA = sideA.speakerIds
   payload.speakerIdsB = sideB.speakerIds

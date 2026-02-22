@@ -313,6 +313,35 @@ const prefillAppliedMatchKey = ref('')
 let countdownTimer: number | null = null
 let countdownDeadline = 0
 
+function parseWinnerPolicyToken(
+  value: unknown
+): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | '' {
+  if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
+    return value
+  }
+  return ''
+}
+
+function roundAllowsWinnerScoreMismatch(roundUserDefinedData: unknown): boolean {
+  if (!roundUserDefinedData || typeof roundUserDefinedData !== 'object') return true
+  const userDefined = roundUserDefinedData as Record<string, unknown>
+  if (typeof userDefined.allow_score_winner_mismatch === 'boolean') {
+    return userDefined.allow_score_winner_mismatch
+  }
+  const compile =
+    userDefined.compile && typeof userDefined.compile === 'object'
+      ? (userDefined.compile as Record<string, unknown>)
+      : null
+  const compileOptions =
+    compile?.options && typeof compile.options === 'object'
+      ? (compile.options as Record<string, unknown>)
+      : compile
+  const winnerPolicy =
+    parseWinnerPolicyToken(userDefined.winner_policy) ||
+    parseWinnerPolicyToken(compileOptions?.winner_policy)
+  return winnerPolicy !== 'score_only'
+}
+
 const scoresValid = computed(() => {
   if (noSpeakerScore.value) return true
   const countA = rolesA.value.length
@@ -342,6 +371,9 @@ const speakerSelectionValid = computed(() => {
 const allowLowTieWin = computed(
   () => roundConfig.value?.userDefinedData?.allow_low_tie_win !== false
 )
+const allowWinnerScoreMismatch = computed(() =>
+  roundAllowsWinnerScoreMismatch(roundConfig.value?.userDefinedData)
+)
 const effectiveWinnerId = computed(() => (winnerDrawSelected.value ? '' : winnerId.value))
 const winnerSelectionValue = computed({
   get: () => (winnerDrawSelected.value ? DRAW_WINNER_OPTION_VALUE : winnerId.value),
@@ -362,18 +394,34 @@ const totalScoreB = computed(() =>
   effectiveScoresB.value.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 )
 const winnerSelectionMade = computed(() => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value)
-const lowTieWarning = computed(() => {
-  if (allowLowTieWin.value) return false
-  if (noSpeakerScore.value) return false
-  if (!winnerSelectionMade.value) return false
-  if (!effectiveWinnerId.value) return true
-  if (effectiveWinnerId.value === teamAId.value) return totalScoreA.value <= totalScoreB.value
-  if (effectiveWinnerId.value === teamBId.value) return totalScoreB.value <= totalScoreA.value
-  return true
-})
+const hasComparableScores = computed(
+  () => !noSpeakerScore.value && effectiveScoresA.value.length > 0 && effectiveScoresB.value.length > 0
+)
+const tiedScores = computed(() => !hasComparableScores.value || totalScoreA.value === totalScoreB.value)
 const winnerRequiredMessage = computed(() =>
   allowLowTieWin.value ? t('勝者または引き分けを選択してください。') : t('勝者を選択してください。')
 )
+const winnerDecisionError = computed(() => {
+  if (!winnerSelectionMade.value) return winnerRequiredMessage.value
+
+  if (winnerDrawSelected.value) {
+    if (!allowLowTieWin.value) return t('このラウンドでは引き分けは選択できません。')
+    if (!allowWinnerScoreMismatch.value && !tiedScores.value) {
+      return t('引き分けは同点時のみ選択できます。')
+    }
+    return ''
+  }
+
+  if (!allowWinnerScoreMismatch.value && hasComparableScores.value && !tiedScores.value) {
+    if (effectiveWinnerId.value === teamAId.value && totalScoreA.value < totalScoreB.value) {
+      return t('勝者は点数の大小と一致させてください。')
+    }
+    if (effectiveWinnerId.value === teamBId.value && totalScoreB.value < totalScoreA.value) {
+      return t('勝者は点数の大小と一致させてください。')
+    }
+  }
+  return ''
+})
 const identityReady = computed(() => Boolean(identityId.value))
 const roundConfigReady = computed(() => Boolean(roundConfig.value))
 const scoreInputReady = computed(() => {
@@ -385,9 +433,8 @@ const scoreInputReady = computed(() => {
 const canSubmit = computed(() => {
   if (!scoreInputReady.value) return false
   if (!selectedTeamA.value || !selectedTeamB.value) return false
-  if (!winnerSelectionMade.value) return false
+  if (winnerDecisionError.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
-  if (!allowLowTieWin.value && lowTieWarning.value) return false
   if (!identityReady.value) return false
   return true
 })
@@ -395,10 +442,9 @@ const validationError = computed(() => {
   if (!scoreInputReady.value) return ''
   if (!selectedTeamA.value || !selectedTeamB.value) return t('チーム情報が不足しています。')
   if (!identityReady.value) return t('参加者ホームでジャッジを選択してください。')
-  if (!winnerSelectionMade.value) return winnerRequiredMessage.value
+  if (winnerDecisionError.value) return winnerDecisionError.value
   if (!scoresValid.value) return t('スコア入力を確認してください。')
   if (!speakerSelectionValid.value) return t('スピーカー選択を確認してください。')
-  if (!allowLowTieWin.value && lowTieWarning.value) return t('低勝ち/同点勝ちは許可されていません。')
   return ''
 })
 const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)
@@ -619,6 +665,7 @@ type PrefillBallotPayload = {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   comment?: string
   speakerIdsA?: string[]
   speakerIdsB?: string[]
@@ -646,13 +693,16 @@ function normalizePrefillPayload(
   if (!direct && !reverse) return null
 
   const winnerRaw = String(payload.winnerId ?? '')
-  const winnerId = reverse
-    ? winnerRaw === sourceA
-      ? sourceB
-      : winnerRaw === sourceB
-        ? sourceA
-        : ''
-    : winnerRaw
+  const drawSelected = payload.draw === true || (payload.draw === undefined && !winnerRaw)
+  const winnerId = drawSelected
+    ? ''
+    : reverse
+      ? winnerRaw === sourceA
+        ? sourceB
+        : winnerRaw === sourceB
+          ? sourceA
+          : ''
+      : winnerRaw
 
   const mapSide = <T>(aValue: T, bValue: T): [T, T] =>
     reverse ? [bValue, aValue] : [aValue, bValue]
@@ -686,6 +736,7 @@ function normalizePrefillPayload(
     teamAId: teamAId.value,
     teamBId: teamBId.value,
     winnerId: winnerId || undefined,
+    draw: drawSelected || undefined,
     comment: typeof payload.comment === 'string' ? payload.comment : undefined,
     speakerIdsA: speakerIdsAValue,
     speakerIdsB: speakerIdsBValue,
@@ -703,8 +754,8 @@ function normalizePrefillPayload(
 }
 
 function applyPrefillPayload(payload: PrefillBallotPayload) {
-  winnerDrawSelected.value = false
-  winnerId.value = payload.winnerId ?? ''
+  winnerDrawSelected.value = payload.draw === true
+  winnerId.value = payload.draw === true ? '' : (payload.winnerId ?? '')
   comment.value = payload.comment ?? ''
 
   if (noSpeakerScore.value) {
@@ -858,16 +909,13 @@ function validateBeforeSubmit() {
   if (!identityReady.value) {
     return false
   }
-  if (!winnerSelectionMade.value) {
+  if (winnerDecisionError.value) {
     return false
   }
   if (!scoresValid.value) {
     return false
   }
   if (!speakerSelectionValid.value) {
-    return false
-  }
-  if (!allowLowTieWin.value && lowTieWarning.value) {
     return false
   }
   if (!canSubmit.value) {
@@ -910,6 +958,7 @@ async function submitConfirmed() {
     teamAId: teamAId.value,
     teamBId: teamBId.value,
     winnerId: effectiveWinnerId.value || undefined,
+    draw: winnerDrawSelected.value || undefined,
     submittedEntityId: identityId.value || undefined,
     speakerIdsA: noSpeakerScore.value ? undefined : speakerIdsA.value,
     speakerIdsB: noSpeakerScore.value ? undefined : speakerIdsB.value,

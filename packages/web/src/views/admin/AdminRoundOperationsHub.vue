@@ -1588,6 +1588,7 @@ function ballotSummaryForPreview(payload: Record<string, unknown>) {
   const teamBId = String(payload.teamBId ?? '').trim()
   if (!teamAId || !teamBId) return t('チーム評価')
   const matchup = `${teamName(teamAId)} vs ${teamName(teamBId)}`
+  if (payload.draw === true) return `${matchup} / ${t('勝者')}: ${t('引き分け')}`
   const winnerId = String(payload.winnerId ?? '').trim()
   if (!winnerId) return matchup
   return `${matchup} / ${t('勝者')}: ${teamName(winnerId)}`
@@ -1721,6 +1722,9 @@ function ballotWinSumBySideForRow(
 ): { gov: number; opp: number } | null {
   const resolved = resolveBallotSidesForRow(ballot, row)
   if (!resolved) return null
+  if (resolved.payload.draw === true) {
+    return { gov: 0, opp: 0 }
+  }
   const winnerId = String(resolved.payload.winnerId ?? '').trim()
   if (winnerId) {
     if (winnerId === row.govId) return { gov: 1, opp: 0 }
