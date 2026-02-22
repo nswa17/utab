@@ -103,55 +103,52 @@
                       :disabled="publicationSwitchBusy"
                     >
                       <template #status>
-                        <label class="row publish-switch-inline publish-switch-inline-compact">
-                          <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
-                          <ToggleSwitch
-                            class="publish-switch-toggle"
-                            :model-value="motionOpenedValue"
-                            :disabled="publicationSwitchBusy"
-                            :aria-label="$t('モーション公開')"
-                            @update:model-value="onMotionPublishToggle"
-                          />
-                        </label>
-                        <label class="row publish-switch-inline publish-switch-inline-compact">
-                          <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
-                          <ToggleSwitch
-                            class="publish-switch-toggle"
-                            :model-value="drawOpenedValue"
-                            :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                            :aria-label="$t('チーム割り当て')"
-                            @update:model-value="
-                              (checked) => onPublishToggle('drawOpened', checked)
-                            "
-                          />
-                        </label>
-                        <label class="row publish-switch-inline publish-switch-inline-compact">
-                          <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
-                          <ToggleSwitch
-                            class="publish-switch-toggle"
-                            :model-value="allocationOpenedValue"
-                            :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                            :aria-label="$t('ジャッジ割り当て')"
-                            @update:model-value="
-                              (checked) => onPublishToggle('allocationOpened', checked)
-                            "
-                          />
-                        </label>
-                        <label
-                          v-if="canShowPriorRoundsHideSwitch"
-                          class="row publish-switch-inline publish-switch-inline-compact"
-                        >
-                          <span class="publish-switch-label">
-                            {{ $t('このラウンドより前を一括非公開') }}
-                          </span>
-                          <ToggleSwitch
-                            class="publish-switch-toggle"
-                            :model-value="priorRoundsFullyHidden"
+                        <div class="row publish-switch-status-row">
+                          <Button
+                            v-if="canShowPriorRoundsHideSwitch"
+                            variant="ghost"
+                            class="prior-rounds-hide-button"
+                            size="sm"
                             :disabled="publicationSwitchBusy || priorRoundsFullyHidden"
-                            :aria-label="$t('このラウンドより前を一括非公開')"
-                            @update:model-value="onPriorRoundsHideToggle"
-                          />
-                        </label>
+                            @click="onPriorRoundsHideToggle(true)"
+                          >
+                            {{ $t('このラウンドより前を一括非公開') }}
+                          </Button>
+                          <label class="row publish-switch-inline publish-switch-inline-compact">
+                            <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
+                            <ToggleSwitch
+                              class="publish-switch-toggle"
+                              :model-value="motionOpenedValue"
+                              :disabled="publicationSwitchBusy"
+                              :aria-label="$t('モーション公開')"
+                              @update:model-value="onMotionPublishToggle"
+                            />
+                          </label>
+                          <label class="row publish-switch-inline publish-switch-inline-compact">
+                            <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
+                            <ToggleSwitch
+                              class="publish-switch-toggle"
+                              :model-value="drawOpenedValue"
+                              :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                              :aria-label="$t('チーム割り当て')"
+                              @update:model-value="
+                                (checked) => onPublishToggle('drawOpened', checked)
+                              "
+                            />
+                          </label>
+                          <label class="row publish-switch-inline publish-switch-inline-compact">
+                            <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
+                            <ToggleSwitch
+                              class="publish-switch-toggle"
+                              :model-value="allocationOpenedValue"
+                              :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
+                              :aria-label="$t('ジャッジ割り当て')"
+                              @update:model-value="
+                                (checked) => onPublishToggle('allocationOpened', checked)
+                              "
+                            />
+                          </label>
+                        </div>
                       </template>
                     </RoundMotionEditor>
                   </section>
@@ -162,21 +159,6 @@
                 <section class="stack publish-preview-section">
                   <div class="row preview-head">
                     <h4>{{ $t('対戦表プレビュー') }}</h4>
-                    <div class="row preview-visibility-chip-list">
-                      <span
-                        class="preview-visibility-chip"
-                        :class="drawOpenedValue ? 'is-open' : 'is-closed'"
-                      >
-                        {{ $t('チーム') }}: {{ drawOpenedValue ? $t('公開') : $t('非公開') }}
-                      </span>
-                      <span
-                        class="preview-visibility-chip"
-                        :class="allocationOpenedValue ? 'is-open' : 'is-closed'"
-                      >
-                        {{ $t('ジャッジ') }}:
-                        {{ allocationOpenedValue ? $t('公開') : $t('非公開') }}
-                      </span>
-                    </div>
                   </div>
                   <DrawPreviewTable
                     :rows="publishPreviewRows"
@@ -184,6 +166,7 @@
                     :opp-label="$t('反対')"
                     :team-visible="drawOpenedValue"
                     :adjudicator-visible="allocationOpenedValue"
+                    :column-header-badges="publishPreviewColumnHeaderBadges"
                   />
                 </section>
                 <span v-if="publishMessage" class="muted small">{{ publishMessage }}</span>
@@ -364,7 +347,6 @@
                     :disabled="
                       isLoading ||
                       effectiveCompileTargetRounds.length === 0 ||
-                      !selectedRoundPublished ||
                       shouldBlockSubmissionCompile
                     "
                     @click="
@@ -380,12 +362,11 @@
                     size="sm"
                     :disabled="
                       isLoading ||
-                      effectiveCompileTargetRounds.length === 0 ||
-                      !selectedRoundPublished
+                      effectiveCompileTargetRounds.length === 0
                     "
                     @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
                   >
-                    {{ $t('強制集計') }}
+                    {{ $t('強制仮集計') }}
                   </Button>
                   <Button
                     v-if="compileManualSaveEnabled"
@@ -728,9 +709,6 @@ const selectedRoundHasDraw = computed(() =>
 )
 const publicationSwitchBusy = computed(
   () => publicationSaving.value || roundsStore.loading || drawsStore.loading
-)
-const selectedRoundPublished = computed(() =>
-  Boolean(selectedDraw.value?.drawOpened && selectedDraw.value?.allocationOpened)
 )
 const compileTargetRounds = computed(() => {
   if (selectedRound.value === null) return []
@@ -1122,19 +1100,18 @@ function roundTaskStates(roundNumber: number): Record<HubTask, HubTaskState> {
   const draw = drawsStore.draws.find((item) => item.round === roundNumber)
   const hasDraw = Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
   const published = Boolean(draw?.drawOpened && draw?.allocationOpened)
+  const hasCompiled = compiledRoundSet.value.has(roundNumber)
+  const hasAnySubmission = submissionsForRound(roundNumber).length > 0
   const expected = ballotExpectedCount(roundNumber)
   const submitted = ballotSubmittedCount(roundNumber)
   const unknown = unknownSubmissionCount(roundNumber, 'ballot')
   const hasGap = (expected > 0 && submitted < expected) || unknown > 0
 
   const drawState: HubTaskState = hasDraw ? 'done' : 'ready'
-  const publishState: HubTaskState = published ? 'done' : !hasDraw ? 'blocked' : 'ready'
-  const submissionsState: HubTaskState = !published ? 'blocked' : hasGap ? 'ready' : 'done'
-  const compileState: HubTaskState = compiledRoundSet.value.has(roundNumber)
-    ? 'done'
-    : !published || hasGap
-      ? 'blocked'
-      : 'ready'
+  const publishState: HubTaskState =
+    published || hasAnySubmission || hasCompiled ? 'done' : !hasDraw ? 'blocked' : 'ready'
+  const submissionsState: HubTaskState = !hasDraw ? 'blocked' : hasGap ? 'ready' : 'done'
+  const compileState: HubTaskState = hasCompiled ? 'done' : hasGap ? 'blocked' : 'ready'
 
   return {
     draw: drawState,
@@ -1215,13 +1192,7 @@ const activeTaskHint = computed(() => {
   if (activeTask.value === 'publish' && !selectedRoundHasDraw.value) {
     return t('まず対戦表を生成してください。')
   }
-  if (activeTask.value === 'submissions' && !selectedRoundPublished.value) {
-    return t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
-  }
   if (activeTask.value === 'compile') {
-    if (!selectedRoundPublished.value) {
-      return t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
-    }
     return t(
       '提出結果を集計して成績を確定します。成績に含めるラウンドを確認してから実行してください。'
     )
@@ -1257,7 +1228,7 @@ function roundLabel(roundNumber: number) {
 }
 
 function roundStatusLabel(status: RoundOperationStatus) {
-  if (status === 'finalized') return t('確定')
+  if (status === 'finalized') return t('公開中')
   if (status === 'generated') return t('生成済み')
   if (status === 'compiled') return t('集計済み')
   if (status === 'collecting') return t('回収中')
@@ -1360,6 +1331,7 @@ function buildCompileInputKey(
   }
 ): string {
   return JSON.stringify({
+    contextRound: selectedRound.value,
     source,
     rounds: [...effectiveCompileTargetRounds.value],
     options: buildCompileOptions(optionOverrides),
@@ -1912,6 +1884,24 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
 })
 
 const publishPreviewRows = computed<DrawPreviewRow[]>(() => drawPreviewRows.value)
+const publishPreviewColumnHeaderBadges = computed(() => {
+  const teamTone: 'open' | 'closed' = drawOpenedValue.value ? 'open' : 'closed'
+  const adjudicatorTone: 'open' | 'closed' = allocationOpenedValue.value ? 'open' : 'closed'
+  const teamBadge: Array<{ text: string; tone: 'open' | 'closed' }> = [
+    { text: drawOpenedValue.value ? t('公開') : t('非公開'), tone: teamTone },
+  ]
+  const adjudicatorBadge: Array<{ text: string; tone: 'open' | 'closed' }> = [
+    { text: allocationOpenedValue.value ? t('公開') : t('非公開'), tone: adjudicatorTone },
+  ]
+  return {
+    gov: teamBadge,
+    opp: teamBadge,
+    score: teamBadge,
+    chair: adjudicatorBadge,
+    panel: adjudicatorBadge,
+    trainee: adjudicatorBadge,
+  }
+})
 
 function feedbackExpectedCountForPreviewRow(row: HubDrawPreviewRow) {
   if (selectedRound.value === null) return 0
@@ -2139,10 +2129,6 @@ async function runCompileWithSource(
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
-  if (!selectedRoundPublished.value) {
-    actionError.value = t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
-    return
-  }
   if (source === 'submissions' && shouldBlockSubmissionCompile.value) {
     actionError.value =
       selectedRoundBallotGapWarning.value ||
@@ -2178,10 +2164,6 @@ async function runPreviewWithSource(
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
-  if (!selectedRoundPublished.value) {
-    actionError.value = t('公開後に提出を回収します。先にラウンド公開設定で公開してください。')
-    return
-  }
   if (source === 'submissions' && shouldBlockSubmissionCompile.value) {
     actionError.value =
       selectedRoundBallotGapWarning.value ||
@@ -2218,7 +2200,6 @@ async function runPreviewWithSource(
 function openForceCompileModal(action: 'compile' | 'preview' | 'save' = 'compile') {
   if (
     selectedRound.value === null ||
-    !selectedRoundPublished.value ||
     effectiveCompileTargetRounds.value.length === 0 ||
     isLoading.value
   ) {
@@ -3087,6 +3068,31 @@ watch(
   background: var(--color-surface-soft);
 }
 
+.publish-switch-status-row {
+  margin-left: auto;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.motion-publish-card :deep(.round-motion-status) {
+  margin-left: auto;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.prior-rounds-hide-button {
+  border-color: #f59e0b;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.prior-rounds-hide-button:hover:not(.is-disabled) {
+  border-color: #d97706;
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
 .publish-preview-section {
   gap: var(--space-2);
 }
@@ -3115,34 +3121,6 @@ watch(
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
-}
-
-.preview-visibility-chip-list {
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.preview-visibility-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.preview-visibility-chip.is-open {
-  border-color: #86efac;
-  color: #166534;
-  background: #f0fdf4;
-}
-
-.preview-visibility-chip.is-closed {
-  border-color: #fdba74;
-  color: #9a3412;
-  background: #fff7ed;
 }
 
 .setting-option {

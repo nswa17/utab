@@ -202,7 +202,7 @@
 
     <div v-else class="card stack">
       <p class="muted">{{ $t('スコアシートを開始するチームを選択してください。') }}</p>
-      <Button variant="ghost" size="sm" :to="homePath">{{ $t('スコアシート一覧へ') }}</Button>
+      <Button variant="ghost" size="sm" :to="homePath">{{ $t('大会トップに戻る') }}</Button>
     </div>
 
     <div v-if="confirmOpen" class="modal-backdrop" role="presentation">
@@ -243,7 +243,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTournamentHome">{{ $t('大会ホームに戻る') }}</Button>
+          <Button size="sm" @click="goToTournamentHome">{{ $t('大会トップに戻る') }}</Button>
         </div>
       </div>
     </div>
@@ -291,10 +291,17 @@ const round = computed(() => route.params.round as string)
 const homePath = computed(() => {
   const query = new URLSearchParams()
   appendParticipantMode(query, participantMode.value)
+  query.set('focusRound', round.value)
+  query.set('focusType', 'ballot')
   const suffix = query.toString()
-  return `/user/${tournamentId.value}/rounds/${round.value}/ballot/home${suffix ? `?${suffix}` : ''}`
+  return `/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`
 })
-const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
+const tournamentHomePath = computed(() => {
+  const query = new URLSearchParams()
+  appendParticipantMode(query, participantMode.value)
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`
+})
 const { identityId } = useParticipantIdentity(tournamentId, participantMode)
 
 const teamAId = ref('')

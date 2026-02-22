@@ -34,7 +34,15 @@ describe('round operations helpers', () => {
         hasDraw: true,
         isPublished: false,
       })
-    ).toBe('generated')
+    ).toBe('compiled')
+    expect(
+      resolveRoundOperationStatus({
+        hasSubmissions: true,
+        hasCompiled: false,
+        hasDraw: true,
+        isPublished: false,
+      })
+    ).toBe('collecting')
     expect(
       resolveRoundOperationStatus({
         hasSubmissions: true,

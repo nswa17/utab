@@ -1,12 +1,12 @@
 <template>
   <section class="stack">
     <div class="row participant-home-header">
-      <h3>{{ isAudience ? $t('対戦表') : $t('参加者ダッシュボード') }}</h3>
+      <h3>{{ $t('大会トップ') }}</h3>
       <ReloadButton
         @click="refresh"
         :disabled="isLoading"
         :loading="isLoading"
-        :target="isAudience ? $t('対戦表') : $t('参加者ダッシュボード')"
+        :target="$t('大会トップ')"
       />
     </div>
     <div class="participant-home-content-shell">
@@ -18,7 +18,7 @@
         </div>
 
         <div v-else class="stack">
-          <div v-if="isSpeaker || isAdjudicator" class="card stack">
+          <div v-if="pendingTaskContext && (isSpeaker || isAdjudicator)" class="card stack">
         <h4>{{ $t('あなたの情報') }}</h4>
         <label v-if="isSpeaker" class="field">
           <span>{{ $t('ジャッジ名') }}</span>
@@ -144,6 +144,15 @@
               })
             }}
           </p>
+          <label v-if="pendingFeedbackTargetOptions.length > 1" class="field">
+            <span>{{ $t('評価対象ジャッジ') }}</span>
+            <select v-model="pendingFeedbackTargetId">
+              <option value="">{{ $t('未選択') }}</option>
+              <option v-for="judge in pendingFeedbackTargetOptions" :key="judge.id" :value="judge.id">
+                {{ judge.name }}
+              </option>
+            </select>
+          </label>
           <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
           <div v-else class="row pending-task-actions">
             <Button :to="pendingTaskPrimaryPath">
@@ -156,7 +165,7 @@
         </p>
       </div>
 
-          <div v-if="isAudience" class="stack audience-rounds">
+          <div class="stack audience-rounds">
         <div class="card stack audience-tools">
           <input
             v-model.trim="audienceTeamQuery"
@@ -170,7 +179,17 @@
           <p class="muted">{{ $t('一致 {count}件', { count: 0 }) }}</p>
         </div>
 
-        <div v-for="round in audienceVisibleRounds" :key="round._id" class="card stack compact-round">
+        <div
+          v-for="round in audienceVisibleRounds"
+          :key="round._id"
+          class="card stack compact-round"
+          :class="{
+            'focused-round': isFocusedRound(round.round),
+            'focused-round-ballot': isFocusedRound(round.round) && focusedRoundType === 'ballot',
+            'focused-round-feedback': isFocusedRound(round.round) && focusedRoundType === 'feedback',
+          }"
+          :id="`round-card-${round.round}`"
+        >
           <button
             type="button"
             class="round-toggle"
@@ -384,7 +403,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTournamentStore } from '@/stores/tournament'
@@ -421,6 +440,27 @@ const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const { participantMode } = useParticipantMode(route)
+
+function firstQueryString(value: unknown) {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    const token = value.find((item) => typeof item === 'string')
+    return typeof token === 'string' ? token : ''
+  }
+  return ''
+}
+
+const focusedRoundNumber = computed<number | null>(() => {
+  const value = Number(firstQueryString(route.query.focusRound))
+  if (!Number.isInteger(value) || value < 1) return null
+  return value
+})
+
+const focusedRoundType = computed<'ballot' | 'feedback' | ''>(() => {
+  const token = firstQueryString(route.query.focusType)
+  if (token === 'ballot' || token === 'feedback') return token
+  return ''
+})
 
 const { identityId: teamIdentityId } = useParticipantIdentity(tournamentId, participantMode)
 const { identityId: judgeFeedbackTeamIdentityId } = useParticipantIdentity(
@@ -655,6 +695,24 @@ const pendingFeedbackContext = computed(() => {
   return pendingTaskContext.value
 })
 
+const pendingFeedbackTargetOptions = computed<Array<{ id: string; name: string }>>(() => {
+  if (!pendingFeedbackContext.value) return []
+  return pendingFeedbackContext.value.targetJudgeIds.map((id) => ({
+    id,
+    name: adjudicatorsStore.adjudicators.find((adj) => adj._id === id)?.name ?? id,
+  }))
+})
+const pendingFeedbackTargetId = ref('')
+const resolvedPendingFeedbackTargetId = computed(() => {
+  const options = pendingFeedbackTargetOptions.value
+  if (options.length === 0) return ''
+  if (options.some((option) => option.id === pendingFeedbackTargetId.value)) {
+    return pendingFeedbackTargetId.value
+  }
+  if (options.length === 1) return options[0].id
+  return ''
+})
+
 function feedbackConfig(roundNumber: number) {
   const userDefined = roundConfig(roundNumber)?.userDefinedData ?? {}
   return {
@@ -849,6 +907,7 @@ const pendingTaskReady = computed(() => {
     return isSpeaker.value && selectedBallotSubmitterAllowed.value
   }
   if (!isAdjudicator.value) return false
+  if (!resolvedPendingFeedbackTargetId.value) return false
   if (judgeEvaluationActorMode.value === 'adjudicator') {
     return selectedFeedbackAdjudicatorAllowed.value
   }
@@ -861,6 +920,9 @@ const pendingTaskHint = computed(() => {
   if (!pendingTaskContext.value) return ''
   if (pendingTaskContext.value.kind === 'ballot') {
     return t('先に提出者を選択すると入力ボタンが表示されます。')
+  }
+  if (!resolvedPendingFeedbackTargetId.value) {
+    return t('先に評価対象ジャッジを選択してください。')
   }
   if (speakerSelectionRequired.value) {
     return t('先に提出者を選択すると入力ボタンが表示されます。')
@@ -889,31 +951,19 @@ const pendingTaskPrimaryPath = computed(() => {
       query
     )
   }
-  if (judgeEvaluationActorMode.value === 'adjudicator') {
-    const feedbackQuery = new URLSearchParams({
-      actor: 'adjudicator',
-    })
-    return withModePath(
-      `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/home`,
-      'adjudicator',
-      feedbackQuery
-    )
-  }
+  const targetJudgeId = resolvedPendingFeedbackTargetId.value
+  if (!targetJudgeId) return ''
   const feedbackQuery = new URLSearchParams({
-    filter: 'team',
-    actor: 'team',
-    team: judgeFeedbackTeamIdentityId.value,
+    actor: judgeEvaluationActorMode.value,
   })
-  const judgeId = pendingTaskContext.value.targetJudgeIds[0]
-  if (pendingTaskContext.value.targetJudgeIds.length === 1 && judgeId) {
-    return withModePath(
-      `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(judgeId)}`,
-      'adjudicator',
-      feedbackQuery
-    )
+  if (judgeEvaluationActorMode.value === 'team') {
+    feedbackQuery.set('team', judgeFeedbackTeamIdentityId.value)
+    if (speakerSelectionRequired.value && judgeFeedbackSpeakerIdentityId.value) {
+      feedbackQuery.set('speaker', judgeFeedbackSpeakerIdentityId.value)
+    }
   }
   return withModePath(
-    `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/home`,
+    `/user/${tournamentId.value}/rounds/${pendingTaskContext.value.round}/feedback/${encodeURIComponent(targetJudgeId)}`,
     'adjudicator',
     feedbackQuery
   )
@@ -989,7 +1039,7 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   const teamA = row?.teams?.gov
   const teamB = row?.teams?.opp
   if (!teamA || !teamB) {
-    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/home`, 'speaker')
+    return withModePath(`/user/${tournamentId.value}/home`, 'speaker')
   }
   const adjudicatorIds = rowAdjudicatorIds(row)
   if (adjudicatorIds.length === 1) {
@@ -1009,26 +1059,37 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (adjudicatorIds.length > 0) {
     query.set('submitters', encodeList(adjudicatorIds))
   }
-  return withModePath(`/user/${tournamentId.value}/dashboard`, 'speaker', query)
+  return withModePath(`/user/${tournamentId.value}/home`, 'speaker', query)
 }
 
 function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   const teamGov = String(row?.teams?.gov ?? '')
   const teamOpp = String(row?.teams?.opp ?? '')
   const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+  const homePath = withModePath(`/user/${tournamentId.value}/home`, 'adjudicator')
   if (!teamGov || !teamOpp || targetIds.length === 0) {
-    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator')
+    return homePath
   }
   const submitterIds = rowAdjudicatorIds(row)
   const config = feedbackConfig(roundNumber)
   const canUseTeamActor = config.evaluateFromTeams
   const canUseAdjudicatorActor = config.evaluateFromAdjudicators && submitterIds.length > 1
   if (!canUseTeamActor && !canUseAdjudicatorActor) {
-    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator')
+    return homePath
   }
   const defaultActor: 'team' | 'adjudicator' = canUseTeamActor ? 'team' : 'adjudicator'
 
   if (defaultActor === 'adjudicator') {
+    if (targetIds.length === 1 && submitterIds.length === 1) {
+      const query = new URLSearchParams({
+        actor: 'adjudicator',
+      })
+      return withModePath(
+        `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
+        'adjudicator',
+        query
+      )
+    }
     const adjudicatorQuery = new URLSearchParams({
       actor: 'adjudicator',
       task: 'feedback',
@@ -1040,24 +1101,20 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
     if (submitterIds.length > 0) {
       adjudicatorQuery.set('submitters', encodeList(submitterIds))
     }
-    return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator', adjudicatorQuery)
+    return withModePath(`/user/${tournamentId.value}/home`, 'adjudicator', adjudicatorQuery)
   }
 
   const teamId = preferredTeamIdForRow(row)
-  if (teamId) {
+  if (targetIds.length === 1 && teamId) {
     const query = new URLSearchParams({
-      filter: 'team',
       actor: 'team',
       team: teamId,
     })
-    if (targetIds.length === 1) {
-      return withModePath(
-        `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
-        'adjudicator',
-        query
-      )
-    }
-    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/feedback/home`, 'adjudicator', query)
+    return withModePath(
+      `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
+      'adjudicator',
+      query
+    )
   }
 
   const unresolvedQuery = new URLSearchParams({
@@ -1068,10 +1125,30 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
     teamOpp,
     targets: encodeList(targetIds),
   })
+  if (teamId) {
+    unresolvedQuery.set('team', teamId)
+  }
   if (submitterIds.length > 0) {
     unresolvedQuery.set('submitters', encodeList(submitterIds))
   }
-  return withModePath(`/user/${tournamentId.value}/dashboard`, 'adjudicator', unresolvedQuery)
+  return withModePath(`/user/${tournamentId.value}/home`, 'adjudicator', unresolvedQuery)
+}
+
+function isFocusedRound(roundNumber: number) {
+  return focusedRoundNumber.value === Number(roundNumber)
+}
+
+async function focusRoundCard(roundNumber: number) {
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) return
+  roundExpanded.value = {
+    ...roundExpanded.value,
+    [roundNumber]: true,
+  }
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  await nextTick()
+  const card = document.getElementById(`round-card-${roundNumber}`)
+  if (!card) return
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function isRoundExpanded(roundNumber: number) {
@@ -1339,6 +1416,33 @@ watch(
 )
 
 watch(
+  [pendingTaskContext, pendingFeedbackTargetOptions],
+  () => {
+    if (!pendingFeedbackContext.value) {
+      pendingFeedbackTargetId.value = ''
+      return
+    }
+    const options = pendingFeedbackTargetOptions.value
+    if (options.length === 0) {
+      pendingFeedbackTargetId.value = ''
+      return
+    }
+    if (options.some((option) => option.id === pendingFeedbackTargetId.value)) return
+    pendingFeedbackTargetId.value = options.length === 1 ? options[0].id : ''
+  },
+  { immediate: true }
+)
+
+watch(
+  [focusedRoundNumber, hasLoaded],
+  async ([roundNumber, loaded]) => {
+    if (!loaded || roundNumber === null) return
+    await focusRoundCard(roundNumber)
+  },
+  { immediate: true }
+)
+
+watch(
   [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, speakerSelectionRequired, judgeEvaluationActorMode],
   () => {
     if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return
@@ -1463,6 +1567,19 @@ select {
 .compact-round {
   padding-top: var(--space-3);
   padding-bottom: var(--space-3);
+}
+
+.focused-round {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.focused-round-ballot {
+  background: color-mix(in srgb, #eff6ff 72%, var(--color-surface));
+}
+
+.focused-round-feedback {
+  background: color-mix(in srgb, #fffbeb 72%, var(--color-surface));
 }
 
 .round-visibility-note {

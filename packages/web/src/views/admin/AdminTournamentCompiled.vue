@@ -106,7 +106,7 @@
               @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
               :disabled="isLoading || !canRunCompile"
             >
-              {{ $t('強制集計') }}
+              {{ $t('強制仮集計') }}
             </Button>
             <Button
               v-if="compileManualSaveEnabled"
@@ -598,7 +598,7 @@
                 >
                   <TeamPerformance
                     :results="speakerPerformanceResults"
-                    :title="$t('スピーカー成績のプロット')"
+                    :title="$t('スピーカー成績')"
                     score-key="average"
                     :value-label="$t('平均')"
                     color-key="average"
@@ -611,7 +611,7 @@
                 >
                   <TeamPerformance
                     :results="adjudicatorPerformanceResults"
-                    :title="$t('ジャッジ成績のプロット')"
+                    :title="$t('ジャッジ成績')"
                     score-key="average"
                     :value-label="$t('平均')"
                     color-key="average"
@@ -991,17 +991,11 @@ const defaultSlideLeftCredit = computed(() => {
 })
 const slideCreditLocaleTag = computed(() => (slideLanguage.value === 'ja' ? 'ja-JP' : 'en-US'))
 const defaultSlideRightCredit = computed(() => {
-  const now = new Date()
-  const datePart = new Intl.DateTimeFormat(slideCreditLocaleTag.value, {
+  return new Intl.DateTimeFormat(slideCreditLocaleTag.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(now)
-  const timePart = new Intl.DateTimeFormat(slideCreditLocaleTag.value, {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(now)
-  return `${datePart} ${timePart}`.trim()
+  }).format(new Date())
 })
 const slideLeftCredit = computed({
   get: () => {
@@ -3592,7 +3586,15 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .fairness-performance-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+}
+
+.fairness-analysis-chart-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-2);
   gap: var(--space-2);
 }
 

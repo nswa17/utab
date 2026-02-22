@@ -14,6 +14,7 @@
         $t('最終更新: {time}', { time: lastRefreshedLabel })
       }}</span>
     </div>
+
     <LoadingState v-if="sectionLoading" />
     <template v-else>
       <article
@@ -51,47 +52,28 @@
         class="subnav-link"
         :class="{ active: isSetupOverviewActive }"
       >
-        {{ $t(setupOverviewLabel) }}
+        {{ $t('大会設定') }}
       </RouterLink>
       <RouterLink
         :to="setupDataPath"
         class="subnav-link"
         :class="{ active: isSetupDataActive }"
       >
-        {{ $t(setupDataLabel) }}
+        {{ $t('大会データ準備') }}
       </RouterLink>
       <RouterLink
         :to="operationsPath"
         class="subnav-link"
         :class="{ active: isOperationsActive }"
       >
-        {{ $t(operationsLabel) }}
+        {{ $t('大会運営') }}
       </RouterLink>
-      <RouterLink
-        :to="reportsPath"
-        class="subnav-link"
-        :class="{ active: isReportsActive }"
-      >
-        {{ $t(reportsLabel) }}
+      <RouterLink :to="reportsPath" class="subnav-link" :class="{ active: isReportsActive }">
+        {{ $t('大会結果レポート') }}
       </RouterLink>
     </nav>
-    <div v-if="showLegacyMigrationLink" class="row migration-link-row">
-      <RouterLink class="migration-link" :to="legacyUpgradePath">
-        {{ $t('新画面へ移動') }}
-      </RouterLink>
-    </div>
-    <article v-if="shouldLockLegacyRoute" class="card stack legacy-readonly-banner" role="status">
-      <div class="row legacy-readonly-head">
-        <strong>{{ $t('読み取り専用') }}</strong>
-      </div>
-      <p>{{ $t('旧導線は読み取り専用です。新画面で操作してください。') }}</p>
-      <RouterLink class="migration-link" :to="legacyUpgradePath || `/admin/${tournamentId}/setup`">
-        {{ $t('新画面へ移動') }}
-      </RouterLink>
-    </article>
-    <div class="legacy-content-shell" :class="{ locked: shouldLockLegacyRoute }">
-      <RouterView v-if="!sectionLoading" />
-    </div>
+
+    <RouterView v-if="!sectionLoading" />
   </section>
 </template>
 
@@ -103,7 +85,6 @@ import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useTournamentStore } from '@/stores/tournament'
 import { api } from '@/utils/api'
-import { isAdminUiV2Enabled, isLegacyAdminReadOnlyEnabled } from '@/config/feature-flags'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,93 +92,42 @@ const tournamentStore = useTournamentStore()
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const tournament = computed(() =>
-  tournamentStore.tournaments.find((t) => t._id === tournamentId.value)
+  tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
+
 const sectionLoading = ref(true)
-const lastRefreshedAt = ref<string>('')
-const adminUiV2Enabled = computed(() => {
-  const matchedWithFlag = route.matched.find((item) => item.meta?.adminUiV2 !== undefined)
-  if (matchedWithFlag) return Boolean(matchedWithFlag.meta.adminUiV2)
-  return isAdminUiV2Enabled()
-})
-const legacyAdminReadOnlyEnabled = ref(isLegacyAdminReadOnlyEnabled())
+const lastRefreshedAt = ref('')
 const duplicateBallotCount = ref(0)
 const duplicateFeedbackCount = ref(0)
 const hasDuplicateSubmissions = computed(
   () => duplicateBallotCount.value > 0 || duplicateFeedbackCount.value > 0
 )
-const isSetupRoute = computed(() => {
-  const base = `/admin/${tournamentId.value}/`
-  return route.path.startsWith(`${base}setup`) || route.path.startsWith(`${base}home`)
-})
+
+const basePath = computed(() => `/admin/${tournamentId.value}`)
+const setupPath = computed(() => `${basePath.value}/setup`)
+const operationsPath = computed(() => `${basePath.value}/operations`)
+const reportsPath = computed(() => `${basePath.value}/reports`)
+
+const setupOverviewPath = computed(() => setupPath.value)
+const setupDataPath = computed(() => ({
+  path: setupPath.value,
+  query: { section: 'data' },
+}))
+
+const isSetupRoute = computed(() => route.path.startsWith(`${setupPath.value}`))
 const isSetupDataActive = computed(
   () => isSetupRoute.value && String(route.query.section ?? '') === 'data'
 )
 const isSetupOverviewActive = computed(
   () => isSetupRoute.value && String(route.query.section ?? '') !== 'data'
 )
-const isOperationsActive = computed(() => {
-  const base = `/admin/${tournamentId.value}/`
-  return (
-    route.path.startsWith(`${base}operations`) ||
-    route.path.startsWith(`${base}rounds`)
-  )
-})
-const isReportsActive = computed(() => {
-  const base = `/admin/${tournamentId.value}/`
-  return route.path.startsWith(`${base}reports`) || route.path.startsWith(`${base}compiled`)
-})
-const setupBasePath = computed(() =>
-  adminUiV2Enabled.value ? `/admin/${tournamentId.value}/setup` : `/admin/${tournamentId.value}/home`
-)
-const setupOverviewPath = computed(() => setupBasePath.value)
-const setupDataPath = computed(() => ({
-  path: setupBasePath.value,
-  query: { section: 'data' },
-}))
-const operationsPath = computed(() =>
-  adminUiV2Enabled.value
-    ? `/admin/${tournamentId.value}/operations`
-    : `/admin/${tournamentId.value}/rounds`
-)
-const reportsPath = computed(() =>
-  adminUiV2Enabled.value
-    ? `/admin/${tournamentId.value}/reports`
-    : `/admin/${tournamentId.value}/compiled`
-)
-const setupOverviewLabel = computed(() => '大会設定')
-const setupDataLabel = computed(() => '大会データ準備')
-const operationsLabel = computed(() =>
-  adminUiV2Enabled.value ? '大会運営' : 'ラウンド管理'
-)
-const reportsLabel = computed(() =>
-  adminUiV2Enabled.value ? '大会結果レポート' : 'レポート生成'
-)
-const isLegacyPrimaryRoute = computed(() => {
-  const base = `/admin/${tournamentId.value}/`
-  return (
-    route.path === `${base}home` ||
-    route.path === `${base}rounds` ||
-    route.path === `${base}compiled`
-  )
-})
-const legacyUpgradePath = computed(() => {
-  if (adminUiV2Enabled.value) return ''
-  const base = `/admin/${tournamentId.value}/`
-  if (route.path.startsWith(`${base}home`)) return `${base}setup`
-  if (route.path === `${base}rounds`) return `${base}operations`
-  if (route.path.startsWith(`${base}compiled`)) return `${base}reports`
-  return ''
-})
-const shouldLockLegacyRoute = computed(
+const isOperationsActive = computed(
   () =>
-    legacyAdminReadOnlyEnabled.value &&
-    !adminUiV2Enabled.value &&
-    isLegacyPrimaryRoute.value
+    route.path.startsWith(`${operationsPath.value}`) ||
+    route.path.startsWith(`${basePath.value}/rounds/`)
 )
-const showLegacyMigrationLink = computed(
-  () => Boolean(legacyUpgradePath.value) && !shouldLockLegacyRoute.value
-)
+const isReportsActive = computed(() => route.path.startsWith(`${reportsPath.value}`))
+
 const lastRefreshedLabel = computed(() => {
   if (!lastRefreshedAt.value) return ''
   const date = new Date(lastRefreshedAt.value)
@@ -310,10 +240,6 @@ watch(
   letter-spacing: 0.01em;
 }
 
-.header-reload {
-  margin-left: 0;
-}
-
 .header-meta {
   margin-left: auto;
 }
@@ -363,38 +289,6 @@ watch(
 
 .subnav-link:last-child {
   border-right: none;
-}
-
-.migration-link-row {
-  margin-top: calc(var(--space-4) * -1);
-  margin-bottom: var(--space-3);
-}
-
-.migration-link {
-  color: var(--color-primary);
-  font-size: 0.85rem;
-  text-decoration: none;
-}
-
-.migration-link:hover {
-  text-decoration: underline;
-}
-
-.legacy-readonly-banner {
-  border: 1px solid #f59e0b;
-  border-left: 4px solid #d97706;
-  background: #fffbeb;
-  margin-top: calc(var(--space-2) * -1);
-  padding: var(--space-2) var(--space-3);
-}
-
-.legacy-readonly-head {
-  align-items: center;
-}
-
-.legacy-content-shell.locked {
-  pointer-events: none;
-  opacity: 0.78;
 }
 
 .tournament-id {

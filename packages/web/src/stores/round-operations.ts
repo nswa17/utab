@@ -7,9 +7,9 @@ export function resolveRoundOperationStatus(input: {
   isPublished: boolean
 }): RoundOperationStatus {
   if (input.isPublished) return 'finalized'
-  if (input.hasDraw) return 'generated'
   if (input.hasCompiled) return 'compiled'
   if (input.hasSubmissions) return 'collecting'
+  if (input.hasDraw) return 'generated'
   return 'preparing'
 }
 

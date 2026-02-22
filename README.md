@@ -328,15 +328,12 @@ pnpm -C packages/web typecheck:vue
 pnpm -C packages/web typecheck:ci
 ```
 
-### 管理者UI移行フラグ（Web）
+### 管理者UIフラグ（Web）
 
 `.env` で以下を切り替えられます。
 
-- `VITE_ADMIN_UI_V2=true|false`
-  - `true`: 新導線（`/setup` `/operations` `/reports`）を主導線化
-  - `false`: 旧導線（`/home` `/rounds` `/compiled`）を主導線化
-- `VITE_ADMIN_UI_LEGACY_READONLY=true|false`
-  - `true`: 旧主導線を読み取り専用表示にし、新導線への移行を促す
+- `VITE_ADMIN_REPORTS_UX_V3=true|false`
+  - `true`: レポート画面の新UIセクションを有効化
 
 ### デバッグログ
 

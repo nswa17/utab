@@ -22,7 +22,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('ラウンド公開設定')
     expect(source).toContain('対戦表作成では参照集計結果を選択できます。未選択でも自動生成できます。')
     expect(source).not.toContain('対戦生成と保存は対戦表設定で実行します。')
-    expect(source).toContain('強制集計')
+    expect(source).toContain('強制仮集計')
     expect(source).toContain('CompileForceRunModal')
     expect(source).toContain('includeLabelsFromRoundDetails')
     expect(source).toContain('compileDiffBaselineCompiledId')

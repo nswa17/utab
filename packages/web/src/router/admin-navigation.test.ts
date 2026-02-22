@@ -4,9 +4,9 @@ import { createMemoryHistory } from 'vue-router'
 import { createAppRouter, setupRouterGuards } from './index'
 import { useAuthStore } from '@/stores/auth'
 
-function createOrganizerRouter(adminUiV2 = true) {
+function createOrganizerRouter() {
   const pinia = createPinia()
-  const router = createAppRouter({ adminUiV2, history: createMemoryHistory(), stubComponents: true })
+  const router = createAppRouter({ history: createMemoryHistory(), stubComponents: true })
   setupRouterGuards(router, pinia)
   const auth = useAuthStore(pinia)
   auth.initialized = true
@@ -18,8 +18,8 @@ function createOrganizerRouter(adminUiV2 = true) {
 }
 
 describe('admin navigation routes', () => {
-  it('supports primary v2 admin paths when feature flag is enabled', async () => {
-    const router = createOrganizerRouter(true)
+  it('supports canonical admin routes', async () => {
+    const router = createOrganizerRouter()
 
     await router.push('/admin/tournament-1')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/setup')
@@ -33,82 +33,51 @@ describe('admin navigation routes', () => {
     await router.push('/admin/tournament-1/reports')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
 
-    await router.push('/admin/tournament-1/reports/presentation?compiledId=abc')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
-    expect(router.currentRoute.value.query.compiledId).toBe('abc')
+    await router.push('/admin/tournament-1/rounds/1')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/1/allocation')
 
-    await router.push('/admin-embed/tournament-1/reports/presentation?compiledId=embed-1')
-    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/reports')
-    expect(router.currentRoute.value.query.compiledId).toBe('embed-1')
+    await router.push('/admin/tournament-1/rounds/1/allocation')
+    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/1/allocation')
 
     await router.push('/admin/tournament-1/rounds/1/result')
     expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/1/result')
   })
 
-  it('keeps legacy paths via compatibility redirects in v2 mode', async () => {
-    const router = createOrganizerRouter(true)
+  it('supports canonical admin embed routes', async () => {
+    const router = createOrganizerRouter()
 
-    await router.push('/admin/tournament-1/home?section=data')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/setup')
-    expect(router.currentRoute.value.query.section).toBe('data')
+    await router.push('/admin-embed/tournament-1/rounds/settings')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/rounds/settings')
 
-    await router.push('/admin/tournament-1/rounds')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
+    await router.push('/admin-embed/tournament-1/rounds/2/allocation')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/rounds/2/allocation')
 
-    await router.push('/admin/tournament-1/compiled')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
+    await router.push('/admin-embed/tournament-1/rounds/2/result')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/rounds/2/result')
 
-    await router.push('/admin/tournament-1/compiled/presentation?compiledId=snap-1')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
-    expect(router.currentRoute.value.query.compiledId).toBe('snap-1')
+    await router.push('/admin-embed/tournament-1/submissions')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/submissions')
 
-    await router.push('/admin/tournament-1/submissions?round=2')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
-    expect(router.currentRoute.value.query.task).toBe('submissions')
-    expect(router.currentRoute.value.query.round).toBe('2')
-
-    await router.push('/admin/tournament-1/rounds/2/result')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/2/result')
+    await router.push('/admin-embed/tournament-1/reports')
+    expect(router.currentRoute.value.path).toBe('/admin-embed/tournament-1/reports')
   })
 
-  it('keeps legacy paths as primary when feature flag is disabled', async () => {
-    const router = createOrganizerRouter(false)
+  it('does not resolve removed legacy admin routes', async () => {
+    const router = createOrganizerRouter()
+    const legacyPaths = [
+      '/admin/tournament-1/home',
+      '/admin/tournament-1/rounds',
+      '/admin/tournament-1/compiled',
+      '/admin/tournament-1/submissions',
+      '/admin/tournament-1/reports/presentation?compiledId=abc',
+      '/admin/tournament-1/compiled/presentation?compiledId=legacy',
+      '/admin/tournament-1/results',
+      '/admin-embed/tournament-1/reports/presentation?compiledId=embed-1',
+    ]
 
-    await router.push('/admin/tournament-1')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/home')
-
-    await router.push('/admin/tournament-1/home')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/home')
-
-    await router.push('/admin/tournament-1/rounds')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds')
-
-    await router.push('/admin/tournament-1/compiled')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/compiled')
-
-    await router.push('/admin/tournament-1/reports/presentation?compiledId=xyz')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
-    expect(router.currentRoute.value.query.compiledId).toBe('xyz')
-
-    await router.push('/admin/tournament-1/compiled/presentation?compiledId=legacy')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/compiled')
-    expect(router.currentRoute.value.query.compiledId).toBe('legacy')
-
-    await router.push('/admin/tournament-1/setup')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/setup')
-
-    await router.push('/admin/tournament-1/operations')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
-
-    await router.push('/admin/tournament-1/reports')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/reports')
-
-    await router.push('/admin/tournament-1/submissions?round=1')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/operations')
-    expect(router.currentRoute.value.query.task).toBe('submissions')
-    expect(router.currentRoute.value.query.round).toBe('1')
-
-    await router.push('/admin/tournament-1/rounds/3/result')
-    expect(router.currentRoute.value.path).toBe('/admin/tournament-1/rounds/3/result')
+    for (const path of legacyPaths) {
+      await router.push(path)
+      expect(router.currentRoute.value.matched.length).toBe(0)
+    }
   })
 })

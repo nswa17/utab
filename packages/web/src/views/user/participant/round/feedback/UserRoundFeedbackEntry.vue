@@ -71,7 +71,7 @@
 
     <div v-else class="card stack">
       <p class="muted">{{ $t('対象のジャッジが見つかりません。') }}</p>
-      <Button variant="ghost" size="sm" :to="homePath">{{ $t('一覧へ戻る') }}</Button>
+      <Button variant="ghost" size="sm" :to="homePath">{{ $t('大会トップに戻る') }}</Button>
     </div>
 
     <div v-if="confirmOpen" class="modal-backdrop" role="presentation">
@@ -112,7 +112,7 @@
         <h4>{{ $t('送信完了') }}</h4>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" @click="goToDraw">{{ $t('対戦表に戻る') }}</Button>
-          <Button size="sm" @click="goToTournamentHome">{{ $t('大会ホームに戻る') }}</Button>
+          <Button size="sm" @click="goToTournamentHome">{{ $t('大会トップに戻る') }}</Button>
         </div>
       </div>
     </div>
@@ -168,7 +168,6 @@ const { identityId: judgeFeedbackSpeakerIdentityId } = useParticipantIdentity(
   participantMode,
   'team-feedback-speaker'
 )
-const filter = computed(() => (typeof route.query.filter === 'string' ? route.query.filter : ''))
 const actorMode = computed<'team' | 'adjudicator'>(() => {
   if (typeof route.query.actor === 'string' && route.query.actor === 'team') return 'team'
   if (participantMode.value === 'speaker') return 'team'
@@ -177,15 +176,18 @@ const actorMode = computed<'team' | 'adjudicator'>(() => {
 
 const homePath = computed(() => {
   const query = new URLSearchParams()
-  if (filter.value) query.set('filter', filter.value)
-  query.set('actor', actorMode.value)
+  appendParticipantMode(query, participantMode.value)
+  query.set('focusRound', round.value)
+  query.set('focusType', 'feedback')
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`
+})
+const tournamentHomePath = computed(() => {
+  const query = new URLSearchParams()
   appendParticipantMode(query, participantMode.value)
   const suffix = query.toString()
-  return `/user/${tournamentId.value}/rounds/${round.value}/feedback/home${
-    suffix ? `?${suffix}` : ''
-  }`
+  return `/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`
 })
-const tournamentHomePath = computed(() => `/user/${tournamentId.value}/home`)
 
 const score = ref(8)
 const matter = ref(4)

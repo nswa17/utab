@@ -21,6 +21,8 @@
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </div>
 
+    <UserParticipantHome v-else-if="hasAccess" />
+
     <div v-else class="card stack">
       <p class="error">{{ errorMessage || $t('アクセス確認に失敗しました。') }}</p>
       <Button variant="secondary" size="sm" to="/user">{{ $t('大会一覧') }}</Button>
@@ -30,19 +32,17 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/utils/api'
 import { useTournamentStore } from '@/stores/tournament'
-import { useRoundsStore } from '@/stores/rounds'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Field from '@/components/common/Field.vue'
 import Button from '@/components/common/Button.vue'
+import UserParticipantHome from '@/views/user/participant/UserParticipantHome.vue'
 
 const route = useRoute()
-const router = useRouter()
 const tournamentStore = useTournamentStore()
-const roundsStore = useRoundsStore()
 const { t } = useI18n({ useScope: 'global' })
 
 const tournamentId = computed(() => {
@@ -52,30 +52,14 @@ const tournamentId = computed(() => {
 const password = ref('')
 const checkingAccess = ref(true)
 const needsPassword = ref(false)
+const hasAccess = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
-
-async function resolveLandingPath() {
-  if (!tournamentId.value) return '/user'
-
-  await roundsStore.fetchRounds(tournamentId.value, { forcePublic: true })
-  const roundNumbers = roundsStore.rounds
-    .map((item) => Number(item.round))
-    .filter((value) => Number.isFinite(value) && value > 0)
-  const latestRound = roundNumbers.length > 0 ? Math.max(...roundNumbers) : null
-  if (!latestRound) return `/user/${tournamentId.value}/results`
-
-  const query = new URLSearchParams()
-  if (typeof route.query.mode === 'string' && route.query.mode.trim()) {
-    query.set('mode', route.query.mode.trim())
-  }
-  const suffix = query.toString()
-  return `/user/${tournamentId.value}/rounds/${latestRound}/home${suffix ? `?${suffix}` : ''}`
-}
 
 async function ensureTournamentAccess() {
   checkingAccess.value = true
   needsPassword.value = false
+  hasAccess.value = false
   errorMessage.value = ''
   if (!tournamentId.value) {
     errorMessage.value = t('大会情報が見つかりません。')
@@ -85,8 +69,8 @@ async function ensureTournamentAccess() {
 
   try {
     await api.get(`/tournaments/${tournamentId.value}`)
+    hasAccess.value = true
     await tournamentStore.fetchTournaments()
-    router.replace(await resolveLandingPath())
   } catch (err: any) {
     const status = err?.response?.status
     if (status === 401) {
@@ -120,7 +104,9 @@ async function enterTournament() {
       password: password.value,
     })
     await tournamentStore.fetchTournaments()
-    router.replace(await resolveLandingPath())
+    needsPassword.value = false
+    hasAccess.value = true
+    password.value = ''
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
   } finally {

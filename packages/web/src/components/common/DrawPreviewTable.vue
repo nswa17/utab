@@ -6,74 +6,194 @@
         <thead>
           <tr>
             <th>
-              <SortHeaderButton
-                :label="$t('会場')"
-                :indicator="sortIndicator('venue')"
-                @click="setSort('venue')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="$t('会場')"
+                  :indicator="sortIndicator('venue')"
+                  @click="setSort('venue')"
+                />
+                <div v-if="columnHeaderBadges('venue').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('venue')"
+                    :key="`venue-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th>
-              <SortHeaderButton
-                :label="govLabel"
-                :indicator="sortIndicator('gov')"
-                @click="setSort('gov')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="govLabel"
+                  :indicator="sortIndicator('gov')"
+                  @click="setSort('gov')"
+                />
+                <div v-if="columnHeaderBadges('gov').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('gov')"
+                    :key="`gov-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th>
-              <SortHeaderButton
-                :label="oppLabel"
-                :indicator="sortIndicator('opp')"
-                @click="setSort('opp')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="oppLabel"
+                  :indicator="sortIndicator('opp')"
+                  @click="setSort('opp')"
+                />
+                <div v-if="columnHeaderBadges('opp').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('opp')"
+                    :key="`opp-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th>
-              <SortHeaderButton
-                :label="winColumnLabel"
-                :indicator="sortIndicator('win')"
-                @click="setSort('win')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="winColumnLabel"
+                  :indicator="sortIndicator('win')"
+                  @click="setSort('win')"
+                />
+                <div v-if="columnHeaderBadges('win').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('win')"
+                    :key="`win-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th v-if="showScoreColumn">
-              <SortHeaderButton
-                :label="scoreColumnLabel"
-                :indicator="sortIndicator('score')"
-                @click="setSort('score')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="scoreColumnLabel"
+                  :indicator="sortIndicator('score')"
+                  @click="setSort('score')"
+                />
+                <div v-if="columnHeaderBadges('score').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('score')"
+                    :key="`score-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th class="draw-col-chair">
-              <SortHeaderButton
-                :label="$t('チェア')"
-                :indicator="sortIndicator('chair')"
-                @click="setSort('chair')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="$t('チェア')"
+                  :indicator="sortIndicator('chair')"
+                  @click="setSort('chair')"
+                />
+                <div v-if="columnHeaderBadges('chair').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('chair')"
+                    :key="`chair-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th class="draw-col-panel">
-              <SortHeaderButton
-                :label="$t('パネル')"
-                :indicator="sortIndicator('panel')"
-                @click="setSort('panel')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="$t('パネル')"
+                  :indicator="sortIndicator('panel')"
+                  @click="setSort('panel')"
+                />
+                <div v-if="columnHeaderBadges('panel').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('panel')"
+                    :key="`panel-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th class="draw-col-trainee">
-              <SortHeaderButton
-                :label="$t('トレーニー')"
-                :indicator="sortIndicator('trainee')"
-                @click="setSort('trainee')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="$t('トレーニー')"
+                  :indicator="sortIndicator('trainee')"
+                  @click="setSort('trainee')"
+                />
+                <div v-if="columnHeaderBadges('trainee').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('trainee')"
+                    :key="`trainee-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th v-if="showSubmissionColumns">
-              <SortHeaderButton
-                :label="teamSubmissionLabel"
-                :indicator="sortIndicator('teamSubmission')"
-                @click="setSort('teamSubmission')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="teamSubmissionLabel"
+                  :indicator="sortIndicator('teamSubmission')"
+                  @click="setSort('teamSubmission')"
+                />
+                <div v-if="columnHeaderBadges('teamSubmission').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('teamSubmission')"
+                    :key="`team-submission-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th v-if="showJudgeSubmissionColumn">
-              <SortHeaderButton
-                :label="judgeSubmissionLabel"
-                :indicator="sortIndicator('judgeSubmission')"
-                @click="setSort('judgeSubmission')"
-              />
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="judgeSubmissionLabel"
+                  :indicator="sortIndicator('judgeSubmission')"
+                  @click="setSort('judgeSubmission')"
+                />
+                <div v-if="columnHeaderBadges('judgeSubmission').length > 0" class="draw-header-badge-list">
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('judgeSubmission')"
+                    :key="`judge-submission-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
             </th>
             <th v-if="showDetailColumn" class="draw-col-detail"></th>
           </tr>
@@ -82,38 +202,34 @@
           <template v-for="row in sortedRows" :key="`preview-${row.key}`">
             <tr>
               <td>{{ row.venueLabel }}</td>
-              <td>{{ teamVisible ? row.govName : $t('非公開') }}</td>
-              <td>{{ teamVisible ? row.oppName : $t('非公開') }}</td>
+              <td>{{ row.govName }}</td>
+              <td>{{ row.oppName }}</td>
               <td>
-                <template v-if="teamVisible">
-                  <div class="draw-win-cell">
-                    <span class="draw-win-main">
-                      <span class="draw-win-value">{{ row.winLabel }}</span>
-                      <span
-                        v-if="row.winStatusLabel"
-                        class="draw-win-status"
-                        :class="`draw-win-status--${row.winStatus ?? 'insufficient'}`"
-                      >
-                        {{ row.winStatusLabel }}
-                      </span>
+                <div class="draw-win-cell">
+                  <span class="draw-win-main">
+                    <span class="draw-win-value">{{ row.winLabel }}</span>
+                    <span
+                      v-if="row.winStatusLabel"
+                      class="draw-win-status"
+                      :class="`draw-win-status--${row.winStatus ?? 'insufficient'}`"
+                    >
+                      {{ row.winStatusLabel }}
                     </span>
-                    <span v-if="row.winMetaLabel" class="muted tiny draw-win-meta">{{ row.winMetaLabel }}</span>
-                  </div>
-                </template>
-                <template v-else>—</template>
+                  </span>
+                  <span v-if="row.winMetaLabel" class="muted tiny draw-win-meta">{{ row.winMetaLabel }}</span>
+                </div>
               </td>
               <td v-if="showScoreColumn">
-                <template v-if="teamVisible">{{ row.scoreLabel ?? '—' }}</template>
-                <template v-else>—</template>
+                {{ row.scoreLabel ?? '—' }}
               </td>
               <td class="draw-col-chair draw-wrap-cell">
-                {{ adjudicatorVisible ? row.chairsLabel : $t('非公開') }}
+                {{ row.chairsLabel }}
               </td>
               <td class="draw-col-panel draw-wrap-cell">
-                {{ adjudicatorVisible ? row.panelsLabel : $t('非公開') }}
+                {{ row.panelsLabel }}
               </td>
               <td class="draw-col-trainee draw-wrap-cell">
-                {{ adjudicatorVisible ? row.traineesLabel : $t('非公開') }}
+                {{ row.traineesLabel }}
               </td>
               <td v-if="showSubmissionColumns">
                 <span
@@ -245,6 +361,9 @@ type PreviewSortKey =
   | 'judgeSubmission'
 type PreviewSortDirection = 'asc' | 'desc'
 type PreviewSortState = { key: PreviewSortKey; direction: PreviewSortDirection }
+type HeaderBadgeTone = 'open' | 'closed' | 'neutral'
+type HeaderBadge = { text: string; tone?: HeaderBadgeTone }
+type ColumnHeaderBadgeMap = Partial<Record<PreviewSortKey, HeaderBadge[]>>
 
 const props = withDefaults(
   defineProps<{
@@ -260,6 +379,7 @@ const props = withDefaults(
     winColumnLabel?: string
     showScoreColumn?: boolean
     scoreColumnLabel?: string
+    columnHeaderBadges?: ColumnHeaderBadgeMap
   }>(),
   {
     govLabel: 'Gov',
@@ -273,6 +393,7 @@ const props = withDefaults(
     winColumnLabel: 'Win',
     showScoreColumn: false,
     scoreColumnLabel: 'SCORE合計',
+    columnHeaderBadges: () => ({}),
   }
 )
 const emit = defineEmits<{
@@ -306,11 +427,11 @@ const columnCount = computed(() => {
   return 7 + scoreColumn + submissionColumns + detailColumn
 })
 
+function columnHeaderBadges(key: PreviewSortKey) {
+  return props.columnHeaderBadges?.[key] ?? []
+}
+
 function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
-  if (!props.teamVisible && (key === 'gov' || key === 'opp' || key === 'win' || key === 'score')) return ''
-  if (!props.adjudicatorVisible && (key === 'chair' || key === 'panel' || key === 'trainee')) {
-    return ''
-  }
   if (key === 'score' && !showScoreColumn.value) return -1
   if (key === 'teamSubmission' && !showSubmissionColumns.value) return 0
   if (key === 'judgeSubmission' && !showJudgeSubmissionColumn.value) return 0
@@ -447,6 +568,48 @@ function onEditSubmission(submissionId?: string) {
   background: var(--color-surface-muted);
   font-weight: 700;
   white-space: nowrap;
+}
+
+.draw-header-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.draw-header-badge-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.draw-header-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.draw-header-badge.is-open {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.draw-header-badge.is-closed {
+  border-color: #fdba74;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.draw-header-badge.is-neutral {
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .draw-preview-table tbody tr:last-child td {

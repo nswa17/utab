@@ -142,8 +142,10 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('fairnessAnalysisResults')
     expect(source).toContain('speakerPerformanceResults')
     expect(source).toContain('adjudicatorPerformanceResults')
-    expect(source).toContain('スピーカー成績のプロット')
-    expect(source).toContain('ジャッジ成績のプロット')
+    expect(source).toContain('スピーカー成績')
+    expect(source).toContain('ジャッジ成績')
+    expect(source).not.toContain('スピーカー成績のプロット')
+    expect(source).not.toContain('ジャッジ成績のプロット')
     expect(source).toContain('<TeamPerformance')
     expect(source).toContain('fairnessScoreKey')
     expect(source).toContain(':show-team-performance="true"')
@@ -151,6 +153,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).not.toContain('showAnalysisSection')
     expect(source).toContain(':use-cards="true"')
     expect(source).toContain('<EmptyState')
+    expect(source).toContain('fairness-analysis-chart-card')
   })
 
   it('keeps score range display fixed to max-score order without sort controls', () => {
