@@ -753,6 +753,7 @@ function onEditSubmission(submissionId?: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-3);
+  align-items: start;
 }
 
 .draw-preview-detail-panel {
@@ -762,6 +763,7 @@ function onEditSubmission(submissionId?: string) {
   padding: var(--space-2);
   display: grid;
   gap: var(--space-2);
+  align-content: start;
 }
 
 .draw-preview-detail-head {

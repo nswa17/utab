@@ -51,6 +51,7 @@
         :to="setupOverviewPath"
         class="subnav-link"
         :class="{ active: isSetupOverviewActive }"
+        @click="refreshSectionInBackground"
       >
         {{ $t('大会設定') }}
       </RouterLink>
@@ -58,6 +59,7 @@
         :to="setupDataPath"
         class="subnav-link"
         :class="{ active: isSetupDataActive }"
+        @click="refreshSectionInBackground"
       >
         {{ $t('大会データ準備') }}
       </RouterLink>
@@ -65,10 +67,16 @@
         :to="operationsPath"
         class="subnav-link"
         :class="{ active: isOperationsActive }"
+        @click="refreshSectionInBackground"
       >
         {{ $t('大会運営') }}
       </RouterLink>
-      <RouterLink :to="reportsPath" class="subnav-link" :class="{ active: isReportsActive }">
+      <RouterLink
+        :to="reportsPath"
+        class="subnav-link"
+        :class="{ active: isReportsActive }"
+        @click="refreshSectionInBackground"
+      >
         {{ $t('大会結果レポート') }}
       </RouterLink>
     </nav>
@@ -192,14 +200,23 @@ async function refreshDuplicateWarnings() {
   }
 }
 
-async function refreshSection() {
-  sectionLoading.value = true
+async function refreshSection(options: { showLoading?: boolean } = {}) {
+  const showLoading = options.showLoading !== false
+  if (showLoading) {
+    sectionLoading.value = true
+  }
   try {
     await Promise.all([tournamentStore.fetchTournaments(), refreshDuplicateWarnings()])
     lastRefreshedAt.value = new Date().toISOString()
   } finally {
-    sectionLoading.value = false
+    if (showLoading) {
+      sectionLoading.value = false
+    }
   }
+}
+
+function refreshSectionInBackground() {
+  void refreshSection({ showLoading: false })
 }
 
 watch(

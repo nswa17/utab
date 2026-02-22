@@ -44,6 +44,7 @@ declare module 'vue' {
     ResultsEditor: typeof import('./components/results/ResultsEditor.vue')['default']
     RoundMotionEditor: typeof import('./components/common/RoundMotionEditor.vue')['default']
     RoundOptionEditor: typeof import('./components/common/RoundOptionEditor.vue')['default']
+    RoundPublicationSwitches: typeof import('./components/common/RoundPublicationSwitches.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScoreChange: typeof import('./components/mstat/ScoreChange.vue')['default']

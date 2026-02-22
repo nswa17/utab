@@ -71,8 +71,8 @@
                   <label class="switch">
                     <input
                       type="checkbox"
-                      :checked="Boolean(round.teamAllocationOpened)"
-                      :disabled="isLoading"
+                      :checked="roundTeamAllocationOpened(round.round)"
+                      :disabled="isLoading || !roundHasDraw(round.round)"
                       @change="onTeamAllocationChange(round, $event)"
                     />
                     <span class="switch-slider"></span>
@@ -89,8 +89,8 @@
                   <label class="switch">
                     <input
                       type="checkbox"
-                      :checked="Boolean(round.adjudicatorAllocationOpened)"
-                      :disabled="isLoading"
+                      :checked="roundAdjudicatorAllocationOpened(round.round)"
+                      :disabled="isLoading || !roundHasDraw(round.round)"
                       @change="onAdjudicatorAllocationChange(round, $event)"
                     />
                     <span class="switch-slider"></span>
@@ -743,6 +743,19 @@ function roundDraw(roundNumber: number) {
   return drawByRound.value.get(Number(roundNumber))
 }
 
+function roundHasDraw(roundNumber: number) {
+  const draw = roundDraw(roundNumber)
+  return Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
+}
+
+function roundTeamAllocationOpened(roundNumber: number) {
+  return Boolean(roundDraw(roundNumber)?.drawOpened)
+}
+
+function roundAdjudicatorAllocationOpened(roundNumber: number) {
+  return Boolean(roundDraw(roundNumber)?.allocationOpened)
+}
+
 function parseTimestamp(value?: string) {
   if (!value) return Number.NaN
   const ms = new Date(value).getTime()
@@ -1241,20 +1254,34 @@ function closeMissingModal() {
 
 async function onTeamAllocationChange(round: any, event: Event) {
   const target = event.target as HTMLInputElement | null
-  await roundsStore.updateRound({
+  const draw = roundDraw(Number(round?.round))
+  if (!draw) return
+  await drawsStore.upsertDraw({
     tournamentId: tournamentId.value,
-    roundId: round._id,
-    teamAllocationOpened: Boolean(target?.checked),
+    round: Number(round.round),
+    allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
+    userDefinedData: draw.userDefinedData,
+    drawOpened: Boolean(target?.checked),
+    allocationOpened: Boolean(draw.allocationOpened),
+    locked: Boolean(draw.locked),
   })
+  await drawsStore.fetchDraws(tournamentId.value)
 }
 
 async function onAdjudicatorAllocationChange(round: any, event: Event) {
   const target = event.target as HTMLInputElement | null
-  await roundsStore.updateRound({
+  const draw = roundDraw(Number(round?.round))
+  if (!draw) return
+  await drawsStore.upsertDraw({
     tournamentId: tournamentId.value,
-    roundId: round._id,
-    adjudicatorAllocationOpened: Boolean(target?.checked),
+    round: Number(round.round),
+    allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
+    userDefinedData: draw.userDefinedData,
+    drawOpened: Boolean(draw.drawOpened),
+    allocationOpened: Boolean(target?.checked),
+    locked: Boolean(draw.locked),
   })
+  await drawsStore.fetchDraws(tournamentId.value)
 }
 
 function requestRemoveRound(id: string) {

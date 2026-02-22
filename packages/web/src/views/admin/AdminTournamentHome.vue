@@ -192,36 +192,24 @@
                 :disabled="roundPublicationBusy"
               >
                 <template #status>
-                  <label class="row publish-switch-inline publish-switch-inline-compact">
-                    <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
-                    <ToggleSwitch
-                      class="publish-switch-toggle"
-                      :model-value="Boolean(round.motionOpened)"
-                      :disabled="roundPublicationBusy"
-                      :aria-label="$t('モーション公開')"
-                      @update:model-value="(checked) => onSetupMotionOpenedChange(round, checked)"
-                    />
-                  </label>
-                  <label class="row publish-switch-inline publish-switch-inline-compact">
-                    <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
-                    <ToggleSwitch
-                      class="publish-switch-toggle"
-                      :model-value="Boolean(round.teamAllocationOpened)"
-                      :disabled="roundPublicationBusy"
-                      :aria-label="$t('チーム割り当て')"
-                      @update:model-value="(checked) => onSetupTeamAllocationChange(round, checked)"
-                    />
-                  </label>
-                  <label class="row publish-switch-inline publish-switch-inline-compact">
-                    <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
-                    <ToggleSwitch
-                      class="publish-switch-toggle"
-                      :model-value="Boolean(round.adjudicatorAllocationOpened)"
-                      :disabled="roundPublicationBusy"
-                      :aria-label="$t('ジャッジ割り当て')"
-                      @update:model-value="(checked) => onSetupAdjudicatorAllocationChange(round, checked)"
-                    />
-                  </label>
+                  <RoundPublicationSwitches
+                    :busy="roundPublicationBusy"
+                    :motion-opened="Boolean(round.motionOpened)"
+                    :motion-label="$t('モーション公開')"
+                    :team-allocation-opened="setupRoundTeamAllocationOpened(round.round)"
+                    :team-allocation-disabled="!setupRoundHasDraw(round.round)"
+                    :team-allocation-label="$t('チーム割り当て')"
+                    :adjudicator-allocation-opened="setupRoundAdjudicatorAllocationOpened(round.round)"
+                    :adjudicator-allocation-disabled="!setupRoundHasDraw(round.round)"
+                    :adjudicator-allocation-label="$t('ジャッジ割り当て')"
+                    @update:motion-opened="(checked) => onSetupMotionOpenedChange(round, checked)"
+                    @update:team-allocation-opened="
+                      (checked) => onSetupTeamAllocationChange(round, checked)
+                    "
+                    @update:adjudicator-allocation-opened="
+                      (checked) => onSetupAdjudicatorAllocationChange(round, checked)
+                    "
+                  />
                 </template>
               </RoundMotionEditor>
             </section>
@@ -1379,6 +1367,7 @@ import CollapseHeader from '@/components/common/CollapseHeader.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
+import RoundPublicationSwitches from '@/components/common/RoundPublicationSwitches.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
@@ -1419,7 +1408,7 @@ const isLoading = computed(
     institutions.loading ||
     submissions.loading
 )
-const roundPublicationBusy = computed(() => rounds.loading || sectionLoading.value)
+const roundPublicationBusy = computed(() => rounds.loading || draws.loading || sectionLoading.value)
 const DEFAULT_TOURNAMENT_ACCESS_PASSWORD = 'password'
 
 const tournamentForm = reactive({
@@ -1642,6 +1631,26 @@ const deleteEntityPrompt = computed(() => {
 })
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
+const setupDrawByRound = computed(() => {
+  const map = new Map<number, any>()
+  draws.draws.forEach((draw) => {
+    map.set(Number(draw.round), draw)
+  })
+  return map
+})
+function setupRoundDraw(roundNumber: number) {
+  return setupDrawByRound.value.get(Number(roundNumber)) ?? null
+}
+function setupRoundHasDraw(roundNumber: number) {
+  const draw = setupRoundDraw(roundNumber)
+  return Boolean(draw && Array.isArray(draw.allocation) && draw.allocation.length > 0)
+}
+function setupRoundTeamAllocationOpened(roundNumber: number) {
+  return Boolean(setupRoundDraw(roundNumber)?.drawOpened)
+}
+function setupRoundAdjudicatorAllocationOpened(roundNumber: number) {
+  return Boolean(setupRoundDraw(roundNumber)?.allocationOpened)
+}
 const setupRoundDeleteId = ref<string | null>(null)
 const setupRoundDeleteError = ref('')
 const setupRoundDeleteTarget = computed(() => {
@@ -2143,26 +2152,33 @@ async function onSetupMotionOpenedChange(round: any, checked: boolean) {
   }
 }
 
-async function onSetupTeamAllocationChange(round: any, checked: boolean) {
-  const updated = await rounds.updateRound({
+async function saveSetupDrawPublication(
+  round: any,
+  nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean }>
+): Promise<boolean> {
+  const roundNumber = Number(round?.round)
+  const draw = setupRoundDraw(roundNumber)
+  if (!Number.isInteger(roundNumber) || !draw) return false
+  const updated = await draws.upsertDraw({
     tournamentId: tournamentId.value,
-    roundId: String(round._id),
-    teamAllocationOpened: Boolean(checked),
+    round: roundNumber,
+    allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
+    userDefinedData: draw.userDefinedData,
+    drawOpened: nextState.drawOpened ?? Boolean(draw.drawOpened),
+    allocationOpened: nextState.allocationOpened ?? Boolean(draw.allocationOpened),
+    locked: Boolean(draw.locked),
   })
-  if (updated?._id) {
-    await rounds.fetchRounds(tournamentId.value)
-  }
+  if (!updated?._id) return false
+  await draws.fetchDraws(tournamentId.value)
+  return true
+}
+
+async function onSetupTeamAllocationChange(round: any, checked: boolean) {
+  await saveSetupDrawPublication(round, { drawOpened: Boolean(checked) })
 }
 
 async function onSetupAdjudicatorAllocationChange(round: any, checked: boolean) {
-  const updated = await rounds.updateRound({
-    tournamentId: tournamentId.value,
-    roundId: String(round._id),
-    adjudicatorAllocationOpened: Boolean(checked),
-  })
-  if (updated?._id) {
-    await rounds.fetchRounds(tournamentId.value)
-  }
+  await saveSetupDrawPublication(round, { allocationOpened: Boolean(checked) })
 }
 
 function isSetupRoundDetailsOpen(roundId: string) {
@@ -3247,29 +3263,6 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .setup-round-motion-panel {
   border: 1px solid var(--color-border);
   gap: var(--space-2);
-}
-
-.publish-switch-inline {
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.publish-switch-inline-compact {
-  min-height: 34px;
-  padding: 0 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.publish-switch-label {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.publish-switch-toggle {
-  flex: 0 0 auto;
 }
 
 .setup-round-edit-grid {

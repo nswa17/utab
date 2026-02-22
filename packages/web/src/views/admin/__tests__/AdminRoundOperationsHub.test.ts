@@ -51,6 +51,9 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('selectedCompileDiffBaselineCompiled')
     expect(source).toContain('selectedCompileDiffBaselineRows')
     expect(source).toContain('compileDiffBaselineCompiledId')
+    expect(source).toContain('v-if="snapshotIncludesSelectedRound && compileRows.length > 0"')
+    expect(source).toContain('compiledStore.compiled?._id')
+    expect(source).toContain('最新集計結果に選択ラウンドが含まれていません。先に集計を実行してください。')
   })
 
   it('shows only team ranking list in compile report', () => {
@@ -83,6 +86,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('clearUnsavedCompilePreview()')
     expect(source).toContain('compileWorkflow.clearPreview()')
     expect(source).toContain('compiledStore.clearPreview()')
+    expect(source).toContain("compileMessage.value = ''")
   })
 
   it('adds strict submission guards before compile and draw generation', () => {

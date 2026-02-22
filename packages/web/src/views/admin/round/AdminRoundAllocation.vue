@@ -127,7 +127,7 @@
                             ...entityPillClasses('venue', row.venue),
                           ]"
                           :title="venueName(row.venue)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('venue', row.venue)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('venue', row.venue)"
@@ -153,7 +153,7 @@
                             ...entityPillClasses('team', row.teams.gov),
                           ]"
                           :title="teamName(row.teams.gov)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.gov)"
@@ -179,7 +179,7 @@
                             ...entityPillClasses('team', row.teams.opp),
                           ]"
                           :title="teamName(row.teams.opp)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.opp)"
@@ -206,7 +206,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -235,7 +235,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -264,7 +264,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -350,7 +350,7 @@
                     ...entityPillClasses('venue', venue._id),
                   ]"
                   :title="venue.name"
-                  draggable="true"
+                  :draggable="!locked"
                   @dragstart="onDragStart('venue', venue._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('venue', venue._id)"
@@ -380,7 +380,7 @@
                     ...entityPillClasses('team', team._id),
                   ]"
                   :title="team.name"
-                  draggable="true"
+                  :draggable="!locked"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('team', team._id)"
@@ -410,7 +410,7 @@
                     ...entityPillClasses('adjudicator', adj._id),
                   ]"
                   :title="adj.name"
-                  draggable="true"
+                  :draggable="!locked"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('adjudicator', adj._id)"
@@ -435,7 +435,7 @@
               variant="secondary"
               size="sm"
               @click="openAutoGenerateModal"
-              :disabled="isLoading || requestLoading"
+              :disabled="isLoading || requestLoading || locked"
             >
               {{ $t('自動生成') }}
             </Button>
@@ -462,7 +462,7 @@
               variant="secondary"
               size="sm"
               @click="revertAllocation"
-              :disabled="!allocationChanged"
+              :disabled="locked || !allocationChanged"
             >
               {{ $t('元に戻す') }}
             </Button>
@@ -946,7 +946,7 @@
             size="sm"
             :loading="requestLoading"
             @click="requestAllocation"
-            :disabled="isLoading || requestLoading"
+            :disabled="isLoading || requestLoading || locked"
           >
             {{ $t('生成') }}
           </Button>
@@ -1798,6 +1798,10 @@ async function save() {
 
 function openAutoGenerateModal() {
   requestError.value = null
+  if (locked.value) {
+    openNotice(t('ドローがロックされているため自動生成できません。'))
+    return
+  }
   if (autoOptions.value.teamAlgorithm === 'break') {
     hydrateAutoBreakPolicyFromRound()
   }
@@ -1933,6 +1937,10 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
 
 async function requestAllocation() {
   requestError.value = null
+  if (locked.value) {
+    requestError.value = t('ドローがロックされているため自動生成できません。')
+    return
+  }
   requestLoading.value = true
   try {
     const teamOptions =
@@ -2058,6 +2066,7 @@ function clearAllocation() {
 }
 
 function revertAllocation() {
+  if (locked.value) return
   syncFromDraw(currentDraw.value ?? null)
 }
 
@@ -2250,6 +2259,10 @@ function moveAllocationRow(fromIndex: number, toIndex: number) {
 }
 
 function onRowDrop(targetIndex: number, event: DragEvent) {
+  if (locked.value) {
+    clearRowDragState()
+    return
+  }
   const fromState = rowDragSourceIndex.value
   const fromPayload = Number(event.dataTransfer?.getData('text/plain'))
   const fromIndex = Number.isInteger(fromState) ? Number(fromState) : fromPayload
@@ -2820,6 +2833,7 @@ const unsubmittedEnabled = computed(
 )
 
 function onDragStart(kind: DragKind, id: string) {
+  if (locked.value) return
   dragPayload.value = { kind, id }
 }
 
@@ -2849,6 +2863,7 @@ function removeVenueFromAllocation(id: string) {
 }
 
 function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
   removeTeamFromAllocation(payload.id)
@@ -2861,6 +2876,7 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
 }
 
 function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'trainees') {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'adjudicator') return
   removeAdjudicatorFromAllocation(payload.id)
@@ -2871,6 +2887,7 @@ function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'tr
 }
 
 function dropVenue(row: DrawAllocationRow) {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
   removeVenueFromAllocation(payload.id)
@@ -2879,6 +2896,7 @@ function dropVenue(row: DrawAllocationRow) {
 }
 
 function dropToWaiting(kind: DragKind) {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== kind) return
   if (kind === 'team') removeTeamFromAllocation(payload.id)

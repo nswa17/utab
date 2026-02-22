@@ -44,7 +44,7 @@ describe('Admin tournament setup integration', () => {
   it('shows per-round detail settings inside setup list', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('setup-round-details')
-    expect(source).toContain('publish-switch-inline')
+    expect(source).toContain('RoundPublicationSwitches')
     expect(source).toContain('チーム割り当て')
     expect(source).toContain('ジャッジ割り当て')
     expect(source).toContain('setupRoundEditForm.userDefinedData')

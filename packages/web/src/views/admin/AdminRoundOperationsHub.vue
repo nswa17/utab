@@ -94,7 +94,7 @@
                   {{ $t('まず対戦表を生成してください。') }}
                 </p>
                 <div class="publish-switch-grid">
-                  <section class="publish-switch-card motion-publish-card">
+                  <section class="publish-switch-card">
                     <RoundMotionEditor
                       v-if="selectedRoundData"
                       :tournament-id="tournamentId"
@@ -103,52 +103,28 @@
                       :disabled="publicationSwitchBusy"
                     >
                       <template #status>
-                        <div class="row publish-switch-status-row">
-                          <Button
-                            v-if="canShowPriorRoundsHideSwitch"
-                            variant="ghost"
-                            class="prior-rounds-hide-button"
-                            size="sm"
-                            :disabled="publicationSwitchBusy || priorRoundsFullyHidden"
-                            @click="onPriorRoundsHideToggle(true)"
-                          >
-                            {{ $t('このラウンドより前を一括非公開') }}
-                          </Button>
-                          <label class="row publish-switch-inline publish-switch-inline-compact">
-                            <span class="publish-switch-label">{{ $t('モーション公開') }}</span>
-                            <ToggleSwitch
-                              class="publish-switch-toggle"
-                              :model-value="motionOpenedValue"
-                              :disabled="publicationSwitchBusy"
-                              :aria-label="$t('モーション公開')"
-                              @update:model-value="onMotionPublishToggle"
-                            />
-                          </label>
-                          <label class="row publish-switch-inline publish-switch-inline-compact">
-                            <span class="publish-switch-label">{{ $t('チーム割り当て') }}</span>
-                            <ToggleSwitch
-                              class="publish-switch-toggle"
-                              :model-value="drawOpenedValue"
-                              :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                              :aria-label="$t('チーム割り当て')"
-                              @update:model-value="
-                                (checked) => onPublishToggle('drawOpened', checked)
-                              "
-                            />
-                          </label>
-                          <label class="row publish-switch-inline publish-switch-inline-compact">
-                            <span class="publish-switch-label">{{ $t('ジャッジ割り当て') }}</span>
-                            <ToggleSwitch
-                              class="publish-switch-toggle"
-                              :model-value="allocationOpenedValue"
-                              :disabled="publicationSwitchBusy || !selectedRoundHasDraw"
-                              :aria-label="$t('ジャッジ割り当て')"
-                              @update:model-value="
-                                (checked) => onPublishToggle('allocationOpened', checked)
-                              "
-                            />
-                          </label>
-                        </div>
+                        <RoundPublicationSwitches
+                          :busy="publicationSwitchBusy"
+                          :show-prior-rounds-hide-button="canShowPriorRoundsHideSwitch"
+                          :prior-rounds-hide-disabled="priorRoundsFullyHidden"
+                          :prior-rounds-hide-label="$t('このラウンドより前を一括非公開')"
+                          :motion-opened="motionOpenedValue"
+                          :motion-label="$t('モーション公開')"
+                          :team-allocation-opened="drawOpenedValue"
+                          :team-allocation-disabled="!selectedRoundHasDraw"
+                          :team-allocation-label="$t('チーム割り当て')"
+                          :adjudicator-allocation-opened="allocationOpenedValue"
+                          :adjudicator-allocation-disabled="!selectedRoundHasDraw"
+                          :adjudicator-allocation-label="$t('ジャッジ割り当て')"
+                          @update:motion-opened="onMotionPublishToggle"
+                          @update:team-allocation-opened="
+                            (checked) => onPublishToggle('drawOpened', checked)
+                          "
+                          @update:adjudicator-allocation-opened="
+                            (checked) => onPublishToggle('allocationOpened', checked)
+                          "
+                          @hide-prior-rounds="onPriorRoundsHideToggle(true)"
+                        />
                       </template>
                     </RoundMotionEditor>
                   </section>
@@ -384,7 +360,10 @@
                 >
                   {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
                 </p>
-                <section v-if="compileRows.length > 0" class="card soft stack compile-result-panel">
+                <section
+                  v-if="snapshotIncludesSelectedRound && compileRows.length > 0"
+                  class="card soft stack compile-result-panel"
+                >
                   <div class="row compile-result-head">
                     <strong>{{ $t('集計レポート') }}</strong>
                     <CompiledSnapshotSelect
@@ -437,6 +416,14 @@
                     </Button>
                   </div>
                 </section>
+                <p
+                  v-else-if="
+                    selectedRound !== null && !snapshotIncludesSelectedRound && compileRowsBase.length > 0
+                  "
+                  class="muted warning"
+                >
+                  {{ $t('最新集計結果に選択ラウンドが含まれていません。先に集計を実行してください。') }}
+                </p>
                 <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
                   {{ $t('集計結果を表示するデータがありません。') }}
                 </p>
@@ -511,9 +498,9 @@ import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Table from '@/components/common/Table.vue'
-import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import CategoryRankingTable from '@/components/common/CategoryRankingTable.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
+import RoundPublicationSwitches from '@/components/common/RoundPublicationSwitches.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
@@ -693,8 +680,6 @@ const priorRoundsFullyHidden = computed(() => {
     const draw = priorRoundDrawMap.value.get(round.round)
     return (
       !Boolean(round.motionOpened) &&
-      !Boolean(round.teamAllocationOpened) &&
-      !Boolean(round.adjudicatorAllocationOpened) &&
       !Boolean(draw?.drawOpened) &&
       !Boolean(draw?.allocationOpened)
     )
@@ -947,19 +932,6 @@ function unknownSubmissionCount(roundNumber: number, type?: 'ballot' | 'feedback
   ).length
 }
 
-function selectedTeamIds(roundNumber: number) {
-  const draw = drawsStore.draws.find((item) => item.round === roundNumber)
-  if (!draw) return []
-  const ids = new Set<string>()
-  draw.allocation.forEach((row) => {
-    const gov = String((row as any)?.teams?.gov ?? '')
-    const opp = String((row as any)?.teams?.opp ?? '')
-    if (gov) ids.add(gov)
-    if (opp) ids.add(opp)
-  })
-  return Array.from(ids)
-}
-
 function teamSpeakerIdsForRound(team: any, roundNumber: number): string[] {
   if (!team) return []
   const detail = Array.isArray(team.details)
@@ -1008,6 +980,12 @@ type FeedbackExpectationSettings = {
   evaluatorInTeam: 'team' | 'speaker'
   chairsAlwaysEvaluated: boolean
 }
+type FeedbackExpectationRow = {
+  teamIds: string[]
+  chairIds: string[]
+  panelIds: string[]
+  adjudicatorIds: string[]
+}
 
 function feedbackExpectationSettings(roundNumber: number): FeedbackExpectationSettings {
   const round = sortedRounds.value.find((item) => item.round === roundNumber)
@@ -1028,26 +1006,60 @@ function feedbackExpectationSettings(roundNumber: number): FeedbackExpectationSe
   }
 }
 
-function feedbackExpectedCount(roundNumber: number) {
-  const settings = feedbackExpectationSettings(roundNumber)
-  let expected = 0
+function feedbackExpectedCountForRow(
+  roundNumber: number,
+  settings: FeedbackExpectationSettings,
+  row: FeedbackExpectationRow
+) {
+  const expectedTargetsFromAdjudicators = row.adjudicatorIds.length
+  const expectedTargetsFromTeams = settings.chairsAlwaysEvaluated
+    ? row.chairIds.length
+    : normalizedUniqueIds([...row.chairIds, ...row.panelIds]).length
+  const teamEvaluatorIds = new Set<string>()
   if (settings.fromTeams) {
-    const teamIds = selectedTeamIds(roundNumber)
     if (settings.evaluatorInTeam === 'speaker') {
-      expected += teamIds.reduce((count, id) => {
+      row.teamIds.forEach((id) => {
         const team = teamsStore.teams.find((item) => item._id === id)
-        if (!team) return count
-        const speakerCount = teamSpeakerIdsForRound(team, roundNumber).length
-        return count + speakerCount
-      }, 0)
+        if (!team) return
+        teamSpeakerIdsForRound(team, roundNumber).forEach((speakerId) => {
+          const normalized = String(speakerId ?? '').trim()
+          if (normalized) teamEvaluatorIds.add(normalized)
+        })
+      })
     } else {
-      expected += teamIds.length
+      row.teamIds.forEach((id) => teamEvaluatorIds.add(id))
     }
   }
-  if (settings.fromAdjudicators) {
-    expected += adjudicatorCount(roundNumber)
+  let expected = 0
+  if (settings.fromTeams && expectedTargetsFromTeams > 0) {
+    expected += teamEvaluatorIds.size * expectedTargetsFromTeams
+  }
+  if (settings.fromAdjudicators && expectedTargetsFromAdjudicators > 1) {
+    expected += expectedTargetsFromAdjudicators * (expectedTargetsFromAdjudicators - 1)
   }
   return expected
+}
+
+function feedbackExpectedCount(roundNumber: number) {
+  const settings = feedbackExpectationSettings(roundNumber)
+  const draw = drawsStore.draws.find((item) => item.round === roundNumber)
+  const allocation = Array.isArray(draw?.allocation) ? draw?.allocation : []
+  return allocation.reduce((total, row) => {
+    const teamIds = normalizedUniqueIds([(row as any)?.teams?.gov, (row as any)?.teams?.opp])
+    const chairIds = normalizedUniqueIds((row as any)?.chairs ?? [])
+    const panelIds = normalizedUniqueIds((row as any)?.panels ?? [])
+    const traineeIds = normalizedUniqueIds((row as any)?.trainees ?? [])
+    const adjudicatorIds = normalizedUniqueIds([...chairIds, ...panelIds, ...traineeIds])
+    return (
+      total +
+      feedbackExpectedCountForRow(roundNumber, settings, {
+        teamIds,
+        chairIds,
+        panelIds,
+        adjudicatorIds,
+      })
+    )
+  }, 0)
 }
 
 const submissionPreviewShowJudgeColumn = computed(() => {
@@ -1907,34 +1919,12 @@ function feedbackExpectedCountForPreviewRow(row: HubDrawPreviewRow) {
   if (selectedRound.value === null) return 0
   const roundNumber = selectedRound.value
   const settings = feedbackExpectationSettings(selectedRound.value)
-  const expectedTargetsFromAdjudicators = row.adjudicatorIds.length
-  const expectedTargetsFromTeams = settings.chairsAlwaysEvaluated
-    ? row.chairIds.length
-    : normalizedUniqueIds([...row.chairIds, ...row.panelIds]).length
-  const teamEvaluatorIds = new Set<string>()
-  if (settings.fromTeams) {
-    const teamIds = normalizedUniqueIds([row.govId, row.oppId])
-    if (settings.evaluatorInTeam === 'speaker') {
-      teamIds.forEach((id) => {
-        const team = teamsStore.teams.find((item) => item._id === id)
-        if (!team) return
-        teamSpeakerIdsForRound(team, roundNumber).forEach((speakerId) => {
-          const normalized = String(speakerId ?? '').trim()
-          if (normalized) teamEvaluatorIds.add(normalized)
-        })
-      })
-    } else {
-      teamIds.forEach((id) => teamEvaluatorIds.add(id))
-    }
-  }
-  let expected = 0
-  if (settings.fromTeams && expectedTargetsFromTeams > 0) {
-    expected += teamEvaluatorIds.size * expectedTargetsFromTeams
-  }
-  if (settings.fromAdjudicators && expectedTargetsFromAdjudicators > 1) {
-    expected += expectedTargetsFromAdjudicators * (expectedTargetsFromAdjudicators - 1)
-  }
-  return expected
+  return feedbackExpectedCountForRow(roundNumber, settings, {
+    teamIds: normalizedUniqueIds([row.govId, row.oppId]),
+    chairIds: row.chairIds,
+    panelIds: row.panelIds,
+    adjudicatorIds: row.adjudicatorIds,
+  })
 }
 
 const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
@@ -2316,6 +2306,8 @@ async function saveDrawPublication(
   nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean; locked: boolean }>
 ): Promise<boolean> {
   if (!selectedDraw.value || selectedRound.value === null) return false
+  const nextDrawOpened = nextState.drawOpened ?? drawOpenedValue.value
+  const nextAllocationOpened = nextState.allocationOpened ?? allocationOpenedValue.value
   publishMessage.value = ''
   actionError.value = ''
   publicationSaving.value = true
@@ -2325,8 +2317,8 @@ async function saveDrawPublication(
       round: selectedRound.value,
       allocation: selectedDraw.value.allocation,
       userDefinedData: selectedDraw.value.userDefinedData,
-      drawOpened: nextState.drawOpened ?? drawOpenedValue.value,
-      allocationOpened: nextState.allocationOpened ?? allocationOpenedValue.value,
+      drawOpened: nextDrawOpened,
+      allocationOpened: nextAllocationOpened,
       locked: nextState.locked ?? lockedValue.value,
     })
     if (!saved) {
@@ -2393,8 +2385,6 @@ async function onPriorRoundsHideToggle(checked: boolean) {
         tournamentId: tournamentId.value,
         roundId: target.roundId,
         motionOpened: false,
-        teamAllocationOpened: false,
-        adjudicatorAllocationOpened: false,
       })
       if (!updatedRound) {
         actionError.value = roundsStore.error ?? t('公開設定の保存に失敗しました。')
@@ -2435,6 +2425,7 @@ function clearUnsavedCompilePreview() {
   if (!compileWorkflow.hasPreview) return
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
+  compileMessage.value = ''
 }
 
 watch(
@@ -3058,55 +3049,6 @@ watch(
   flex-direction: column;
   justify-content: flex-start;
   gap: var(--space-2);
-}
-
-.publish-switch-label {
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-}
-
-.publish-switch-toggle {
-  align-self: center;
-}
-
-.publish-switch-inline {
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.publish-switch-inline-compact {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  background: var(--color-surface-soft);
-}
-
-.publish-switch-status-row {
-  margin-left: auto;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.motion-publish-card :deep(.round-motion-status) {
-  margin-left: auto;
-  width: 100%;
-  justify-content: flex-end;
-}
-
-.prior-rounds-hide-button {
-  border-color: #f59e0b;
-  color: #9a3412;
-  background: #fff7ed;
-}
-
-.prior-rounds-hide-button:hover:not(.is-disabled) {
-  border-color: #d97706;
-  color: #7c2d12;
-  background: #ffedd5;
 }
 
 .publish-preview-section {

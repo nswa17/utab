@@ -1185,14 +1185,12 @@ function roundConfig(roundNumber: number) {
 
 function teamAllocationVisible(roundNumber: number) {
   const draw = drawForRound(roundNumber)
-  if (typeof draw?.drawOpened === 'boolean') return draw.drawOpened
-  return roundConfig(roundNumber)?.teamAllocationOpened !== false
+  return draw?.drawOpened === true
 }
 
 function adjudicatorAllocationVisible(roundNumber: number) {
   const draw = drawForRound(roundNumber)
-  if (typeof draw?.allocationOpened === 'boolean') return draw.allocationOpened
-  return roundConfig(roundNumber)?.adjudicatorAllocationOpened !== false
+  return draw?.allocationOpened === true
 }
 
 function roundHasVisibleAllocation(roundNumber: number) {
