@@ -78,6 +78,7 @@ describe('AdminTournamentCompiled V2', () => {
   it('uses common diff baseline selector and defaults to previous snapshot', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     const helper = load('src/utils/compiled-snapshot.ts')
+    const selector = load('src/components/common/CompiledDiffBaselineSelect.vue')
     expect(source).toContain('CompiledDiffBaselineSelect')
     expect(source).toContain('compileDiffBaselineSelection')
     expect(source).toContain('diffBaselineCompiledOptions')
@@ -85,6 +86,8 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('resolvePreviousCompiledId')
     expect(source).not.toContain('差分基準: {baseline}')
     expect(source).not.toContain('latest-label')
+    expect(selector).toContain("props.placeholder || t('未選択')")
+    expect(selector).toContain(':placeholder="placeholderText"')
     expect(helper).toContain('formatCompiledSnapshotOptionLabel')
     expect(helper).toContain('resolvePreviousCompiledId')
   })
@@ -92,9 +95,11 @@ describe('AdminTournamentCompiled V2', () => {
   it('applies selected diff baseline immediately on the client without waiting for recompilation', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('applyClientBaselineDiff')
+    expect(source).toContain('stripDiffFields')
     expect(source).toContain('selectedDiffBaselineCompiled')
     expect(source).toContain('selectedDiffBaselineRows')
     expect(source).toContain('resultSourceForLabel')
+    expect(source).toContain('selectedDiffBaselineCompiledId.value.length > 0')
   })
 
   it('adds fairness summary cards for side, matchup, and judge allocation bias', () => {

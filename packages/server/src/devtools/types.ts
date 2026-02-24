@@ -11,6 +11,7 @@ export type FillSetupRequest = {
   targetTeams: number
   targetAdjudicators: number
   targetVenues: number
+  targetInstitutions: number
   speakersPerTeam: number
 }
 
@@ -39,6 +40,28 @@ export type FillRoundSubmissionsResponse = {
   before: SubmissionCountSummary
   created: SubmissionCountSummary
   after: SubmissionCountSummary
+}
+
+export type ClearRoundSubmissionsResponse = {
+  tournamentId: string
+  round: number
+  before: SubmissionCountSummary
+  deleted: SubmissionCountSummary
+  after: SubmissionCountSummary
+}
+
+export type CopiedCollectionSummary = {
+  name: string
+  count: number
+}
+
+export type CopyTournamentResponse = {
+  sourceTournamentId: string
+  tournamentId: string
+  sourceTournamentName: string
+  tournamentName: string
+  copiedCollections: CopiedCollectionSummary[]
+  copiedDocuments: number
 }
 
 export class DevToolsServiceError extends Error {

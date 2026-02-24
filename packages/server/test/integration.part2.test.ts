@@ -449,6 +449,23 @@ describe('Server integration', () => {
       'submittedEntityId is not assigned to this matchup'
     )
 
+    const invalidBallotTrainee = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamId1,
+      teamBId: teamId2,
+      winnerId: teamId1,
+      speakerIdsA: [speakerId1],
+      speakerIdsB: [speakerId2],
+      scoresA: [76],
+      scoresB: [75],
+      submittedEntityId: traineeId,
+    })
+    expect(invalidBallotTrainee.status).toBe(400)
+    expect(String(invalidBallotTrainee.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not assigned to this matchup'
+    )
+
     const invalidBallotMatchup = await agent.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
@@ -504,6 +521,18 @@ describe('Server integration', () => {
       'submittedEntityId is not allowed for this feedback target'
     )
 
+    const invalidFeedbackTraineeTargetFromSpeaker = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: traineeId,
+      score: 8,
+      submittedEntityId: speakerId1,
+    })
+    expect(invalidFeedbackTraineeTargetFromSpeaker.status).toBe(400)
+    expect(String(invalidFeedbackTraineeTargetFromSpeaker.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId is not allowed for this feedback target'
+    )
+
     const validFeedbackFromSpeaker = await agent.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
@@ -521,6 +550,15 @@ describe('Server integration', () => {
       submittedEntityId: panelId,
     })
     expect(validFeedbackFromAdjudicator.status).toBe(201)
+
+    const validFeedbackFromTrainee = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 7.1,
+      submittedEntityId: traineeId,
+    })
+    expect(validFeedbackFromTrainee.status).toBe(201)
 
     const invalidFeedbackSelfAdjudicator = await agent.post('/api/submissions/feedback').send({
       tournamentId,

@@ -7,7 +7,7 @@ import {
   listResults,
   updateResult,
 } from '../controllers/results.js'
-import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
+import { requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
@@ -46,13 +46,13 @@ const deleteSchema = {
 
 router.get(
   '/',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listResults
 )
 router.get(
   '/:id',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(getSchema),
   getResult
 )

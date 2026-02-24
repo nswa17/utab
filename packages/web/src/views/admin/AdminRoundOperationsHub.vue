@@ -157,13 +157,6 @@
                 </div>
                 <div class="grid submission-overview-grid">
                   <div class="card soft stack submission-overview-card">
-                    <span class="muted small">{{ $t('提出数') }}</span>
-                    <strong
-                      >{{ totalSubmittedCount(selectedRound) }} /
-                      {{ totalExpectedCount(selectedRound) }}</strong
-                    >
-                  </div>
-                  <div class="card soft stack submission-overview-card">
                     <span class="muted small">{{ $t('スコアシート') }}</span>
                     <strong
                       >{{ ballotSubmittedCount(selectedRound) }} /
@@ -191,69 +184,41 @@
                       }}
                     </span>
                   </div>
-                </div>
-                <section class="card soft stack submission-speed-panel">
-                  <div class="row submission-speed-head">
-                    <h5>{{ $t('提出スピード詳細') }}</h5>
-                    <span
-                      v-if="selectedRoundSubmissionSpeed"
-                      class="speed-status-chip"
-                      :class="`speed-status-${selectedRoundSubmissionSpeed.status}`"
-                    >
-                      {{ speedStatusLabel(selectedRoundSubmissionSpeed.status) }}
-                    </span>
-                  </div>
-                  <p v-if="selectedRoundSubmissionSpeed" class="muted small">
-                    {{
-                      $t('中央値 {median}分 / P90 {p90}分', {
-                        median: selectedRoundSubmissionSpeed.medianMinutes,
-                        p90: selectedRoundSubmissionSpeed.p90Minutes,
-                      })
-                    }}
-                  </p>
-                  <p v-if="selectedRoundSubmissionSpeed" class="muted small">
-                    {{
-                      $t('遅延率 {rate}%', {
-                        rate: Math.round(selectedRoundSubmissionSpeed.delayedRate * 1000) / 10,
-                      })
-                    }}
-                  </p>
-                  <p v-else class="muted small">{{ $t('提出時刻データがありません。') }}</p>
-                  <section class="stack">
-                    <div class="row submission-delay-head">
-                      <h5>{{ $t('遅延上位提出者') }}</h5>
-                      <p class="muted small">{{ $t('30分超の提出のみ表示') }}</p>
+                  <div class="card soft stack submission-overview-card submission-speed-summary-card">
+                    <div class="row submission-speed-summary-head">
+                      <span class="muted small">{{ $t('提出スピード詳細') }}</span>
+                      <span
+                        v-if="selectedRoundSubmissionSpeed"
+                        class="speed-status-chip"
+                        :class="`speed-status-${selectedRoundSubmissionSpeed.status}`"
+                      >
+                        {{ speedStatusLabel(selectedRoundSubmissionSpeed.status) }}
+                      </span>
                     </div>
-                    <Table v-if="selectedRoundSubmissionDelayRows.length > 0" hover striped>
-                      <thead>
-                        <tr>
-                          <th>{{ $t('提出者') }}</th>
-                          <th>{{ $t('種別') }}</th>
-                          <th>{{ $t('経過(分)') }}</th>
-                          <th>{{ $t('提出時刻') }}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr
-                          v-for="row in selectedRoundSubmissionDelayRows"
-                          :key="`delay-${row.round}-${row.id}-${row.createdAt}`"
-                        >
-                          <td>{{ row.id ? submissionEntityName(row.id) : '—' }}</td>
-                          <td>{{ submissionTypeLabel(row.type) }}</td>
-                          <td>{{ row.elapsedMinutes }}</td>
-                          <td>{{ formatSubmissionTimestamp(row.createdAt) }}</td>
-                        </tr>
-                      </tbody>
-                    </Table>
+                    <p v-if="selectedRoundSubmissionSpeed" class="muted small">
+                      {{
+                        $t('中央値 {median}分 / P90 {p90}分', {
+                          median: selectedRoundSubmissionSpeed.medianMinutes,
+                          p90: selectedRoundSubmissionSpeed.p90Minutes,
+                        })
+                      }}
+                    </p>
+                    <p v-else class="muted small">{{ $t('提出時刻データがありません。') }}</p>
+                    <template v-if="selectedRoundSubmissionDelayTopNames.length > 0">
+                      <span class="muted small">{{ $t('遅延上位提出者') }}</span>
+                      <p class="small submission-delay-name-list">
+                        {{ selectedRoundSubmissionDelayTopNames.join(', ') }}
+                      </p>
+                    </template>
                     <p v-else class="muted small">{{ $t('遅延提出は検出されませんでした。') }}</p>
-                  </section>
-                </section>
+                  </div>
+                </div>
                 <p v-if="selectedRoundUnknownBallotWarning" class="muted warning">
                   {{ selectedRoundUnknownBallotWarning }}
                 </p>
                 <section v-if="selectedRoundHasDraw" class="stack submission-preview-section">
                   <div class="row preview-head submission-preview-head">
-                    <h4>{{ $t('会場別提出状況') }}</h4>
+                    <h5>{{ $t('会場別提出状況') }}</h5>
                     <div class="stack submission-preview-search">
                       <input
                         v-model="submissionPreviewSearchQuery"
@@ -360,22 +325,29 @@
                 >
                   {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
                 </p>
+                <p v-if="isShowingSavedCompiledForSelectedRound" class="muted small">
+                  {{
+                    $t('このラウンドを含む保存済み集計（最新）を表示中: {snapshot}', {
+                      snapshot: selectedRoundLatestSavedCompiledLabel,
+                    })
+                  }}
+                </p>
                 <section
                   v-if="snapshotIncludesSelectedRound && compileRows.length > 0"
                   class="card soft stack compile-result-panel"
                 >
                   <div class="row compile-result-head">
                     <strong>{{ $t('集計レポート') }}</strong>
-                    <CompiledSnapshotSelect
+                    <CompiledDiffBaselineSelect
                       v-if="diffBaselineCompiledOptions.length > 0"
                       v-model="compileDiffBaselineCompiledId"
                       class="compile-result-baseline-select"
                       :label="$t('差分比較')"
-                      :options="compileDiffBaselineSelectOptions"
+                      :options="diffBaselineCompiledOptions"
                       :placeholder="$t('未選択')"
                     />
                   </div>
-                  <div class="row diff-legend">
+                  <div v-if="showCompileDiffLegend" class="row diff-legend">
                     <span class="diff-legend-item">
                       <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
                     </span>
@@ -497,7 +469,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
-import Table from '@/components/common/Table.vue'
 import CategoryRankingTable from '@/components/common/CategoryRankingTable.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
 import RoundPublicationSwitches from '@/components/common/RoundPublicationSwitches.vue'
@@ -505,7 +476,7 @@ import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompileSaveSnapshotModal from '@/components/common/CompileSaveSnapshotModal.vue'
-import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -534,7 +505,6 @@ import {
 } from '@/utils/diff-indicator'
 import { applyClientBaselineDiff } from '@/utils/compiled-diff'
 import {
-  countSubmissionActors,
   resolveRoundOperationStatus,
   type RoundOperationStatus,
 } from '@/stores/round-operations'
@@ -544,6 +514,15 @@ import {
   resolveLatestCompiledIdContainingRound,
 } from '@/utils/compiled-snapshot'
 import { includeLabelsFromRoundDetails } from '@/utils/compile-include-labels'
+import {
+  buildRoundSubmissionCoverage,
+  expectedFeedbackCountForRow,
+  normalizeIdList,
+  resolveFeedbackExpectationSettings,
+  type FeedbackExpectationSettings,
+  type RoundSubmissionCoverage,
+  type SubmissionExpectationRow,
+} from '@/utils/submission-expectations'
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 
@@ -746,23 +725,6 @@ function normalizeCompiledDoc(doc: any): Record<string, any> | null {
   if (doc?.updatedAt) normalized.updatedAt = doc.updatedAt
   return normalized
 }
-const compileDisplayPayload = computed<Record<string, any> | null>(() => {
-  if (shouldUseCompilePreviewPayload.value) {
-    return compiledStore.previewState?.preview ?? compiledStore.compiled
-  }
-  return compiledStore.compiled
-})
-
-const compiledSnapshotRoundSet = computed(() => {
-  const rounds = Array.isArray(compileDisplayPayload.value?.rounds)
-    ? compileDisplayPayload.value.rounds
-    : []
-  return new Set(
-    rounds
-      .map((item: any) => item?.r ?? item?.round)
-      .filter((value: number) => Number.isInteger(value) && value >= 1)
-  )
-})
 const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   compiledHistory.value
     .map((item) => {
@@ -780,17 +742,66 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const currentCompiledId = computed(() => String(compiledStore.compiled?._id ?? '').trim())
+const selectedRoundLatestSavedCompiledId = computed(() => {
+  if (selectedRound.value === null) return ''
+  return resolveLatestCompiledIdContainingRound(baselineCompiledOptions.value, selectedRound.value)
+})
+const selectedRoundLatestSavedCompiled = computed<Record<string, any> | null>(() => {
+  const compiledId = selectedRoundLatestSavedCompiledId.value.trim()
+  if (!compiledId) return null
+  const matched = compiledHistory.value.find((item) => resolveCompiledDocId(item) === compiledId)
+  if (!matched) return null
+  return normalizeCompiledDoc(matched)
+})
+const compileDisplayPayload = computed<Record<string, any> | null>(() => {
+  if (shouldUseCompilePreviewPayload.value) {
+    return compiledStore.previewState?.preview ?? compiledStore.compiled
+  }
+  return selectedRoundLatestSavedCompiled.value ?? compiledStore.compiled
+})
+const compiledSnapshotRoundSet = computed(() => {
+  const rounds = Array.isArray(compileDisplayPayload.value?.rounds)
+    ? compileDisplayPayload.value.rounds
+    : []
+  return new Set(
+    rounds
+      .map((item: any) => item?.r ?? item?.round)
+      .filter((value: number) => Number.isInteger(value) && value >= 1)
+  )
+})
+const currentCompiledId = computed(() => {
+  if (shouldUseCompilePreviewPayload.value) {
+    return String(compiledStore.compiled?._id ?? '').trim()
+  }
+  return String(compileDisplayPayload.value?._id ?? '').trim()
+})
 const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   baselineCompiledOptions.value.filter((item) => item.compiledId !== currentCompiledId.value)
 )
 const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
-const compileDiffBaselineSelectOptions = computed(() =>
-  diffBaselineCompiledOptions.value.map((option) => ({
-    value: option.compiledId,
-    label: formatCompiledSnapshotOptionLabel(option, snapshotLocaleTag.value),
-  }))
-)
+const selectedRoundLatestSavedCompiledLabel = computed(() => {
+  const payload = selectedRoundLatestSavedCompiled.value
+  if (!payload) return ''
+  const rounds = Array.isArray(payload.rounds)
+    ? payload.rounds
+        .map((entry: any) => entry?.r ?? entry?.round ?? entry)
+        .filter((value: number) => Number.isFinite(value))
+    : []
+  return formatCompiledSnapshotOptionLabel(
+    {
+      rounds,
+      createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : undefined,
+      snapshotName: String(payload.snapshot_name ?? '').trim() || undefined,
+    },
+    snapshotLocaleTag.value
+  )
+})
+const isShowingSavedCompiledForSelectedRound = computed(() => {
+  if (shouldUseCompilePreviewPayload.value) return false
+  const targetId = selectedRoundLatestSavedCompiledId.value.trim()
+  if (!targetId) return false
+  return String(compileDisplayPayload.value?._id ?? '').trim() === targetId
+})
 const compileRowsBase = computed<any[]>(() => {
   return Array.isArray(compileDisplayPayload.value?.compiled_team_results)
     ? compileDisplayPayload.value!.compiled_team_results
@@ -808,15 +819,28 @@ const selectedCompileDiffBaselineRows = computed<any[]>(() =>
     ? selectedCompileDiffBaselineCompiled.value!.compiled_team_results
     : []
 )
+function stripDiffFields(rows: any[]): any[] {
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || !('diff' in row)) return row
+    const { diff: _diff, ...rest } = row
+    return rest
+  })
+}
 const compileRows = computed<any[]>(() => {
+  const currentRows = stripDiffFields(compileRowsBase.value)
   if (
     !compileDiffBaselineCompiledId.value.trim() ||
     selectedCompileDiffBaselineRows.value.length === 0
   ) {
-    return compileRowsBase.value
+    return currentRows
   }
-  return applyClientBaselineDiff(compileRowsBase.value, selectedCompileDiffBaselineRows.value)
+  return applyClientBaselineDiff(currentRows, stripDiffFields(selectedCompileDiffBaselineRows.value))
 })
+const showCompileDiffLegend = computed(
+  () =>
+    compileDiffBaselineCompiledId.value.trim().length > 0 &&
+    compileRows.value.some((row) => row?.diff?.ranking)
+)
 const compileColumns = computed(() => {
   const metricKeys = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
   const visibleMetrics = metricKeys.filter((key) =>
@@ -853,27 +877,55 @@ const snapshotIncludesSelectedRound = computed(() => {
 })
 
 const compiledRoundSet = computed(() => {
-  const rounds = Array.isArray(compiledStore.compiled?.rounds) ? compiledStore.compiled?.rounds : []
-  return new Set(
-    rounds
-      .map((item: any) => item?.r ?? item?.round)
-      .filter((value: number) => Number.isInteger(value) && value >= 1)
-  )
+  const set = new Set<number>()
+  baselineCompiledOptions.value.forEach((option) => {
+    option.rounds.forEach((roundNumber) => {
+      const normalized = Number(roundNumber)
+      if (Number.isInteger(normalized) && normalized >= 1) {
+        set.add(normalized)
+      }
+    })
+  })
+  const latestRounds = Array.isArray(compiledStore.compiled?.rounds) ? compiledStore.compiled?.rounds : []
+  latestRounds
+    .map((item: any) => item?.r ?? item?.round)
+    .filter((value: number) => Number.isInteger(value) && value >= 1)
+    .forEach((roundNumber: number) => set.add(roundNumber))
+  return set
 })
 
-function submissionActorKey(item: any) {
-  const payloadEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
-  if (payloadEntityId) return payloadEntityId
-  const submittedBy = String(item?.submittedBy ?? '').trim()
-  return submittedBy
-}
+const roundConfigByRound = computed(() => {
+  const map = new Map<number, any>()
+  sortedRounds.value.forEach((round) => {
+    map.set(round.round, round)
+  })
+  return map
+})
+
+const drawByRound = computed(() => {
+  const map = new Map<number, any>()
+  drawsStore.draws.forEach((draw) => {
+    map.set(draw.round, draw)
+  })
+  return map
+})
+
+const submissionsByRound = computed(() => {
+  const map = new Map<number, Submission[]>()
+  submissionsStore.submissions.forEach((submission) => {
+    const roundNumber = Number(submission.round)
+    if (!Number.isInteger(roundNumber) || roundNumber < 1) return
+    const list = map.get(roundNumber) ?? []
+    list.push(submission)
+    map.set(roundNumber, list)
+  })
+  return map
+})
 
 function submissionsForRound(roundNumber: number, type?: 'ballot' | 'feedback') {
-  return submissionsStore.submissions.filter((item) => {
-    const sameRound = item.round === roundNumber
-    const sameType = type ? item.type === type : true
-    return sameRound && sameType
-  })
+  const list = submissionsByRound.value.get(roundNumber) ?? []
+  if (!type) return list
+  return list.filter((item) => item.type === type)
 }
 
 const selectedRoundSubmissions = computed(() => {
@@ -926,11 +978,16 @@ const selectedRoundSubmissionDelayRows = computed(() => {
   }).filter((row) => row.round === selectedRound.value)
 })
 
-function unknownSubmissionCount(roundNumber: number, type?: 'ballot' | 'feedback') {
-  return submissionsForRound(roundNumber, type).filter(
-    (item) => submissionActorKey(item).trim().length === 0
-  ).length
-}
+const selectedRoundSubmissionDelayTopNames = computed(() =>
+  Array.from(
+    new Set(
+      selectedRoundSubmissionDelayRows.value
+        .map((row) => submissionEntityName(row.id))
+        .map((name) => name.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 6)
+)
 
 function teamSpeakerIdsForRound(team: any, roundNumber: number): string[] {
   if (!team) return []
@@ -938,128 +995,72 @@ function teamSpeakerIdsForRound(team: any, roundNumber: number): string[] {
     ? team.details.find((item: any) => Number(item?.r) === Number(roundNumber))
     : null
   if (!detail) return []
-  return (detail.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-}
-
-function adjudicatorCount(roundNumber: number) {
-  const draw = drawsStore.draws.find((item) => item.round === roundNumber)
-  if (!draw) return 0
-  const ids = new Set<string>()
-  draw.allocation.forEach((row) => {
-    ;[...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])].forEach((id) => {
-      const token = String(id ?? '').trim()
-      if (token) ids.add(token)
-    })
-  })
-  return ids.size
-}
-
-function ballotSubmittedCount(roundNumber: number) {
-  return countSubmissionActors(submissionsForRound(roundNumber, 'ballot'), submissionActorKey)
-}
-
-function feedbackSubmittedCount(roundNumber: number) {
-  return countSubmissionActors(submissionsForRound(roundNumber, 'feedback'), submissionActorKey)
-}
-
-function totalExpectedCount(roundNumber: number) {
-  return ballotExpectedCount(roundNumber) + feedbackExpectedCount(roundNumber)
-}
-
-function totalSubmittedCount(roundNumber: number) {
-  return ballotSubmittedCount(roundNumber) + feedbackSubmittedCount(roundNumber)
-}
-
-function ballotExpectedCount(roundNumber: number) {
-  return adjudicatorCount(roundNumber)
-}
-
-type FeedbackExpectationSettings = {
-  fromTeams: boolean
-  fromAdjudicators: boolean
-  evaluatorInTeam: 'team' | 'speaker'
-  chairsAlwaysEvaluated: boolean
-}
-type FeedbackExpectationRow = {
-  teamIds: string[]
-  chairIds: string[]
-  panelIds: string[]
-  adjudicatorIds: string[]
+  return normalizeIdList(detail.speakers ?? [])
 }
 
 function feedbackExpectationSettings(roundNumber: number): FeedbackExpectationSettings {
-  const round = sortedRounds.value.find((item) => item.round === roundNumber)
-  if (!round) {
-    return {
-      fromTeams: false,
-      fromAdjudicators: false,
-      evaluatorInTeam: 'team',
-      chairsAlwaysEvaluated: false,
-    }
-  }
-  const userDefined = (round.userDefinedData ?? {}) as Record<string, any>
-  return {
-    fromTeams: userDefined.evaluate_from_teams === true,
-    fromAdjudicators: userDefined.evaluate_from_adjudicators === true,
-    evaluatorInTeam: userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
-    chairsAlwaysEvaluated: userDefined.chairs_always_evaluated === true,
-  }
+  const round = roundConfigByRound.value.get(roundNumber)
+  return resolveFeedbackExpectationSettings(round?.userDefinedData)
 }
 
-function feedbackExpectedCountForRow(
-  roundNumber: number,
-  settings: FeedbackExpectationSettings,
-  row: FeedbackExpectationRow
-) {
-  const expectedTargetsFromAdjudicators = row.adjudicatorIds.length
-  const expectedTargetsFromTeams = settings.chairsAlwaysEvaluated
-    ? row.chairIds.length
-    : normalizedUniqueIds([...row.chairIds, ...row.panelIds]).length
-  const teamEvaluatorIds = new Set<string>()
-  if (settings.fromTeams) {
-    if (settings.evaluatorInTeam === 'speaker') {
-      row.teamIds.forEach((id) => {
-        const team = teamsStore.teams.find((item) => item._id === id)
-        if (!team) return
-        teamSpeakerIdsForRound(team, roundNumber).forEach((speakerId) => {
-          const normalized = String(speakerId ?? '').trim()
-          if (normalized) teamEvaluatorIds.add(normalized)
-        })
-      })
-    } else {
-      row.teamIds.forEach((id) => teamEvaluatorIds.add(id))
-    }
-  }
-  let expected = 0
-  if (settings.fromTeams && expectedTargetsFromTeams > 0) {
-    expected += teamEvaluatorIds.size * expectedTargetsFromTeams
-  }
-  if (settings.fromAdjudicators && expectedTargetsFromAdjudicators > 1) {
-    expected += expectedTargetsFromAdjudicators * (expectedTargetsFromAdjudicators - 1)
-  }
-  return expected
+const emptyRoundSubmissionCoverage: RoundSubmissionCoverage = {
+  ballot: { expected: 0, submitted: 0, missing: 0, duplicates: 0, unknown: 0 },
+  feedback: { expected: 0, submitted: 0, missing: 0, duplicates: 0, unknown: 0 },
 }
 
-function feedbackExpectedCount(roundNumber: number) {
-  const settings = feedbackExpectationSettings(roundNumber)
-  const draw = drawsStore.draws.find((item) => item.round === roundNumber)
-  const allocation = Array.isArray(draw?.allocation) ? draw?.allocation : []
-  return allocation.reduce((total, row) => {
-    const teamIds = normalizedUniqueIds([(row as any)?.teams?.gov, (row as any)?.teams?.opp])
-    const chairIds = normalizedUniqueIds((row as any)?.chairs ?? [])
-    const panelIds = normalizedUniqueIds((row as any)?.panels ?? [])
-    const traineeIds = normalizedUniqueIds((row as any)?.trainees ?? [])
-    const adjudicatorIds = normalizedUniqueIds([...chairIds, ...panelIds, ...traineeIds])
-    return (
-      total +
-      feedbackExpectedCountForRow(roundNumber, settings, {
-        teamIds,
-        chairIds,
-        panelIds,
-        adjudicatorIds,
+const roundSubmissionCoverageByRound = computed(() => {
+  const map = new Map<number, RoundSubmissionCoverage>()
+  const roundNumbers = new Set<number>()
+  roundConfigByRound.value.forEach((_, roundNumber) => roundNumbers.add(roundNumber))
+  drawByRound.value.forEach((_, roundNumber) => roundNumbers.add(roundNumber))
+  submissionsByRound.value.forEach((_, roundNumber) => roundNumbers.add(roundNumber))
+
+  roundNumbers.forEach((roundNumber) => {
+    const draw = drawByRound.value.get(roundNumber)
+    const round = roundConfigByRound.value.get(roundNumber)
+    map.set(
+      roundNumber,
+      buildRoundSubmissionCoverage({
+        roundNumber,
+        allocation: draw?.allocation,
+        userDefinedData: round?.userDefinedData,
+        submissions: submissionsByRound.value.get(roundNumber) ?? [],
+        resolveTeamSpeakerIds: (teamId, targetRound) => {
+          const team = teamsStore.teams.find((item) => item._id === teamId)
+          return teamSpeakerIdsForRound(team, targetRound)
+        },
       })
     )
-  }, 0)
+  })
+
+  return map
+})
+
+function roundSubmissionCoverage(roundNumber: number | null): RoundSubmissionCoverage {
+  if (roundNumber === null) return emptyRoundSubmissionCoverage
+  return roundSubmissionCoverageByRound.value.get(roundNumber) ?? emptyRoundSubmissionCoverage
+}
+
+function ballotExpectedCount(roundNumber: number | null) {
+  return roundSubmissionCoverage(roundNumber).ballot.expected
+}
+
+function ballotSubmittedCount(roundNumber: number | null) {
+  return roundSubmissionCoverage(roundNumber).ballot.submitted
+}
+
+function feedbackExpectedCount(roundNumber: number | null) {
+  return roundSubmissionCoverage(roundNumber).feedback.expected
+}
+
+function feedbackSubmittedCount(roundNumber: number | null) {
+  return roundSubmissionCoverage(roundNumber).feedback.submitted
+}
+
+function unknownSubmissionCount(roundNumber: number | null, type?: 'ballot' | 'feedback') {
+  const coverage = roundSubmissionCoverage(roundNumber)
+  if (!type) return coverage.ballot.unknown + coverage.feedback.unknown
+  return coverage[type].unknown
 }
 
 const submissionPreviewShowJudgeColumn = computed(() => {
@@ -1541,12 +1542,6 @@ function formatSubmissionTimestamp(value?: string) {
   }).format(date)
 }
 
-function submissionTypeLabel(type: 'ballot' | 'feedback' | 'unknown') {
-  if (type === 'ballot') return t('チーム評価')
-  if (type === 'feedback') return t('ジャッジ評価')
-  return t('不明')
-}
-
 function speedStatusLabel(status: 'ok' | 'warn' | 'danger') {
   if (status === 'danger') return t('要介入')
   if (status === 'warn') return t('注意')
@@ -1606,6 +1601,8 @@ type HubDrawPreviewRow = DrawPreviewRow & {
   pairKey: string
   chairIds: string[]
   panelIds: string[]
+  traineeIds: string[]
+  ballotSubmitterIds: string[]
   adjudicatorIds: string[]
 }
 
@@ -1668,6 +1665,12 @@ function submissionSortValue(value?: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function submissionActorKey(item: any) {
+  const payloadEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
+  if (payloadEntityId) return payloadEntityId
+  return String(item?.submittedBy ?? '').trim()
+}
+
 function buildSubmissionPreviewEntry(item: any, index: number): SubmissionPreviewEntry {
   const actorId = submissionActorKey(item)
   const submittedBy = actorId ? submissionEntityName(actorId) : ''
@@ -1688,12 +1691,6 @@ function sortSubmissionPreviewEntries(
     .slice()
     .sort((left, right) => right.sortValue - left.sortValue)
     .map(({ sortValue: _, ...entry }) => entry)
-}
-
-function normalizedUniqueIds(values: unknown[]) {
-  return Array.from(
-    new Set(values.map((id) => String(id ?? '').trim()).filter((id) => id.length > 0))
-  )
 }
 
 function toFiniteNumberList(value: unknown): number[] {
@@ -1868,10 +1865,11 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
     const govWin = compiledTeamWinMap.value.get(govId) ?? 0
     const oppWin = compiledTeamWinMap.value.get(oppId) ?? 0
     const venueId = String(row?.venue ?? '')
-    const chairs = Array.isArray(row?.chairs) ? normalizedUniqueIds(row.chairs) : []
-    const panels = Array.isArray(row?.panels) ? normalizedUniqueIds(row.panels) : []
-    const trainees = Array.isArray(row?.trainees) ? normalizedUniqueIds(row.trainees) : []
-    const adjudicatorIds = normalizedUniqueIds([...chairs, ...panels, ...trainees])
+    const chairs = normalizeIdList(row?.chairs ?? [])
+    const panels = normalizeIdList(row?.panels ?? [])
+    const trainees = normalizeIdList(row?.trainees ?? [])
+    const ballotSubmitterIds = normalizeIdList([...chairs, ...panels])
+    const adjudicatorIds = normalizeIdList([...chairs, ...panels, ...trainees])
     return {
       key: `${index}-${govId}-${oppId}-${venueId}`,
       matchIndex: index,
@@ -1882,6 +1880,8 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
       pairKey: normalizeTeamPairKey(govId, oppId),
       chairIds: chairs,
       panelIds: panels,
+      traineeIds: trainees,
+      ballotSubmitterIds,
       adjudicatorIds,
       govName: govId ? teamName(govId) : t('未選択'),
       oppName: oppId ? teamName(oppId) : t('未選択'),
@@ -1919,11 +1919,24 @@ function feedbackExpectedCountForPreviewRow(row: HubDrawPreviewRow) {
   if (selectedRound.value === null) return 0
   const roundNumber = selectedRound.value
   const settings = feedbackExpectationSettings(selectedRound.value)
-  return feedbackExpectedCountForRow(roundNumber, settings, {
-    teamIds: normalizedUniqueIds([row.govId, row.oppId]),
+  const expectationRow: SubmissionExpectationRow = {
+    govTeamId: row.govId,
+    oppTeamId: row.oppId,
+    teamIds: normalizeIdList([row.govId, row.oppId]),
     chairIds: row.chairIds,
     panelIds: row.panelIds,
+    traineeIds: row.traineeIds,
+    ballotSubmitterIds: row.ballotSubmitterIds,
     adjudicatorIds: row.adjudicatorIds,
+  }
+  return expectedFeedbackCountForRow({
+    roundNumber,
+    settings,
+    row: expectationRow,
+    resolveTeamSpeakerIds: (teamId, targetRound) => {
+      const team = teamsStore.teams.find((item) => item._id === teamId)
+      return teamSpeakerIdsForRound(team, targetRound)
+    },
   })
 }
 
@@ -1972,7 +1985,7 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
 
   return rows.map((row) => {
     const bucket = bucketByRowKey.get(row.key) ?? { team: [], teamBallots: [], judge: [] }
-    const expectedBallotCount = row.adjudicatorIds.length
+    const expectedBallotCount = row.ballotSubmitterIds.length
     const winDisplay = buildSubmissionWinDisplay(row, bucket.teamBallots, expectedBallotCount)
     return {
       ...row,
@@ -2854,20 +2867,15 @@ watch(
   gap: 4px;
 }
 
-.submission-speed-panel {
+.submission-speed-summary-card {
   border: 1px solid var(--color-border);
-  gap: var(--space-2);
 }
 
-.submission-speed-head {
+.submission-speed-summary-head {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.submission-speed-head h5 {
-  margin: 0;
+  min-height: 22px;
 }
 
 .speed-status-chip {
@@ -2898,11 +2906,10 @@ watch(
   border: 1px solid #fca5a5;
 }
 
-.submission-delay-head {
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+.submission-delay-name-list {
+  margin: 0;
+  color: var(--color-text);
+  line-height: 1.5;
 }
 
 .submission-evaluation-tabs {
@@ -3062,6 +3069,10 @@ watch(
 
 .submission-preview-head {
   align-items: center;
+}
+
+.submission-preview-head h5 {
+  margin: 0;
 }
 
 .submission-preview-search {

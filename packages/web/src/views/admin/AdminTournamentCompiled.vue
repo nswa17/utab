@@ -898,6 +898,7 @@ import { includeLabelsFromRoundDetailsAny } from '@/utils/compile-include-labels
 import { useReportSlideSettings } from '@/composables/useReportSlideSettings'
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
+import { buildRoundSubmissionCoverage } from '@/utils/submission-expectations'
 import {
   buildSubPrizeResultsFromCompiled,
   DEFAULT_SLIDE_SETTINGS,
@@ -1561,12 +1562,20 @@ const selectedDiffBaselineRows = computed<any[]>(() => {
   return resultSourceForLabel(selectedDiffBaselineCompiled.value, activeLabel.value)
 })
 
+function stripDiffFields(rows: any[]): any[] {
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || !('diff' in row)) return row
+    const { diff: _diff, ...rest } = row
+    return rest
+  })
+}
+
 const activeResults = computed<any[]>(() => {
-  const mapped = mapResultRows(activeResultsSource.value, activeLabel.value)
+  const mapped = stripDiffFields(mapResultRows(activeResultsSource.value, activeLabel.value))
   if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineRows.value.length === 0) {
     return mapped
   }
-  return applyClientBaselineDiff(mapped, selectedDiffBaselineRows.value)
+  return applyClientBaselineDiff(mapped, stripDiffFields(selectedDiffBaselineRows.value))
 })
 const fairnessAnalysisSource = computed<any[]>(() => {
   if (!compiled.value) return []
@@ -1577,11 +1586,11 @@ const selectedDiffBaselineTeamRows = computed<any[]>(() => {
   return resultSourceForLabel(selectedDiffBaselineCompiled.value, 'teams')
 })
 const fairnessAnalysisResults = computed<any[]>(() => {
-  const mapped = mapResultRows(fairnessAnalysisSource.value, 'teams')
+  const mapped = stripDiffFields(mapResultRows(fairnessAnalysisSource.value, 'teams'))
   if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineTeamRows.value.length === 0) {
     return mapped
   }
-  return applyClientBaselineDiff(mapped, selectedDiffBaselineTeamRows.value)
+  return applyClientBaselineDiff(mapped, stripDiffFields(selectedDiffBaselineTeamRows.value))
 })
 const speakerPerformanceResults = computed<any[]>(() => {
   if (!compiled.value) return []
@@ -1612,8 +1621,10 @@ const sortedActiveResults = computed<any[]>(() => {
     })
     .map((entry) => entry.row)
 })
-const showDiffLegend = computed(() =>
-  activeResults.value.some((row: any) => row?.diff?.ranking) || compileDiffMeta.value !== null
+const showDiffLegend = computed(
+  () =>
+    selectedDiffBaselineCompiledId.value.length > 0 &&
+    activeResults.value.some((row: any) => row?.diff?.ranking)
 )
 
 const announcementResultsSource = computed<any[]>(() => {
@@ -1993,20 +2004,6 @@ const scoreEnabledFairnessRounds = computed<RoundSummary[]>(() => {
   return fairnessVisualRounds.value.filter((round) => roundSet.has(round.round))
 })
 
-function expectedIdsForRound(r: number) {
-  const draw = drawByRound.value.get(r)
-  const expectedAdjudicators = new Set<string>()
-  const expectedTeams = new Set<string>()
-  draw?.allocation?.forEach((row: any) => {
-    if (row?.teams?.gov) expectedTeams.add(String(row.teams.gov))
-    if (row?.teams?.opp) expectedTeams.add(String(row.teams.opp))
-    ;(row?.chairs ?? []).forEach((id: string) => expectedAdjudicators.add(String(id)))
-    ;(row?.panels ?? []).forEach((id: string) => expectedAdjudicators.add(String(id)))
-    ;(row?.trainees ?? []).forEach((id: string) => expectedAdjudicators.add(String(id)))
-  })
-  return { expectedAdjudicators, expectedTeams }
-}
-
 function speakerIdsForTeamRound(teamId: string, r: number) {
   const team = teams.teams.find((item) => item._id === teamId)
   if (!team) return []
@@ -2015,77 +2012,16 @@ function speakerIdsForTeamRound(teamId: string, r: number) {
   return detailSpeakers
 }
 
-function expectedSpeakerIdsForRound(r: number) {
-  const { expectedTeams } = expectedIdsForRound(r)
-  const set = new Set<string>()
-  expectedTeams.forEach((teamId) => {
-    speakerIdsForTeamRound(teamId, r).forEach((id) => set.add(id))
+function roundSubmissionCoverage(roundNumber: number) {
+  const draw = drawByRound.value.get(roundNumber)
+  const roundConfig = roundConfigByRound.value.get(roundNumber)
+  return buildRoundSubmissionCoverage({
+    roundNumber,
+    allocation: draw?.allocation,
+    userDefinedData: roundConfig?.userDefinedData,
+    submissions: submissionsByRound.value.get(roundNumber) ?? [],
+    resolveTeamSpeakerIds: (teamId, targetRound) => speakerIdsForTeamRound(teamId, targetRound),
   })
-  return set
-}
-
-function ballotSubmittedIds(r: number) {
-  const list = submissionsByRound.value.get(r) ?? []
-  const set = new Set<string>()
-  list
-    .filter((item) => item.type === 'ballot')
-    .forEach((item: any) => {
-      const id = item.payload?.submittedEntityId
-      if (id) set.add(String(id))
-    })
-  return set
-}
-
-function feedbackSubmittedIds(r: number) {
-  const list = submissionsByRound.value.get(r) ?? []
-  const set = new Set<string>()
-  list
-    .filter((item) => item.type === 'feedback')
-    .forEach((item: any) => {
-      const id = item.payload?.submittedEntityId
-      if (id) set.add(String(id))
-    })
-  return set
-}
-
-function unknownCountsByRound(r: number) {
-  const list = submissionsByRound.value.get(r) ?? []
-  const ballot = list.filter(
-    (item: any) => item.type === 'ballot' && !(item.payload as any)?.submittedEntityId
-  ).length
-  const feedback = list.filter(
-    (item: any) => item.type === 'feedback' && !(item.payload as any)?.submittedEntityId
-  ).length
-  return { ballot, feedback }
-}
-
-function duplicateSubmitterCountByRound(r: number, type: 'ballot' | 'feedback') {
-  const list = submissionsByRound.value.get(r) ?? []
-  const counter = new Map<string, number>()
-  list
-    .filter((item: any) => item.type === type)
-    .forEach((item: any) => {
-      const submittedEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
-      if (!submittedEntityId) return
-      counter.set(submittedEntityId, (counter.get(submittedEntityId) ?? 0) + 1)
-    })
-  return Array.from(counter.values()).reduce((acc, count) => acc + Math.max(0, count - 1), 0)
-}
-
-function expectedFeedbackIdsForRound(r: number) {
-  const config = roundConfigByRound.value.get(r)
-  const set = new Set<string>()
-  if (config?.userDefinedData?.evaluate_from_teams !== false) {
-    if (config?.userDefinedData?.evaluator_in_team === 'speaker') {
-      expectedSpeakerIdsForRound(r).forEach((id) => set.add(id))
-    } else {
-      expectedIdsForRound(r).expectedTeams.forEach((id) => set.add(id))
-    }
-  }
-  if (config?.userDefinedData?.evaluate_from_adjudicators !== false) {
-    expectedIdsForRound(r).expectedAdjudicators.forEach((id) => set.add(id))
-  }
-  return set
 }
 
 type RoundSubmissionSummary = {
@@ -2108,26 +2044,22 @@ type RoundSubmissionSummary = {
 
 const roundSubmissionSummaries = computed<RoundSubmissionSummary[]>(() =>
   summaryTargetRounds.value.map((round) => {
-    const { expectedAdjudicators } = expectedIdsForRound(round)
-    const submittedBallot = ballotSubmittedIds(round)
-    const unknown = unknownCountsByRound(round)
-    const expectedFeedback = expectedFeedbackIdsForRound(round)
-    const submittedFeedback = feedbackSubmittedIds(round)
+    const coverage = roundSubmissionCoverage(round)
     return {
       round,
       ballot: {
-        expected: expectedAdjudicators.size,
-        submitted: submittedBallot.size,
-        missing: Math.max(0, expectedAdjudicators.size - submittedBallot.size),
-        duplicates: duplicateSubmitterCountByRound(round, 'ballot'),
-        unknown: unknown.ballot,
+        expected: coverage.ballot.expected,
+        submitted: coverage.ballot.submitted,
+        missing: coverage.ballot.missing,
+        duplicates: coverage.ballot.duplicates,
+        unknown: coverage.ballot.unknown,
       },
       feedback: {
-        expected: expectedFeedback.size,
-        submitted: submittedFeedback.size,
-        missing: Math.max(0, expectedFeedback.size - submittedFeedback.size),
-        duplicates: duplicateSubmitterCountByRound(round, 'feedback'),
-        unknown: unknown.feedback,
+        expected: coverage.feedback.expected,
+        submitted: coverage.feedback.submitted,
+        missing: coverage.feedback.missing,
+        duplicates: coverage.feedback.duplicates,
+        unknown: coverage.feedback.unknown,
       },
     }
   })

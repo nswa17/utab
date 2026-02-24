@@ -5,6 +5,7 @@ import { getTeamModel } from '../models/team.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import {
   DevToolsServiceError,
+  type ClearRoundSubmissionsResponse,
   type FillRoundSubmissionsResponse,
   type SubmissionCountSummary,
 } from './types.js'
@@ -15,6 +16,7 @@ type NormalizedDrawRow = {
   chairs: string[]
   panels: string[]
   trainees: string[]
+  ballotSubmitters: string[]
   adjudicators: string[]
 }
 
@@ -65,6 +67,7 @@ function normalizeDrawRows(allocation: unknown): NormalizedDrawRow[] {
       const chairs = normalizeIdList(source.chairs)
       const panels = normalizeIdList(source.panels)
       const trainees = normalizeIdList(source.trainees)
+      const ballotSubmitters = normalizeIdList([...chairs, ...panels])
       const adjudicators = normalizeIdList([...chairs, ...panels, ...trainees])
       if (adjudicators.length === 0) return null
       return {
@@ -73,6 +76,7 @@ function normalizeDrawRows(allocation: unknown): NormalizedDrawRow[] {
         chairs,
         panels,
         trainees,
+        ballotSubmitters,
         adjudicators,
       }
     })
@@ -184,6 +188,41 @@ function toSummary(ballot: number, feedback: number): SubmissionCountSummary {
   }
 }
 
+export async function clearRoundSubmissions(
+  tournamentId: string,
+  round: number
+): Promise<ClearRoundSubmissionsResponse> {
+  if (!Number.isInteger(round) || round < 1) {
+    throw new DevToolsServiceError(400, 'round must be an integer >= 1')
+  }
+
+  const connection = await getTournamentConnection(tournamentId)
+  const SubmissionModel = getSubmissionModel(connection)
+
+  const [beforeBallot, beforeFeedback] = await Promise.all([
+    SubmissionModel.countDocuments({ tournamentId, round, type: 'ballot' }).exec(),
+    SubmissionModel.countDocuments({ tournamentId, round, type: 'feedback' }).exec(),
+  ])
+
+  const [deletedBallotResult, deletedFeedbackResult] = await Promise.all([
+    SubmissionModel.deleteMany({ tournamentId, round, type: 'ballot' }).exec(),
+    SubmissionModel.deleteMany({ tournamentId, round, type: 'feedback' }).exec(),
+  ])
+
+  const deletedBallot = Number((deletedBallotResult as any)?.deletedCount ?? 0)
+  const deletedFeedback = Number((deletedFeedbackResult as any)?.deletedCount ?? 0)
+  const afterBallot = Math.max(0, beforeBallot - deletedBallot)
+  const afterFeedback = Math.max(0, beforeFeedback - deletedFeedback)
+
+  return {
+    tournamentId,
+    round,
+    before: toSummary(beforeBallot, beforeFeedback),
+    deleted: toSummary(deletedBallot, deletedFeedback),
+    after: toSummary(afterBallot, afterFeedback),
+  }
+}
+
 function teamSpeakerIdsForRound(team: any, round: number): string[] {
   const details = Array.isArray(team?.details) ? team.details : []
   const roundDetail = details.find((detail: any) => Number(detail?.r) === round)
@@ -235,14 +274,14 @@ export async function fillRoundSubmissions(
   const expectedFeedbackByKey = new Map<string, Record<string, unknown>>()
 
   rows.forEach((row) => {
-    row.adjudicators.forEach((adjudicatorId) => {
-      const key = ballotKey(round, adjudicatorId, row.gov, row.opp)
+    row.ballotSubmitters.forEach((submittedEntityId) => {
+      const key = ballotKey(round, submittedEntityId, row.gov, row.opp)
       if (expectedBallotByKey.has(key)) return
       expectedBallotByKey.set(
         key,
         buildBallotPayload(
           row,
-          adjudicatorId,
+          submittedEntityId,
           teamSpeakerIdsByTeam.get(row.gov) ?? [],
           teamSpeakerIdsByTeam.get(row.opp) ?? [],
           settings.noSpeakerScore

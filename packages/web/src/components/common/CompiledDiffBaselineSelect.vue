@@ -3,6 +3,7 @@
     :model-value="modelValue"
     :label="labelText"
     :options="normalizedOptions"
+    :placeholder="placeholderText"
     :disabled="disabled"
     @update:model-value="onUpdate"
   />
@@ -18,6 +19,7 @@ type DiffBaselineOption = {
   compiledId: string
   rounds: number[]
   createdAt?: string
+  snapshotName?: string
 }
 
 const props = withDefaults(
@@ -25,10 +27,12 @@ const props = withDefaults(
     modelValue: string
     options: DiffBaselineOption[]
     label?: string
+    placeholder?: string
     disabled?: boolean
   }>(),
   {
     label: '',
+    placeholder: '',
     disabled: false,
   }
 )
@@ -40,6 +44,7 @@ const emit = defineEmits<{
 const { t, locale } = useI18n({ useScope: 'global' })
 
 const labelText = computed(() => props.label || t('差分比較'))
+const placeholderText = computed(() => props.placeholder || t('未選択'))
 const localeTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
 const normalizedOptions = computed(() =>
   props.options.map((option) => ({

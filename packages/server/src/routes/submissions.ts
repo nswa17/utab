@@ -149,7 +149,7 @@ const deleteSchema = {
 router.get('/', requireTournamentAdmin(), validateRequest(listSchema), listSubmissions)
 router.get(
   '/mine',
-  requireTournamentAccess(),
+  requireTournamentAdmin(),
   validateRequest(participantListSchema),
   listParticipantSubmissions
 )

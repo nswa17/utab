@@ -164,9 +164,9 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
     const govId = normalizeId(row.teams?.gov)
     const oppId = normalizeId(row.teams?.opp)
     const teamIds = [govId, oppId].filter((id) => id.length > 0)
+    const debateAdjudicatorIds = normalizeIdList([...(row.chairs ?? []), ...(row.panels ?? [])])
     const adjudicatorIds = normalizeIdList([
-      ...(row.chairs ?? []),
-      ...(row.panels ?? []),
+      ...debateAdjudicatorIds,
       ...(row.trainees ?? []),
     ])
     const venueId = normalizeId(row.venue)
@@ -433,14 +433,14 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
           {}
         )
       )
-    } else if (adjudicatorIds.length % 2 === 0) {
+    } else if (debateAdjudicatorIds.length > 0 && debateAdjudicatorIds.length % 2 === 0) {
       warnings.push(
         createWarning(
           rowIndex,
           'adjudicator_even_count',
           'warn',
           'adjudicator',
-          createTargets(rowIndex, [], adjudicatorIds),
+          createTargets(rowIndex, [], debateAdjudicatorIds),
           {}
         )
       )

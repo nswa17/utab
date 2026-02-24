@@ -164,7 +164,10 @@
                   :indicator="sortIndicator('teamSubmission')"
                   @click="setSort('teamSubmission')"
                 />
-                <div v-if="columnHeaderBadges('teamSubmission').length > 0" class="draw-header-badge-list">
+                <div
+                  v-if="columnHeaderBadges('teamSubmission').length > 0"
+                  class="draw-header-badge-list"
+                >
                   <span
                     v-for="(badge, index) in columnHeaderBadges('teamSubmission')"
                     :key="`team-submission-badge-${index}-${badge.text}`"
@@ -183,7 +186,10 @@
                   :indicator="sortIndicator('judgeSubmission')"
                   @click="setSort('judgeSubmission')"
                 />
-                <div v-if="columnHeaderBadges('judgeSubmission').length > 0" class="draw-header-badge-list">
+                <div
+                  v-if="columnHeaderBadges('judgeSubmission').length > 0"
+                  class="draw-header-badge-list"
+                >
                   <span
                     v-for="(badge, index) in columnHeaderBadges('judgeSubmission')"
                     :key="`judge-submission-badge-${index}-${badge.text}`"
@@ -216,7 +222,9 @@
                       {{ row.winStatusLabel }}
                     </span>
                   </span>
-                  <span v-if="row.winMetaLabel" class="muted tiny draw-win-meta">{{ row.winMetaLabel }}</span>
+                  <span v-if="row.winMetaLabel" class="muted tiny draw-win-meta">{{
+                    row.winMetaLabel
+                  }}</span>
                 </div>
               </td>
               <td v-if="showScoreColumn">
@@ -239,7 +247,9 @@
                     row.teamSubmissionExpectedCount
                   )}`"
                 >
-                  {{ submissionCountText(row.teamSubmissionCount, row.teamSubmissionExpectedCount) }}
+                  {{
+                    submissionCountText(row.teamSubmissionCount, row.teamSubmissionExpectedCount)
+                  }}
                 </span>
               </td>
               <td v-if="showJudgeSubmissionColumn">
@@ -250,7 +260,9 @@
                     row.judgeSubmissionExpectedCount
                   )}`"
                 >
-                  {{ submissionCountText(row.judgeSubmissionCount, row.judgeSubmissionExpectedCount) }}
+                  {{
+                    submissionCountText(row.judgeSubmissionCount, row.judgeSubmissionExpectedCount)
+                  }}
                 </span>
               </td>
               <td v-if="showDetailColumn" class="draw-col-detail">
@@ -271,7 +283,10 @@
                     <div class="row draw-preview-detail-head">
                       <strong>{{ teamSubmissionLabel }}</strong>
                     </div>
-                    <table v-if="(row.submissionDetail?.team ?? []).length > 0" class="draw-preview-detail-table">
+                    <table
+                      v-if="(row.submissionDetail?.team ?? []).length > 0"
+                      class="draw-preview-detail-table"
+                    >
                       <thead>
                         <tr>
                           <th>{{ $t('提出者') }}</th>
@@ -281,7 +296,10 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="entry in row.submissionDetail?.team ?? []" :key="`team-${row.key}-${entry.key}`">
+                        <tr
+                          v-for="entry in row.submissionDetail?.team ?? []"
+                          :key="`team-${row.key}-${entry.key}`"
+                        >
                           <td>{{ entry.submittedByLabel }}</td>
                           <td>{{ entry.summaryLabel }}</td>
                           <td>{{ entry.submittedAtLabel }}</td>
@@ -304,7 +322,10 @@
                     <div class="row draw-preview-detail-head">
                       <strong>{{ judgeSubmissionLabel }}</strong>
                     </div>
-                    <table v-if="(row.submissionDetail?.judge ?? []).length > 0" class="draw-preview-detail-table">
+                    <table
+                      v-if="(row.submissionDetail?.judge ?? []).length > 0"
+                      class="draw-preview-detail-table"
+                    >
                       <thead>
                         <tr>
                           <th>{{ $t('提出者') }}</th>
@@ -314,7 +335,10 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="entry in row.submissionDetail?.judge ?? []" :key="`judge-${row.key}-${entry.key}`">
+                        <tr
+                          v-for="entry in row.submissionDetail?.judge ?? []"
+                          :key="`judge-${row.key}-${entry.key}`"
+                        >
                           <td>{{ entry.submittedByLabel }}</td>
                           <td>{{ entry.summaryLabel }}</td>
                           <td>{{ entry.submittedAtLabel }}</td>
@@ -414,7 +438,9 @@ const showSubmissionColumns = computed(() => props.showSubmissionColumns)
 const showJudgeSubmissionColumn = computed(
   () => showSubmissionColumns.value && props.showJudgeSubmissionColumn
 )
-const showDetailColumn = computed(() => showSubmissionColumns.value || showJudgeSubmissionColumn.value)
+const showDetailColumn = computed(
+  () => showSubmissionColumns.value || showJudgeSubmissionColumn.value
+)
 const showScoreColumn = computed(() => props.showScoreColumn)
 const teamSubmissionLabel = computed(() => props.teamSubmissionLabel)
 const judgeSubmissionLabel = computed(() => props.judgeSubmissionLabel)
@@ -422,7 +448,8 @@ const winColumnLabel = computed(() => props.winColumnLabel)
 const scoreColumnLabel = computed(() => props.scoreColumnLabel)
 const columnCount = computed(() => {
   const scoreColumn = Number(showScoreColumn.value)
-  const submissionColumns = Number(showSubmissionColumns.value) + Number(showJudgeSubmissionColumn.value)
+  const submissionColumns =
+    Number(showSubmissionColumns.value) + Number(showJudgeSubmissionColumn.value)
   const detailColumn = Number(showDetailColumn.value)
   return 7 + scoreColumn + submissionColumns + detailColumn
 })
@@ -450,28 +477,30 @@ function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
 const sortedRows = computed(() => {
   const state = sortState.value
   const direction = state.direction === 'asc' ? 1 : -1
-  return props.rows
-    .slice()
-    .sort((left, right) => {
-      if (state.key === 'venue' && left.venuePriority !== right.venuePriority) {
-        return direction * (left.venuePriority - right.venuePriority)
-      }
-      const leftValue = sortValue(left, state.key)
-      const rightValue = sortValue(right, state.key)
-      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-        const diff = leftValue - rightValue
-        if (diff !== 0) return direction * diff
-      } else {
-        const diff = sortCollator.compare(String(leftValue), String(rightValue))
-        if (diff !== 0) return direction * diff
-      }
-      if (state.key === 'score' && (left.scoreGap ?? 0) !== (right.scoreGap ?? 0)) {
-        return (left.scoreGap ?? 0) - (right.scoreGap ?? 0)
-      }
-      if (left.winGap !== right.winGap) return left.winGap - right.winGap
-      return left.matchIndex - right.matchIndex
-    })
+  return props.rows.slice().sort((left, right) => {
+    if (state.key === 'venue' && left.venuePriority !== right.venuePriority) {
+      return direction * (left.venuePriority - right.venuePriority)
+    }
+    const leftValue = sortValue(left, state.key)
+    const rightValue = sortValue(right, state.key)
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+      const diff = leftValue - rightValue
+      if (diff !== 0) return direction * diff
+    } else {
+      const diff = sortCollator.compare(String(leftValue), String(rightValue))
+      if (diff !== 0) return direction * diff
+    }
+    if (state.key === 'score' && (left.scoreGap ?? 0) !== (right.scoreGap ?? 0)) {
+      return (left.scoreGap ?? 0) - (right.scoreGap ?? 0)
+    }
+    if (left.winGap !== right.winGap) return left.winGap - right.winGap
+    return left.matchIndex - right.matchIndex
+  })
 })
+
+function getDisplayRows() {
+  return sortedRows.value.slice()
+}
 
 function setSort(key: PreviewSortKey) {
   if (sortState.value.key === key) {
@@ -503,10 +532,15 @@ function hasSubmissionDetail(row: DrawPreviewRow) {
   const visibleTeamExpected = showSubmissionColumns.value ? teamExpected : 0
   const visibleJudgeExpected = showJudgeSubmissionColumn.value ? judgeExpected : 0
   const visibleDetailRows =
-    (showSubmissionColumns.value ? detail?.team?.length ?? 0 : 0) +
-    (showJudgeSubmissionColumn.value ? detail?.judge?.length ?? 0 : 0)
+    (showSubmissionColumns.value ? (detail?.team?.length ?? 0) : 0) +
+    (showJudgeSubmissionColumn.value ? (detail?.judge?.length ?? 0) : 0)
   return (
-    visibleTeamCount + visibleJudgeCount + visibleTeamExpected + visibleJudgeExpected + visibleDetailRows > 0
+    visibleTeamCount +
+      visibleJudgeCount +
+      visibleTeamExpected +
+      visibleJudgeExpected +
+      visibleDetailRows >
+    0
   )
 }
 
@@ -542,6 +576,10 @@ function onEditSubmission(submissionId?: string) {
   if (!normalized) return
   emit('edit-submission', normalized)
 }
+
+defineExpose({
+  getDisplayRows,
+})
 </script>
 
 <style scoped>

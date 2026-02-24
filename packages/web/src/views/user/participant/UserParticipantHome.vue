@@ -18,153 +18,6 @@
         </div>
 
         <div v-else class="stack">
-          <div v-if="pendingTaskContext && (isSpeaker || isAdjudicator)" class="card stack">
-        <h4>{{ $t('あなたの情報') }}</h4>
-        <label v-if="isSpeaker" class="field">
-          <span>{{ $t('ジャッジ名') }}</span>
-          <select v-model="teamIdentityId">
-            <option value="">{{ $t('未選択') }}</option>
-            <option v-for="adj in adjudicatorIdentityOptions" :key="adj._id" :value="adj._id">
-              {{ adj.name }}
-            </option>
-          </select>
-        </label>
-        <label v-if="isAdjudicator" class="field">
-          <span>{{ $t('評価者') }}</span>
-          <select v-model="judgeEvaluationActorMode" :disabled="judgeEvaluationActorOptions.length <= 1">
-            <option
-              v-for="option in judgeEvaluationActorOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-        <label v-if="isAdjudicator && judgeEvaluationActorMode === 'team'" class="field">
-          <span>{{ $t('チーム') }}</span>
-          <select v-model="judgeFeedbackTeamIdentityId">
-            <option value="">{{ $t('未選択') }}</option>
-            <option v-for="team in judgeFeedbackTeamOptions" :key="team._id" :value="team._id">
-              {{ team.name }}
-            </option>
-          </select>
-        </label>
-        <label
-          v-if="
-            isAdjudicator &&
-            judgeEvaluationActorMode === 'team' &&
-            speakerSelectionRequired
-          "
-          class="field"
-        >
-          <span>{{ $t('スピーカー') }}</span>
-          <select
-            v-model="judgeFeedbackSpeakerIdentityId"
-            :disabled="!judgeFeedbackTeamIdentityId || judgeFeedbackSelectableSpeakers.length === 0"
-          >
-            <option value="">{{ $t('未選択') }}</option>
-            <option
-              v-for="speaker in judgeFeedbackSelectableSpeakers"
-              :key="speaker._id"
-              :value="speaker._id"
-            >
-              {{ speaker.name }}
-            </option>
-          </select>
-        </label>
-        <label v-if="isAdjudicator && judgeEvaluationActorMode === 'adjudicator'" class="field">
-          <span>{{ $t('ジャッジ名') }}</span>
-          <select v-model="teamIdentityId">
-            <option value="">{{ $t('未選択') }}</option>
-            <option v-for="adj in adjudicatorIdentityOptions" :key="adj._id" :value="adj._id">
-              {{ adj.name }}
-            </option>
-          </select>
-        </label>
-        <p v-if="isSpeaker && !teamIdentityId" class="muted">
-          {{ $t('先にジャッジを選択してください。') }}
-        </p>
-        <p
-          v-if="
-            isAdjudicator &&
-            judgeEvaluationActorMode === 'team' &&
-            !judgeFeedbackTeamIdentityId
-          "
-          class="muted"
-        >
-          {{ $t('先にチームを選択してください。') }}
-        </p>
-        <p
-          v-if="
-            isAdjudicator &&
-            judgeEvaluationActorMode === 'team' &&
-            speakerSelectionRequired &&
-            judgeFeedbackTeamIdentityId &&
-            judgeFeedbackSelectableSpeakers.length === 0
-          "
-          class="muted"
-        >
-          {{ $t('このチームに選択可能なスピーカーがいません。') }}
-        </p>
-        <template v-if="pendingTaskContext">
-          <p class="muted small task-summary">
-            {{
-              $t('対象ラウンド: {round}', {
-                round: pendingTaskContext.round,
-              })
-            }}
-          </p>
-          <p v-if="pendingBallotContext" class="muted">
-            {{
-              $t('対象試合: {gov} vs {opp}', {
-                gov: teamName(pendingBallotContext.teamA),
-                opp: teamName(pendingBallotContext.teamB),
-              })
-            }}
-          </p>
-          <p
-            v-if="
-              pendingBallotContext &&
-              pendingBallotContext.submitterCandidates.length > 0
-            "
-            class="muted small"
-          >
-            {{
-              $t('提出候補ジャッジ: {names}', {
-                names: adjudicatorNames(pendingBallotContext.submitterCandidates),
-              })
-            }}
-          </p>
-          <p v-if="pendingFeedbackContext" class="muted">
-            {{
-              $t('対象試合: {gov} vs {opp}', {
-                gov: teamName(pendingFeedbackContext.teamGov),
-                opp: teamName(pendingFeedbackContext.teamOpp),
-              })
-            }}
-          </p>
-          <label v-if="pendingFeedbackTargetOptions.length > 1" class="field">
-            <span>{{ $t('評価対象ジャッジ') }}</span>
-            <select v-model="pendingFeedbackTargetId">
-              <option value="">{{ $t('未選択') }}</option>
-              <option v-for="judge in pendingFeedbackTargetOptions" :key="judge.id" :value="judge.id">
-                {{ judge.name }}
-              </option>
-            </select>
-          </label>
-          <p v-if="!pendingTaskReady" class="muted">{{ pendingTaskHint }}</p>
-          <div v-else class="row pending-task-actions">
-            <Button :to="pendingTaskPrimaryPath">
-              {{ pendingTaskPrimaryLabel }}
-            </Button>
-          </div>
-        </template>
-        <p v-else class="muted small task-summary">
-          {{ $t('対戦表の評価ボタンから入力を開始してください。') }}
-        </p>
-      </div>
-
           <div class="stack audience-rounds">
         <div class="card stack audience-tools">
           <input
@@ -278,9 +131,19 @@
                     <strong>{{ teamName(row.teams.opp) }}</strong>
                   </div>
                 </div>
-                <div v-if="adjudicatorAllocationVisible(round.round)" class="draw-chair-line">
-                  <span class="draw-chair-label">{{ $t('チェア:') }}</span>
-                  <span class="draw-chair-names">{{ adjudicatorNames(row.chairs) }}</span>
+                <div v-if="adjudicatorAllocationVisible(round.round)" class="stack draw-judge-list">
+                  <div class="draw-judge-line">
+                    <span class="draw-judge-label">{{ $t('チェア:') }}</span>
+                    <span class="draw-judge-names">{{ adjudicatorNames(row.chairs) }}</span>
+                  </div>
+                  <div class="draw-judge-line">
+                    <span class="draw-judge-label">{{ $t('パネル:') }}</span>
+                    <span class="draw-judge-names">{{ adjudicatorNames(row.panels) }}</span>
+                  </div>
+                  <div class="draw-judge-line">
+                    <span class="draw-judge-label">{{ $t('トレーニー:') }}</span>
+                    <span class="draw-judge-names">{{ adjudicatorNames(row.trainees) }}</span>
+                  </div>
                 </div>
                 <div class="row draw-actions">
                   <Button variant="ghost" size="sm" :to="teamEvaluationPath(round.round, row)">
@@ -349,6 +212,30 @@
                         }}</span>
                       </button>
                     </th>
+                    <th v-if="adjudicatorAllocationVisible(round.round)">
+                      <button
+                        type="button"
+                        class="table-sort"
+                        @click="setAudienceTableSort(round.round, 'panel')"
+                      >
+                        {{ $t('パネル') }}
+                        <span class="sort-indicator">{{
+                          audienceSortIndicator(round.round, 'panel')
+                        }}</span>
+                      </button>
+                    </th>
+                    <th v-if="adjudicatorAllocationVisible(round.round)">
+                      <button
+                        type="button"
+                        class="table-sort"
+                        @click="setAudienceTableSort(round.round, 'trainee')"
+                      >
+                        {{ $t('トレーニー') }}
+                        <span class="sort-indicator">{{
+                          audienceSortIndicator(round.round, 'trainee')
+                        }}</span>
+                      </button>
+                    </th>
                     <th class="draw-actions-header">{{ $t('操作') }}</th>
                   </tr>
                 </thead>
@@ -364,6 +251,12 @@
                     <td v-if="teamAllocationVisible(round.round)">{{ teamName(row.teams.opp) }}</td>
                     <td v-if="adjudicatorAllocationVisible(round.round)">
                       {{ adjudicatorNames(row.chairs) }}
+                    </td>
+                    <td v-if="adjudicatorAllocationVisible(round.round)">
+                      {{ adjudicatorNames(row.panels) }}
+                    </td>
+                    <td v-if="adjudicatorAllocationVisible(round.round)">
+                      {{ adjudicatorNames(row.trainees) }}
                     </td>
                     <td class="draw-actions-cell">
                       <div class="row draw-actions">
@@ -574,7 +467,7 @@ const errorMessage = computed(
 )
 
 const roundExpanded = ref<Record<number, boolean>>({})
-type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair'
+type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair' | 'panel' | 'trainee'
 type AudienceSortDirection = 'asc' | 'desc'
 type AudienceSortState = { key: AudienceSortKey; direction: AudienceSortDirection }
 const audienceTableSortByRound = ref<Record<number, AudienceSortState>>({})
@@ -988,7 +881,7 @@ function audienceAdjudicatorMatchesQuery(adjudicatorId?: string) {
 
 function isAudienceRowMatched(row: DrawAllocationRow) {
   if (!hasAudienceTeamQuery.value) return false
-  const judgeIds = [...(row.chairs ?? []), ...(row.panels ?? [])]
+  const judgeIds = [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])]
   return (
     audienceTeamMatchesQuery(row?.teams?.gov) ||
     audienceTeamMatchesQuery(row?.teams?.opp) ||
@@ -1021,6 +914,10 @@ function rowAdjudicatorIds(row: DrawAllocationRow) {
   ).filter(Boolean)
 }
 
+function rowBallotSubmitterIds(row: DrawAllocationRow) {
+  return Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+}
+
 function encodeList(values: string[]) {
   return values.map((value) => encodeURIComponent(value)).join(',')
 }
@@ -1036,30 +933,24 @@ function judgeEvaluationEnabled(roundNumber: number) {
 }
 
 function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
+  const homePath = withModePath(`/user/${tournamentId.value}/home`, 'speaker')
   const teamA = row?.teams?.gov
   const teamB = row?.teams?.opp
   if (!teamA || !teamB) {
-    return withModePath(`/user/${tournamentId.value}/home`, 'speaker')
+    return homePath
   }
-  const adjudicatorIds = rowAdjudicatorIds(row)
-  if (adjudicatorIds.length === 1) {
-    const query = new URLSearchParams({
-      teamA,
-      teamB,
-      submitter: adjudicatorIds[0],
-    })
-    return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/entry`, 'speaker', query)
-  }
+  const ballotSubmitterIds = rowBallotSubmitterIds(row)
   const query = new URLSearchParams({
-    task: 'ballot',
-    round: String(roundNumber),
     teamA,
     teamB,
   })
-  if (adjudicatorIds.length > 0) {
-    query.set('submitters', encodeList(adjudicatorIds))
+  if (ballotSubmitterIds.length === 1) {
+    query.set('submitter', ballotSubmitterIds[0])
   }
-  return withModePath(`/user/${tournamentId.value}/home`, 'speaker', query)
+  if (ballotSubmitterIds.length > 0) {
+    query.set('submitters', encodeList(ballotSubmitterIds))
+  }
+  return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/entry`, 'speaker', query)
 }
 
 function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
@@ -1078,60 +969,28 @@ function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
     return homePath
   }
   const defaultActor: 'team' | 'adjudicator' = canUseTeamActor ? 'team' : 'adjudicator'
-
-  if (defaultActor === 'adjudicator') {
-    if (targetIds.length === 1 && submitterIds.length === 1) {
-      const query = new URLSearchParams({
-        actor: 'adjudicator',
-      })
-      return withModePath(
-        `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
-        'adjudicator',
-        query
-      )
-    }
-    const adjudicatorQuery = new URLSearchParams({
-      actor: 'adjudicator',
-      task: 'feedback',
-      round: String(roundNumber),
-      teamGov,
-      teamOpp,
-      targets: encodeList(targetIds),
-    })
-    if (submitterIds.length > 0) {
-      adjudicatorQuery.set('submitters', encodeList(submitterIds))
-    }
-    return withModePath(`/user/${tournamentId.value}/home`, 'adjudicator', adjudicatorQuery)
-  }
-
-  const teamId = preferredTeamIdForRow(row)
-  if (targetIds.length === 1 && teamId) {
-    const query = new URLSearchParams({
-      actor: 'team',
-      team: teamId,
-    })
-    return withModePath(
-      `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
-      'adjudicator',
-      query
-    )
-  }
-
-  const unresolvedQuery = new URLSearchParams({
-    actor: 'team',
-    task: 'feedback',
-    round: String(roundNumber),
+  const query = new URLSearchParams({
+    actor: defaultActor,
     teamGov,
     teamOpp,
     targets: encodeList(targetIds),
   })
-  if (teamId) {
-    unresolvedQuery.set('team', teamId)
-  }
   if (submitterIds.length > 0) {
-    unresolvedQuery.set('submitters', encodeList(submitterIds))
+    query.set('submitters', encodeList(submitterIds))
   }
-  return withModePath(`/user/${tournamentId.value}/home`, 'adjudicator', unresolvedQuery)
+  if (defaultActor === 'team') {
+    const teamId = preferredTeamIdForRow(row)
+    if (teamId) {
+      query.set('team', teamId)
+    }
+  } else if (submitterIds.length === 1) {
+    query.set('submitter', submitterIds[0])
+  }
+  return withModePath(
+    `/user/${tournamentId.value}/rounds/${roundNumber}/feedback/${encodeURIComponent(targetIds[0])}`,
+    'adjudicator',
+    query
+  )
 }
 
 function isFocusedRound(roundNumber: number) {
@@ -1225,6 +1084,8 @@ function audienceSortValue(row: DrawAllocationRow, key: AudienceSortKey) {
   if (key === 'venue') return venueName(row.venue)
   if (key === 'gov') return teamName(row.teams?.gov)
   if (key === 'opp') return teamName(row.teams?.opp)
+  if (key === 'panel') return adjudicatorNames(row.panels ?? [])
+  if (key === 'trainee') return adjudicatorNames(row.trainees ?? [])
   return adjudicatorNames(row.chairs ?? [])
 }
 
@@ -1726,7 +1587,11 @@ select {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 44%, transparent);
 }
 
-.draw-chair-line {
+.draw-judge-list {
+  gap: 2px;
+}
+
+.draw-judge-line {
   display: flex;
   gap: 6px;
   align-items: baseline;
@@ -1734,12 +1599,12 @@ select {
   font-size: 13px;
 }
 
-.draw-chair-label {
+.draw-judge-label {
   font-weight: 700;
   color: var(--color-text);
 }
 
-.draw-chair-names {
+.draw-judge-names {
   font-weight: 600;
   color: var(--color-text);
 }

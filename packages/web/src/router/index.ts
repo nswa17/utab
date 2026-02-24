@@ -23,7 +23,6 @@ const AdminRoundResult = () => import('@/views/admin/round/AdminRoundResult.vue'
 const UserHome = () => import('@/views/user/UserHome.vue')
 const UserTournament = () => import('@/views/user/UserTournament.vue')
 const UserTournamentHome = () => import('@/views/user/UserTournamentHome.vue')
-const UserTournamentResults = () => import('@/views/user/UserTournamentResults.vue')
 const UserParticipantLayout = () => import('@/views/user/participant/UserParticipantLayout.vue')
 const UserRoundBallotEntry = () => import('@/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
 const UserRoundFeedbackEntry = () => import('@/views/user/participant/round/feedback/UserRoundFeedbackEntry.vue')
@@ -111,7 +110,6 @@ export function createAppRouter(options: RouterOptions = {}): Router {
             }),
           },
           { path: 'home', component: routeComponent(UserTournamentHome) },
-          { path: 'results', component: routeComponent(UserTournamentResults) },
           {
             path: '',
             component: routeComponent(UserParticipantLayout),

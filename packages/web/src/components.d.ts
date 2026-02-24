@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdjudicatorSlides: typeof import('./components/slides/AdjudicatorSlides.vue')['default']
+    AppBottomBar: typeof import('./components/common/AppBottomBar.vue')['default']
     AppHeader: typeof import('./components/common/AppHeader.vue')['default']
     BestSlides: typeof import('./components/slides/BestSlides.vue')['default']
     BreakPolicyEditor: typeof import('./components/common/BreakPolicyEditor.vue')['default']

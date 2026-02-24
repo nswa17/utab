@@ -15,9 +15,15 @@ describe('DevToolsBar', () => {
 
   it('stores API success responses and renders summary lines', () => {
     const source = loadSource()
+    expect(source).toContain('copySummary.value = data')
     expect(source).toContain('fillSetupSummary.value = data')
     expect(source).toContain('fillRoundSummary.value = data')
+    expect(source).toContain('clearRoundSummary.value = data')
+    expect(source).toContain("requestCopyTournament(tournamentId.value)")
+    expect(source).toContain("requestClearRoundSubmissions(tournamentId.value")
+    expect(source).toContain('v-if="copySummary"')
     expect(source).toContain('v-if="fillSetupSummary"')
     expect(source).toContain('v-if="fillRoundSummary"')
+    expect(source).toContain('v-if="clearRoundSummary"')
   })
 })

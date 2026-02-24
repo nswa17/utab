@@ -62,6 +62,8 @@ const en = {
     'Team B Matter/Manner counts must match.',
   '前回送信した内容を読み込みました。このラウンドの再送信はできません。修正が必要な場合は運営に報告してください。':
     'Loaded your previous submission. You cannot resubmit for this round. Report needed corrections to organizers.',
+  'この端末に保存された前回入力を読み込みました。このラウンドの再送信はできません。修正が必要な場合は運営に報告してください。':
+    'Loaded the previous input saved on this device. You cannot resubmit for this round. Report needed corrections to organizers.',
   'Manner': 'Manner',
   'Matter': 'Matter',
   'Matter/Manner採点': 'Matter/Manner scoring',
@@ -99,6 +101,7 @@ const en = {
   '{name} が片側に偏っています': 'Side imbalance for {name}',
   '{name} は利用不可': '{name} is unavailable',
   'あなたの情報': 'Your details',
+  '提出・対戦情報': 'Submission & matchup details',
   'いいえ': 'No',
   'キャンセル': 'Cancel',
   'ここにチームをドロップ': 'Drop team here',
@@ -270,6 +273,10 @@ const en = {
   '参照可能な集計結果がありません。': 'No compile results are available for reference.',
   '参照できる集計結果がありません。未選択のまま自動生成できます。':
     'No compile results are available to reference. You can auto-generate without selecting one.',
+  '参照できる集計結果がありません。未選択のまま配置を確認できます。':
+    'No compiled reference is available. You can continue reviewing allocations without one.',
+  '参照集計結果を選ぶと、チーム/ジャッジの順位や平均を配置表に表示できます。近い実力同士の対戦確認や割り当て調整に使ってください。':
+    'Selecting a compiled reference shows team/adjudicator rankings and averages in the allocation table. Use it to verify power matching and adjust assignments.',
   '警告と詳細は次の集計を参照: {label}':
     'Warnings and details reference this compile result: {label}',
   '表示中: {label}': 'Showing: {label}',
@@ -398,6 +405,8 @@ const en = {
     'Cannot generate next-round draw because selected round ballots are incomplete.',
   '最新集計結果に選択ラウンドが含まれていません。先に集計を実行してください。':
     'Selected round is not included in the latest compile result. Run compile first.',
+  'このラウンドを含む保存済み集計（最新）を表示中: {snapshot}':
+    'Showing latest saved compile including this round: {snapshot}',
   '次ラウンド生成では最新集計結果を参照します。':
     'Next-round generation will use the latest compile result.',
   'オリジナル': 'Original',
@@ -1412,6 +1421,8 @@ const en = {
   'タスクはありません。': 'No tasks.',
   'スピーカー名で絞り込み': 'Filter by speaker name',
   'スコア入力を確認してください。': 'Please check the score inputs.',
+  '提出・対戦情報で提出者ジャッジを選択してください。':
+    'Please select the submitter adjudicator in "Submission & matchup details".',
   '採点設定を読み込み中です。通信状況を確認して再度お試しください。':
     'Loading score settings. Check your connection and try again.',
   'スピーカー選択を確認してください。': 'Please check speaker selection.',

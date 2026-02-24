@@ -12,7 +12,7 @@ import {
   listCompiledAdjudicators,
   createCompiledAdjudicators,
 } from '../controllers/compiled.js'
-import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
+import { requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 import {
   compileAggregationPolicies,
@@ -89,7 +89,7 @@ const deleteSchema = {
 
 router.get(
   '/',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listCompiled
 )
@@ -98,14 +98,14 @@ router.post('/', requireTournamentAdmin(), validateRequest(createSchema), create
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteCompiled)
 router.get(
   '/teams',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listCompiledTeams
 )
 router.post('/teams', requireTournamentAdmin(), validateRequest(createSchema), createCompiledTeams)
 router.get(
   '/speakers',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listCompiledSpeakers
 )
@@ -117,7 +117,7 @@ router.post(
 )
 router.get(
   '/adjudicators',
-  requireTournamentView(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listCompiledAdjudicators
 )

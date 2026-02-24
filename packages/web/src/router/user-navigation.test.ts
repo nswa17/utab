@@ -19,9 +19,6 @@ describe('user navigation routes', () => {
     await router.push('/user/tournament-1/home')
     expect(router.currentRoute.value.path).toBe('/user/tournament-1/home')
 
-    await router.push('/user/tournament-1/results')
-    expect(router.currentRoute.value.path).toBe('/user/tournament-1/results')
-
     await router.push('/user/tournament-1/rounds/1/ballot/entry')
     expect(router.currentRoute.value.path).toBe('/user/tournament-1/rounds/1/ballot/entry')
 
@@ -33,6 +30,7 @@ describe('user navigation routes', () => {
     const router = createUserRouter()
     const legacyPaths = [
       '/user/tournament-1/dashboard',
+      '/user/tournament-1/results',
       '/user/tournament-1/rounds/1/home',
       '/user/tournament-1/rounds/1/draw',
       '/user/tournament-1/rounds/1/ballot/home',

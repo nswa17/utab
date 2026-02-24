@@ -2,7 +2,12 @@
   <section class="stack">
     <div class="stack header-stack">
       <div class="row tournament-header">
-        <Button variant="secondary" size="sm" class="tournament-list-back" :to="headerBackPath">
+        <Button
+          variant="secondary"
+          size="sm"
+          class="tournament-list-back"
+          :to="headerBackPath"
+        >
           ← {{ headerBackLabel }}
         </Button>
         <h1 class="tournament-title">{{ tournament?.name ?? $t('大会詳細') }}</h1>
@@ -59,8 +64,26 @@ const isTournamentHomeRoute = computed(() => {
   const rootPath = `/user/${tournamentId.value}`
   return route.path === homePath || route.path === rootPath
 })
-const headerBackPath = computed(() => '/user')
-const headerBackLabel = computed(() => t('大会一覧'))
+const participantMode = computed(() => {
+  const mode = route.query.mode
+  if (mode === 'speaker' || mode === 'adjudicator' || mode === 'audience') return mode
+  return ''
+})
+const tournamentHomePath = computed(() => {
+  if (!tournamentId.value) return '/user'
+  const query = new URLSearchParams()
+  if (participantMode.value) {
+    query.set('mode', participantMode.value)
+  }
+  const suffix = query.toString()
+  return `/user/${tournamentId.value}/home${suffix ? `?${suffix}` : ''}`
+})
+const headerBackPath = computed(() =>
+  isTournamentHomeRoute.value ? '/user' : tournamentHomePath.value
+)
+const headerBackLabel = computed(() =>
+  isTournamentHomeRoute.value ? t('大会一覧') : t('大会トップ')
+)
 const showTournamentNotice = computed(() => Boolean(tournamentId.value) && !isTournamentHomeRoute.value)
 const currentOrigin = computed(() => {
   if (typeof window === 'undefined') return ''
@@ -211,6 +234,10 @@ onUnmounted(() => {
 @media (max-width: 720px) {
   .tournament-header {
     align-items: center;
+  }
+
+  .tournament-list-back {
+    display: none;
   }
 
   .header-qr-slot {

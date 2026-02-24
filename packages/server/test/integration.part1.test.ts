@@ -280,11 +280,7 @@ describe('Server integration', () => {
     expect('userDefinedData' in publicAdjudicators.body.data[0]).toBe(false)
 
     const publicResults = await request(app).get(`/api/results?tournamentId=${tournamentId}`)
-    expect(publicResults.status).toBe(200)
-    expect('createdBy' in publicResults.body.data[0]).toBe(false)
-    expect('comment' in publicResults.body.data[0].payload).toBe(false)
-    expect('user_defined_data' in publicResults.body.data[0].payload).toBe(false)
-    expect('submittedBy' in publicResults.body.data[0].payload).toBe(false)
+    expect(publicResults.status).toBe(401)
 
     const publicDraws = await request(app).get(`/api/draws?tournamentId=${tournamentId}`)
     expect(publicDraws.status).toBe(200)
@@ -296,13 +292,7 @@ describe('Server integration', () => {
     expect('createdBy' in publicDraws.body.data[0]).toBe(false)
 
     const publicCompiled = await request(app).get(`/api/compiled?tournamentId=${tournamentId}&latest=1`)
-    expect(publicCompiled.status).toBe(200)
-    expect(publicCompiled.body.data).not.toBeNull()
-    expect('createdBy' in publicCompiled.body.data).toBe(false)
-    expect('compile_source' in publicCompiled.body.data.payload).toBe(false)
-    expect('compile_options' in publicCompiled.body.data.payload).toBe(false)
-    expect('compile_warnings' in publicCompiled.body.data.payload).toBe(false)
-    expect('compile_diff_meta' in publicCompiled.body.data.payload).toBe(false)
+    expect(publicCompiled.status).toBe(401)
 
     const openAccessSkipRes = await request(app).post(`/api/tournaments/${tournamentId}/access`).send({
       action: 'skip',

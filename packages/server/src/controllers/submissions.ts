@@ -422,8 +422,8 @@ async function validateBallotAgainstDraw(
   const submittedEntityId = String(payload.submittedEntityId ?? '').trim()
   if (!submittedEntityId) return { ok: true, value: null }
 
-  const allowedAdjudicators = new Set<string>([...row.chairs, ...row.panels, ...row.trainees])
-  if (allowedAdjudicators.size > 0 && !allowedAdjudicators.has(submittedEntityId)) {
+  const allowedBallotSubmitters = new Set<string>([...row.chairs, ...row.panels])
+  if (allowedBallotSubmitters.size > 0 && !allowedBallotSubmitters.has(submittedEntityId)) {
     return { ok: false, message: 'submittedEntityId is not assigned to this matchup' }
   }
 

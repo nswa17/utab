@@ -9,6 +9,7 @@
         </div>
       </div>
     </main>
+    <AppBottomBar v-if="!isEmbeddedRoute" />
   </div>
 </template>
 
@@ -16,6 +17,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from './components/common/AppHeader.vue'
+import AppBottomBar from './components/common/AppBottomBar.vue'
 import DevToolsBar from './devtools/DevToolsBar.vue'
 
 const route = useRoute()

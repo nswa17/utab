@@ -3,7 +3,7 @@
     <LoadingState v-if="checking" />
     <div v-else-if="blocked" class="card stack">
       <p class="muted">{{ blockReason }}</p>
-      <Button variant="secondary" size="sm" :to="listPath">
+      <Button variant="secondary" size="sm" class="participant-list-back" :to="listPath">
         {{ $t('大会一覧') }}
       </Button>
     </div>
@@ -67,3 +67,11 @@ watch(tournamentId, () => {
   evaluateAccess()
 })
 </script>
+
+<style scoped>
+@media (max-width: 720px) {
+  .participant-list-back {
+    display: none;
+  }
+}
+</style>

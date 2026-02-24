@@ -17,7 +17,7 @@ import {
   deleteRawAdjudicatorResult,
   deleteRawAdjudicatorResults,
 } from '../controllers/raw-results.js'
-import { requireTournamentAccess, requireTournamentAdmin } from '../middleware/auth.js'
+import { requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
@@ -145,7 +145,7 @@ const deleteManySchema = {
 
 router.get(
   '/teams',
-  requireTournamentAccess(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listRawTeamResults
 )
@@ -156,7 +156,7 @@ router.delete('/teams/:id', requireTournamentAdmin(), validateRequest(deleteSche
 
 router.get(
   '/speakers',
-  requireTournamentAccess(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listRawSpeakerResults
 )
@@ -187,7 +187,7 @@ router.delete(
 
 router.get(
   '/adjudicators',
-  requireTournamentAccess(),
+  requireTournamentAdmin(),
   validateRequest(listSchema),
   listRawAdjudicatorResults
 )

@@ -34,6 +34,30 @@ function allocateName(existingNames: Set<string>, prefix: string): string {
   }
 }
 
+function randomIndex(maxExclusive: number): number {
+  if (maxExclusive <= 1) return 0
+  return Math.floor(Math.random() * maxExclusive)
+}
+
+function randomPickOne<T>(items: T[]): T | null {
+  if (items.length === 0) return null
+  return items[randomIndex(items.length)]
+}
+
+function randomPickUnique<T>(items: T[], count: number): T[] {
+  if (count <= 0 || items.length === 0) return []
+  if (count >= items.length) return [...items]
+
+  const pool = [...items]
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomIndex(index + 1)
+    const next = pool[index]
+    pool[index] = pool[swapIndex]
+    pool[swapIndex] = next
+  }
+  return pool.slice(0, count)
+}
+
 async function loadSetupCounts(tournamentId: string): Promise<SetupCountSummary> {
   const connection = await getTournamentConnection(tournamentId)
   const TeamModel = getTeamModel(connection)
@@ -70,6 +94,7 @@ export async function fillTournamentSetupData(
     targetTeams: normalizePositiveInt(request.targetTeams),
     targetAdjudicators: normalizePositiveInt(request.targetAdjudicators),
     targetVenues: normalizePositiveInt(request.targetVenues),
+    targetInstitutions: normalizePositiveInt(request.targetInstitutions),
     speakersPerTeam: Math.max(1, normalizePositiveInt(request.speakersPerTeam)),
   }
 
@@ -120,23 +145,27 @@ export async function fillTournamentSetupData(
   }
   const roundNumbers = rounds.map((round) => Number((round as any)?.round)).filter(Number.isFinite)
 
-  let institutions = await InstitutionModel.find({ tournamentId }).lean().exec()
-  if (institutions.length === 0) {
-    const institutionName = allocateName(new Set<string>(), 'Dev Institution')
-    const createdInstitution = await InstitutionModel.create({
+  let institutions = await InstitutionModel.find({ tournamentId }).select({ _id: 1, name: 1 }).lean().exec()
+  const institutionNameSet = normalizedNameSet(institutions as Array<{ name?: unknown }>)
+  const institutionDeficit = Math.max(0, normalizedRequest.targetInstitutions - before.institutions)
+  if (institutionDeficit > 0) {
+    const payload = Array.from({ length: institutionDeficit }).map(() => ({
       tournamentId,
-      name: institutionName,
+      name: allocateName(institutionNameSet, 'Dev Institution'),
       category: 'institution',
       priority: 1,
       userDefinedData: { __devtools: { source: 'fill-setup' } },
-    })
-    created.institutions += 1
-    institutions = [createdInstitution.toObject() as any]
+    }))
+    await InstitutionModel.insertMany(payload, { ordered: true })
+    created.institutions += payload.length
+    institutions = await InstitutionModel.find({ tournamentId }).select({ _id: 1, name: 1 }).lean().exec()
   }
-
-  const primaryInstitution = institutions[0] as any
-  const primaryInstitutionId = String(primaryInstitution?._id ?? '')
-  const primaryInstitutionName = String(primaryInstitution?.name ?? '').trim() || 'Dev Institution'
+  const institutionPool = institutions
+    .map((institution: any) => ({
+      id: String(institution?._id ?? '').trim(),
+      name: String(institution?.name ?? '').trim() || 'Institution',
+    }))
+    .filter((item) => item.id.length > 0)
 
   const existingSpeakers = await SpeakerModel.find({ tournamentId }).select({ _id: 1, name: 1 }).lean().exec()
   const speakerNameSet = normalizedNameSet(existingSpeakers as Array<{ name?: unknown }>)
@@ -158,23 +187,18 @@ export async function fillTournamentSetupData(
     id: String(speaker?._id ?? ''),
     name: String(speaker?.name ?? '').trim() || 'Speaker',
   }))
-  let speakerCursor = 0
 
   const teamNameSet = normalizedNameSet(
     (await TeamModel.find({ tournamentId }).select({ name: 1 }).lean().exec()) as Array<{ name?: unknown }>
   )
   const teamDeficit = Math.max(0, normalizedRequest.targetTeams - before.teams)
   if (teamDeficit > 0) {
-    const nextSpeakerBatch = () => {
-      const selected: Array<{ id: string; name: string }> = []
-      for (let index = 0; index < normalizedRequest.speakersPerTeam; index += 1) {
-        if (speakerPool.length === 0) break
-        const picked = speakerPool[speakerCursor % speakerPool.length]
-        speakerCursor += 1
-        if (!picked?.id) continue
-        selected.push(picked)
+    const nextSpeakerBatch = (): Array<{ id: string; name: string }> => {
+      if (speakerPool.length === 0) return []
+      if (speakerPool.length <= normalizedRequest.speakersPerTeam) {
+        return [...speakerPool]
       }
-      return selected
+      return randomPickUnique(speakerPool, normalizedRequest.speakersPerTeam)
     }
 
     const payload = Array.from({ length: teamDeficit }).map(() => {
@@ -183,16 +207,19 @@ export async function fillTournamentSetupData(
       const speakerNames = speakerIds
         .map((speakerId) => teamSpeakers.find((item) => item.id === speakerId)?.name ?? '')
         .filter((name) => name.trim().length > 0)
+      const assignedInstitution = randomPickOne(institutionPool)
+      const assignedInstitutionId = assignedInstitution?.id ?? ''
+      const assignedInstitutionName = assignedInstitution?.name ?? ''
 
       return {
         tournamentId,
         name: allocateName(teamNameSet, 'Dev Team'),
-        institution: primaryInstitutionName,
+        institution: assignedInstitutionName || undefined,
         speakers: speakerNames.map((name) => ({ name })),
         details: roundNumbers.map((roundNumber) => ({
           r: roundNumber,
           available: true,
-          institutions: primaryInstitutionId ? [primaryInstitutionId] : [],
+          institutions: assignedInstitutionId ? [assignedInstitutionId] : [],
           speakers: speakerIds,
         })),
         userDefinedData: { __devtools: { source: 'fill-setup' } },
@@ -210,20 +237,24 @@ export async function fillTournamentSetupData(
   )
   const adjudicatorDeficit = Math.max(0, normalizedRequest.targetAdjudicators - before.adjudicators)
   if (adjudicatorDeficit > 0) {
-    const payload = Array.from({ length: adjudicatorDeficit }).map(() => ({
-      tournamentId,
-      name: allocateName(adjudicatorNameSet, 'Dev Judge'),
-      strength: 5,
-      active: true,
-      preev: 0,
-      details: roundNumbers.map((roundNumber) => ({
-        r: roundNumber,
-        available: true,
-        institutions: primaryInstitutionId ? [primaryInstitutionId] : [],
-        conflicts: [],
-      })),
-      userDefinedData: { __devtools: { source: 'fill-setup' } },
-    }))
+    const payload = Array.from({ length: adjudicatorDeficit }).map(() => {
+      const assignedInstitution = randomPickOne(institutionPool)
+      const assignedInstitutionId = assignedInstitution?.id ?? ''
+      return {
+        tournamentId,
+        name: allocateName(adjudicatorNameSet, 'Dev Judge'),
+        strength: 5,
+        active: true,
+        preev: 0,
+        details: roundNumbers.map((roundNumber) => ({
+          r: roundNumber,
+          available: true,
+          institutions: assignedInstitutionId ? [assignedInstitutionId] : [],
+          conflicts: [],
+        })),
+        userDefinedData: { __devtools: { source: 'fill-setup' } },
+      }
+    })
 
     await AdjudicatorModel.insertMany(payload, { ordered: true })
     created.adjudicators += payload.length

@@ -13,6 +13,7 @@ export type FillSetupRequest = {
   targetTeams: number
   targetAdjudicators: number
   targetVenues: number
+  targetInstitutions: number
   speakersPerTeam: number
 }
 
@@ -43,6 +44,23 @@ export type FillRoundSubmissionsResponse = {
   after: SubmissionCountSummary
 }
 
+export type ClearRoundSubmissionsResponse = {
+  tournamentId: string
+  round: number
+  before: SubmissionCountSummary
+  deleted: SubmissionCountSummary
+  after: SubmissionCountSummary
+}
+
+export type CopyTournamentResponse = {
+  sourceTournamentId: string
+  tournamentId: string
+  sourceTournamentName: string
+  tournamentName: string
+  copiedCollections: Array<{ name: string; count: number }>
+  copiedDocuments: number
+}
+
 export async function requestFillSetup(
   tournamentId: string,
   payload: FillSetupRequest
@@ -60,4 +78,20 @@ export async function requestFillRoundSubmissions(
     payload
   )
   return response.data?.data as FillRoundSubmissionsResponse
+}
+
+export async function requestClearRoundSubmissions(
+  tournamentId: string,
+  payload: FillRoundSubmissionsRequest
+): Promise<ClearRoundSubmissionsResponse> {
+  const response = await api.post(
+    `/dev-tools/tournaments/${tournamentId}/clear-round-submissions`,
+    payload
+  )
+  return response.data?.data as ClearRoundSubmissionsResponse
+}
+
+export async function requestCopyTournament(tournamentId: string): Promise<CopyTournamentResponse> {
+  const response = await api.post(`/dev-tools/tournaments/${tournamentId}/copy-tournament`, {})
+  return response.data?.data as CopyTournamentResponse
 }

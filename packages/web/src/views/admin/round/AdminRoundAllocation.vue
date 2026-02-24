@@ -47,6 +47,28 @@
     <section :class="['stack', 'allocation-board', { card: !isEmbeddedRoute }]">
       <LoadingState v-if="sectionLoading" />
       <template v-else>
+        <section v-if="isEmbeddedRoute" class="card soft stack embedded-reference-card">
+          <h5>{{ $t('参照集計結果') }}</h5>
+          <p class="muted small">
+            {{
+              $t(
+                '参照集計結果を選ぶと、チーム/ジャッジの順位や平均を配置表に表示できます。近い実力同士の対戦確認や割り当て調整に使ってください。'
+              )
+            }}
+          </p>
+          <CompiledSnapshotSelect
+            v-if="detailSnapshotSelectOptions.length > 0"
+            v-model="selectedDetailSnapshotId"
+            class="embedded-detail-snapshot-select"
+            :label="$t('参照集計結果')"
+            :options="detailSnapshotSelectOptions"
+            :placeholder="$t('未選択')"
+          />
+          <p v-else class="muted small">
+            {{ $t('参照できる集計結果がありません。未選択のまま配置を確認できます。') }}
+          </p>
+        </section>
+
         <section class="stack board-block">
           <div class="row board-head">
             <div class="row board-title-row">
@@ -68,7 +90,7 @@
               </div>
             </div>
             <CompiledSnapshotSelect
-              v-if="detailSnapshotSelectOptions.length > 0"
+              v-if="detailSnapshotSelectOptions.length > 0 && !isEmbeddedRoute"
               v-model="selectedDetailSnapshotId"
               class="detail-snapshot-select"
               :label="$t('参照集計結果')"
@@ -314,12 +336,7 @@
           </div>
 
           <div class="row add-row-wrap">
-            <button
-              type="button"
-              class="add-row-button"
-              :disabled="locked"
-              @click="addRow"
-            >
+            <button type="button" class="add-row-button" :disabled="locked" @click="addRow">
               <span class="plus" aria-hidden="true">+</span>
               <span>{{ $t('行追加') }}</span>
             </button>
@@ -422,13 +439,6 @@
           </div>
         </section>
 
-        <section class="stack board-block">
-          <div class="row preview-head">
-            <h4>{{ $t('対戦表プレビュー') }}</h4>
-          </div>
-          <DrawPreviewTable :rows="previewRows" :gov-label="govLabel" :opp-label="oppLabel" />
-        </section>
-
         <div class="row allocation-toolbar">
           <div class="row action-row">
             <Button
@@ -474,11 +484,40 @@
               </span>
             </label>
             <span class="action-spacer"></span>
-            <Button variant="danger" size="sm" @click="openDeleteDrawModal" :disabled="!currentDraw">
+            <Button
+              variant="danger"
+              size="sm"
+              @click="openDeleteDrawModal"
+              :disabled="!currentDraw"
+            >
               {{ $t('削除') }}
             </Button>
           </div>
         </div>
+
+        <section class="stack board-block">
+          <div class="row preview-head">
+            <h4>{{ $t('対戦表プレビュー') }}</h4>
+          </div>
+          <DrawPreviewTable
+            ref="drawPreviewTableRef"
+            :rows="previewRows"
+            :gov-label="govLabel"
+            :opp-label="oppLabel"
+          />
+          <div class="stack preview-download-stack">
+            <div class="row section-download-row">
+              <Button
+                variant="secondary"
+                class="section-download-button"
+                :disabled="previewRows.length === 0"
+                @click="downloadDrawPreviewCsv"
+              >
+                {{ $t('CSVダウンロード') }}
+              </Button>
+            </div>
+          </div>
+        </section>
       </template>
     </section>
 
@@ -559,34 +598,54 @@
           </Button>
         </div>
         <div class="stack auto-generate-layout">
-          <section class="card soft stack auto-group">
+          <section class="card soft stack auto-group auto-group--basic">
             <h5 class="auto-group-title">{{ $t('基本設定') }}</h5>
-            <div class="grid">
-              <label class="stack">
+            <div class="auto-basic-grid">
+              <div class="stack auto-target-block">
                 <span class="option-title">
                   {{ $t('対象') }}
-                  <span class="help-tip" :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
                     >?</span
                   >
                 </span>
-                <select v-model="requestScope">
-                  <option value="all">{{ $t('全体') }}</option>
-                  <option value="teams">{{ $t('チーム') }}</option>
-                  <option value="adjudicators">{{ $t('ジャッジ') }}</option>
-                  <option value="venues">{{ $t('会場') }}</option>
-                </select>
+                <div class="auto-scope-tabs" role="tablist" :aria-label="$t('対象')">
+                  <button
+                    v-for="option in requestScopeTabOptions"
+                    :key="option.value"
+                    type="button"
+                    class="auto-scope-tab"
+                    :class="{ active: requestScope === option.value }"
+                    role="tab"
+                    :aria-selected="requestScope === option.value"
+                    :disabled="option.disabled"
+                    @click="selectRequestScope(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
                 <p class="muted tiny option-help-text">{{ requestScopeDescription }}</p>
-              </label>
-              <CompiledSnapshotSelect
-                v-if="autoSnapshotSelectOptions.length > 0"
-                v-model="selectedAutoSnapshotId"
-                :label="$t('参照集計結果')"
-                :options="autoSnapshotSelectOptions"
-                :placeholder="$t('未選択')"
-              />
-              <p v-else class="muted small">
-                {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
-              </p>
+                <p v-if="autoScopeRequiresExistingDraw" class="muted tiny option-help-text">
+                  {{
+                    $t(
+                      '既存のドローがないため、adjudicators/venues 生成には先にチーム割り当てが必要です。'
+                    )
+                  }}
+                </p>
+              </div>
+              <div class="stack auto-reference-block">
+                <CompiledSnapshotSelect
+                  v-if="autoSnapshotSelectOptions.length > 0"
+                  v-model="selectedAutoSnapshotId"
+                  :label="$t('参照集計結果')"
+                  :options="autoSnapshotSelectOptions"
+                  :placeholder="$t('未選択')"
+                />
+                <p v-else class="muted small">
+                  {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
+                </p>
+              </div>
             </div>
           </section>
 
@@ -596,7 +655,9 @@
               <label class="stack" v-if="scopeIncludesTeams">
                 <span class="option-title">
                   {{ $t('チームアルゴリズム') }}
-                  <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')">?</span>
+                  <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamAlgorithm">
                   <option value="standard">{{ $t('標準') }}</option>
@@ -609,7 +670,9 @@
               <label class="stack" v-if="scopeIncludesAdjudicators">
                 <span class="option-title">
                   {{ $t('ジャッジアルゴリズム') }}
-                  <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')">?</span>
+                  <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.adjudicatorAlgorithm">
                   <option value="standard">{{ $t('標準') }}</option>
@@ -621,7 +684,9 @@
                 <input v-model="autoOptions.shuffleVenue" type="checkbox" />
                 <span class="option-title">
                   {{ $t('会場シャッフル') }}
-                  <span class="help-tip" :title="$t('会場をランダムに割り当てる場合に有効にします。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('会場をランダムに割り当てる場合に有効にします。')"
                     >?</span
                   >
                 </span>
@@ -638,10 +703,16 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('チーム方式') }}
-                  <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')">?</span>
+                  <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamMethod">
-                  <option v-for="option in teamMethodOptions" :key="option.value" :value="option.value">
+                  <option
+                    v-for="option in teamMethodOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
                     {{ option.label }}
                   </option>
                 </select>
@@ -653,9 +724,17 @@
                   <span class="help-tip" :title="$t('適用する制約を複数選択できます。')">?</span>
                 </span>
                 <div class="checklist">
-                  <div v-for="option in teamFilterOptions" :key="option.value" class="stack checklist-option">
+                  <div
+                    v-for="option in teamFilterOptions"
+                    :key="option.value"
+                    class="stack checklist-option"
+                  >
                     <label class="row">
-                      <input v-model="autoOptions.teamFilters" type="checkbox" :value="option.value" />
+                      <input
+                        v-model="autoOptions.teamFilters"
+                        type="checkbox"
+                        :value="option.value"
+                      />
                       <span>{{ option.label }}</span>
                     </label>
                     <span class="muted tiny option-inline-help">{{ option.description }}</span>
@@ -667,7 +746,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('奇数ブラケット処理') }}
-                  <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
+                  <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamPowerpairOddBracket">
                   <option
@@ -714,10 +795,15 @@
                 </select>
                 <p class="muted tiny option-help-text">{{ teamPowerpairConflictDescription }}</p>
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('機関衝突重み') }}
-                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')"
+                    >?</span
+                  >
                 </span>
                 <input
                   v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
@@ -726,7 +812,10 @@
                   step="0.1"
                 />
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('過去対戦重み') }}
                   <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
@@ -738,7 +827,10 @@
                   step="0.1"
                 />
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('最大スワップ試行') }}
                   <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
@@ -771,7 +863,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('ペアリング方式') }}
-                  <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')">?</span>
+                  <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamStrictPairingMethod">
                   <option
@@ -787,7 +881,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('プルアップ方式') }}
-                  <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')">?</span>
+                  <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamStrictPullupMethod">
                   <option
@@ -820,13 +916,17 @@
                 <input v-model="autoOptions.teamStrictAvoidConflict" type="checkbox" />
                 <span class="option-title">
                   {{ $t('衝突回避') }}
-                  <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
+                  <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')"
+                    >?</span
+                  >
                 </span>
               </label>
               <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
                 <span class="option-title">
                   {{ $t('機関衝突重み') }}
-                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')"
+                    >?</span
+                  >
                 </span>
                 <input
                   v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
@@ -856,7 +956,11 @@
               <div class="stack">
                 <span class="option-title">
                   {{ $t('ジャッジフィルタ') }}
-                  <span class="help-tip" :title="$t('ジャッジ割り当て時に適用する制約を選択します。')">?</span>
+                  <span
+                    class="help-tip"
+                    :title="$t('ジャッジ割り当て時に適用する制約を選択します。')"
+                    >?</span
+                  >
                 </span>
                 <div class="checklist">
                   <div
@@ -881,7 +985,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('割当方式') }}
-                  <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')">?</span>
+                  <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.adjudicatorAssign">
                   <option
@@ -898,7 +1004,9 @@
                 <input v-model="autoOptions.adjudicatorScatter" type="checkbox" />
                 <span class="option-title">
                   {{ $t('パネル分散') }}
-                  <span class="help-tip" :title="$t('同系統のジャッジが偏らないように分散させます。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('同系統のジャッジが偏らないように分散させます。')"
                     >?</span
                   >
                 </span>
@@ -906,7 +1014,9 @@
               <p class="muted tiny option-help-text">
                 {{
                   autoOptions.adjudicatorScatter
-                    ? $t('有効時は同じ層のジャッジが一部屋に固まりすぎないよう、順に散らして配置します。')
+                    ? $t(
+                        '有効時は同じ層のジャッジが一部屋に固まりすぎないよう、順に散らして配置します。'
+                      )
                     : $t('無効時は上位から順に該当部屋へ詰めて配置します。')
                 }}
               </p>
@@ -940,8 +1050,11 @@
             </div>
           </section>
         </div>
-        <p v-if="requestError" class="error">{{ requestError }}</p>
-        <div class="row modal-actions">
+        <p v-if="requestError" class="error auto-request-error">{{ requestError }}</p>
+        <div class="row modal-actions auto-modal-actions">
+          <Button variant="ghost" size="sm" @click="closeAutoGenerateModal">
+            {{ $t('閉じる') }}
+          </Button>
           <Button
             size="sm"
             :loading="requestLoading"
@@ -964,8 +1077,15 @@
         <h4>{{ $t('ドロー削除') }}</h4>
         <p class="muted">{{ $t('このドローを削除しますか？') }}</p>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{ $t('キャンセル') }}</Button>
-          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteCurrentDraw">
+          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{
+            $t('キャンセル')
+          }}</Button>
+          <Button
+            variant="danger"
+            size="sm"
+            :disabled="isLoading"
+            @click="confirmDeleteCurrentDraw"
+          >
             {{ $t('削除') }}
           </Button>
         </div>
@@ -1065,6 +1185,8 @@ const props = withDefaults(
   }
 )
 
+type RequestScope = 'all' | 'teams' | 'adjudicators' | 'venues'
+
 function normalizeRoundValue(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
@@ -1079,7 +1201,10 @@ const round = computed(() => {
   return normalizeRoundValue(route.query.round) ?? 1
 })
 const isEmbeddedRoute = computed(
-  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+  () =>
+    props.embedded ||
+    route.path.startsWith('/admin-embed/') ||
+    String(route.query.embed ?? '') === '1'
 )
 
 const allocation = ref<DrawAllocationRow[]>([])
@@ -1089,7 +1214,7 @@ const locked = ref(false)
 const sectionLoading = ref(true)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
-const requestScope = ref<'all' | 'teams' | 'adjudicators' | 'venues'>('all')
+const requestScope = ref<RequestScope>('all')
 const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
 const generatedUserDefinedData = ref<Record<string, any> | null>(null)
@@ -1106,6 +1231,7 @@ const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
 const autoBreakSize = ref(8)
 const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('manual')
 const autoBreakSeeding = ref<BreakSeeding>('high_low')
+const drawPreviewTableRef = ref<{ getDisplayRows: () => DrawPreviewRow[] } | null>(null)
 const showNoticeDialog = ref(false)
 const noticeMessage = ref('')
 
@@ -1556,13 +1682,11 @@ const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
   if (compiledSnapshotOptions.value.length === 0) return null
   const selectedId = String(selectedDetailSnapshotId.value ?? '').trim()
   if (selectedId.length === 0) return null
-  const selected = compiledSnapshotOptions.value.find(
-    (option) => option.compiledId === selectedId
-  )
+  const selected = compiledSnapshotOptions.value.find((option) => option.compiledId === selectedId)
   return selected ?? null
 })
-const selectedDetailPayload = computed<Record<string, any>>(() =>
-  selectedDetailSnapshot.value?.payload ?? {}
+const selectedDetailPayload = computed<Record<string, any>>(
+  () => selectedDetailSnapshot.value?.payload ?? {}
 )
 const autoSnapshotSelectOptions = computed(() =>
   autoCompiledSnapshotOptions.value.map((option) => ({
@@ -1571,9 +1695,38 @@ const autoSnapshotSelectOptions = computed(() =>
   }))
 )
 
-function defaultCompiledSnapshotId(options: Array<Pick<CompiledSnapshotOption, 'compiledId' | 'rounds' | 'createdAt'>>) {
+function defaultCompiledSnapshotId(
+  options: Array<Pick<CompiledSnapshotOption, 'compiledId' | 'rounds' | 'createdAt'>>
+) {
   return resolveLatestCompiledIdContainingRound(options, defaultSnapshotTargetRound.value)
 }
+const autoScopeRequiresExistingDraw = computed(() => allocation.value.length === 0)
+const requestScopeTabOptions = computed<
+  Array<{ value: RequestScope; label: string; disabled: boolean }>
+>(() => [
+  { value: 'all', label: t('全体'), disabled: false },
+  { value: 'teams', label: t('チーム'), disabled: false },
+  {
+    value: 'adjudicators',
+    label: t('ジャッジ'),
+    disabled: autoScopeRequiresExistingDraw.value,
+  },
+  {
+    value: 'venues',
+    label: t('会場'),
+    disabled: autoScopeRequiresExistingDraw.value,
+  },
+])
+
+function scopeRequiresExistingDraw(scope: RequestScope) {
+  return autoScopeRequiresExistingDraw.value && (scope === 'adjudicators' || scope === 'venues')
+}
+
+function selectRequestScope(scope: RequestScope) {
+  if (scopeRequiresExistingDraw(scope)) return
+  requestScope.value = scope
+}
+
 const scopeIncludesTeams = computed(
   () => requestScope.value === 'all' || requestScope.value === 'teams'
 )
@@ -1595,9 +1748,7 @@ const requestScopeDescription = computed(
 )
 
 const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
-  standard: t(
-    '標準: 各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'
-  ),
+  standard: t('標準: 各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'),
   strict: t(
     '厳密: 勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。'
   ),
@@ -1639,13 +1790,22 @@ const teamMethodDescription = computed(() =>
   selectedDescription(teamMethodOptions.value, autoOptions.value.teamMethod)
 )
 const teamPowerpairOddBracketDescription = computed(() =>
-  selectedDescription(teamPowerpairOddBracketOptions.value, autoOptions.value.teamPowerpairOddBracket)
+  selectedDescription(
+    teamPowerpairOddBracketOptions.value,
+    autoOptions.value.teamPowerpairOddBracket
+  )
 )
 const teamPowerpairPairingDescription = computed(() =>
-  selectedDescription(teamPowerpairPairingOptions.value, autoOptions.value.teamPowerpairPairingMethod)
+  selectedDescription(
+    teamPowerpairPairingOptions.value,
+    autoOptions.value.teamPowerpairPairingMethod
+  )
 )
 const teamPowerpairConflictDescription = computed(() =>
-  selectedDescription(teamPowerpairConflictOptions.value, autoOptions.value.teamPowerpairAvoidConflicts)
+  selectedDescription(
+    teamPowerpairConflictOptions.value,
+    autoOptions.value.teamPowerpairAvoidConflicts
+  )
 )
 const teamStrictPairingDescription = computed(() =>
   selectedDescription(teamStrictPairingOptions.value, autoOptions.value.teamStrictPairingMethod)
@@ -1801,6 +1961,9 @@ function openAutoGenerateModal() {
   if (locked.value) {
     openNotice(t('ドローがロックされているため自動生成できません。'))
     return
+  }
+  if (scopeRequiresExistingDraw(requestScope.value)) {
+    requestScope.value = 'all'
   }
   if (autoOptions.value.teamAlgorithm === 'break') {
     hydrateAutoBreakPolicyFromRound()
@@ -1966,12 +2129,12 @@ async function requestAllocation() {
               },
               max_swap_iterations: autoOptions.value.teamPowerpairMaxSwapIterations,
             }
-        : autoOptions.value.teamAlgorithm === 'break'
-          ? {}
-        : {
-            method: autoOptions.value.teamMethod,
-            filters: autoOptions.value.teamFilters,
-          }
+          : autoOptions.value.teamAlgorithm === 'break'
+            ? {}
+            : {
+                method: autoOptions.value.teamMethod,
+                filters: autoOptions.value.teamFilters,
+              }
     const adjudicatorOptions =
       autoOptions.value.adjudicatorAlgorithm === 'traditional'
         ? {
@@ -2041,9 +2204,7 @@ async function requestAllocation() {
     if (data?.allocation) {
       const generatedRows = cloneAllocation(data.allocation)
       allocation.value =
-        requestScope.value === 'teams'
-          ? mergeTeamScopeAllocation(generatedRows)
-          : generatedRows
+        requestScope.value === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
       if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
         generatedUserDefinedData.value =
           data.userDefinedData && typeof data.userDefinedData === 'object'
@@ -2080,7 +2241,9 @@ function detailForRound(details: any[] | undefined, r: number) {
 }
 
 function normalizeInstitutionCategory(value: unknown): ConflictGroupCategory {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'region') return 'region'
   if (normalized === 'league') return 'league'
   return 'institution'
@@ -2179,6 +2342,57 @@ const previewRows = computed<DrawPreviewRow[]>(() => {
     }
   })
 })
+
+function formatPreviewCsvValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(',')
+  if (value === null || value === undefined || value === '') return ''
+  return String(value)
+}
+
+function escapeCsvValue(value: string) {
+  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function downloadDrawPreviewCsv() {
+  const displayRows = drawPreviewTableRef.value?.getDisplayRows() ?? previewRows.value
+  if (displayRows.length === 0) return
+  const headers = [
+    '#',
+    t('会場'),
+    govLabel.value,
+    oppLabel.value,
+    t('チェア'),
+    t('パネル'),
+    t('トレーニー'),
+  ]
+  const rows = displayRows.map((row, index) =>
+    [
+      index + 1,
+      row.venueLabel,
+      row.govName,
+      row.oppName,
+      row.chairsLabel,
+      row.panelsLabel,
+      row.traineesLabel,
+    ].map((cell) => escapeCsvValue(formatPreviewCsvValue(cell)))
+  )
+  const csv = [
+    headers.map((header) => escapeCsvValue(String(header))).join(','),
+    ...rows.map((row) => row.join(',')),
+  ].join('\n')
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `round_${round.value}_draw_preview.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 function teamNameById(id: string) {
   return teams.teams.find((team) => team._id === id)?.name ?? id
@@ -2293,9 +2507,11 @@ function clearDetail() {
   selectedDetail.value = null
 }
 
-const displayDetail = computed<
-  { type: 'team' | 'adjudicator' | 'venue'; id: string; fromDrag: boolean } | null
->(() => {
+const displayDetail = computed<{
+  type: 'team' | 'adjudicator' | 'venue'
+  id: string
+  fromDrag: boolean
+} | null>(() => {
   if (dragPayload.value) {
     const type =
       dragPayload.value.kind === 'team'
@@ -2641,7 +2857,10 @@ function openWarningPopover(index: number, event: Event) {
   if (top + estimatedHeight > window.innerHeight - viewportPadding) {
     top = rect.top - estimatedHeight - topGap
   }
-  top = Math.max(viewportPadding, Math.min(top, window.innerHeight - estimatedHeight - viewportPadding))
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - estimatedHeight - viewportPadding)
+  )
 
   warningPopoverStyle.value = {
     left: `${Math.round(left)}px`,
@@ -2735,7 +2954,16 @@ const expectedTeamIds = computed(() => {
   return set
 })
 
-const expectedAdjudicatorIds = computed(() => {
+const expectedBallotSubmitterIds = computed(() => {
+  const set = new Set<string>()
+  allocation.value.forEach((row) => {
+    ;(row.chairs ?? []).forEach((id) => set.add(id))
+    ;(row.panels ?? []).forEach((id) => set.add(id))
+  })
+  return set
+})
+
+const expectedFeedbackAdjudicatorIds = computed(() => {
   const set = new Set<string>()
   allocation.value.forEach((row) => {
     ;(row.chairs ?? []).forEach((id) => set.add(id))
@@ -2764,7 +2992,7 @@ const feedbackSubmittedIds = computed(() => {
 })
 
 const missingBallotSubmitters = computed(() => {
-  const ids = Array.from(expectedAdjudicatorIds.value).filter(
+  const ids = Array.from(expectedBallotSubmitterIds.value).filter(
     (id) => !ballotSubmittedIds.value.has(id)
   )
   return adjudicators.adjudicators.filter((adj) => ids.includes(adj._id))
@@ -2814,7 +3042,7 @@ const missingFeedbackFromTeams = computed(() => {
 
 const missingFeedbackFromAdjudicators = computed(() => {
   if (!evaluationFromAdjudicatorsEnabled.value) return []
-  const ids = Array.from(expectedAdjudicatorIds.value).filter(
+  const ids = Array.from(expectedFeedbackAdjudicatorIds.value).filter(
     (id) => !feedbackSubmittedIds.value.has(id)
   )
   return adjudicators.adjudicators.filter((adj) => ids.includes(adj._id))
@@ -2829,7 +3057,7 @@ const unknownFeedbackCount = computed(
 )
 
 const unsubmittedEnabled = computed(
-  () => expectedAdjudicatorIds.value.size > 0 || expectedTeamIds.value.size > 0
+  () => expectedFeedbackAdjudicatorIds.value.size > 0 || expectedTeamIds.value.size > 0
 )
 
 function onDragStart(kind: DragKind, id: string) {
@@ -3086,27 +3314,101 @@ watch(
 .auto-generate-header {
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid #dbe2ea;
 }
 
 .auto-label {
   gap: var(--space-2);
+  align-items: center;
+}
+
+.auto-label strong {
+  font-size: 18px;
+  letter-spacing: 0.01em;
 }
 
 .auto-generate-layout {
+  gap: var(--space-3);
+}
+
+.auto-basic-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.auto-target-block {
   gap: var(--space-2);
 }
 
-.auto-group {
-  border: 1px solid var(--color-border);
+.auto-reference-block {
   gap: var(--space-2);
+}
+
+.auto-scope-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  background: #eef2f7;
+}
+
+.auto-scope-tab {
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: #334155;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.auto-scope-tab:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.82);
+  color: #0f172a;
+}
+
+.auto-scope-tab.active {
+  background: #ffffff;
+  border-color: #93c5fd;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.auto-scope-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auto-group {
+  border: 1px solid #dbe2ea;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  gap: var(--space-2);
+}
+
+.auto-group--basic {
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
 }
 
 .auto-group-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--color-text);
+  letter-spacing: 0.01em;
 }
 
 .option-title {
@@ -3205,6 +3507,19 @@ watch(
   gap: var(--space-3);
 }
 
+.embedded-reference-card {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.embedded-reference-card h5 {
+  margin: 0;
+}
+
+.embedded-detail-snapshot-select {
+  width: min(520px, 100%);
+}
+
 .board-block {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -3235,6 +3550,20 @@ watch(
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.preview-download-stack {
+  margin-top: var(--space-2);
+  gap: var(--space-1);
+}
+
+.section-download-row {
+  justify-content: flex-end;
+}
+
+.section-download-button {
+  width: 100%;
+  justify-content: center;
 }
 
 .allocation-table-wrap {
@@ -3435,7 +3764,10 @@ watch(
 }
 
 .pill-entity {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .pill-severity--critical {
@@ -3750,6 +4082,11 @@ watch(
 
 .auto-modal {
   gap: var(--space-3);
+  padding: clamp(14px, 2vw, 20px);
+  border: 1px solid #cbd5e1;
+  background:
+    radial-gradient(circle at top right, rgba(14, 116, 144, 0.09), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
 .import-info {
@@ -3759,6 +4096,19 @@ watch(
 .modal-actions {
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.auto-request-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fff1f2;
+  padding: 8px 10px;
+}
+
+.auto-modal-actions {
+  border-top: 1px solid #dbe2ea;
+  padding-top: var(--space-2);
 }
 
 .floating-detail {
@@ -3777,6 +4127,14 @@ watch(
 }
 
 @media (max-width: 960px) {
+  .auto-basic-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-scope-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .floating-detail {
     top: auto;
     bottom: 12px;

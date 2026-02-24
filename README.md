@@ -78,8 +78,8 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
 ### Phase 5 追加（T12: 内容/表現の分離入力・修正）
 
 - 参加者バロット入力で前回提出をプリフィル
-  - 同一提出者・同一ラウンド・同一対戦の既存 ballot がある場合、`winner/comment/speakerIds/scores/matter/manner/best/poi` を読み込み
-  - Matter/Manner 入力ラウンドでも再提出時の修正コストを削減
+  - 同一端末・同一提出者・同一ラウンド・同一対戦で直前送信した ballot の `winner/comment/speakerIds/scores/matter/manner/best/poi` をローカル保存し、再訪時に読み込み
+  - サーバーから参加者向けに既存提出内容を返さず、提出内容の漏えいを防止
 - 管理画面の提出編集を拡張
   - `AdminTournamentSubmissions` に ballot 用のフォーム編集（`フォーム` / `JSON` 切替）を追加
   - Matter/Manner 分離入力と合計スコア入力を切替可能

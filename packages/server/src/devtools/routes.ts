@@ -2,7 +2,12 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
-import { fillRoundSubmissionsForRound, fillSetup } from './controllers.js'
+import {
+  clearRoundSubmissionsForRound,
+  copyTournament,
+  fillRoundSubmissionsForRound,
+  fillSetup,
+} from './controllers.js'
 
 const router: Router = Router()
 
@@ -16,6 +21,7 @@ const fillSetupSchema = {
     targetTeams: z.number().int().min(0),
     targetAdjudicators: z.number().int().min(0),
     targetVenues: z.number().int().min(0),
+    targetInstitutions: z.number().int().min(0),
     speakersPerTeam: z.number().int().min(1),
   }),
 }
@@ -25,6 +31,11 @@ const fillRoundSubmissionsSchema = {
   body: z.object({
     round: z.number().int().min(1),
   }),
+}
+
+const copyTournamentSchema = {
+  params: paramsSchema,
+  body: z.object({}),
 }
 
 router.post(
@@ -39,6 +50,20 @@ router.post(
   requireTournamentAdmin(),
   validateRequest(fillRoundSubmissionsSchema),
   fillRoundSubmissionsForRound
+)
+
+router.post(
+  '/tournaments/:tournamentId/clear-round-submissions',
+  requireTournamentAdmin(),
+  validateRequest(fillRoundSubmissionsSchema),
+  clearRoundSubmissionsForRound
+)
+
+router.post(
+  '/tournaments/:tournamentId/copy-tournament',
+  requireTournamentAdmin(),
+  validateRequest(copyTournamentSchema),
+  copyTournament
 )
 
 export { router as devToolsRouter }

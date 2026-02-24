@@ -117,6 +117,33 @@ describe('allocation warnings', () => {
     expect(warnings[1].counts).toEqual({ critical: 1, warn: 0, info: 0 })
   })
 
+  it('does not count trainees for adjudicator even-count warnings', () => {
+    const traineeCase = buildRowWarningStates({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { gov: 'team-1', opp: 'team-2' },
+          chairs: ['adj-1'],
+          panels: [],
+          trainees: ['adj-trainee-1'],
+        },
+      ],
+      isTeamAvailable: () => true,
+      isAdjudicatorAvailable: () => true,
+      isVenueAvailable: () => true,
+      teamInstitutions: () => [],
+      adjudicatorInstitutions: () => [],
+      institutionCategory: () => 'institution',
+      adjudicatorConflicts: () => [],
+      teamWin: () => undefined,
+      teamPastOpponents: () => [],
+      teamPastSides: () => [],
+      adjudicatorJudgedTeams: () => [],
+    })
+    const codes = traineeCase[0].warnings.map((warning) => warning.code)
+    expect(codes).not.toContain('adjudicator_even_count')
+  })
+
   it('builds entity index with max severity and row references', () => {
     const index = buildEntityWarningIndex(warnings)
     const team1 = index.get(warningEntityKey('team', 'team-1'))
