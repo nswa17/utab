@@ -103,13 +103,63 @@
             <table class="allocation-table">
               <thead>
                 <tr>
-                  <th class="match-col"></th>
-                  <th class="venue-col">{{ $t('会場') }}</th>
-                  <th class="team-col">{{ govLabel }}</th>
-                  <th class="team-col">{{ oppLabel }}</th>
-                  <th class="adjudicator-col">{{ $t('チェア') }}</th>
-                  <th class="adjudicator-col">{{ $t('パネル') }}</th>
-                  <th class="adjudicator-col">{{ $t('トレーニー') }}</th>
+                  <th class="match-col">
+                    <SortHeaderButton
+                      label="#"
+                      compact
+                      :indicator="allocationSortIndicator('match')"
+                      :aria-label="$t('行番号をドラッグして並び替え')"
+                      @click="setAllocationSort('match')"
+                    />
+                  </th>
+                  <th class="venue-col">
+                    <SortHeaderButton
+                      :label="$t('会場')"
+                      compact
+                      :indicator="allocationSortIndicator('venue')"
+                      @click="setAllocationSort('venue')"
+                    />
+                  </th>
+                  <th class="team-col">
+                    <SortHeaderButton
+                      :label="govLabel"
+                      compact
+                      :indicator="allocationSortIndicator('gov')"
+                      @click="setAllocationSort('gov')"
+                    />
+                  </th>
+                  <th class="team-col">
+                    <SortHeaderButton
+                      :label="oppLabel"
+                      compact
+                      :indicator="allocationSortIndicator('opp')"
+                      @click="setAllocationSort('opp')"
+                    />
+                  </th>
+                  <th class="adjudicator-col">
+                    <SortHeaderButton
+                      :label="$t('チェア')"
+                      compact
+                      :indicator="allocationSortIndicator('chairs')"
+                      @click="setAllocationSort('chairs')"
+                    />
+                  </th>
+                  <th class="adjudicator-col">
+                    <SortHeaderButton
+                      :label="$t('パネル')"
+                      compact
+                      :indicator="allocationSortIndicator('panels')"
+                      @click="setAllocationSort('panels')"
+                    />
+                  </th>
+                  <th class="adjudicator-col">
+                    <SortHeaderButton
+                      :label="$t('トレーニー')"
+                      compact
+                      :indicator="allocationSortIndicator('trainees')"
+                      @click="setAllocationSort('trainees')"
+                    />
+                  </th>
                   <th>{{ $t('備考') }}</th>
                   <th class="delete-col"></th>
                 </tr>
@@ -171,16 +221,22 @@
                           :class="[
                             'pill',
                             'draggable',
-                            'truncate-pill',
+                            'team-pill',
                             ...entityPillClasses('team', row.teams.gov),
                           ]"
-                          :title="teamName(row.teams.gov)"
+                          :title="teamPillTitle(row.teams.gov)"
                           :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.gov)"
                         >
-                          {{ teamName(row.teams.gov) }}
+                          <span class="team-pill-name">{{ teamName(row.teams.gov) }}</span>
+                          <span
+                            v-if="teamWinBadge(row.teams.gov)"
+                            :class="['team-win-badge', teamWinBadgeClass(row.teams.gov)]"
+                          >
+                            {{ teamWinBadge(row.teams.gov) }}
+                          </span>
                         </span>
                         <span v-else class="muted small">{{ $t('ここにチームをドロップ') }}</span>
                       </div>
@@ -197,16 +253,22 @@
                           :class="[
                             'pill',
                             'draggable',
-                            'truncate-pill',
+                            'team-pill',
                             ...entityPillClasses('team', row.teams.opp),
                           ]"
-                          :title="teamName(row.teams.opp)"
+                          :title="teamPillTitle(row.teams.opp)"
                           :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.opp)"
                         >
-                          {{ teamName(row.teams.opp) }}
+                          <span class="team-pill-name">{{ teamName(row.teams.opp) }}</span>
+                          <span
+                            v-if="teamWinBadge(row.teams.opp)"
+                            :class="['team-win-badge', teamWinBadgeClass(row.teams.opp)]"
+                          >
+                            {{ teamWinBadge(row.teams.opp) }}
+                          </span>
                         </span>
                         <span v-else class="muted small">{{ $t('ここにチームをドロップ') }}</span>
                       </div>
@@ -224,16 +286,25 @@
                           :class="[
                             'pill',
                             'draggable',
-                            'truncate-pill',
+                            'adjudicator-pill',
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
-                          :title="adjudicatorName(adjId)"
+                          :title="adjudicatorPillTitle(adjId)"
                           :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
-                          {{ adjudicatorName(adjId) }}
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
                         </span>
                         <span v-if="row.chairs.length === 0" class="muted small">{{
                           $t('ジャッジをドロップ')
@@ -253,16 +324,25 @@
                           :class="[
                             'pill',
                             'draggable',
-                            'truncate-pill',
+                            'adjudicator-pill',
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
-                          :title="adjudicatorName(adjId)"
+                          :title="adjudicatorPillTitle(adjId)"
                           :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
-                          {{ adjudicatorName(adjId) }}
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
                         </span>
                         <span v-if="row.panels.length === 0" class="muted small">{{
                           $t('ジャッジをドロップ')
@@ -282,16 +362,25 @@
                           :class="[
                             'pill',
                             'draggable',
-                            'truncate-pill',
+                            'adjudicator-pill',
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
-                          :title="adjudicatorName(adjId)"
+                          :title="adjudicatorPillTitle(adjId)"
                           :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
-                          {{ adjudicatorName(adjId) }}
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
                         </span>
                         <span v-if="row.trainees.length === 0" class="muted small">{{
                           $t('ジャッジをドロップ')
@@ -393,16 +482,22 @@
                   :class="[
                     'pill',
                     'draggable',
-                    'truncate-pill',
+                    'team-pill',
                     ...entityPillClasses('team', team._id),
                   ]"
-                  :title="team.name"
+                  :title="teamPillTitle(team._id)"
                   :draggable="!locked"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('team', team._id)"
                 >
-                  {{ team.name }}
+                  <span class="team-pill-name">{{ team.name }}</span>
+                  <span
+                    v-if="teamWinBadge(team._id)"
+                    :class="['team-win-badge', teamWinBadgeClass(team._id)]"
+                  >
+                    {{ teamWinBadge(team._id) }}
+                  </span>
                 </span>
               </div>
             </div>
@@ -423,16 +518,22 @@
                   :class="[
                     'pill',
                     'draggable',
-                    'truncate-pill',
+                    'adjudicator-pill',
                     ...entityPillClasses('adjudicator', adj._id),
                   ]"
-                  :title="adj.name"
+                  :title="adjudicatorPillTitle(adj._id)"
                   :draggable="!locked"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('adjudicator', adj._id)"
                 >
-                  {{ adj.name }}
+                  <span class="adjudicator-pill-name">{{ adj.name }}</span>
+                  <span
+                    v-if="adjudicatorAverageBadge(adj._id)"
+                    :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adj._id)]"
+                  >
+                    {{ adjudicatorAverageBadge(adj._id) }}
+                  </span>
                 </span>
               </div>
             </div>
@@ -635,15 +736,12 @@
                 </p>
               </div>
               <div class="stack auto-reference-block">
-                <CompiledSnapshotSelect
-                  v-if="autoSnapshotSelectOptions.length > 0"
-                  v-model="selectedAutoSnapshotId"
-                  :label="$t('参照集計結果')"
-                  :options="autoSnapshotSelectOptions"
-                  :placeholder="$t('未選択')"
-                />
-                <p v-else class="muted small">
-                  {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
+                <span class="option-title">{{ $t('参照集計結果') }}</span>
+                <p class="muted tiny option-help-text">
+                  {{ selectedDetailSnapshotLabel }}
+                </p>
+                <p class="muted tiny option-help-text">
+                  {{ $t('対戦表作成で選択中の参照集計結果を利用します。') }}
                 </p>
               </div>
             </div>
@@ -1130,6 +1228,7 @@ import { useStylesStore } from '@/stores/styles'
 import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
+import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import NoticeDialog from '@/components/common/NoticeDialog.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
@@ -1186,10 +1285,37 @@ const props = withDefaults(
 )
 
 type RequestScope = 'all' | 'teams' | 'adjudicators' | 'venues'
+type AllocationSortKey = 'match' | 'venue' | 'gov' | 'opp' | 'chairs' | 'panels' | 'trainees'
+type AllocationSortDirection = 'asc' | 'desc'
+const DRAW_REFERENCE_COMPILED_ID_KEY = 'reference_compiled_id'
 
 function normalizeRoundValue(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
+}
+
+function normalizeDrawUserDefinedData(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return { ...(value as Record<string, any>) }
+}
+
+function readDrawReferenceCompiledId(value: unknown): string {
+  const raw = normalizeDrawUserDefinedData(value)[DRAW_REFERENCE_COMPILED_ID_KEY]
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+function withDrawReferenceCompiledId(
+  userDefinedData: unknown,
+  compiledId: string
+): Record<string, any> | undefined {
+  const merged = normalizeDrawUserDefinedData(userDefinedData)
+  const normalizedCompiledId = compiledId.trim()
+  if (normalizedCompiledId) {
+    merged[DRAW_REFERENCE_COMPILED_ID_KEY] = normalizedCompiledId
+  } else {
+    delete merged[DRAW_REFERENCE_COMPILED_ID_KEY]
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined
 }
 
 const tournamentId = computed(() => route.params.tournamentId as string)
@@ -1222,7 +1348,6 @@ const showAutoGenerateModal = ref(false)
 const showAllocationImportModal = ref(false)
 const showDeleteDrawModal = ref(false)
 const compiledHistory = ref<any[]>([])
-const selectedAutoSnapshotId = ref('')
 const selectedDetailSnapshotId = ref('')
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
@@ -1231,9 +1356,17 @@ const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
 const autoBreakSize = ref(8)
 const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('manual')
 const autoBreakSeeding = ref<BreakSeeding>('high_low')
+const allocationSortState = ref<{ key: AllocationSortKey; direction: AllocationSortDirection }>({
+  key: 'match',
+  direction: 'asc',
+})
 const drawPreviewTableRef = ref<{ getDisplayRows: () => DrawPreviewRow[] } | null>(null)
 const showNoticeDialog = ref(false)
 const noticeMessage = ref('')
+const allocationSortCollator = new Intl.Collator(['ja', 'en'], {
+  numeric: true,
+  sensitivity: 'base',
+})
 
 function openNotice(message: string) {
   noticeMessage.value = message
@@ -1633,7 +1766,6 @@ const priorRounds = computed(() =>
     .slice()
     .sort((a, b) => a.round - b.round)
 )
-const priorRoundNumbers = computed(() => priorRounds.value.map((item) => Number(item.round)))
 const defaultSnapshotTargetRound = computed(() => (round.value > 1 ? round.value - 1 : null))
 type CompiledSnapshotOption = {
   compiledId: string
@@ -1666,12 +1798,6 @@ const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const autoCompiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() => {
-  const priorSet = new Set(priorRoundNumbers.value)
-  return compiledSnapshotOptions.value
-    .map((item) => ({ ...item }))
-    .filter((item) => item.rounds.some((value) => priorSet.has(value)))
-})
 const detailSnapshotSelectOptions = computed(() =>
   compiledSnapshotOptions.value.map((option) => ({
     value: option.compiledId,
@@ -1688,11 +1814,10 @@ const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
 const selectedDetailPayload = computed<Record<string, any>>(
   () => selectedDetailSnapshot.value?.payload ?? {}
 )
-const autoSnapshotSelectOptions = computed(() =>
-  autoCompiledSnapshotOptions.value.map((option) => ({
-    value: option.compiledId,
-    label: formatCompiledSnapshotOptionLabel(option, 'ja-JP'),
-  }))
+const selectedDetailSnapshotLabel = computed(() =>
+  selectedDetailSnapshot.value
+    ? formatCompiledSnapshotOptionLabel(selectedDetailSnapshot.value, 'ja-JP')
+    : t('未選択')
 )
 
 function defaultCompiledSnapshotId(
@@ -1869,6 +1994,7 @@ function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
       draw.userDefinedData && typeof draw.userDefinedData === 'object'
         ? (draw.userDefinedData as Record<string, any>)
         : null
+    selectedDetailSnapshotId.value = readDrawReferenceCompiledId(draw.userDefinedData)
   } else {
     allocation.value = [createEmptyAllocationRow()]
     drawOpened.value = false
@@ -1876,6 +2002,7 @@ function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
     locked.value = false
     savedDrawId.value = null
     generatedUserDefinedData.value = null
+    selectedDetailSnapshotId.value = ''
   }
   savedSnapshot.value = allocationSnapshot()
 }
@@ -1937,11 +2064,15 @@ async function save() {
     openNotice(t('同じチームが両サイドに設定されています。'))
     return
   }
+  const nextUserDefinedData = withDrawReferenceCompiledId(
+    generatedUserDefinedData.value,
+    String(selectedDetailSnapshotId.value ?? '')
+  )
   const saved = await draws.upsertDraw({
     tournamentId: tournamentId.value,
     round: round.value,
     allocation: validRows,
-    ...(generatedUserDefinedData.value ? { userDefinedData: generatedUserDefinedData.value } : {}),
+    ...(nextUserDefinedData ? { userDefinedData: nextUserDefinedData } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
@@ -1954,6 +2085,7 @@ async function save() {
   }
   savedSnapshot.value = allocationSnapshot()
   savedDrawId.value = saved?._id ?? savedDrawId.value
+  generatedUserDefinedData.value = nextUserDefinedData ?? null
 }
 
 function openAutoGenerateModal() {
@@ -2142,7 +2274,7 @@ async function requestAllocation() {
             scatter: autoOptions.value.adjudicatorScatter,
           }
         : { filters: autoOptions.value.adjudicatorFilters }
-    const snapshotId = String(selectedAutoSnapshotId.value ?? '').trim()
+    const snapshotId = String(selectedDetailSnapshotId.value ?? '').trim()
     const roundList = snapshotId ? [] : priorRounds.value.map((item) => item.round)
     if (
       (requestScope.value === 'adjudicators' || requestScope.value === 'venues') &&
@@ -2313,6 +2445,96 @@ function adjudicatorListLabel(ids: string[]) {
   return ids.map((id) => adjudicatorNameById(id)).join(', ')
 }
 
+function teamWinValue(teamId: string): number | null {
+  const result = compiledTeamMap.value.get(String(teamId))
+  const value = Number(result?.win)
+  return Number.isFinite(value) ? value : null
+}
+
+const maxTeamWin = computed(() => {
+  let max = 0
+  compiledTeamMap.value.forEach((result) => {
+    const value = Number(result?.win)
+    if (Number.isFinite(value) && value > max) {
+      max = value
+    }
+  })
+  return max
+})
+
+function formatTeamWinValue(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded)
+}
+
+function teamWinBadge(teamId: string) {
+  const value = teamWinValue(teamId)
+  if (value === null) return ''
+  const formatted = formatTeamWinValue(value)
+  return formatted.startsWith('-') ? formatted : `+${formatted}`
+}
+
+function teamWinBadgeClass(teamId: string) {
+  const value = teamWinValue(teamId)
+  if (value === null) return 'team-win-badge--none'
+  const max = maxTeamWin.value
+  if (max <= 0) return 'team-win-badge--low'
+  const ratio = value / max
+  if (ratio >= 0.67) return 'team-win-badge--high'
+  if (ratio >= 0.34) return 'team-win-badge--mid'
+  return 'team-win-badge--low'
+}
+
+function teamPillTitle(teamId: string) {
+  const label = teamName(teamId)
+  const winBadge = teamWinBadge(teamId)
+  return winBadge ? `${label} (${winBadge})` : label
+}
+
+function adjudicatorAverageValue(adjudicatorId: string): number | null {
+  const result = compiledAdjMap.value.get(String(adjudicatorId))
+  const value = Number(result?.average)
+  return Number.isFinite(value) ? value : null
+}
+
+const adjudicatorAverageRange = computed(() => {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  compiledAdjMap.value.forEach((result) => {
+    const value = Number(result?.average)
+    if (!Number.isFinite(value)) return
+    if (value < min) min = value
+    if (value > max) max = value
+  })
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: null as number | null, max: null as number | null }
+  }
+  return { min, max }
+})
+
+function adjudicatorAverageBadge(adjudicatorId: string) {
+  const value = adjudicatorAverageValue(adjudicatorId)
+  if (value === null) return ''
+  return String(Math.round(value))
+}
+
+function adjudicatorAverageBadgeClass(adjudicatorId: string) {
+  const value = adjudicatorAverageValue(adjudicatorId)
+  if (value === null) return 'adjudicator-average-badge--none'
+  const { min, max } = adjudicatorAverageRange.value
+  if (min === null || max === null || max <= min) return 'adjudicator-average-badge--mid'
+  const ratio = (value - min) / (max - min)
+  if (ratio >= 0.67) return 'adjudicator-average-badge--high'
+  if (ratio >= 0.34) return 'adjudicator-average-badge--mid'
+  return 'adjudicator-average-badge--low'
+}
+
+function adjudicatorPillTitle(adjudicatorId: string) {
+  const label = adjudicatorName(adjudicatorId)
+  const averageBadge = adjudicatorAverageBadge(adjudicatorId)
+  return averageBadge ? `${label} (${t('平均')}: ${averageBadge})` : label
+}
+
 const previewRows = computed<DrawPreviewRow[]>(() => {
   return allocation.value.map((row, index) => {
     const govId = row.teams.gov
@@ -2430,6 +2652,51 @@ const dragKind = computed(() => dragPayload.value?.kind ?? null)
 const rowDragSourceIndex = ref<number | null>(null)
 const rowDragTargetIndex = ref<number | null>(null)
 
+function allocationSortValue(row: DrawAllocationRow, key: AllocationSortKey) {
+  if (key === 'venue') return row.venue ? venueName(row.venue) : ''
+  if (key === 'gov') return row.teams.gov ? teamName(row.teams.gov) : ''
+  if (key === 'opp') return row.teams.opp ? teamName(row.teams.opp) : ''
+  if (key === 'chairs') return adjudicatorListLabel(row.chairs ?? [])
+  if (key === 'panels') return adjudicatorListLabel(row.panels ?? [])
+  if (key === 'trainees') return adjudicatorListLabel(row.trainees ?? [])
+  return ''
+}
+
+function applyAllocationSort(key: AllocationSortKey, direction: AllocationSortDirection) {
+  const rows = allocation.value.map((row, index) => ({ row, index }))
+  rows.sort((left, right) => {
+    if (key === 'match') {
+      return direction === 'asc' ? left.index - right.index : right.index - left.index
+    }
+    const leftValue = allocationSortValue(left.row, key)
+    const rightValue = allocationSortValue(right.row, key)
+    const diff = allocationSortCollator.compare(leftValue, rightValue)
+    if (diff !== 0) return direction === 'asc' ? diff : -diff
+    return left.index - right.index
+  })
+  allocation.value = rows.map((item) => item.row)
+  clearRowDragState()
+}
+
+function setAllocationSort(key: AllocationSortKey) {
+  if (locked.value) return
+  const nextDirection: AllocationSortDirection =
+    allocationSortState.value.key === key
+      ? allocationSortState.value.direction === 'asc'
+        ? 'desc'
+        : 'asc'
+      : key === 'match'
+        ? 'asc'
+        : 'asc'
+  allocationSortState.value = { key, direction: nextDirection }
+  applyAllocationSort(key, nextDirection)
+}
+
+function allocationSortIndicator(key: AllocationSortKey) {
+  if (allocationSortState.value.key !== key) return '↕'
+  return allocationSortState.value.direction === 'asc' ? '↑' : '↓'
+}
+
 function clearRowDragState() {
   rowDragSourceIndex.value = null
   rowDragTargetIndex.value = null
@@ -2470,6 +2737,7 @@ function moveAllocationRow(fromIndex: number, toIndex: number) {
   const [moved] = allocation.value.splice(fromIndex, 1)
   if (!moved) return
   allocation.value.splice(toIndex, 0, moved)
+  allocationSortState.value = { key: 'match', direction: 'asc' }
 }
 
 function onRowDrop(targetIndex: number, event: DragEvent) {
@@ -2578,6 +2846,7 @@ const detailRows = computed(() => {
   if (type === 'adjudicator') {
     const adj = adjudicators.adjudicators.find((a) => a._id === id)
     const result = compiledAdjMap.value.get(String(id))
+    const averageBadge = adjudicatorAverageBadge(id)
     const institutionsList = adj
       ? adjudicatorInstitutions(adj).map((inst) => institutionNameById(inst))
       : []
@@ -2586,7 +2855,7 @@ const detailRows = computed(() => {
       : []
     return [
       { label: t('順位'), value: result?.ranking ?? '—' },
-      { label: t('平均'), value: result?.average ?? '—' },
+      { label: t('平均'), value: averageBadge || '—' },
       {
         label: t('コンフリクトグループ'),
         value: institutionsList.length ? institutionsList.join(', ') : '—',
@@ -3076,6 +3345,14 @@ function removeTeamFromAllocation(id: string) {
   })
 }
 
+function findTeamPlacement(id: string): { row: DrawAllocationRow; side: 'gov' | 'opp' } | null {
+  for (const row of allocation.value) {
+    if (row.teams.gov === id) return { row, side: 'gov' }
+    if (row.teams.opp === id) return { row, side: 'opp' }
+  }
+  return null
+}
+
 function removeAdjudicatorFromAllocation(id: string) {
   allocation.value.forEach((row) => {
     row.chairs = (row.chairs ?? []).filter((item) => item !== id)
@@ -3090,11 +3367,27 @@ function removeVenueFromAllocation(id: string) {
   })
 }
 
+function findVenuePlacement(id: string): { row: DrawAllocationRow } | null {
+  for (const row of allocation.value) {
+    if (row.venue === id) return { row }
+  }
+  return null
+}
+
 function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
+  const targetTeamId = String(row.teams[side] ?? '')
+  if (targetTeamId === payload.id) {
+    onDragEnd()
+    return
+  }
+  const source = findTeamPlacement(payload.id)
   removeTeamFromAllocation(payload.id)
+  if (source && targetTeamId.length > 0 && targetTeamId !== payload.id) {
+    source.row.teams[source.side] = targetTeamId
+  }
   row.teams[side] = payload.id
   const other = side === 'gov' ? 'opp' : 'gov'
   if (row.teams[other] === payload.id) {
@@ -3118,7 +3411,16 @@ function dropVenue(row: DrawAllocationRow) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
+  const targetVenueId = String(row.venue ?? '')
+  if (targetVenueId === payload.id) {
+    onDragEnd()
+    return
+  }
+  const source = findVenuePlacement(payload.id)
   removeVenueFromAllocation(payload.id)
+  if (source && targetVenueId.length > 0 && targetVenueId !== payload.id) {
+    source.row.venue = targetVenueId
+  }
   row.venue = payload.id
   onDragEnd()
 }
@@ -3193,9 +3495,6 @@ watch(defaultSnapshotTargetRound, () => {
   if (compiledSnapshotOptions.value.length > 0) {
     selectedDetailSnapshotId.value = defaultCompiledSnapshotId(compiledSnapshotOptions.value)
   }
-  if (autoCompiledSnapshotOptions.value.length > 0) {
-    selectedAutoSnapshotId.value = defaultCompiledSnapshotId(autoCompiledSnapshotOptions.value)
-  }
 })
 
 watch(
@@ -3206,26 +3505,6 @@ watch(
       return
     }
     syncFromDraw(null)
-  },
-  { immediate: true }
-)
-
-watch(
-  autoCompiledSnapshotOptions,
-  (options) => {
-    if (options.length === 0) {
-      selectedAutoSnapshotId.value = ''
-      return
-    }
-    const selected = String(selectedAutoSnapshotId.value ?? '').trim()
-    if (!selected) {
-      selectedAutoSnapshotId.value = defaultCompiledSnapshotId(options)
-      return
-    }
-    const exists = options.some((option) => option.compiledId === selected)
-    if (!exists) {
-      selectedAutoSnapshotId.value = defaultCompiledSnapshotId(options)
-    }
   },
   { immediate: true }
 )
@@ -3592,6 +3871,21 @@ watch(
   font-weight: 600;
 }
 
+.allocation-table th.venue-col,
+.allocation-table th.team-col,
+.allocation-table th.adjudicator-col,
+.allocation-table td.venue-col,
+.allocation-table td.team-col,
+.allocation-table td.adjudicator-col {
+  text-align: center;
+}
+
+.allocation-table td.venue-col .drop-zone,
+.allocation-table td.team-col .drop-zone,
+.allocation-table td.adjudicator-col .drop-zone {
+  justify-content: center;
+}
+
 .match-col {
   width: 56px;
   text-align: center;
@@ -3761,6 +4055,100 @@ watch(
   max-width: 100%;
   color: #0f172a;
   box-shadow: 0 1px 1px rgba(15, 23, 42, 0.06);
+}
+
+.team-pill {
+  gap: 6px;
+  max-width: 100%;
+}
+
+.team-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adjudicator-pill {
+  gap: 6px;
+  max-width: 100%;
+}
+
+.adjudicator-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-win-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.team-win-badge--high {
+  color: #075985;
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+}
+
+.team-win-badge--mid {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.team-win-badge--low {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.team-win-badge--none {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.adjudicator-average-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  min-width: 26px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.adjudicator-average-badge--high {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.adjudicator-average-badge--mid {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.adjudicator-average-badge--low {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.adjudicator-average-badge--none {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 .pill-entity {

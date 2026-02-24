@@ -2,8 +2,9 @@ import { count, countCommon } from '../../general/math.js'
 import { findOne } from '../sys.js'
 import { accessDetail } from '../../general/tools.js'
 import {
+  buildInstitutionPriorityHistogram,
+  compareInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from '../common/institution-priority.js'
 
 export function filterByRandom(
@@ -63,14 +64,21 @@ export function filterByInstitution(team: any, a: any, b: any, { r, config }: an
   const bInstitutions = accessDetail(b, r).institutions as number[]
   const teamInstitutions = accessDetail(team, r).institutions as number[]
   const priorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
-  const aInsti =
-    Object.keys(priorityMap).length > 0
-      ? weightedCommonScore(aInstitutions || [], teamInstitutions || [], priorityMap)
-      : countCommon(aInstitutions || [], teamInstitutions || [])
-  const bInsti =
-    Object.keys(priorityMap).length > 0
-      ? weightedCommonScore(bInstitutions || [], teamInstitutions || [], priorityMap)
-      : countCommon(bInstitutions || [], teamInstitutions || [])
+  if (Object.keys(priorityMap).length > 0) {
+    const aHistogram = buildInstitutionPriorityHistogram(
+      aInstitutions || [],
+      teamInstitutions || [],
+      priorityMap
+    )
+    const bHistogram = buildInstitutionPriorityHistogram(
+      bInstitutions || [],
+      teamInstitutions || [],
+      priorityMap
+    )
+    return compareInstitutionPriorityHistograms(aHistogram, bHistogram)
+  }
+  const aInsti = countCommon(aInstitutions || [], teamInstitutions || [])
+  const bInsti = countCommon(bInstitutions || [], teamInstitutions || [])
   if (aInsti < bInsti) return -1
   if (aInsti > bInsti) return 1
   return 0

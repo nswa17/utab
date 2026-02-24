@@ -1,6 +1,8 @@
 <template>
-  <div class="app" :class="{ embedded: isEmbeddedRoute, 'with-devtools': showDevToolsBar }">
-    <DevToolsBar v-if="showDevToolsBar" />
+  <div
+    class="app"
+    :class="{ embedded: isEmbeddedRoute, 'with-devtools-dock': showDevToolsDock && devToolsOpen }"
+  >
     <AppHeader v-if="!isEmbeddedRoute" />
     <main class="content" :class="{ embedded: isEmbeddedRoute }">
       <div class="page" :class="{ embedded: isEmbeddedRoute }">
@@ -9,24 +11,45 @@
         </div>
       </div>
     </main>
-    <AppBottomBar v-if="!isEmbeddedRoute" />
+    <AppBottomBar
+      v-if="!isEmbeddedRoute"
+      :show-dev-tools-toggle="showDevToolsDock"
+      :dev-tools-open="devToolsOpen"
+      @toggle-dev-tools="devToolsOpen = !devToolsOpen"
+    />
+    <DevToolsDock v-if="showDevToolsDock && devToolsOpen" @close="devToolsOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from './stores/auth'
 import AppHeader from './components/common/AppHeader.vue'
 import AppBottomBar from './components/common/AppBottomBar.vue'
-import DevToolsBar from './devtools/DevToolsBar.vue'
+import DevToolsDock from './devtools/DevToolsDock.vue'
 
 const route = useRoute()
+const auth = useAuthStore()
+const devToolsOpen = ref(false)
 const isEmbeddedRoute = computed(() => route.path.startsWith('/admin-embed/'))
-const showDevToolsBar = computed(
-  () =>
-    import.meta.env.DEV &&
-    route.path.startsWith('/admin') &&
-    !route.path.startsWith('/admin-embed/')
+const isAdminRole = computed(() => auth.role === 'organizer' || auth.role === 'superuser')
+const hasAdminTournamentContext = computed(() => {
+  if (!route.path.startsWith('/admin/')) return false
+  const tournamentId = String(route.params.tournamentId ?? '').trim()
+  return tournamentId.length > 0
+})
+const showDevToolsDock = computed(
+  () => !isEmbeddedRoute.value && isAdminRole.value && hasAdminTournamentContext.value
+)
+
+watch(
+  showDevToolsDock,
+  (visible) => {
+    if (visible) return
+    devToolsOpen.value = false
+  },
+  { immediate: true }
 )
 </script>
 
@@ -37,8 +60,8 @@ const showDevToolsBar = computed(
   flex-direction: column;
 }
 
-.app.with-devtools {
-  padding-top: 70px;
+.app.with-devtools-dock {
+  padding-bottom: 56px;
 }
 
 .content {
@@ -48,6 +71,7 @@ const showDevToolsBar = computed(
 
 .app.embedded {
   min-height: auto;
+  padding-bottom: 0;
 }
 
 .content.embedded {
@@ -59,11 +83,5 @@ const showDevToolsBar = computed(
   padding: 0;
   margin: 0;
   max-width: none;
-}
-
-@media (max-width: 860px) {
-  .app.with-devtools {
-    padding-top: 118px;
-  }
 }
 </style>

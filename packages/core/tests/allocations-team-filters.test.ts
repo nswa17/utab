@@ -30,6 +30,25 @@ describe('allocations/teams/filters', () => {
     expect(filterByInstitution(team, a, b, { r: 1 })).toBe(1)
   })
 
+  it('prioritizes lower numeric conflict priority over multiple lower-importance overlaps', () => {
+    const compared = filterByInstitution(
+      { id: 10, details: [{ r: 1, institutions: [1, 2, 3] }] },
+      { id: 11, details: [{ r: 1, institutions: [1] }] },
+      { id: 12, details: [{ r: 1, institutions: [2, 3] }] },
+      {
+        r: 1,
+        config: {
+          institution_priority_map: {
+            1: 1,
+            2: 2,
+            3: 2,
+          },
+        },
+      }
+    )
+    expect(compared).toBe(1)
+  })
+
   it('filters by past opponent', () => {
     expect(filterByPastOpponent(team, a, b, { compiled_team_results: compiledTeamResults })).toBe(1)
   })

@@ -62,6 +62,6 @@ describe('allocations/teams', () => {
         },
       },
     })
-    expect(compared).toBe(-1)
+    expect(compared).toBe(1)
   })
 })

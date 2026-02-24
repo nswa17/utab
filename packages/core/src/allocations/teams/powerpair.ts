@@ -1,11 +1,13 @@
 import { shuffle, countCommon } from '../../general/math.js'
 import { sortTeams } from '../../general/sortings.js'
 import { accessDetail, filterAvailable } from '../../general/tools.js'
-import { decidePositions, findOne as findOneResult } from '../sys.js'
+import { decidePositions } from '../sys.js'
 import { sillyLogger } from '../../general/loggers.js'
 import {
+  buildInstitutionPriorityHistogram,
+  compareInstitutionPriorityHistograms,
+  mergeInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from '../common/institution-priority.js'
 
 type OddBracketMethod = 'pullup_top' | 'pullup_bottom' | 'pullup_random'
@@ -187,17 +189,21 @@ function pairConflictScore(
   teamById: Map<number, any>,
   resultById: Map<number, any>,
   round: number,
-  institutionPriorityMap: Record<number, number>,
-  conflictWeights: ConflictWeights
-): number {
+  institutionPriorityMap: Record<number, number>
+): { institution: Record<number, number>; pastOpponent: number } {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
   const institutionsA = (accessDetail(teamA, round)?.institutions ?? []) as number[]
   const institutionsB = (accessDetail(teamB, round)?.institutions ?? []) as number[]
-  const institutionConflict =
+  const institution =
     Object.keys(institutionPriorityMap).length > 0
-      ? weightedCommonScore(institutionsA, institutionsB, institutionPriorityMap)
-      : countCommon(institutionsA, institutionsB)
+      ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
+      : (() => {
+          const overlap = countCommon(institutionsA, institutionsB)
+          const histogram: Record<number, number> = {}
+          if (overlap > 0) histogram[1] = overlap
+          return histogram
+        })()
 
   const pastOpponentsA = Array.isArray(resultById.get(teamAId)?.past_opponents)
     ? (resultById.get(teamAId)?.past_opponents as number[])
@@ -205,14 +211,49 @@ function pairConflictScore(
   const pastOpponentsB = Array.isArray(resultById.get(teamBId)?.past_opponents)
     ? (resultById.get(teamBId)?.past_opponents as number[])
     : []
-  const pastConflict =
+  const pastOpponent =
     pastOpponentsA.filter((id) => id === teamBId).length +
     pastOpponentsB.filter((id) => id === teamAId).length
 
-  return (
-    conflictWeights.institution * institutionConflict +
-    conflictWeights.past_opponent * pastConflict
-  )
+  return { institution, pastOpponent }
+}
+
+type PairConflictProfile = ReturnType<typeof pairConflictScore>
+
+function mergePairConflictProfile(left: PairConflictProfile, right: PairConflictProfile) {
+  return {
+    institution: mergeInstitutionPriorityHistograms(left.institution, right.institution),
+    pastOpponent: left.pastOpponent + right.pastOpponent,
+  }
+}
+
+function comparePairConflictProfile(
+  left: PairConflictProfile,
+  right: PairConflictProfile,
+  conflictWeights: ConflictWeights
+) {
+  const compareInstitution = () =>
+    compareInstitutionPriorityHistograms(left.institution, right.institution)
+  const comparePast = () => {
+    if (left.pastOpponent < right.pastOpponent) return -1
+    if (left.pastOpponent > right.pastOpponent) return 1
+    return 0
+  }
+
+  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) {
+    return 0
+  }
+  if (conflictWeights.institution <= 0) return comparePast()
+  if (conflictWeights.past_opponent <= 0) return compareInstitution()
+
+  if (conflictWeights.institution >= conflictWeights.past_opponent) {
+    const institutionComparison = compareInstitution()
+    if (institutionComparison !== 0) return institutionComparison
+    return comparePast()
+  }
+  const pastComparison = comparePast()
+  if (pastComparison !== 0) return pastComparison
+  return compareInstitution()
 }
 
 function applyOneUpOneDown(
@@ -233,29 +274,14 @@ function applyOneUpOneDown(
       const upper = next[index]
       const lower = next[index + 1]
       if (upper.length !== 2 || lower.length !== 2) continue
-      const before =
-        pairConflictScore(
-          upper[0],
-          upper[1],
-          teamById,
-          resultById,
-          round,
-          institutionPriorityMap,
-          conflictWeights
-        ) +
-        pairConflictScore(
-          lower[0],
-          lower[1],
-          teamById,
-          resultById,
-          round,
-          institutionPriorityMap,
-          conflictWeights
-        )
+      const before = mergePairConflictProfile(
+        pairConflictScore(upper[0], upper[1], teamById, resultById, round, institutionPriorityMap),
+        pairConflictScore(lower[0], lower[1], teamById, resultById, round, institutionPriorityMap)
+      )
 
       let best:
         | {
-            improvement: number
+            after: PairConflictProfile
             upperPos: number
             lowerPos: number
           }
@@ -268,40 +294,38 @@ function applyOneUpOneDown(
             swappedLower[lowerPos],
             swappedUpper[upperPos],
           ]
-          const after =
+          const after = mergePairConflictProfile(
             pairConflictScore(
               swappedUpper[0],
               swappedUpper[1],
               teamById,
               resultById,
               round,
-              institutionPriorityMap,
-              conflictWeights
-            ) +
+              institutionPriorityMap
+            ),
             pairConflictScore(
               swappedLower[0],
               swappedLower[1],
               teamById,
               resultById,
               round,
-              institutionPriorityMap,
-              conflictWeights
+              institutionPriorityMap
             )
-          const improvement = before - after
-          if (improvement <= 0) continue
+          )
+          if (comparePairConflictProfile(after, before, conflictWeights) >= 0) continue
           if (
             !best ||
-            improvement > best.improvement ||
-            (improvement === best.improvement &&
+            comparePairConflictProfile(after, best.after, conflictWeights) < 0 ||
+            (comparePairConflictProfile(after, best.after, conflictWeights) === 0 &&
               (upperPos < best.upperPos ||
                 (upperPos === best.upperPos && lowerPos < best.lowerPos)))
           ) {
-            best = { improvement, upperPos, lowerPos }
+            best = { after, upperPos, lowerPos }
           }
         }
       }
 
-      if (best && best.improvement > 0) {
+      if (best) {
         ;[next[index][best.upperPos], next[index + 1][best.lowerPos]] = [
           next[index + 1][best.lowerPos],
           next[index][best.upperPos],

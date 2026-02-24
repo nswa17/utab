@@ -4,8 +4,10 @@ import { shuffle, combinations, isin, countCommon } from '../../general/math.js'
 import { decidePositions, findOne as findOneResult } from '../sys.js'
 import { accessDetail } from '../../general/tools.js'
 import {
+  buildInstitutionPriorityHistogram,
+  compareInstitutionPriorityHistograms,
+  mergeInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from '../common/institution-priority.js'
 
 function addInformationToDivision(
@@ -184,23 +186,32 @@ function normalizedWeight(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
 
-function pairConflictScore(
+type ConflictProfile = {
+  institution: Record<number, number>
+  pastOpponent: number
+}
+
+function pairConflictProfile(
   teamAId: number,
   teamBId: number,
   teamById: Map<number, any>,
   resultById: Map<number, any>,
   round: number,
-  institutionPriorityMap: Record<number, number>,
-  conflictWeights: { institution: number; past_opponent: number }
-): number {
+  institutionPriorityMap: Record<number, number>
+): ConflictProfile {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
   const institutionsA = (accessDetail(teamA, round)?.institutions ?? []) as number[]
   const institutionsB = (accessDetail(teamB, round)?.institutions ?? []) as number[]
-  const institutionOverlap =
+  const institutionOverlapProfile =
     Object.keys(institutionPriorityMap).length > 0
-      ? weightedCommonScore(institutionsA, institutionsB, institutionPriorityMap)
-      : countCommon(institutionsA, institutionsB)
+      ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
+      : (() => {
+          const overlap = countCommon(institutionsA, institutionsB)
+          const histogram: Record<number, number> = {}
+          if (overlap > 0) histogram[1] = overlap
+          return histogram
+        })()
 
   const pastA = Array.isArray(resultById.get(teamAId)?.past_opponents)
     ? (resultById.get(teamAId)?.past_opponents as number[])
@@ -211,35 +222,65 @@ function pairConflictScore(
   const pastOverlap =
     pastA.filter((id) => id === teamBId).length + pastB.filter((id) => id === teamAId).length
 
-  return (
-    conflictWeights.institution * institutionOverlap +
-    conflictWeights.past_opponent * pastOverlap
-  )
+  return {
+    institution: institutionOverlapProfile,
+    pastOpponent: pastOverlap,
+  }
 }
 
-function matchConflictScore(
+function mergeConflictProfiles(left: ConflictProfile, right: ConflictProfile): ConflictProfile {
+  return {
+    institution: mergeInstitutionPriorityHistograms(left.institution, right.institution),
+    pastOpponent: left.pastOpponent + right.pastOpponent,
+  }
+}
+
+function compareConflictProfiles(
+  left: ConflictProfile,
+  right: ConflictProfile,
+  conflictWeights: { institution: number; past_opponent: number }
+): number {
+  const compareInstitution = () =>
+    compareInstitutionPriorityHistograms(left.institution, right.institution)
+  const comparePast = () => {
+    if (left.pastOpponent < right.pastOpponent) return -1
+    if (left.pastOpponent > right.pastOpponent) return 1
+    return 0
+  }
+
+  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) {
+    return 0
+  }
+  if (conflictWeights.institution <= 0) return comparePast()
+  if (conflictWeights.past_opponent <= 0) return compareInstitution()
+
+  if (conflictWeights.institution >= conflictWeights.past_opponent) {
+    const institutionComparison = compareInstitution()
+    if (institutionComparison !== 0) return institutionComparison
+    return comparePast()
+  }
+  const pastComparison = comparePast()
+  if (pastComparison !== 0) return pastComparison
+  return compareInstitution()
+}
+
+function matchConflictProfile(
   match: number[],
   teamById: Map<number, any>,
   resultById: Map<number, any>,
   round: number,
-  institutionPriorityMap: Record<number, number>,
-  conflictWeights: { institution: number; past_opponent: number }
-): number {
-  let score = 0
+  institutionPriorityMap: Record<number, number>
+): ConflictProfile {
+  let profile: ConflictProfile = { institution: {}, pastOpponent: 0 }
   for (let i = 0; i < match.length; i += 1) {
     for (let j = i + 1; j < match.length; j += 1) {
-      score += pairConflictScore(
-        match[i],
-        match[j],
-        teamById,
-        resultById,
-        round,
-        institutionPriorityMap,
-        conflictWeights
+      profile = mergeConflictProfiles(
+        profile,
+        pairConflictProfile(match[i], match[j], teamById, resultById, round, institutionPriorityMap)
       )
     }
   }
-  return score
+  return profile
 }
 
 function resolveDp(
@@ -276,7 +317,7 @@ function resolveDp(
   for (let iteration = 0; iteration < swapsLimit; iteration += 1) {
     let best:
       | {
-          improvement: number
+          after: ConflictProfile
           leftIndex: number
           rightIndex: number
           leftPos: number
@@ -290,23 +331,22 @@ function resolveDp(
         const rightMatch = next[rightIndex]
         if (!Array.isArray(leftMatch) || !Array.isArray(rightMatch)) continue
 
-        const before =
-          matchConflictScore(
+        const before = mergeConflictProfiles(
+          matchConflictProfile(
             leftMatch,
             teamById,
             resultById,
             round,
-            institutionPriorityMap,
-            conflictWeights
-          ) +
-          matchConflictScore(
+            institutionPriorityMap
+          ),
+          matchConflictProfile(
             rightMatch,
             teamById,
             resultById,
             round,
-            institutionPriorityMap,
-            conflictWeights
+            institutionPriorityMap
           )
+        )
 
         for (let leftPos = 0; leftPos < leftMatch.length; leftPos += 1) {
           for (let rightPos = 0; rightPos < rightMatch.length; rightPos += 1) {
@@ -316,29 +356,27 @@ function resolveDp(
               swappedRight[rightPos],
               swappedLeft[leftPos],
             ]
-            const after =
-              matchConflictScore(
+            const after = mergeConflictProfiles(
+              matchConflictProfile(
                 swappedLeft,
                 teamById,
                 resultById,
                 round,
-                institutionPriorityMap,
-                conflictWeights
-              ) +
-              matchConflictScore(
+                institutionPriorityMap
+              ),
+              matchConflictProfile(
                 swappedRight,
                 teamById,
                 resultById,
                 round,
-                institutionPriorityMap,
-                conflictWeights
+                institutionPriorityMap
               )
-            const improvement = before - after
-            if (improvement <= 0) continue
+            )
+            if (compareConflictProfiles(after, before, conflictWeights) >= 0) continue
             if (
               !best ||
-              improvement > best.improvement ||
-              (improvement === best.improvement &&
+              compareConflictProfiles(after, best.after, conflictWeights) < 0 ||
+              (compareConflictProfiles(after, best.after, conflictWeights) === 0 &&
                 (leftIndex < best.leftIndex ||
                   (leftIndex === best.leftIndex &&
                     (rightIndex < best.rightIndex ||
@@ -346,7 +384,7 @@ function resolveDp(
                         (leftPos < best.leftPos ||
                           (leftPos === best.leftPos && rightPos < best.rightPos)))))))
             ) {
-              best = { improvement, leftIndex, rightIndex, leftPos, rightPos }
+              best = { after, leftIndex, rightIndex, leftPos, rightPos }
             }
           }
         }

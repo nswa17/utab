@@ -3,8 +3,9 @@ import { findOne } from '../sys.js'
 import { accessDetail, findAndAccessDetail } from '../../general/tools.js'
 import { evaluateAdjudicator } from '../../general/sortings.js'
 import {
+  buildInstitutionPriorityHistogram,
+  compareInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from '../common/institution-priority.js'
 
 export function filterByRandom(square: any, a: any, b: any, { r }: any): number {
@@ -72,14 +73,13 @@ export function filterByInstitution(
   )
   const aInst = accessDetail(adjudicator, r).institutions as number[]
   const priorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
-  const g1Conflict =
-    Object.keys(priorityMap).length > 0
-      ? weightedCommonScore(g1Inst, aInst || [], priorityMap)
-      : countCommon(g1Inst, aInst || [])
-  const g2Conflict =
-    Object.keys(priorityMap).length > 0
-      ? weightedCommonScore(g2Inst, aInst || [], priorityMap)
-      : countCommon(g2Inst, aInst || [])
+  if (Object.keys(priorityMap).length > 0) {
+    const g1Histogram = buildInstitutionPriorityHistogram(g1Inst, aInst || [], priorityMap)
+    const g2Histogram = buildInstitutionPriorityHistogram(g2Inst, aInst || [], priorityMap)
+    return compareInstitutionPriorityHistograms(g1Histogram, g2Histogram)
+  }
+  const g1Conflict = countCommon(g1Inst, aInst || [])
+  const g2Conflict = countCommon(g2Inst, aInst || [])
   if (g1Conflict > g2Conflict) return 1
   if (g1Conflict < g2Conflict) return -1
   return 0

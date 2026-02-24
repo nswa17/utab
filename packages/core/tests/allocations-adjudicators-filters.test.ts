@@ -91,7 +91,7 @@ describe('allocations/adjudicators/adjfilters', () => {
           },
         },
       })
-    ).toBe(-1)
+    ).toBe(1)
   })
 
   it('filters by explicit conflicts', () => {

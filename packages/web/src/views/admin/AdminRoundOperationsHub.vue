@@ -252,14 +252,13 @@
                 <p class="muted small">
                   {{
                     $t(
-                      '提出結果を集計して、このラウンド終了時点の成績を確定します。成績に含めるラウンドを下で選択してください。未選択のラウンドはこの時点の成績に反映されません。'
+                      '提出結果を集計して、このラウンド終了時点の成績を確定します。対戦表作成で選択した参照集計ラウンドに、このラウンドを加えた対象で集計します。'
                     )
                   }}
                 </p>
                 <section class="card soft stack compile-option-panel">
                   <h5>{{ $t('集計オプション') }}</h5>
                   <CompileOptionsEditor
-                    v-model:source-rounds="selectedCompileRounds"
                     v-model:ranking-preset="rankingPriorityPreset"
                     v-model:ranking-order="rankingPriorityOrder"
                     v-model:winner-policy="compileWinnerPolicy"
@@ -270,8 +269,7 @@
                     v-model:missing-data-policy="compileMissingDataPolicy"
                     :show-winner-scoring="false"
                     :show-ranking-priority="true"
-                    :show-source-rounds="true"
-                    :source-round-options="compileSourceRoundOptions"
+                    :show-source-rounds="false"
                     :disabled="isLoading"
                   />
                 </section>
@@ -338,14 +336,6 @@
                 >
                   <div class="row compile-result-head">
                     <strong>{{ $t('集計レポート') }}</strong>
-                    <CompiledDiffBaselineSelect
-                      v-if="diffBaselineCompiledOptions.length > 0"
-                      v-model="compileDiffBaselineCompiledId"
-                      class="compile-result-baseline-select"
-                      :label="$t('差分比較')"
-                      :options="diffBaselineCompiledOptions"
-                      :placeholder="$t('未選択')"
-                    />
                   </div>
                   <div v-if="showCompileDiffLegend" class="row diff-legend">
                     <span class="diff-legend-item">
@@ -476,7 +466,6 @@ import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
 import CompileSaveSnapshotModal from '@/components/common/CompileSaveSnapshotModal.vue'
-import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
@@ -544,6 +533,7 @@ const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.
 const selectedRound = ref<number | null>(null)
 type HubTask = 'submissions' | 'compile' | 'draw' | 'publish'
 type HubTaskState = 'done' | 'ready' | 'blocked'
+const DRAW_REFERENCE_COMPILED_ID_KEY = 'reference_compiled_id'
 const hubTaskOrder: HubTask[] = ['draw', 'publish', 'submissions', 'compile']
 const activeTask = ref<HubTask>('draw')
 const roundTaskSelection = ref<Record<number, HubTask>>({})
@@ -582,9 +572,7 @@ const compileBestAggregation = ref<CompileOptions['duplicate_normalization']['be
 const compileMissingDataPolicy = ref<CompileOptions['missing_data_policy']>(
   DEFAULT_COMPILE_OPTIONS.missing_data_policy
 )
-const compileDiffBaselineCompiledId = ref('')
 const compiledHistory = ref<any[]>([])
-const selectedCompileRounds = ref<number[]>([])
 const forceCompileModalOpen = ref(false)
 const publicationSaving = ref(false)
 const compileSortKey = ref('ranking')
@@ -629,6 +617,34 @@ const selectedRoundData = computed(
 const selectedDraw = computed(
   () => drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
+function readDrawReferenceCompiledId(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  const raw = (value as Record<string, unknown>)[DRAW_REFERENCE_COMPILED_ID_KEY]
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+const selectedRoundReferenceCompiledId = computed(() =>
+  readDrawReferenceCompiledId(selectedDraw.value?.userDefinedData)
+)
+function normalizeCompiledRoundNumbers(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((entry: any) => Number(entry?.r ?? entry?.round ?? entry))
+        .filter((roundNumber: number) => Number.isInteger(roundNumber) && roundNumber >= 1)
+    )
+  ).sort((left, right) => left - right)
+}
+const selectedRoundReferenceCompiledRounds = computed<number[]>(() => {
+  const baselineId = selectedRoundReferenceCompiledId.value
+  if (!baselineId) return []
+  const matched = compiledHistory.value.find(
+    (item) => String(item?._id ?? '').trim() === baselineId
+  )
+  if (!matched) return []
+  const payload = matched?.payload && typeof matched.payload === 'object' ? matched.payload : matched
+  return normalizeCompiledRoundNumbers((payload as Record<string, any>)?.rounds)
+})
 const priorRounds = computed(() => {
   if (selectedRound.value === null) return []
   return sortedRounds.value.filter((round) => round.round < selectedRound.value!)
@@ -674,26 +690,12 @@ const selectedRoundHasDraw = computed(() =>
 const publicationSwitchBusy = computed(
   () => publicationSaving.value || roundsStore.loading || drawsStore.loading
 )
-const compileTargetRounds = computed(() => {
+const effectiveCompileTargetRounds = computed(() => {
   if (selectedRound.value === null) return []
-  return sortedRounds.value
-    .filter((round) => round.round <= selectedRound.value!)
-    .map((round) => round.round)
+  const rounds = new Set<number>(selectedRoundReferenceCompiledRounds.value)
+  rounds.add(selectedRound.value)
+  return Array.from(rounds).sort((left, right) => left - right)
 })
-const compileSourceRoundOptions = computed(() =>
-  sortedRounds.value.map((round) => ({
-    value: round.round,
-    label: roundLabel(round.round),
-    disabled:
-      selectedRound.value === null ||
-      round.round > selectedRound.value,
-  }))
-)
-const effectiveCompileTargetRounds = computed(() =>
-  compileTargetRounds.value.filter((roundNumber) =>
-    selectedCompileRounds.value.includes(roundNumber)
-  )
-)
 const canSavePreview = computed(() => compileManualSaveEnabled && compileWorkflow.canSave)
 const manualCompileInputKey = computed(() =>
   buildCompileInputKey(manualCompileSource.value, manualCompileOptionOverrides.value)
@@ -769,15 +771,6 @@ const compiledSnapshotRoundSet = computed(() => {
       .filter((value: number) => Number.isInteger(value) && value >= 1)
   )
 })
-const currentCompiledId = computed(() => {
-  if (shouldUseCompilePreviewPayload.value) {
-    return String(compiledStore.compiled?._id ?? '').trim()
-  }
-  return String(compileDisplayPayload.value?._id ?? '').trim()
-})
-const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
-  baselineCompiledOptions.value.filter((item) => item.compiledId !== currentCompiledId.value)
-)
 const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
 const selectedRoundLatestSavedCompiledLabel = computed(() => {
   const payload = selectedRoundLatestSavedCompiled.value
@@ -807,8 +800,14 @@ const compileRowsBase = computed<any[]>(() => {
     ? compileDisplayPayload.value!.compiled_team_results
     : []
 })
+const selectedCompileDiffBaselineCompiledId = computed(() => {
+  const baselineId = selectedRoundReferenceCompiledId.value
+  if (!baselineId) return ''
+  const exists = compiledHistory.value.some((item) => resolveCompiledDocId(item) === baselineId)
+  return exists ? baselineId : ''
+})
 const selectedCompileDiffBaselineCompiled = computed<Record<string, any> | null>(() => {
-  const baselineId = compileDiffBaselineCompiledId.value.trim()
+  const baselineId = selectedCompileDiffBaselineCompiledId.value
   if (!baselineId) return null
   const matched = compiledHistory.value.find((item) => resolveCompiledDocId(item) === baselineId)
   if (!matched) return null
@@ -829,7 +828,7 @@ function stripDiffFields(rows: any[]): any[] {
 const compileRows = computed<any[]>(() => {
   const currentRows = stripDiffFields(compileRowsBase.value)
   if (
-    !compileDiffBaselineCompiledId.value.trim() ||
+    !selectedCompileDiffBaselineCompiledId.value ||
     selectedCompileDiffBaselineRows.value.length === 0
   ) {
     return currentRows
@@ -838,7 +837,7 @@ const compileRows = computed<any[]>(() => {
 })
 const showCompileDiffLegend = computed(
   () =>
-    compileDiffBaselineCompiledId.value.trim().length > 0 &&
+    selectedCompileDiffBaselineCompiledId.value.length > 0 &&
     compileRows.value.some((row) => row?.diff?.ranking)
 )
 const compileColumns = computed(() => {
@@ -1252,17 +1251,6 @@ const compileIncludeLabelsFromRound = computed(() =>
   includeLabelsFromRoundDetails(selectedRoundData.value?.userDefinedData)
 )
 
-function normalizeCompileSourceRounds(sourceRounds: unknown, maxRound: number): number[] {
-  if (!Array.isArray(sourceRounds)) return []
-  return Array.from(
-    new Set(
-      sourceRounds
-        .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value <= maxRound)
-    )
-  ).sort((left, right) => left - right)
-}
-
 function applyCompileDraftFromRound() {
   if (selectedRound.value === null) return
   const userDefined = (selectedRoundData.value?.userDefinedData ?? {}) as Record<string, any>
@@ -1280,19 +1268,12 @@ function applyCompileDraftFromRound() {
   compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
-  const allowedRounds = compileTargetRounds.value
-  const configuredRounds = normalizeCompileSourceRounds(
-    rawCompile.source_rounds,
-    selectedRound.value
-  ).filter((roundNumber) => allowedRounds.includes(roundNumber))
-  selectedCompileRounds.value =
-    configuredRounds.length > 0 ? configuredRounds : allowedRounds.slice()
 }
 
 function buildCompileOptions(overrides?: {
   missing_data_policy?: CompileOptions['missing_data_policy']
 }): CompileOptions {
-  const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
+  const selectedBaselineId = selectedCompileDiffBaselineCompiledId.value
   const diffBaseline =
     selectedBaselineId.length > 0
       ? { mode: 'compiled' as const, compiled_id: selectedBaselineId }
@@ -2050,10 +2031,6 @@ async function refresh() {
       refreshCompiledHistory(),
     ])
     submissionsLoadError.value = submissionsStore.error ?? ''
-    const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
-    if (!selectedBaselineId) {
-      applyDefaultCompileDiffBaseline()
-    }
     const queryRound = Number(route.query.round)
     const hasQueryRound = Number.isInteger(queryRound) && queryRound >= 1
     if (hasQueryRound && sortedRounds.value.some((item) => item.round === queryRound)) {
@@ -2153,7 +2130,6 @@ async function runCompileWithSource(
   compiledStore.clearPreview()
   compileMessage.value = t('集計が完了しました。')
   await Promise.all([compiledStore.fetchLatest(tournamentId.value), refreshCompiledHistory()])
-  applyDefaultCompileDiffBaseline()
 }
 
 async function runPreviewWithSource(
@@ -2197,7 +2173,6 @@ async function runPreviewWithSource(
   )
   compileMessage.value = t('仮集計を実行しました。内容を確認して保存してください。')
   trackCompileMetric('preview_run', source)
-  applyDefaultCompileDiffBaseline()
 }
 
 function openForceCompileModal(action: 'compile' | 'preview' | 'save' = 'compile') {
@@ -2293,7 +2268,6 @@ async function saveCompiledSnapshot() {
   compileMessage.value = t('集計結果を保存しました。')
   trackCompileMetric('save_snapshot', source)
   await refreshCompiledHistory()
-  applyDefaultCompileDiffBaseline()
 }
 
 async function refreshCompiledHistory() {
@@ -2304,15 +2278,6 @@ async function refreshCompiledHistory() {
   } catch {
     compiledHistory.value = []
   }
-}
-
-function applyDefaultCompileDiffBaseline() {
-  const targetRound =
-    selectedRound.value !== null && selectedRound.value > 1 ? selectedRound.value - 1 : null
-  compileDiffBaselineCompiledId.value = resolveLatestCompiledIdContainingRound(
-    diffBaselineCompiledOptions.value,
-    targetRound
-  )
 }
 
 async function saveDrawPublication(
@@ -2512,19 +2477,6 @@ watch(
 )
 
 watch(
-  compileTargetRounds,
-  (rounds) => {
-    const filtered = selectedCompileRounds.value.filter((round) => rounds.includes(round))
-    if (filtered.length > 0) {
-      selectedCompileRounds.value = filtered
-      return
-    }
-    selectedCompileRounds.value = rounds.slice()
-  },
-  { immediate: true }
-)
-
-watch(
   selectedRound,
   (nextRound, previousRound) => {
     if (nextRound !== previousRound) {
@@ -2533,7 +2485,6 @@ watch(
     manualCompileSource.value = 'submissions'
     manualCompileOptionOverrides.value = undefined
     applyCompileDraftFromRound()
-    applyDefaultCompileDiffBaseline()
   },
   { immediate: true }
 )
@@ -2543,26 +2494,6 @@ watch(submissionEditorTarget, (target) => {
   if (target) return
   closeSubmissionEditorModal()
 })
-
-watch(
-  diffBaselineCompiledOptions,
-  (options) => {
-    const selectedBaselineId = compileDiffBaselineCompiledId.value.trim()
-    if (options.length === 0) {
-      compileDiffBaselineCompiledId.value = ''
-      return
-    }
-    if (!selectedBaselineId) {
-      applyDefaultCompileDiffBaseline()
-      return
-    }
-    const exists = options.some((option) => option.compiledId === selectedBaselineId)
-    if (!exists) {
-      applyDefaultCompileDiffBaseline()
-    }
-  },
-  { immediate: true }
-)
 
 watch(
   tournamentId,
@@ -2963,20 +2894,6 @@ watch(
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
-}
-
-.compile-result-baseline-select {
-  margin-left: auto;
-  width: min(340px, 100%);
-}
-
-.compile-result-baseline-select :deep(.compiled-snapshot-select) {
-  min-width: 0;
-}
-
-.compile-result-baseline-select :deep(select) {
-  min-height: 34px;
-  font-size: 12px;
 }
 
 .compile-download-row {
