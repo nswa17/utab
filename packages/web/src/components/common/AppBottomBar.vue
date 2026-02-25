@@ -12,7 +12,7 @@
       </button>
 
       <div class="lang-switch-shell" role="group" :aria-label="$t('表示言語')">
-        <span class="lang-switch-label">{{ $t('表示言語') }}</span>
+        <span class="lang-switch-icon" aria-hidden="true">🌐</span>
         <div class="lang-switch-track">
           <button
             type="button"
@@ -21,7 +21,7 @@
             :aria-pressed="locale === 'ja' ? 'true' : 'false'"
             @click="changeLocale('ja')"
           >
-            {{ $t('日本語') }}
+            日本語
           </button>
           <button
             type="button"
@@ -115,12 +115,15 @@ function changeLocale(next: Locale) {
     0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
-.lang-switch-label {
+.lang-switch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  padding-left: 6px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .lang-switch-track {
@@ -178,7 +181,7 @@ function changeLocale(next: Locale) {
     min-width: 140px;
   }
 
-  .lang-switch-label {
+  .lang-switch-icon {
     display: none;
   }
 }

@@ -39,11 +39,23 @@ const auth = useAuthStore()
 const username = ref('')
 const password = ref('')
 
+function resolveRedirectTarget(rawRedirect: unknown): string {
+  const redirect = Array.isArray(rawRedirect) ? rawRedirect[0] : rawRedirect
+  if (typeof redirect !== 'string' || !redirect.startsWith('/')) return '/admin'
+  if (redirect.startsWith('/login')) return '/admin'
+  return redirect
+}
+
 async function handleSubmit() {
-  const ok = await auth.login(username.value, password.value)
+  if (auth.loading) return
+  const ok = await auth.login(username.value.trim(), password.value)
   if (ok) {
-    const redirect = (route.query.redirect as string) || '/admin'
-    router.push(redirect)
+    const redirect = resolveRedirectTarget(route.query.redirect)
+    try {
+      await router.replace(redirect)
+    } catch {
+      await router.replace('/admin')
+    }
   }
 }
 </script>

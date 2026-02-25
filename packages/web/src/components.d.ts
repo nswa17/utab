@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdjudicatorSlides: typeof import('./components/slides/AdjudicatorSlides.vue')['default']
+    AllocationTableShell: typeof import('./components/common/AllocationTableShell.vue')['default']
     AppBottomBar: typeof import('./components/common/AppBottomBar.vue')['default']
     AppHeader: typeof import('./components/common/AppHeader.vue')['default']
     BestSlides: typeof import('./components/slides/BestSlides.vue')['default']
@@ -41,13 +42,12 @@ declare module 'vue' {
     NoticeDialog: typeof import('./components/common/NoticeDialog.vue')['default']
     NumberBox: typeof import('./components/common/NumberBox.vue')['default']
     PoiSlides: typeof import('./components/slides/PoiSlides.vue')['default']
+    PriorityDragSelector: typeof import('./components/common/PriorityDragSelector.vue')['default']
     ReloadButton: typeof import('./components/common/ReloadButton.vue')['default']
     ResultsEditor: typeof import('./components/results/ResultsEditor.vue')['default']
     RoundMotionEditor: typeof import('./components/common/RoundMotionEditor.vue')['default']
     RoundOptionEditor: typeof import('./components/common/RoundOptionEditor.vue')['default']
     RoundPublicationSwitches: typeof import('./components/common/RoundPublicationSwitches.vue')['default']
-    RouterLink: typeof import('vue-router')['RouterLink']
-    RouterView: typeof import('vue-router')['RouterView']
     ScoreChange: typeof import('./components/mstat/ScoreChange.vue')['default']
     ScoreHistogram: typeof import('./components/mstat/ScoreHistogram.vue')['default']
     ScoreRange: typeof import('./components/mstat/ScoreRange.vue')['default']

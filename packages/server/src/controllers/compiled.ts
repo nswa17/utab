@@ -26,7 +26,7 @@ import {
   type CompileOptions,
   type CompileOptionsInput,
 } from '../types/compiled-options.js'
-import { buildDetailsForRounds, normalizeScoreWeights } from './shared/allocation-support.js'
+import { buildDetailsForRounds, buildIdMaps, normalizeScoreWeights } from './shared/allocation-support.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type BallotPayload = {
@@ -221,6 +221,93 @@ function validatePreviewToken(
 function toNumberArray(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => (typeof item === 'number' ? item : Number(item)))
+}
+
+function buildStringIdMaps(ids: Iterable<string>): { map: Map<string, number>; reverse: Map<number, string> } {
+  const normalizedIds = Array.from(
+    new Set(
+      Array.from(ids)
+        .map((id) => String(id ?? '').trim())
+        .filter((id) => id.length > 0)
+    )
+  ).sort((left, right) => left.localeCompare(right))
+  const map = new Map<string, number>()
+  const reverse = new Map<number, string>()
+  normalizedIds.forEach((id, index) => {
+    const numericId = index + 1
+    map.set(id, numericId)
+    reverse.set(numericId, id)
+  })
+  return { map, reverse }
+}
+
+function restoreMappedId(value: unknown, reverse: Map<number, string>): string {
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue) && reverse.has(numericValue)) {
+    return reverse.get(numericValue) ?? String(value ?? '')
+  }
+  return String(value ?? '')
+}
+
+function remapCompiledTeamResults(
+  teamResults: any[],
+  teamReverse: Map<number, string>
+): any[] {
+  return teamResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, teamReverse),
+    past_opponents: Array.isArray(result?.past_opponents)
+      ? result.past_opponents.map((id: unknown) => restoreMappedId(id, teamReverse))
+      : result?.past_opponents,
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, teamReverse),
+          opponents: Array.isArray(detail?.opponents)
+            ? detail.opponents.map((id: unknown) => restoreMappedId(id, teamReverse))
+            : detail?.opponents,
+        }))
+      : result?.details,
+  }))
+}
+
+function remapCompiledSpeakerResults(
+  speakerResults: any[],
+  speakerReverse: Map<number, string>
+): any[] {
+  return speakerResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, speakerReverse),
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, speakerReverse),
+        }))
+      : result?.details,
+  }))
+}
+
+function remapCompiledAdjudicatorResults(
+  adjudicatorResults: any[],
+  adjudicatorReverse: Map<number, string>,
+  teamReverse: Map<number, string>
+): any[] {
+  return adjudicatorResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, adjudicatorReverse),
+    judged_teams: Array.isArray(result?.judged_teams)
+      ? result.judged_teams.map((id: unknown) => restoreMappedId(id, teamReverse))
+      : result?.judged_teams,
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, adjudicatorReverse),
+          judged_teams: Array.isArray(detail?.judged_teams)
+            ? detail.judged_teams.map((id: unknown) => restoreMappedId(id, teamReverse))
+            : detail?.judged_teams,
+        }))
+      : result?.details,
+  }))
 }
 
 function sumScores(scores: number[]): number {
@@ -826,47 +913,165 @@ async function buildCompiledPayloadFromRaw(
   const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
+  const teamMaps = buildIdMaps(teams)
+  const adjudicatorMaps = buildIdMaps(adjudicators)
   const teamById = new Map(teams.map((team) => [String(team._id), team]))
-  const teamIds = new Set(filteredRawTeamResults.map((result: any) => String(result.id)))
-  const teamInstances = Array.from(teamIds).map((id) => {
-    const team = teamById.get(id)
-    return {
-      id,
-      details: buildDetailsForRounds((team as any)?.details, rounds, {
-        available: true,
-        institutions: [],
-        speakers: [],
-      }),
-    }
+  const adjudicatorById = new Map(adjudicators.map((adj) => [String(adj._id), adj]))
+
+  const speakerIdPool = new Set<string>()
+  teams.forEach((team: any) => {
+    team.details?.forEach((detail: any) => {
+      ;(detail?.speakers ?? []).forEach((speakerId: unknown) => {
+        const normalizedId = String(speakerId ?? '').trim()
+        if (normalizedId) speakerIdPool.add(normalizedId)
+      })
+    })
   })
+  filteredRawSpeakerResults.forEach((result: any) => {
+    const normalizedId = String(result?.id ?? '').trim()
+    if (normalizedId) speakerIdPool.add(normalizedId)
+  })
+  const speakerMaps = buildStringIdMaps(speakerIdPool)
 
-  const speakerIds = new Set(filteredRawSpeakerResults.map((result: any) => String(result.id)))
-  const speakerInstances = Array.from(speakerIds).map((id) => ({ id }))
+  const mapFromId = (id: string): number =>
+    adjudicatorMaps.map.get(id) ??
+    speakerMaps.map.get(id) ??
+    teamMaps.map.get(id) ??
+    0
 
-  const adjudicatorIds = new Set(filteredRawAdjudicatorResults.map((result: any) => String(result.id)))
-  const adjudicatorInstances = Array.from(adjudicatorIds).map((id) => ({ id }))
+  const mappedRawTeamResults = filteredRawTeamResults
+    .map((result: any) => {
+      const teamId = teamMaps.map.get(String(result?.id ?? ''))
+      if (teamId === undefined) return null
+      const opponents = Array.isArray(result?.opponents)
+        ? result.opponents
+            .map((opponentId: unknown) => teamMaps.map.get(String(opponentId ?? '')))
+            .filter((value: number | undefined): value is number => value !== undefined)
+        : []
+      return {
+        ...result,
+        id: teamId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+        opponents,
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
 
-  const compiledTeamResults =
-    filteredRawSpeakerResults.length > 0 && speakerInstances.length > 0
+  const mappedRawSpeakerResults = filteredRawSpeakerResults
+    .map((result: any) => {
+      const speakerId = speakerMaps.map.get(String(result?.id ?? ''))
+      if (speakerId === undefined) return null
+      return {
+        ...result,
+        id: speakerId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
+
+  const mappedRawAdjudicatorResults = filteredRawAdjudicatorResults
+    .map((result: any) => {
+      const adjudicatorId = adjudicatorMaps.map.get(String(result?.id ?? ''))
+      if (adjudicatorId === undefined) return null
+      const judgedTeams = Array.isArray(result?.judged_teams)
+        ? result.judged_teams
+            .map((teamId: unknown) => teamMaps.map.get(String(teamId ?? '')))
+            .filter((value: number | undefined): value is number => value !== undefined)
+        : []
+      return {
+        ...result,
+        id: adjudicatorId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+        judged_teams: judgedTeams,
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
+
+  const teamIds = new Set(mappedRawTeamResults.map((result) => Number(result.id)))
+  const teamInstances = Array.from(teamIds)
+    .map((numericId) => {
+      if (!Number.isFinite(numericId)) return null
+      const teamId = teamMaps.reverse.get(numericId)
+      const team = teamId ? teamById.get(teamId) : null
+      return {
+        id: numericId,
+        details: buildDetailsForRounds((team as any)?.details, rounds, {
+          available: true,
+          institutions: [],
+          speakers: [],
+        }, undefined, (speakerId) => speakerMaps.map.get(String(speakerId))),
+      }
+    })
+    .filter((team): team is { id: number; details: any[] } => team !== null)
+
+  const speakerIds = new Set(mappedRawSpeakerResults.map((result) => Number(result.id)))
+  const speakerInstances = Array.from(speakerIds)
+    .filter((numericId) => Number.isFinite(numericId))
+    .map((id) => ({ id }))
+
+  const adjudicatorIds = new Set(mappedRawAdjudicatorResults.map((result) => Number(result.id)))
+  const adjudicatorInstances = Array.from(adjudicatorIds)
+    .filter((numericId) => Number.isFinite(numericId))
+    .map((numericId) => {
+      const adjudicatorId = adjudicatorMaps.reverse.get(numericId)
+      const adjudicator = adjudicatorId ? adjudicatorById.get(adjudicatorId) : null
+      return {
+        id: numericId,
+        preev: Number((adjudicator as any)?.preev ?? (adjudicator as any)?.strength ?? 0),
+        details: buildDetailsForRounds(
+          (adjudicator as any)?.details,
+          rounds,
+          { available: true, institutions: [], conflicts: [] },
+          undefined,
+          undefined,
+          (teamId) => teamMaps.map.get(String(teamId))
+        ),
+      }
+    })
+
+  const compiledTeamResultsCore =
+    mappedRawSpeakerResults.length > 0 && speakerInstances.length > 0
       ? coreResults.compileTeamResults(
-          teamInstances,
-          speakerInstances,
-          filteredRawTeamResults,
-          filteredRawSpeakerResults,
+          teamInstances as any,
+          speakerInstances as any,
+          mappedRawTeamResults as any,
+          mappedRawSpeakerResults as any,
           rounds,
           style
         )
-      : coreResults.compileTeamResults(teamInstances, filteredRawTeamResults, rounds, style)
+      : coreResults.compileTeamResults(
+          teamInstances as any,
+          mappedRawTeamResults as any,
+          rounds,
+          style
+        )
 
-  const compiledSpeakerResults =
-    filteredRawSpeakerResults.length > 0
-      ? coreResults.compileSpeakerResults(speakerInstances, filteredRawSpeakerResults, style, rounds)
+  const compiledSpeakerResultsCore =
+    mappedRawSpeakerResults.length > 0
+      ? coreResults.compileSpeakerResults(
+          speakerInstances as any,
+          mappedRawSpeakerResults as any,
+          style,
+          rounds
+        )
       : []
 
-  const compiledAdjudicatorResults =
-    filteredRawAdjudicatorResults.length > 0
-      ? coreResults.compileAdjudicatorResults(adjudicatorInstances, filteredRawAdjudicatorResults, rounds)
+  const compiledAdjudicatorResultsCore =
+    mappedRawAdjudicatorResults.length > 0
+      ? coreResults.compileAdjudicatorResults(
+          adjudicatorInstances as any,
+          mappedRawAdjudicatorResults as any,
+          rounds
+        )
       : []
+
+  const compiledTeamResults = remapCompiledTeamResults(compiledTeamResultsCore, teamMaps.reverse)
+  const compiledSpeakerResults = remapCompiledSpeakerResults(compiledSpeakerResultsCore, speakerMaps.reverse)
+  const compiledAdjudicatorResults = remapCompiledAdjudicatorResults(
+    compiledAdjudicatorResultsCore,
+    adjudicatorMaps.reverse,
+    teamMaps.reverse
+  )
 
   const teamMeta = new Map<string, { institutions: string[] }>()
   teams.forEach((team: any) => {
@@ -994,7 +1199,12 @@ async function buildCompiledPayloadFromSubmissions(
     roundDocs.map((doc: any) => [Number(doc.round), doc.name ?? `Round ${doc.round}`])
   )
 
+  const teamMaps = buildIdMaps(teams)
+  const adjudicatorMaps = buildIdMaps(adjudicators)
   const teamById = new Map<string, any>(teams.map((team) => [String(team._id), team]))
+  const adjudicatorById = new Map<string, any>(
+    adjudicators.map((adjudicator) => [String(adjudicator._id), adjudicator])
+  )
   const speakerMeta = new Map<string, { teamId: string; teamName: string }>()
 
   teams.forEach((team) => {
@@ -1379,35 +1589,147 @@ async function buildCompiledPayloadFromSubmissions(
   const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
-  const teamInstances = Array.from(teamIdsWithResults).map((teamId) => ({
-    id: teamId,
-    details: rounds.map((r) => ({ r, speakers: getSpeakersForTeamRound(teamId, r) })),
-  }))
+  const speakerIdPool = new Set<string>()
+  speakerMeta.forEach((_meta, speakerId) => {
+    const normalizedId = String(speakerId ?? '').trim()
+    if (normalizedId) speakerIdPool.add(normalizedId)
+  })
+  speakerIdsWithScores.forEach((speakerId) => {
+    const normalizedId = String(speakerId ?? '').trim()
+    if (normalizedId) speakerIdPool.add(normalizedId)
+  })
+  const speakerMaps = buildStringIdMaps(speakerIdPool)
 
-  const speakerInstances = Array.from(speakerIdsWithScores).map((id) => ({ id }))
-  const adjudicatorInstances = adjudicators
-    .filter((adj) => adjudicatorIdsWithScores.has(String(adj._id)))
-    .map((adj) => ({ id: String(adj._id) }))
+  const mapFromId = (id: string): number =>
+    adjudicatorMaps.map.get(id) ??
+    speakerMaps.map.get(id) ??
+    teamMaps.map.get(id) ??
+    0
 
-  const compiledTeamResults =
-    rawTeamResults.length > 0
+  const mappedRawTeamResults = rawTeamResults
+    .map((result: any) => {
+      const teamId = teamMaps.map.get(String(result?.id ?? ''))
+      if (teamId === undefined) return null
+      const opponents = Array.isArray(result?.opponents)
+        ? result.opponents
+            .map((opponentId: unknown) => teamMaps.map.get(String(opponentId ?? '')))
+            .filter((value: number | undefined): value is number => value !== undefined)
+        : []
+      return {
+        ...result,
+        id: teamId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+        opponents,
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
+
+  const mappedRawSpeakerResults = rawSpeakerResults
+    .map((result: any) => {
+      const speakerId = speakerMaps.map.get(String(result?.id ?? ''))
+      if (speakerId === undefined) return null
+      return {
+        ...result,
+        id: speakerId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
+
+  const mappedRawAdjudicatorResults = rawAdjudicatorResults
+    .map((result: any) => {
+      const adjudicatorId = adjudicatorMaps.map.get(String(result?.id ?? ''))
+      if (adjudicatorId === undefined) return null
+      const judgedTeams = Array.isArray(result?.judged_teams)
+        ? result.judged_teams
+            .map((teamId: unknown) => teamMaps.map.get(String(teamId ?? '')))
+            .filter((value: number | undefined): value is number => value !== undefined)
+        : []
+      return {
+        ...result,
+        id: adjudicatorId,
+        from_id: mapFromId(String(result?.from_id ?? '')),
+        judged_teams: judgedTeams,
+      }
+    })
+    .filter((result): result is Record<string, any> => result !== null)
+
+  const teamInstances = Array.from(teamIdsWithResults)
+    .map((teamId) => {
+      const mappedTeamId = teamMaps.map.get(teamId)
+      if (mappedTeamId === undefined) return null
+      return {
+        id: mappedTeamId,
+        details: rounds.map((r) => ({
+          r,
+          speakers: getSpeakersForTeamRound(teamId, r)
+            .map((speakerId) => speakerMaps.map.get(String(speakerId ?? '')))
+            .filter((value: number | undefined): value is number => value !== undefined),
+        })),
+      }
+    })
+    .filter((team): team is { id: number; details: any[] } => team !== null)
+
+  const speakerInstances = Array.from(new Set(mappedRawSpeakerResults.map((result) => Number(result.id))))
+    .filter((numericId) => Number.isFinite(numericId))
+    .map((id) => ({ id }))
+  const adjudicatorInstances = Array.from(
+    new Set(mappedRawAdjudicatorResults.map((result) => Number(result.id)))
+  )
+    .filter((numericId) => Number.isFinite(numericId))
+    .map((numericId) => {
+      const adjudicatorId = adjudicatorMaps.reverse.get(numericId)
+      const adjudicator = adjudicatorId ? adjudicatorById.get(adjudicatorId) : null
+      return {
+        id: numericId,
+        preev: Number((adjudicator as any)?.preev ?? (adjudicator as any)?.strength ?? 0),
+        details: buildDetailsForRounds(
+          (adjudicator as any)?.details,
+          rounds,
+          { available: true, institutions: [], conflicts: [] },
+          undefined,
+          undefined,
+          (teamId) => teamMaps.map.get(String(teamId))
+        ),
+      }
+    })
+
+  const compiledTeamResultsCore =
+    mappedRawTeamResults.length > 0
       ? coreResults.compileTeamResults(
-          teamInstances,
-          speakerInstances,
-          rawTeamResults,
-          rawSpeakerResults,
+          teamInstances as any,
+          speakerInstances as any,
+          mappedRawTeamResults as any,
+          mappedRawSpeakerResults as any,
           rounds,
           style
         )
       : []
-  const compiledSpeakerResults =
-    rawSpeakerResults.length > 0
-      ? coreResults.compileSpeakerResults(speakerInstances, rawSpeakerResults, style, rounds)
+  const compiledSpeakerResultsCore =
+    mappedRawSpeakerResults.length > 0
+      ? coreResults.compileSpeakerResults(
+          speakerInstances as any,
+          mappedRawSpeakerResults as any,
+          style,
+          rounds
+        )
       : []
-  const compiledAdjudicatorResults =
-    rawAdjudicatorResults.length > 0
-      ? coreResults.compileAdjudicatorResults(adjudicatorInstances, rawAdjudicatorResults, rounds)
+  const compiledAdjudicatorResultsCore =
+    mappedRawAdjudicatorResults.length > 0
+      ? coreResults.compileAdjudicatorResults(
+          adjudicatorInstances as any,
+          mappedRawAdjudicatorResults as any,
+          rounds
+        )
       : []
+
+  const compiledTeamResults = remapCompiledTeamResults(compiledTeamResultsCore, teamMaps.reverse)
+  const compiledSpeakerResults = remapCompiledSpeakerResults(compiledSpeakerResultsCore, speakerMaps.reverse)
+  const compiledAdjudicatorResults = remapCompiledAdjudicatorResults(
+    compiledAdjudicatorResultsCore,
+    adjudicatorMaps.reverse,
+    teamMaps.reverse
+  )
 
   const teamMeta = new Map<string, { institutions: string[] }>()
   teams.forEach((team) => {

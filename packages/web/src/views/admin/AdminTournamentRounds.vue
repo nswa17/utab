@@ -36,7 +36,12 @@
               />
             </button>
             <div v-if="!isEmbeddedRoute" class="row round-head-actions">
-              <Button variant="danger" size="sm" class="round-delete" @click="requestRemoveRound(round._id)">
+              <Button
+                variant="danger"
+                size="sm"
+                class="round-delete"
+                @click="requestRemoveRound(round._id)"
+              >
                 {{ $t('削除') }}
               </Button>
             </div>
@@ -133,6 +138,16 @@
               </Field>
               <div class="row motion-actions">
                 <Button
+                  variant="ghost"
+                  size="sm"
+                  class="round-settings-open-button"
+                  :aria-pressed="isAdvancedSettingsExpanded(round._id) ? 'true' : 'false'"
+                  :disabled="isLoading"
+                  @click="toggleAdvancedSettings(round._id)"
+                >
+                  {{ $t('ラウンド詳細設定') }}
+                </Button>
+                <Button
                   variant="secondary"
                   class="motion-update-button"
                   size="sm"
@@ -153,266 +168,345 @@
           <Button variant="secondary" size="sm" @click="openRoundPage(round.round, 'submissions')">
             {{ $t('提出データ閲覧') }}
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            class="advanced-toggle-button"
-            :class="{ active: isAdvancedSettingsExpanded(round._id) }"
-            :aria-pressed="isAdvancedSettingsExpanded(round._id) ? 'true' : 'false'"
-            :disabled="isLoading"
-            @click="toggleAdvancedSettings(round._id)"
-          >
-            {{ $t('ラウンド詳細設定') }}
-          </Button>
         </div>
 
         <div
-          v-show="isExpanded(round._id) && isAdvancedSettingsExpanded(round._id)"
-          class="stack advanced-settings"
+          v-if="isAdvancedSettingsExpanded(round._id)"
+          class="modal-backdrop"
+          role="presentation"
+          @click.self="toggleAdvancedSettings(round._id)"
         >
-          <div class="grid weight-grid">
-            <Field :label="$t('チェア重み')" v-slot="{ id, describedBy }">
-              <input
-                v-model.number="roundDraft(round).weights.chair"
-                :id="id"
-                :aria-describedby="describedBy"
-                type="number"
-              />
-            </Field>
-            <Field :label="$t('パネル重み')" v-slot="{ id, describedBy }">
-              <input
-                v-model.number="roundDraft(round).weights.panel"
-                :id="id"
-                :aria-describedby="describedBy"
-                type="number"
-              />
-            </Field>
-            <Field :label="$t('トレーニー重み')" v-slot="{ id, describedBy }">
-              <input
-                v-model.number="roundDraft(round).weights.trainee"
-                :id="id"
-                :aria-describedby="describedBy"
-                type="number"
-              />
-            </Field>
-          </div>
+          <div class="modal card stack round-settings-modal" role="dialog" aria-modal="true">
+            <div class="modal-head">
+              <strong>
+                {{ round.name || $t('ラウンド {round}', { round: round.round }) }} /
+                {{ $t('ラウンド詳細設定') }}
+              </strong>
+              <button
+                type="button"
+                class="modal-close"
+                :aria-label="$t('閉じる')"
+                @click="toggleAdvancedSettings(round._id)"
+              >
+                ×
+              </button>
+            </div>
 
-          <section class="stack settings-group">
-            <RoundOptionEditor
-              v-model:evaluate-from-adjudicators="roundDraft(round).userDefined.evaluate_from_adjudicators"
-              v-model:evaluate-from-teams="roundDraft(round).userDefined.evaluate_from_teams"
-              v-model:chairs-always-evaluated="roundDraft(round).userDefined.chairs_always_evaluated"
-              v-model:evaluator-in-team="roundDraft(round).userDefined.evaluator_in_team"
-              v-model:no-speaker-score="roundDraft(round).userDefined.no_speaker_score"
-              v-model:allow-low-tie-win="roundDraft(round).userDefined.allow_low_tie_win"
-              v-model:score-by-matter-manner="roundDraft(round).userDefined.score_by_matter_manner"
-              v-model:tie-points="roundDraft(round).compile.options.tie_points"
-              v-model:poi="roundDraft(round).userDefined.poi"
-              v-model:best="roundDraft(round).userDefined.best"
-              :disabled="isLoading"
-            >
-              <template #after-team-settings>
-                <section class="stack round-ranking-settings">
-                  <CompileOptionsEditor
-                    v-model:source-rounds="roundDraft(round).compile.source_rounds"
-                    v-model:ranking-preset="roundDraft(round).compile.options.ranking_priority.preset"
-                    v-model:ranking-order="roundDraft(round).compile.options.ranking_priority.order"
-                    v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
-                    v-model:tie-points="roundDraft(round).compile.options.tie_points"
-                    v-model:merge-policy="roundDraft(round).compile.options.duplicate_normalization.merge_policy"
-                    v-model:poi-aggregation="roundDraft(round).compile.options.duplicate_normalization.poi_aggregation"
-                    v-model:best-aggregation="roundDraft(round).compile.options.duplicate_normalization.best_aggregation"
-                    v-model:missing-data-policy="roundDraft(round).compile.options.missing_data_policy"
-                    :show-winner-scoring="false"
-                    :show-source-rounds="false"
-                    :show-merge-and-missing="false"
-                    :source-round-options="compileSourceRoundSelectOptions(round.round)"
-                    :disabled="isLoading"
+            <div class="stack advanced-settings">
+              <div class="grid weight-grid">
+                <Field :label="$t('チェア重み')" v-slot="{ id, describedBy }">
+                  <input
+                    v-model.number="roundDraft(round).weights.chair"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                    type="number"
                   />
-                </section>
-              </template>
-            </RoundOptionEditor>
-          </section>
+                </Field>
+                <Field :label="$t('パネル重み')" v-slot="{ id, describedBy }">
+                  <input
+                    v-model.number="roundDraft(round).weights.panel"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                    type="number"
+                  />
+                </Field>
+                <Field :label="$t('トレーニー重み')" v-slot="{ id, describedBy }">
+                  <input
+                    v-model.number="roundDraft(round).weights.trainee"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                    type="number"
+                  />
+                </Field>
+              </div>
 
-          <section class="stack settings-group">
-            <h5 class="settings-group-title">{{ $t('ブレイク設定') }}</h5>
-            <div class="grid settings-options-grid">
-              <label class="row small setting-option">
-                <input v-model="roundDraft(round).break.enabled" type="checkbox" />
-                <span>{{ $t('ブレイクラウンドとして扱う') }}</span>
-                <span
-                  class="help-badge"
-                  :title="$t('有効化すると、参加チーム確定時に Team.details[r].available を同期します。')"
-                  aria-hidden="true"
-                  >?</span
+              <section class="stack settings-group">
+                <RoundOptionEditor
+                  v-model:evaluate-from-adjudicators="
+                    roundDraft(round).userDefined.evaluate_from_adjudicators
+                  "
+                  v-model:evaluate-from-teams="roundDraft(round).userDefined.evaluate_from_teams"
+                  v-model:chairs-always-evaluated="
+                    roundDraft(round).userDefined.chairs_always_evaluated
+                  "
+                  v-model:evaluator-in-team="roundDraft(round).userDefined.evaluator_in_team"
+                  v-model:no-speaker-score="roundDraft(round).userDefined.no_speaker_score"
+                  v-model:allow-low-tie-win="roundDraft(round).userDefined.allow_low_tie_win"
+                  v-model:score-by-matter-manner="
+                    roundDraft(round).userDefined.score_by_matter_manner
+                  "
+                  v-model:tie-points="roundDraft(round).compile.options.tie_points"
+                  v-model:poi="roundDraft(round).userDefined.poi"
+                  v-model:best="roundDraft(round).userDefined.best"
+                  :lock-allow-low-tie-win="roundDraft(round).break.enabled"
+                  :disabled="isLoading"
                 >
-              </label>
-              <Field :label="$t('参照ラウンド')" v-slot="{ id, describedBy }">
-                <select
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  v-model="roundDraft(round).break.source"
-                >
-                  <option value="submissions">{{ $t('提出データ') }}</option>
-                  <option value="raw">{{ $t('Raw結果') }}</option>
-                </select>
-                <div class="stack break-source-options">
-                  <label
-                    v-for="sourceRound in breakSourceRoundOptions(round.round)"
-                    :key="`break-source-${round._id}-${sourceRound}`"
-                    class="row small break-source-option"
-                  >
-                    <input
-                      type="checkbox"
-                      :checked="roundDraft(round).break.sourceRounds.includes(sourceRound)"
-                      @change="onBreakSourceRoundToggle(roundDraft(round).break, sourceRound, $event)"
-                    />
-                    <span>{{ roundLabel(sourceRound) }}</span>
-                  </label>
-                </div>
-                <p class="muted small">
-                  {{ $t('未選択時は直前までの全ラウンドを参照します。') }}
-                </p>
-              </Field>
-              <Field :label="$t('ブレイク人数')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="roundDraft(round).break.size"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                  type="number"
-                  min="1"
-                />
-              </Field>
-              <Field :label="$t('境界同点の扱い')" v-slot="{ id, describedBy }">
-                <select
-                  v-model="roundDraft(round).break.cutoffTiePolicy"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                >
-                  <option value="manual">{{ $t('手動選抜') }}</option>
-                  <option value="include_all">{{ $t('同点は全員含める') }}</option>
-                  <option value="strict">{{ $t('人数を厳密適用') }}</option>
-                </select>
-              </Field>
-              <Field :label="$t('シード方式')" v-slot="{ id, describedBy }">
-                <select v-model="roundDraft(round).break.seeding" :id="id" :aria-describedby="describedBy">
-                  <option value="high_low">{{ $t('High-Low (1 vs N)') }}</option>
-                </select>
-              </Field>
-            </div>
-
-            <div class="row break-actions">
-              <Button
-                variant="secondary"
-                size="sm"
-                :disabled="isLoading || !roundDraft(round).break.enabled || roundDraft(round).break.loading"
-                @click="refreshBreakCandidates(round)"
-              >
-                {{
-                  roundDraft(round).break.loading
-                    ? $t('候補更新中...')
-                    : $t('ブレイク候補を更新')
-                }}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                :disabled="
-                  isLoading ||
-                  !roundDraft(round).break.enabled ||
-                  roundDraft(round).break.participants.length === 0
-                "
-                @click="resetBreakParticipantSeeds(roundDraft(round).break)"
-              >
-                {{ $t('候補順位でシード再設定') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                :disabled="isLoading || !roundDraft(round).break.enabled"
-                @click="saveRoundBreak(round)"
-              >
-                {{ $t('ブレイク参加を保存') }}
-              </Button>
-            </div>
-
-            <p v-if="roundDraft(round).break.error" class="error small">
-              {{ roundDraft(round).break.error }}
-            </p>
-
-            <p class="muted small">
-              {{
-                $t('選択中 {selected}/{total}', {
-                  selected: roundDraft(round).break.participants.length,
-                  total: roundDraft(round).break.candidates.length,
-                })
-              }}
-            </p>
-
-            <div
-              v-if="roundDraft(round).break.candidates.length > 0"
-              class="break-candidates-table-wrapper"
-            >
-              <table class="break-candidates-table">
-                <thead>
-                  <tr>
-                    <th>{{ $t('参加') }}</th>
-                    <th>{{ $t('シード') }}</th>
-                    <th>{{ $t('順位') }}</th>
-                    <th>{{ $t('チーム') }}</th>
-                    <th>{{ $t('勝敗点') }}</th>
-                    <th>{{ $t('スコア') }}</th>
-                    <th>{{ $t('マージン') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="candidate in roundDraft(round).break.candidates"
-                    :key="candidate.teamId"
-                    :class="{ 'cutoff-tie-row': candidate.isCutoffTie }"
-                  >
-                    <td>
-                      <input
-                        type="checkbox"
-                        :checked="isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)"
-                        @change="onBreakParticipantToggle(roundDraft(round).break, candidate.teamId, $event)"
+                  <template #after-team-settings>
+                    <section class="stack round-ranking-settings">
+                      <CompileOptionsEditor
+                        v-model:source-rounds="roundDraft(round).compile.source_rounds"
+                        v-model:ranking-preset="
+                          roundDraft(round).compile.options.ranking_priority.preset
+                        "
+                        v-model:ranking-order="
+                          roundDraft(round).compile.options.ranking_priority.order
+                        "
+                        v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
+                        v-model:tie-points="roundDraft(round).compile.options.tie_points"
+                        v-model:merge-policy="
+                          roundDraft(round).compile.options.duplicate_normalization.merge_policy
+                        "
+                        v-model:poi-aggregation="
+                          roundDraft(round).compile.options.duplicate_normalization.poi_aggregation
+                        "
+                        v-model:best-aggregation="
+                          roundDraft(round).compile.options.duplicate_normalization.best_aggregation
+                        "
+                        v-model:missing-data-policy="
+                          roundDraft(round).compile.options.missing_data_policy
+                        "
+                        :show-winner-scoring="false"
+                        :show-source-rounds="false"
+                        :show-merge-and-missing="false"
+                        :source-round-options="compileSourceRoundSelectOptions(round.round)"
+                        :disabled="isLoading"
                       />
-                    </td>
-                    <td>
-                      <template
-                        v-if="isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)"
+                    </section>
+                  </template>
+                </RoundOptionEditor>
+              </section>
+
+              <section class="stack settings-group">
+                <h5 class="settings-group-title">{{ $t('ブレイク設定') }}</h5>
+                <div class="grid settings-options-grid">
+                  <label class="row small setting-option">
+                    <input
+                      v-model="roundDraft(round).break.enabled"
+                      type="checkbox"
+                      @change="onBreakEnabledChange(roundDraft(round))"
+                    />
+                    <span>{{ $t('ブレイクラウンドとして扱う') }}</span>
+                    <span
+                      class="help-badge"
+                      :title="
+                        $t(
+                          '有効化すると、参加チーム確定時に Team.details[r].available を同期します。'
+                        )
+                      "
+                      aria-hidden="true"
+                      >?</span
+                    >
+                  </label>
+                  <p v-if="roundDraft(round).break.enabled" class="muted small">
+                    {{
+                      $t(
+                        '第2ブレイク以降は前ラウンドの勝者（+BYE）を自動で次ステージ参加者にします。'
+                      )
+                    }}
+                  </p>
+                  <p v-if="roundDraft(round).break.enabled" class="muted small">
+                    {{ $t('参加チーム数が奇数のときは上位シードにBYEを割り当てます。') }}
+                  </p>
+                  <Field :label="$t('参照ラウンド')" v-slot="{ id, describedBy }">
+                    <select
+                      :id="id"
+                      :aria-describedby="describedBy"
+                      v-model="roundDraft(round).break.source"
+                    >
+                      <option value="submissions">{{ $t('提出データ') }}</option>
+                      <option value="raw">{{ $t('Raw結果') }}</option>
+                    </select>
+                    <div class="stack break-source-options">
+                      <label
+                        v-for="sourceRound in breakSourceRoundOptions(round.round)"
+                        :key="`break-source-${round._id}-${sourceRound}`"
+                        class="row small break-source-option"
                       >
                         <input
-                          class="break-seed-input"
-                          type="number"
-                          min="1"
-                          :value="breakParticipantSeed(roundDraft(round).break, candidate.teamId)"
+                          type="checkbox"
+                          :checked="roundDraft(round).break.sourceRounds.includes(sourceRound)"
                           @change="
-                            onBreakParticipantSeedChange(
-                              roundDraft(round).break,
-                              candidate.teamId,
-                              $event
-                            )
+                            onBreakSourceRoundToggle(roundDraft(round).break, sourceRound, $event)
                           "
                         />
-                      </template>
-                      <span v-else class="muted">-</span>
-                    </td>
-                    <td>{{ candidate.ranking ?? '-' }}</td>
-                    <td>{{ candidate.teamName }}</td>
-                    <td>{{ candidate.win }}</td>
-                    <td>{{ candidate.sum }}</td>
-                    <td>{{ candidate.margin }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+                        <span>{{ roundLabel(sourceRound) }}</span>
+                      </label>
+                    </div>
+                    <p class="muted small">
+                      {{ $t('未選択時は直前までの全ラウンドを参照します。') }}
+                    </p>
+                  </Field>
+                  <Field :label="$t('ブレイクチーム数')" v-slot="{ id, describedBy }">
+                    <input
+                      v-model.number="roundDraft(round).break.size"
+                      :id="id"
+                      :aria-describedby="describedBy"
+                      type="number"
+                      min="1"
+                      @change="onBreakSizeChange(roundDraft(round).break, $event)"
+                    />
+                  </Field>
+                  <Field :label="$t('境界同点の扱い')" v-slot="{ id, describedBy }">
+                    <select
+                      v-model="roundDraft(round).break.cutoffTiePolicy"
+                      :id="id"
+                      :aria-describedby="describedBy"
+                      @change="onBreakCutoffTiePolicyChange(roundDraft(round).break)"
+                    >
+                      <option value="manual">{{ $t('手動選抜') }}</option>
+                      <option value="include_all">{{ $t('同点は全員含める') }}</option>
+                      <option value="strict">{{ $t('人数を厳密適用') }}</option>
+                    </select>
+                  </Field>
+                  <Field :label="$t('シード方式')" v-slot="{ id, describedBy }">
+                    <select
+                      v-model="roundDraft(round).break.seeding"
+                      :id="id"
+                      :aria-describedby="describedBy"
+                    >
+                      <option value="reseed_each_round">{{ $t('毎ラウンド再シード (1 vs N)') }}</option>
+                      <option value="fixed_bracket">{{ $t('固定ブラケット') }}</option>
+                      <option value="random_within_tie_group">
+                        {{ $t('同順位内ランダム') }}
+                      </option>
+                      <option value="random_full">{{ $t('完全ランダム') }}</option>
+                    </select>
+                  </Field>
+                </div>
 
-          <div class="row">
-            <Button size="sm" :disabled="isLoading" @click="saveRoundSettings(round)">
-              {{ $t('設定を保存') }}
-            </Button>
+                <div class="row break-actions">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="
+                      isLoading ||
+                      !roundDraft(round).break.enabled ||
+                      roundDraft(round).break.loading
+                    "
+                    @click="refreshBreakCandidates(round)"
+                  >
+                    {{
+                      roundDraft(round).break.loading
+                        ? $t('候補更新中...')
+                        : $t('ブレイク候補を更新')
+                    }}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    :disabled="
+                      isLoading ||
+                      !roundDraft(round).break.enabled ||
+                      roundDraft(round).break.participants.length === 0
+                    "
+                    @click="resetBreakParticipantSeeds(roundDraft(round).break)"
+                  >
+                    {{ $t('候補順位でシード再設定') }}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="isLoading || !roundDraft(round).break.enabled"
+                    @click="saveRoundBreak(round)"
+                  >
+                    {{ $t('ブレイク参加を保存') }}
+                  </Button>
+                </div>
+
+                <p v-if="roundDraft(round).break.error" class="error small">
+                  {{ roundDraft(round).break.error }}
+                </p>
+
+                <p class="muted small">
+                  {{
+                    $t('選択中 {selected}/{total}', {
+                      selected: roundDraft(round).break.participants.length,
+                      total: roundDraft(round).break.candidates.length,
+                    })
+                  }}
+                </p>
+
+                <div
+                  v-if="roundDraft(round).break.candidates.length > 0"
+                  class="break-candidates-table-wrapper"
+                >
+                  <table class="break-candidates-table">
+                    <thead>
+                      <tr>
+                        <th>{{ $t('参加') }}</th>
+                        <th>{{ $t('シード') }}</th>
+                        <th>{{ $t('順位') }}</th>
+                        <th>{{ $t('チーム') }}</th>
+                        <th>{{ $t('勝敗点') }}</th>
+                        <th>{{ $t('スコア') }}</th>
+                        <th>{{ $t('マージン') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="candidate in roundDraft(round).break.candidates"
+                        :key="candidate.teamId"
+                        :class="{ 'cutoff-tie-row': candidate.isCutoffTie }"
+                      >
+                        <td>
+                          <input
+                            type="checkbox"
+                            :checked="
+                              isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)
+                            "
+                            @change="
+                              onBreakParticipantToggle(
+                                roundDraft(round).break,
+                                candidate.teamId,
+                                $event
+                              )
+                            "
+                          />
+                        </td>
+                        <td>
+                          <template
+                            v-if="
+                              isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)
+                            "
+                          >
+                            <input
+                              class="break-seed-input"
+                              type="number"
+                              min="1"
+                              :value="
+                                breakParticipantSeed(roundDraft(round).break, candidate.teamId)
+                              "
+                              @change="
+                                onBreakParticipantSeedChange(
+                                  roundDraft(round).break,
+                                  candidate.teamId,
+                                  $event
+                                )
+                              "
+                            />
+                          </template>
+                          <span v-else class="muted">-</span>
+                        </td>
+                        <td>{{ candidate.ranking ?? '-' }}</td>
+                        <td>{{ candidate.teamName }}</td>
+                        <td>{{ candidate.win }}</td>
+                        <td>{{ candidate.sum }}</td>
+                        <td>{{ candidate.margin }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <div class="row modal-actions">
+                <Button variant="ghost" size="sm" @click="toggleAdvancedSettings(round._id)">
+                  {{ $t('閉じる') }}
+                </Button>
+                <Button size="sm" :disabled="isLoading" @click="saveRoundSettings(round)">
+                  {{ $t('設定を保存') }}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </article>
@@ -453,7 +547,10 @@
               {{ missingBallotNames(missingModalRoundConfig).join(', ') }}
             </p>
           </div>
-          <div v-if="missingFeedbackTeamNames(missingModalRoundConfig).length > 0" class="stack tight">
+          <div
+            v-if="missingFeedbackTeamNames(missingModalRoundConfig).length > 0"
+            class="stack tight"
+          >
             <strong class="small">{{
               $t('評価未提出（{label}）', { label: feedbackTeamLabel(missingModalRoundConfig) })
             }}</strong>
@@ -461,7 +558,10 @@
               {{ missingFeedbackTeamNames(missingModalRoundConfig).join(', ') }}
             </p>
           </div>
-          <div v-if="missingFeedbackAdjudicatorNames(missingModalRoundConfig).length > 0" class="stack tight">
+          <div
+            v-if="missingFeedbackAdjudicatorNames(missingModalRoundConfig).length > 0"
+            class="stack tight"
+          >
             <strong class="small">{{ $t('評価未提出（ジャッジ）') }}</strong>
             <p class="muted small">
               {{ missingFeedbackAdjudicatorNames(missingModalRoundConfig).join(', ') }}
@@ -483,13 +583,17 @@
         <p class="muted">
           {{
             $t('ラウンド {round} を削除しますか？', {
-              round: roundDeleteModalRound.name || $t('ラウンド {round}', { round: roundDeleteModalRound.round }),
+              round:
+                roundDeleteModalRound.name ||
+                $t('ラウンド {round}', { round: roundDeleteModalRound.round }),
             })
           }}
         </p>
         <p v-if="roundDeleteError" class="error small">{{ roundDeleteError }}</p>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeRoundDeleteModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="ghost" size="sm" @click="closeRoundDeleteModal">{{
+            $t('キャンセル')
+          }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRound">
             {{ $t('削除') }}
           </Button>
@@ -516,11 +620,8 @@ import { useTeamsStore } from '@/stores/teams'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { defaultRoundDefaults } from '@/utils/round-defaults'
-import {
-  normalizeCompileOptions,
-  type CompileOptions,
-} from '@/types/compiled'
-import type { RoundBreakConfig } from '@/types/round'
+import { normalizeCompileOptions, type CompileOptions } from '@/types/compiled'
+import type { BreakSeeding, RoundBreakConfig } from '@/types/round'
 
 const route = useRoute()
 const router = useRouter()
@@ -549,7 +650,10 @@ function normalizeRoundValue(value: unknown): number | null {
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const isEmbeddedRoute = computed(
-  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+  () =>
+    props.embedded ||
+    route.path.startsWith('/admin-embed/') ||
+    String(route.query.embed ?? '') === '1'
 )
 const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.round - b.round))
 const selectedRoundFromQuery = computed(() => {
@@ -613,7 +717,7 @@ type BreakDraft = {
   sourceRounds: number[]
   size: number
   cutoffTiePolicy: 'manual' | 'include_all' | 'strict'
-  seeding: 'high_low'
+  seeding: BreakSeeding
   participants: Array<{ teamId: string; seed: number }>
   candidates: BreakCandidate[]
   loading: boolean
@@ -648,6 +752,15 @@ function normalizeSourceRounds(roundNumber: number, sourceRounds: unknown): numb
   ).sort((left, right) => left - right)
 }
 
+function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
+  if (value === 'high_low') return 'reseed_each_round'
+  if (value === 'reseed_each_round') return 'reseed_each_round'
+  if (value === 'fixed_bracket') return 'fixed_bracket'
+  if (value === 'random_within_tie_group') return 'random_within_tie_group'
+  if (value === 'random_full') return 'random_full'
+  return fallback
+}
+
 function defaultBreakDraft(roundNumber: number, rawBreak: unknown): BreakDraft {
   const source = (rawBreak ?? {}) as Record<string, any>
   const sizeRaw = Number(source.size)
@@ -660,8 +773,8 @@ function defaultBreakDraft(roundNumber: number, rawBreak: unknown): BreakDraft {
     cutoffTiePolicy:
       source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
         ? source.cutoff_tie_policy
-        : 'manual',
-    seeding: 'high_low',
+        : 'include_all',
+    seeding: normalizeBreakSeeding(source.seeding, 'reseed_each_round'),
     participants: normalizeBreakParticipants(source.participants),
     candidates: [],
     loading: false,
@@ -678,6 +791,12 @@ type RoundSettingsDraft = {
 }
 const roundDrafts = reactive<Record<string, RoundSettingsDraft>>({})
 
+function applyBreakRoundConstraints(draft: RoundSettingsDraft) {
+  if (draft.break.enabled) {
+    draft.userDefined.allow_low_tie_win = false
+  }
+}
+
 function createRoundDraft(round: any): RoundSettingsDraft {
   const motions = Array.isArray(round.motions) ? round.motions : []
   const userDefined = round.userDefinedData ?? {}
@@ -690,7 +809,7 @@ function createRoundDraft(round: any): RoundSettingsDraft {
   const { break: _ignoredBreak, ...plainUserDefined } = userDefined
   void _ignoredBreak
   const roundNumber = Number(round.round)
-  return {
+  const draft: RoundSettingsDraft = {
     motion: motions[0] ? String(motions[0]) : '',
     weights: {
       chair: Number(round.weightsOfAdjudicators?.chair ?? 1),
@@ -710,6 +829,8 @@ function createRoundDraft(round: any): RoundSettingsDraft {
     },
     break: defaultBreakDraft(Number(round.round), userDefinedBreak),
   }
+  applyBreakRoundConstraints(draft)
+  return draft
 }
 
 function roundDraft(round: any): RoundSettingsDraft {
@@ -783,7 +904,8 @@ function roundLabel(roundNumber: number) {
 const missingModalRoundConfig = computed(() => {
   if (missingModalRound.value === null) return null
   return (
-    sortedRounds.value.find((round) => Number(round.round) === Number(missingModalRound.value)) ?? null
+    sortedRounds.value.find((round) => Number(round.round) === Number(missingModalRound.value)) ??
+    null
   )
 })
 
@@ -966,11 +1088,16 @@ function toggleAdvancedSettings(roundId: string) {
 function breakSourceRoundOptions(targetRound: number): number[] {
   return sortedRounds.value
     .map((round) => Number(round.round))
-    .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound)
+    .filter(
+      (roundNumber) =>
+        Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound
+    )
     .sort((left, right) => left - right)
 }
 
-function compileSourceRoundSelectOptions(targetRound: number): Array<{ value: number; label: string }> {
+function compileSourceRoundSelectOptions(
+  targetRound: number
+): Array<{ value: number; label: string }> {
   return breakSourceRoundOptions(targetRound).map((roundNumber) => ({
     value: roundNumber,
     label: roundLabel(roundNumber),
@@ -1009,8 +1136,32 @@ function pickBreakTeamIdsFromCandidates(
     .map((candidate) => candidate.teamId)
 }
 
+function normalizeBreakSizeValue(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1
+}
+
+function syncBreakParticipantsFromCandidates(draft: BreakDraft) {
+  if (draft.candidates.length === 0) return
+  const normalizedSize = normalizeBreakSizeValue(draft.size)
+  if (draft.size !== normalizedSize) {
+    draft.size = normalizedSize
+  }
+  if (draft.cutoffTiePolicy === 'manual' && draft.participants.length > 0) {
+    return
+  }
+  const selectedIds = pickBreakTeamIdsFromCandidates(
+    draft.candidates,
+    normalizedSize,
+    draft.cutoffTiePolicy
+  )
+  setBreakParticipantsFromTeamIds(draft, selectedIds)
+}
+
 function resetBreakParticipantSeeds(draft: BreakDraft) {
-  const order = new Map<string, number>(draft.candidates.map((candidate, index) => [candidate.teamId, index]))
+  const order = new Map<string, number>(
+    draft.candidates.map((candidate, index) => [candidate.teamId, index])
+  )
   const sorted = draft.participants
     .filter((participant) => order.has(participant.teamId))
     .sort((left, right) => {
@@ -1072,6 +1223,24 @@ function onBreakParticipantToggle(draft: BreakDraft, teamId: string, event: Even
   }
 }
 
+function onBreakSizeChange(draft: BreakDraft, event: Event) {
+  const target = event.target as HTMLInputElement | null
+  const normalizedSize = normalizeBreakSizeValue(target?.value ?? draft.size)
+  draft.size = normalizedSize
+  if (target && target.value !== String(normalizedSize)) {
+    target.value = String(normalizedSize)
+  }
+  syncBreakParticipantsFromCandidates(draft)
+}
+
+function onBreakCutoffTiePolicyChange(draft: BreakDraft) {
+  syncBreakParticipantsFromCandidates(draft)
+}
+
+function onBreakEnabledChange(draft: RoundSettingsDraft) {
+  applyBreakRoundConstraints(draft)
+}
+
 function effectiveBreakSourceRounds(round: any, draft: BreakDraft): number[] {
   const selected = normalizeSourceRounds(Number(round.round), draft.sourceRounds)
   if (selected.length > 0) return selected
@@ -1096,19 +1265,17 @@ async function refreshBreakCandidates(round: any) {
     }
     draft.candidates = Array.isArray(response.candidates) ? response.candidates : []
     draft.sourceRounds = Array.isArray(response.sourceRounds)
-      ? response.sourceRounds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 1)
+      ? response.sourceRounds
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value >= 1)
       : draft.sourceRounds
 
     const candidateTeamIds = new Set(draft.candidates.map((candidate) => candidate.teamId))
-    draft.participants = draft.participants.filter((participant) => candidateTeamIds.has(participant.teamId))
+    draft.participants = draft.participants.filter((participant) =>
+      candidateTeamIds.has(participant.teamId)
+    )
 
-    const currentSelected = selectedBreakTeamIds(draft)
-    let selectedIds: string[] = []
-    if (draft.cutoffTiePolicy === 'manual' && currentSelected.size > 0) {
-      return
-    }
-    selectedIds = pickBreakTeamIdsFromCandidates(draft.candidates, Number(draft.size), draft.cutoffTiePolicy)
-    setBreakParticipantsFromTeamIds(draft, selectedIds)
+    syncBreakParticipantsFromCandidates(draft)
   } finally {
     draft.loading = false
   }
@@ -1131,8 +1298,7 @@ function validateBreakSeeds(draft: BreakDraft): string | null {
 
 function serializeBreakConfig(round: any, draft: BreakDraft): RoundBreakConfig {
   const source_rounds = normalizeSourceRounds(Number(round.round), draft.sourceRounds)
-  const sizeRaw = Number(draft.size)
-  const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : 1
+  const size = normalizeBreakSizeValue(draft.size)
   return {
     enabled: draft.enabled,
     source_rounds,
@@ -1149,8 +1315,16 @@ function serializeBreakConfig(round: any, draft: BreakDraft): RoundBreakConfig {
 }
 
 async function saveRoundBreak(round: any) {
-  const draft = roundDraft(round).break
+  const draftState = roundDraft(round)
+  applyBreakRoundConstraints(draftState)
+  const draft = draftState.break
   draft.error = ''
+  draft.size = normalizeBreakSizeValue(draft.size)
+  if (draft.cutoffTiePolicy !== 'manual' && draft.candidates.length === 0) {
+    await refreshBreakCandidates(round)
+    if (draft.error) return
+  }
+  syncBreakParticipantsFromCandidates(draft)
   const seedError = validateBreakSeeds(draft)
   if (seedError) {
     draft.error = seedError
@@ -1199,8 +1373,12 @@ async function onMotionOpenedChange(round: any, event: Event) {
 
 async function saveRoundSettings(round: any) {
   const draft = roundDraft(round)
+  applyBreakRoundConstraints(draft)
   const existingBreak = (round.userDefinedData ?? {}).break
-  const compileSourceRounds = normalizeSourceRounds(Number(round.round), draft.compile.source_rounds)
+  const compileSourceRounds = normalizeSourceRounds(
+    Number(round.round),
+    draft.compile.source_rounds
+  )
   const compileOptions = normalizeCompileOptions(draft.compile.options)
   await roundsStore.updateRound({
     tournamentId: tournamentId.value,
@@ -1443,11 +1621,18 @@ watch(
 }
 
 .motion-actions {
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
 
+.round-settings-open-button {
+  white-space: nowrap;
+  border-color: var(--color-border);
+}
+
 .motion-update-button {
+  margin-left: auto;
   background: #ffedd5;
   border-color: #fdba74;
   color: #9a3412;
@@ -1463,17 +1648,6 @@ watch(
 
 .motion-field :deep(.field-control) {
   width: 100%;
-}
-
-.advanced-toggle-button {
-  white-space: nowrap;
-  border-color: var(--color-border);
-}
-
-.advanced-toggle-button.active {
-  background: var(--color-secondary);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 
 .advanced-settings {
@@ -1699,6 +1873,10 @@ watch(
   overflow: auto;
 }
 
+.round-settings-modal {
+  max-width: min(1080px, 96vw);
+}
+
 .modal-actions {
   justify-content: flex-end;
   gap: var(--space-2);
@@ -1743,6 +1921,10 @@ watch(
 @media (max-width: 760px) {
   .round-shortcuts {
     padding-top: var(--space-1);
+  }
+
+  .motion-update-button {
+    margin-left: 0;
   }
 }
 </style>

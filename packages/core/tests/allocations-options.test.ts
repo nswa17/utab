@@ -120,21 +120,29 @@ describe('allocations option handling', () => {
     expect(chairIds).toHaveLength(2)
     expect(new Set(chairIds).size).toBe(2)
 
-    const traditionalAllocated = adjudicatorTraditional.get(
-      1,
-      baseDraw,
-      adjudicators,
-      teams,
-      compiledTeamResults,
-      compiledAdjudicatorResults,
-      { chairs: 1, panels: 1, trainees: 0 },
-      config,
-      { assign: 'middle_to_slight', scatter: true }
-    )
-    expect(traditionalAllocated.allocation).toHaveLength(2)
-    traditionalAllocated.allocation.forEach((square: any) => {
-      expect(Array.isArray(square.chairs)).toBe(true)
-      expect(Array.isArray(square.panels)).toBe(true)
-    })
+    const traditionalAssignModes = [
+      'high_to_slight',
+      'high_to_close',
+      'middle_to_slight',
+      'middle_to_close',
+    ] as const
+    for (const assignMode of traditionalAssignModes) {
+      const traditionalAllocated = adjudicatorTraditional.get(
+        1,
+        baseDraw,
+        adjudicators,
+        teams,
+        compiledTeamResults,
+        compiledAdjudicatorResults,
+        { chairs: 1, panels: 1, trainees: 0 },
+        config,
+        { assign: assignMode, scatter: true }
+      )
+      expect(traditionalAllocated.allocation).toHaveLength(2)
+      traditionalAllocated.allocation.forEach((square: any) => {
+        expect(Array.isArray(square.chairs)).toBe(true)
+        expect(Array.isArray(square.panels)).toBe(true)
+      })
+    }
   })
 })

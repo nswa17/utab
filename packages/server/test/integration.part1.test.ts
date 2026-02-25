@@ -1268,6 +1268,350 @@ describe('Server integration', () => {
     expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(false)
   })
 
+  it('derives first break round participants from standings when participants are empty', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-auto-first-stage', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-auto-first-stage', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Auto First Stage Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+      user_defined_data: {
+        round_defaults: {
+          break: {
+            source: 'raw',
+            size: 8,
+            cutoff_tie_policy: 'manual',
+            seeding: 'high_low',
+          },
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
+    expect(round2Res.status).toBe(201)
+    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break SF' })
+    expect(round3Res.status).toBe(201)
+    const round3Id = round3Res.body.data._id as string
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r1-gamma',
+        r: 1,
+        win: 1,
+        sum: 75,
+        margin: 5,
+        opponents: [alphaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1-alpha',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -5,
+        opponents: [gammaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r1-delta',
+        r: 1,
+        win: 1,
+        sum: 74,
+        margin: 3,
+        opponents: [betaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1-beta',
+        r: 1,
+        win: 0,
+        sum: 71,
+        margin: -3,
+        opponents: [deltaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r2-gamma',
+        r: 2,
+        win: 1,
+        sum: 76,
+        margin: 4,
+        opponents: [betaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r2-beta',
+        r: 2,
+        win: 0,
+        sum: 72,
+        margin: -4,
+        opponents: [gammaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r2-delta',
+        r: 2,
+        win: 1,
+        sum: 73,
+        margin: 2,
+        opponents: [alphaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r2-alpha',
+        r: 2,
+        win: 0,
+        sum: 71,
+        margin: -2,
+        opponents: [deltaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const saveBreakRes = await agent.patch(`/api/rounds/${round3Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1, 2],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(saveBreakRes.status).toBe(200)
+
+    const breakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 3,
+    })
+    expect(breakAllocRes.status).toBe(200)
+    expect(breakAllocRes.body.data.allocation).toHaveLength(1)
+    expect(breakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(false)
+    const autoParticipants = breakAllocRes.body.data.userDefinedData?.break?.participants as Array<{
+      teamId: string
+      seed: number
+    }>
+    expect(autoParticipants).toHaveLength(2)
+    expect(new Set(autoParticipants.map((participant) => participant.teamId))).toEqual(
+      new Set([gammaId, deltaId])
+    )
+    expect(
+      autoParticipants
+        .map((participant) => participant.seed)
+        .sort((left, right) => left - right)
+    ).toEqual([1, 2])
+    const matchTeams = breakAllocRes.body.data.allocation[0].teams
+    expect([matchTeams.gov, matchTeams.opp].sort()).toEqual([gammaId, deltaId].sort())
+  })
+
+  it('supports all-allocation wrapper with break team algorithm', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-wrapper-all', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-wrapper-all', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+    expect(typeof styleId).toBe('number')
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Wrapper Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const round2Id = round2Res.body.data._id as string
+
+    const adjudicatorARes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Judge A', strength: 7 })
+    expect(adjudicatorARes.status).toBe(201)
+    const adjudicatorBRes = await agent
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Judge B', strength: 6 })
+    expect(adjudicatorBRes.status).toBe(201)
+
+    const venueARes = await agent.post('/api/venues').send({ tournamentId, name: 'Room 1' })
+    expect(venueARes.status).toBe(201)
+    const venueBRes = await agent.post('/api/venues').send({ tournamentId, name: 'Room 2' })
+    expect(venueBRes.status).toBe(201)
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 76,
+        margin: 6,
+        opponents: [deltaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -6,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 1,
+        sum: 74,
+        margin: 3,
+        opponents: [gammaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r1',
+        r: 1,
+        win: 0,
+        sum: 71,
+        margin: -3,
+        opponents: [betaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const round2BreakRes = await agent.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round2BreakRes.status).toBe(200)
+
+    const allocRes = await agent.post('/api/allocations').send({
+      tournamentId,
+      round: 2,
+      options: {
+        team_allocation_algorithm: 'break',
+        adjudicator_allocation_algorithm: 'standard',
+        numbers_of_adjudicators: { chairs: 1, panels: 0, trainees: 0 },
+        venue_allocation_algorithm_options: { shuffle: false },
+      },
+    })
+    expect(allocRes.status).toBe(200)
+    expect(allocRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('break')
+    expect(allocRes.body.data.allocation).toHaveLength(1)
+
+    const square = allocRes.body.data.allocation[0]
+    expect([square.teams.gov, square.teams.opp].sort()).toEqual([alphaId, betaId].sort())
+    expect(Array.isArray(square.chairs)).toBe(true)
+    expect(square.chairs.length).toBe(1)
+    expect(square.venue).toBeTruthy()
+  })
+
   it('generates break allocation with byes and advances winners to next round', async () => {
     const agent = request.agent(app)
 
@@ -1382,7 +1726,7 @@ describe('Server integration', () => {
         source_rounds: [1],
         size: 3,
         cutoff_tie_policy: 'manual',
-        seeding: 'high_low',
+        seeding: 'reseed_each_round',
         participants: [
           { teamId: alphaId, seed: 1 },
           { teamId: betaId, seed: 2 },
@@ -1401,9 +1745,15 @@ describe('Server integration', () => {
     expect(round2BreakAllocRes.body.data.allocation).toHaveLength(1)
     const matchTeams = round2BreakAllocRes.body.data.allocation[0].teams
     expect([matchTeams.gov, matchTeams.opp].sort()).toEqual([betaId, gammaId].sort())
+    expect(round2BreakAllocRes.body.data.userDefinedData?.break?.stage_participants).toEqual([
+      { teamId: alphaId, seed: 1 },
+      { teamId: betaId, seed: 2 },
+      { teamId: gammaId, seed: 3 },
+    ])
     expect(round2BreakAllocRes.body.data.userDefinedData?.break?.stage_byes).toEqual([
       { teamId: alphaId, seed: 1 },
     ])
+    expect(round2BreakAllocRes.body.data.userDefinedData?.break?.matches).toHaveLength(1)
 
     const saveRound2DrawRes = await agent.post('/api/draws').send({
       tournamentId,
@@ -1435,7 +1785,7 @@ describe('Server integration', () => {
         source_rounds: [1, 2],
         size: 3,
         cutoff_tie_policy: 'manual',
-        seeding: 'high_low',
+        seeding: 'reseed_each_round',
         participants: [],
       },
       syncTeamAvailability: false,
@@ -1452,6 +1802,783 @@ describe('Server integration', () => {
     expect([nextTeams.gov, nextTeams.opp].sort()).toEqual([alphaId, betaId].sort())
     expect(round3BreakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(true)
     expect(round3BreakAllocRes.body.data.userDefinedData?.break?.previous_round).toBe(2)
+  })
+
+  it('derives break winners from saved draw allocation when previous break metadata is stale', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-stale-meta', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-stale-meta', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Stale Meta Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerAlphaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Alpha Speaker' })
+    expect(speakerAlphaRes.status).toBe(201)
+    const speakerBetaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Beta Speaker' })
+    expect(speakerBetaRes.status).toBe(201)
+    const speakerGammaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Gamma Speaker' })
+    expect(speakerGammaRes.status).toBe(201)
+    const speakerDeltaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Delta Speaker' })
+    expect(speakerDeltaRes.status).toBe(201)
+
+    const alphaSpeakerId = speakerAlphaRes.body.data._id as string
+    const betaSpeakerId = speakerBetaRes.body.data._id as string
+    const gammaSpeakerId = speakerGammaRes.body.data._id as string
+    const deltaSpeakerId = speakerDeltaRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      {
+        tournamentId,
+        name: 'Alpha',
+        details: [{ r: 2, available: true, speakers: [alphaSpeakerId], institutions: [] }],
+      },
+      {
+        tournamentId,
+        name: 'Beta',
+        details: [{ r: 2, available: true, speakers: [betaSpeakerId], institutions: [] }],
+      },
+      {
+        tournamentId,
+        name: 'Gamma',
+        details: [{ r: 2, available: true, speakers: [gammaSpeakerId], institutions: [] }],
+      },
+      {
+        tournamentId,
+        name: 'Delta',
+        details: [{ r: 2, available: true, speakers: [deltaSpeakerId], institutions: [] }],
+      },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'Break R1' })
+    expect(round2Res.status).toBe(201)
+    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break R2' })
+    expect(round3Res.status).toBe(201)
+    const round2Id = round2Res.body.data._id as string
+    const round3Id = round3Res.body.data._id as string
+
+    const round2BreakRes = await agent.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 4,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+          { teamId: gammaId, seed: 3 },
+          { teamId: deltaId, seed: 4 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round2BreakRes.status).toBe(200)
+
+    const round2BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(round2BreakAllocRes.status).toBe(200)
+    expect(round2BreakAllocRes.body.data.allocation).toHaveLength(2)
+    const staleBreakMetadata = round2BreakAllocRes.body.data.userDefinedData
+    expect(staleBreakMetadata?.break?.stage_participants).toHaveLength(4)
+
+    const editedRound2Allocation = [
+      {
+        id: 0,
+        teams: { gov: alphaId, opp: betaId },
+        chairs: [],
+        panels: [],
+        trainees: [],
+        venue: null,
+      },
+      {
+        id: 1,
+        teams: { gov: deltaId, opp: gammaId },
+        chairs: [],
+        panels: [],
+        trainees: [],
+        venue: null,
+      },
+    ]
+
+    const saveRound2DrawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: editedRound2Allocation,
+      userDefinedData: staleBreakMetadata,
+      drawOpened: false,
+      allocationOpened: false,
+      locked: false,
+    })
+    expect(saveRound2DrawRes.status).toBe(201)
+
+    const ballot1Res = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 2,
+      teamAId: alphaId,
+      teamBId: betaId,
+      winnerId: alphaId,
+      scoresA: [76],
+      scoresB: [73],
+      submittedEntityId: 'stale-break-judge-1',
+    })
+    expect(ballot1Res.status).toBe(201)
+
+    const ballot2Res = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 2,
+      teamAId: deltaId,
+      teamBId: gammaId,
+      winnerId: deltaId,
+      scoresA: [74],
+      scoresB: [72],
+      submittedEntityId: 'stale-break-judge-2',
+    })
+    expect(ballot2Res.status).toBe(201)
+
+    const round3BreakRes = await agent.patch(`/api/rounds/${round3Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1, 2],
+        size: 4,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round3BreakRes.status).toBe(200)
+
+    const round3BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 3,
+    })
+    expect(round3BreakAllocRes.status).toBe(200)
+    expect(round3BreakAllocRes.body.data.allocation).toHaveLength(1)
+    const finalists = round3BreakAllocRes.body.data.allocation[0].teams
+    expect([finalists.gov, finalists.opp].sort()).toEqual([alphaId, deltaId].sort())
+  })
+
+  it('keeps fixed bracket paths when advancing from previous break round', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-fixed-bracket', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-fixed-bracket', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Fixed Bracket Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+      { tournamentId, name: 'Epsilon' },
+      { tournamentId, name: 'Zeta' },
+      { tournamentId, name: 'Eta' },
+      { tournamentId, name: 'Theta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+    const epsilonId = teamByName.get('Epsilon')!
+    const zetaId = teamByName.get('Zeta')!
+    const etaId = teamByName.get('Eta')!
+    const thetaId = teamByName.get('Theta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const round3Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 3, name: 'Break SF' })
+    expect(round3Res.status).toBe(201)
+    const round2Id = round2Res.body.data._id as string
+    const round3Id = round3Res.body.data._id as string
+
+    const round2BreakRes = await agent.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 8,
+        cutoff_tie_policy: 'manual',
+        seeding: 'fixed_bracket',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+          { teamId: gammaId, seed: 3 },
+          { teamId: deltaId, seed: 4 },
+          { teamId: epsilonId, seed: 5 },
+          { teamId: zetaId, seed: 6 },
+          { teamId: etaId, seed: 7 },
+          { teamId: thetaId, seed: 8 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round2BreakRes.status).toBe(200)
+
+    const round2BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(round2BreakAllocRes.status).toBe(200)
+    expect(round2BreakAllocRes.body.data.allocation).toHaveLength(4)
+    const round2Allocation = round2BreakAllocRes.body.data.allocation as Array<any>
+    const round2Matches = round2BreakAllocRes.body.data.userDefinedData?.break?.matches as Array<{
+      id: number
+      gov: { teamId: string; seed: number }
+      opp: { teamId: string; seed: number }
+    }>
+    expect(round2Matches).toHaveLength(4)
+
+    const winnerSeedByMatchId = new Map<number, number>([
+      [1, 8],
+      [2, 7],
+      [3, 3],
+      [4, 4],
+    ])
+    const winnerByMatchId = new Map<number, string>()
+    round2Matches.forEach((match) => {
+      const targetSeed = winnerSeedByMatchId.get(Number(match.id))
+      expect(targetSeed).toBeDefined()
+      const winner = [match.gov, match.opp].find((side) => side.seed === targetSeed)
+      expect(winner).toBeTruthy()
+      if (winner) {
+        winnerByMatchId.set(Number(match.id), winner.teamId)
+      }
+    })
+
+    const saveRound2DrawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: round2Allocation,
+      userDefinedData: round2BreakAllocRes.body.data.userDefinedData,
+      drawOpened: false,
+      allocationOpened: false,
+      locked: false,
+    })
+    expect(saveRound2DrawRes.status).toBe(201)
+
+    for (const row of round2Allocation) {
+      const teams = row.teams as { gov: string; opp: string }
+      const matchId = Number(row.id) + 1
+      const winnerId = winnerByMatchId.get(matchId)
+      expect(winnerId).toBeTruthy()
+      if (!winnerId) continue
+      expect([teams.gov, teams.opp]).toContain(winnerId)
+
+      const ballotRes = await agent.post('/api/submissions/ballots').send({
+        tournamentId,
+        round: 2,
+        teamAId: teams.gov,
+        teamBId: teams.opp,
+        winnerId,
+        scoresA: [winnerId === teams.gov ? 76 : 72],
+        scoresB: [winnerId === teams.opp ? 76 : 72],
+        submittedEntityId: `fixed-break-judge-${matchId}`,
+      })
+      expect(ballotRes.status).toBe(201)
+    }
+
+    const round3BreakRes = await agent.patch(`/api/rounds/${round3Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1, 2],
+        size: 8,
+        cutoff_tie_policy: 'manual',
+        seeding: 'fixed_bracket',
+        participants: [],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round3BreakRes.status).toBe(200)
+
+    const round3BreakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 3,
+    })
+    expect(round3BreakAllocRes.status).toBe(200)
+    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(true)
+    expect(round3BreakAllocRes.body.data.allocation).toHaveLength(2)
+
+    const pairKey = (teamA: string, teamB: string) => [teamA, teamB].sort().join(':')
+    const semifinalPairs = (
+      round3BreakAllocRes.body.data.allocation as Array<{ teams: { gov: string; opp: string } }>
+    ).map((row) => pairKey(row.teams.gov, row.teams.opp))
+    expect(new Set(semifinalPairs)).toEqual(
+      new Set([pairKey(thetaId, etaId), pairKey(gammaId, deltaId)])
+    )
+  })
+
+  it('reassigns seeds randomly for random_full seeding', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-random-full', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-random-full', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Random Full Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Break R1' })
+    expect(round1Res.status).toBe(201)
+    const round1Id = round1Res.body.data._id as string
+
+    const round1BreakRes = await agent.patch(`/api/rounds/${round1Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [],
+        size: 4,
+        cutoff_tie_policy: 'manual',
+        seeding: 'random_full',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+          { teamId: gammaId, seed: 3 },
+          { teamId: deltaId, seed: 4 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round1BreakRes.status).toBe(200)
+
+    const breakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 1,
+    })
+    expect(breakAllocRes.status).toBe(200)
+    expect(breakAllocRes.body.data.allocation).toHaveLength(2)
+
+    const participants = breakAllocRes.body.data.userDefinedData?.break?.participants as Array<{
+      teamId: string
+      seed: number
+    }>
+    expect(participants).toHaveLength(4)
+    expect(new Set(participants.map((participant) => participant.teamId))).toEqual(
+      new Set([alphaId, betaId, gammaId, deltaId])
+    )
+    expect(
+      participants
+        .map((participant) => participant.seed)
+        .sort((left, right) => left - right)
+    ).toEqual([1, 2, 3, 4])
+
+    const allocatedTeamIds = new Set<string>()
+    ;(breakAllocRes.body.data.allocation as Array<{ teams: { gov: string; opp: string } }>).forEach((row) => {
+      allocatedTeamIds.add(row.teams.gov)
+      allocatedTeamIds.add(row.teams.opp)
+    })
+    expect(allocatedTeamIds).toEqual(new Set([alphaId, betaId, gammaId, deltaId]))
+  })
+
+  it('keeps ranking tiers while randomizing seeds within tie groups', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-random-tie', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-random-tie', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Random Tie Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+      { tournamentId, name: 'Gamma' },
+      { tournamentId, name: 'Delta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+    const gammaId = teamByName.get('Gamma')!
+    const deltaId = teamByName.get('Delta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
+    expect(round2Res.status).toBe(201)
+    const round2Id = round2Res.body.data._id as string
+
+    const setBreakSourceRes = await agent.patch(`/api/rounds/${round2Id}`).send({
+      tournamentId,
+      userDefinedData: {
+        ...(round2Res.body.data.userDefinedData ?? {}),
+        break: {
+          ...((round2Res.body.data.userDefinedData ?? {}).break ?? {}),
+          source: 'raw',
+        },
+      },
+    })
+    expect(setBreakSourceRes.status).toBe(200)
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1-alpha',
+        r: 1,
+        win: 1,
+        sum: 75,
+        margin: 5,
+        opponents: [gammaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: gammaId,
+        from_id: 'seed-r1-gamma',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -5,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1-beta',
+        r: 1,
+        win: 1,
+        sum: 75,
+        margin: 5,
+        opponents: [deltaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: deltaId,
+        from_id: 'seed-r1-delta',
+        r: 1,
+        win: 0,
+        sum: 70,
+        margin: -5,
+        opponents: [betaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const round2BreakRes = await agent.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 4,
+        cutoff_tie_policy: 'manual',
+        seeding: 'random_within_tie_group',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+          { teamId: gammaId, seed: 3 },
+          { teamId: deltaId, seed: 4 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round2BreakRes.status).toBe(200)
+
+    const breakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(breakAllocRes.status).toBe(200)
+    expect(breakAllocRes.body.data.allocation).toHaveLength(2)
+
+    const participants = breakAllocRes.body.data.userDefinedData?.break?.participants as Array<{
+      teamId: string
+      seed: number
+    }>
+    expect(participants).toHaveLength(4)
+    expect(
+      participants
+        .map((participant) => participant.seed)
+        .sort((left, right) => left - right)
+    ).toEqual([1, 2, 3, 4])
+
+    const candidateRes = await agent.post(`/api/rounds/${round2Id}/break/candidates`).send({
+      tournamentId,
+      source: 'raw',
+      sourceRounds: [1],
+      size: 4,
+    })
+    expect(candidateRes.status).toBe(200)
+    const rankingByTeamId = new Map<string, number | null>(
+      (candidateRes.body.data.candidates as Array<{ teamId: string; ranking: number | null }>).map(
+        (candidate) => [candidate.teamId, candidate.ranking]
+      )
+    )
+
+    const seedByTeamId = new Map(participants.map((participant) => [participant.teamId, participant.seed]))
+    const teamIds = [alphaId, betaId, gammaId, deltaId]
+    for (let leftIndex = 0; leftIndex < teamIds.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < teamIds.length; rightIndex += 1) {
+        const leftTeamId = teamIds[leftIndex]
+        const rightTeamId = teamIds[rightIndex]
+        const leftRank = rankingByTeamId.get(leftTeamId)
+        const rightRank = rankingByTeamId.get(rightTeamId)
+        if (!Number.isInteger(leftRank) || !Number.isInteger(rightRank) || leftRank === rightRank) continue
+        const leftSeed = seedByTeamId.get(leftTeamId)
+        const rightSeed = seedByTeamId.get(rightTeamId)
+        expect(Number.isInteger(leftSeed)).toBe(true)
+        expect(Number.isInteger(rightSeed)).toBe(true)
+        if (leftRank < rightRank) {
+          expect((leftSeed as number) < (rightSeed as number)).toBe(true)
+        } else {
+          expect((rightSeed as number) < (leftSeed as number)).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('balances gov/opp assignment in break allocations from prior side history', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'break-side-balance', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'break-side-balance', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const styleRes = await agent.get('/api/styles')
+    expect(styleRes.status).toBe(200)
+    const styleId = styleRes.body.data?.[0]?.id
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Break Side Balance Open',
+      style: styleId,
+      options: {
+        style: {
+          team_num: 2,
+          score_weights: [1],
+        },
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Alpha' },
+      { tournamentId, name: 'Beta' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
+    const teamByName = new Map<string, string>(teams.map((team) => [team.name, team._id]))
+    const alphaId = teamByName.get('Alpha')!
+    const betaId = teamByName.get('Beta')!
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    expect(round1Res.status).toBe(201)
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
+    expect(round2Res.status).toBe(201)
+    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break Final' })
+    expect(round3Res.status).toBe(201)
+    const round3Id = round3Res.body.data._id as string
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r1-alpha',
+        r: 1,
+        win: 1,
+        sum: 76,
+        margin: 4,
+        opponents: [betaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r1-beta',
+        r: 1,
+        win: 0,
+        sum: 72,
+        margin: -4,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+      {
+        tournamentId,
+        id: alphaId,
+        from_id: 'seed-r2-alpha',
+        r: 2,
+        win: 1,
+        sum: 75,
+        margin: 3,
+        opponents: [betaId],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: betaId,
+        from_id: 'seed-r2-beta',
+        r: 2,
+        win: 0,
+        sum: 72,
+        margin: -3,
+        opponents: [alphaId],
+        side: 'opp',
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const round3BreakRes = await agent.patch(`/api/rounds/${round3Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1, 2],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: alphaId, seed: 1 },
+          { teamId: betaId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: false,
+    })
+    expect(round3BreakRes.status).toBe(200)
+
+    const breakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 3,
+    })
+    expect(breakAllocRes.status).toBe(200)
+    expect(breakAllocRes.body.data.allocation).toHaveLength(1)
+    const finalMatch = breakAllocRes.body.data.allocation[0].teams
+    expect(finalMatch.gov).toBe(betaId)
+    expect(finalMatch.opp).toBe(alphaId)
   })
 
   it('skips adjudicator allocation when adjudicators are insufficient', async () => {

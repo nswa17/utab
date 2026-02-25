@@ -1,7 +1,12 @@
 import type { CompileOptions } from '@/types/compiled'
 
 export type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-export type BreakSeeding = 'high_low'
+export type BreakSeeding =
+  | 'high_low'
+  | 'reseed_each_round'
+  | 'fixed_bracket'
+  | 'random_within_tie_group'
+  | 'random_full'
 
 export interface BreakParticipant {
   teamId: string

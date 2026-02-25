@@ -41,7 +41,7 @@ describe('round defaults', () => {
     expect(normalized.break.source).toBe('raw')
     expect(normalized.break.size).toBe(16)
     expect(normalized.break.cutoff_tie_policy).toBe('include_all')
-    expect(normalized.break.seeding).toBe('high_low')
+    expect(normalized.break.seeding).toBe('reseed_each_round')
     expect(normalized.compile.source).toBe('raw')
     expect(normalized.compile.source_rounds).toEqual([1, 2, 3])
     expect(normalized.compile.options.winner_policy).toBe('score_only')
@@ -66,7 +66,7 @@ describe('round defaults', () => {
         source: 'submissions',
         size: 12,
         cutoff_tie_policy: 'strict',
-        seeding: 'high_low',
+        seeding: 'reseed_each_round',
       },
       compile: {
         source: 'raw',
@@ -117,7 +117,7 @@ describe('round defaults', () => {
         source: 'submissions',
         size: 8,
         cutoff_tie_policy: 'manual',
-        seeding: 'high_low',
+        seeding: 'reseed_each_round',
       },
       compile: {
         source: 'submissions',

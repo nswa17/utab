@@ -1,5 +1,5 @@
 import { teamAllocationPrecheck } from './teams/checks.js'
-import { sortTeams, sortDecorator } from '../general/sortings.js'
+import { sortTeams, sortDecorator, type CompiledTeamResult } from '../general/sortings.js'
 import { mGaleShapley } from './teams/matchings.js'
 import { strictMatching } from './teams/strict_matchings.js'
 import { getTeamDrawPowerpair } from './teams/powerpair.js'
@@ -7,35 +7,49 @@ import { decidePositions } from './sys.js'
 import { filterAvailable } from '../general/tools.js'
 import { sillyLogger } from '../general/loggers.js'
 import * as filters from './teams/filters.js'
+import type { AllocationConfig, Draw } from '../types/allocations.js'
+import type { TeamEntity } from '../types/domain.js'
+import type { TeamDrawAlgorithmOptions } from '../types/options.js'
 
-type RankFilter = (team: any, a: any, b: any, dict: any) => number
+type TeamFilterContext = {
+  r: number
+  compiled_team_results: CompiledTeamResult[]
+  config: AllocationConfig
+}
+
+type RankFilter = (
+  team: TeamEntity,
+  a: TeamEntity,
+  b: TeamEntity,
+  dict: TeamFilterContext
+) => number
 
 function integrateFilterFunctions(
-  team: any,
+  team: TeamEntity,
   filterFunctions: RankFilter[],
   weights: number[],
-  dict: any
+  dict: TeamFilterContext
 ) {
   sillyLogger(integrateFilterFunctions, arguments, 'draws')
-  return (a: any, b: any) => {
-    let aVal = 0
-    let c = 0
+  return (a: TeamEntity, b: TeamEntity) => {
+    let aValue = 0
+    let index = 0
     for (const func of filterFunctions) {
-      aVal += weights[c] * func(team, a, b, dict)
-      c += 1
+      aValue += weights[index] * func(team, a, b, dict)
+      index += 1
     }
-    return aVal > 0 ? 1 : aVal < 0 ? -1 : 0
+    return aValue > 0 ? 1 : aValue < 0 ? -1 : 0
   }
 }
 
 function getTeamRanksOriginal(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   filterFunctions: RankFilter[],
-  __: any,
-  config: any
-) {
+  _: number[],
+  config: AllocationConfig
+): Record<number, number[]> {
   sillyLogger(getTeamRanksOriginal, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
   for (const team of teams) {
@@ -47,19 +61,19 @@ function getTeamRanksOriginal(
         config,
       })
     )
-    ranks[team.id] = others.map((o) => o.id)
+    ranks[team.id] = others.map((other) => other.id)
   }
   return ranks
 }
 
 function getTeamRanksStraight(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   filterFunctions: RankFilter[],
-  __: any,
-  config: any
-) {
+  _: number[],
+  config: AllocationConfig
+): Record<number, number[]> {
   sillyLogger(getTeamRanksStraight, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
   const weights = Array(filterFunctions.length).fill(1)
@@ -72,22 +86,22 @@ function getTeamRanksStraight(
         config,
       })
     )
-    ranks[team.id] = others.map((o) => o.id)
+    ranks[team.id] = others.map((other) => other.id)
   }
   return ranks
 }
 
 function getTeamRanksWeighted(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   filterFunctions: RankFilter[],
-  __: any,
-  config: any
-) {
+  _: number[],
+  config: AllocationConfig
+): Record<number, number[]> {
   sillyLogger(getTeamRanksWeighted, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
-  const weights = Array(filterFunctions.length).map((_x, i) => 1 / (i + 1))
+  const weights = Array(filterFunctions.length).map((_value, index) => 1 / (index + 1))
   for (const team of teams) {
     const others = teams.filter((other) => team.id !== other.id)
     others.sort(
@@ -97,19 +111,19 @@ function getTeamRanksWeighted(
         config,
       })
     )
-    ranks[team.id] = others.map((o) => o.id)
+    ranks[team.id] = others.map((other) => other.id)
   }
   return ranks
 }
 
 function getTeamRanksCustom(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   filterFunctions: RankFilter[],
   weights: number[],
-  config: any
-) {
+  config: AllocationConfig
+): Record<number, number[]> {
   sillyLogger(getTeamRanksCustom, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
   for (const team of teams) {
@@ -121,32 +135,32 @@ function getTeamRanksCustom(
         config,
       })
     )
-    ranks[team.id] = others.map((o) => o.id)
+    ranks[team.id] = others.map((other) => other.id)
   }
   return ranks
 }
 
-const getTeamRanksMethods: Record<string, Function> = {
+const getTeamRanksMethods = {
   original: getTeamRanksOriginal,
   straight: getTeamRanksStraight,
   weighted: getTeamRanksWeighted,
   custom: getTeamRanksCustom,
-}
+} as const
 
 function getTeamAllocationFromMatching(
   matching: Record<number, number[]>,
-  compiledTeamResults: any[],
-  config: any
-) {
+  compiledTeamResults: CompiledTeamResult[],
+  config: AllocationConfig
+): Draw['allocation'] {
   sillyLogger(getTeamAllocationFromMatching, arguments, 'draws')
   let used: number[] = []
-  const teamAllocation: any[] = []
+  const teamAllocation: Draw['allocation'] = []
   let id = 0
-  for (const key in matching) {
-    if (used.indexOf(parseInt(key)) > -1) continue
-    const square: any = { id, chairs: [], panels: [], trainees: [], venue: null }
-    const teams = matching[key]
-    teams.push(parseInt(key))
+  for (const key of Object.keys(matching)) {
+    const teamId = Number(key)
+    if (used.includes(teamId)) continue
+    const square = { id, teams: [] as number[], chairs: [], panels: [], trainees: [], venue: null }
+    const teams = [...matching[teamId], teamId]
     square.teams = decidePositions(teams, compiledTeamResults, config)
     teamAllocation.push(square)
     used = used.concat(teams)
@@ -157,8 +171,8 @@ function getTeamAllocationFromMatching(
 
 function getTeamDraw(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   {
     filters: filtersOpt = [
       'by_strength',
@@ -169,33 +183,27 @@ function getTeamDraw(
     ],
     method = 'straight',
     weights = [],
-  },
-  config: any
-) {
-  const filterFunctions = filtersOpt.map((f) => filterMethods[f])
+  }: TeamDrawAlgorithmOptions = {},
+  config: AllocationConfig
+): Draw {
+  const filterFunctions = filtersOpt.map((filterName) => filterMethods[filterName]).filter(Boolean)
   const availableTeams = filterAvailable(teams, r)
   const sortedTeams = sortTeams(availableTeams, compiledTeamResults)
-  const ts = sortedTeams.map((t) => t.id)
-  const ranks = getTeamRanksMethods[method](
-    r,
-    sortedTeams,
-    compiledTeamResults,
-    filterFunctions,
-    weights,
-    config
-  )
+  const teamIds = sortedTeams.map((team) => team.id)
+  const rankMethod = getTeamRanksMethods[method as keyof typeof getTeamRanksMethods] ?? getTeamRanksStraight
+  const ranks = rankMethod(r, sortedTeams, compiledTeamResults, filterFunctions, weights, config)
   const teamNum = config.style.team_num
-  const matching = mGaleShapley(ts, ranks, teamNum - 1)
+  const matching = mGaleShapley(teamIds, ranks, teamNum - 1)
   const teamAllocation = getTeamAllocationFromMatching(matching, compiledTeamResults, config)
   return { r, allocation: teamAllocation }
 }
 
-function getTeamAllocationFromStrictMatching(matching: number[][]) {
+function getTeamAllocationFromStrictMatching(matching: number[][]): Draw['allocation'] {
   sillyLogger(getTeamAllocationFromStrictMatching, arguments, 'draws')
   let id = 0
-  const allocation: any[] = []
-  for (const div of matching) {
-    allocation.push({ id, teams: div, chairs: [], panels: [], trainees: [], venue: null })
+  const allocation: Draw['allocation'] = []
+  for (const teams of matching) {
+    allocation.push({ id, teams, chairs: [], panels: [], trainees: [], venue: null })
     id += 1
   }
   return allocation
@@ -203,17 +211,17 @@ function getTeamAllocationFromStrictMatching(matching: number[][]) {
 
 function getTeamDrawStrict(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
-  config: any,
-  options: any
-) {
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
+  config: AllocationConfig,
+  options: TeamDrawAlgorithmOptions = {}
+): Draw {
   const matching = strictMatching(teams, compiledTeamResults, config, { ...options, round: r })
-  const teamAllocation = getTeamAllocationFromStrictMatching(matching as any)
+  const teamAllocation = getTeamAllocationFromStrictMatching(matching as number[][])
   return { r, allocation: teamAllocation }
 }
 
-const filterMethods: Record<string, Function> = {
+const filterMethods: Record<string, RankFilter> = {
   by_side: filters.filterBySide,
   by_institution: filters.filterByInstitution,
   by_past_opponent: filters.filterByPastOpponent,

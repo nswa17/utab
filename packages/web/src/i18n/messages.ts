@@ -68,6 +68,11 @@ const en = {
   POI合計: 'Total POI',
   POI賞: 'POI Award',
   'Power Pair': 'Power Pair',
+  安定マッチング: 'Stable matching',
+  大会標準: 'Tournament standard',
+  大会拡張: 'Tournament extended',
+  安定割当: 'Stable allocation',
+  大会運用: 'Tournament operation',
   Preev: 'Pre-evaluation',
   'Preev: {value}': 'Pre-evaluation: {value}',
   事前評価: 'Pre-evaluation',
@@ -95,6 +100,7 @@ const en = {
   '{count}件': '{count} items',
   '{label} 結果': '{label} results',
   '{category} / 優先度 {priority}': '{category} / Priority {priority}',
+  '{name} が{side}側に偏っています': 'Side imbalance for {name} ({side}-heavy)',
   '{name} が片側に偏っています': 'Side imbalance for {name}',
   '{name} は利用不可': '{name} is unavailable',
   あなたの情報: 'Your details',
@@ -103,6 +109,8 @@ const en = {
   キャンセル: 'Cancel',
   ここにチームをドロップ: 'Drop team here',
   ここに会場をドロップ: 'Drop venue here',
+  チームをドロップ: 'Drop team',
+  会場をドロップ: 'Drop venue',
   'このドローを削除しますか？': 'Delete this draw?',
   'このチームに選択可能なスピーカーがいません。':
     'No selectable speakers are available for this team.',
@@ -228,8 +236,6 @@ const en = {
   'カットラインが同点になった時の扱いです。': 'How to handle ties at the break cutoff line.',
   'ブレイク対戦時の初期シード割り当て方式です。': 'Initial seeding method used for break pairings.',
   ラウンドデフォルトを保存: 'Save round defaults',
-  '新規ラウンドは大会セットアップのラウンドデフォルトを継承します。':
-    'New rounds inherit round defaults from tournament setup.',
   ラウンド運営ハブ: 'Round operations hub',
   運営ステップ: 'Operation steps',
   '運営は左から順に進みます。後続ステップは前段の完了後に実行してください。':
@@ -273,6 +279,8 @@ const en = {
     'Auto-generation uses the reference compile result selected in draw builder.',
   '参照集計結果を選ぶと、チーム/ジャッジの順位や平均を配置表に表示できます。近い実力同士の対戦確認や割り当て調整に使ってください。':
     'Selecting a compiled reference shows team/adjudicator rankings and averages in the allocation table. Use it to verify power matching and adjust assignments.',
+  '配置表の順位・平均表示に使います。':
+    'Used to show rankings and averages on the allocation table.',
   '警告と詳細は次の集計を参照: {label}':
     'Warnings and details reference this compile result: {label}',
   '表示中: {label}': 'Showing: {label}',
@@ -402,6 +410,9 @@ const en = {
   '次ラウンド生成では最新集計結果を参照します。':
     'Next-round generation will use the latest compile result.',
   オリジナル: 'Original',
+  均等合算: 'Equal-weight aggregate',
+  優先順適用: 'Priority-order',
+  '優先順適用（段階）': 'Priority-order (stepwise)',
   キー: 'Key',
   キー生成: 'Generate keys',
   クリア: 'Clear',
@@ -449,6 +460,7 @@ const en = {
   スタイル: 'Style',
   'スタイル: {style}': 'Style: {style}',
   ストレート: 'Straight',
+  '均等合算（同重み）': 'Equal-weight aggregate',
   スピーカー: 'Speaker',
   既存スピーカーから選択: 'Select from existing speakers',
   '以下のスピーカーは既存リストに存在しません: {names}':
@@ -590,7 +602,8 @@ const en = {
   上位から: 'From top',
   下位から: 'From bottom',
   不明: 'Unknown',
-  '中→弱': 'Middle to Slight',
+  '中→実力差大': 'Middle to Larger Skill Gap',
+  '中→実力差小': 'Middle to Smaller Skill Gap',
   '中→高': 'Middle to High',
   会場: 'Venue',
   '会場 (ドラッグ)': 'Venue (drag)',
@@ -607,6 +620,8 @@ const en = {
   '低勝ち/同点勝ち許可': 'Allow low/tie win',
   引き分け許可: 'Allow draw',
   '引き分け入力と低勝ち・同点勝ちを許可します。': 'Allow draw input and low-win/tie-win decisions.',
+  'ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。':
+    'In break rounds, draw input and low-win/tie-win are always disabled.',
   右へ移動: 'Move to right',
   作成: 'Create',
   '作成者: {name}': 'Created by: {name}',
@@ -738,6 +753,7 @@ const en = {
   大会ホームに戻る: 'Back to tournament home',
   大会一覧: 'Tournament list',
   大会名: 'Tournament name',
+  管理者名: 'Manager',
   大会名で検索: 'Search by tournament name',
   '大会情報 (Markdown)': 'Tournament info (Markdown)',
   '大会情報（Markdown形式対応）': 'Tournament info (Markdown supported)',
@@ -830,12 +846,21 @@ const en = {
   参照ラウンド: 'Source rounds',
   '未選択時は直前までの全ラウンドを参照します。': 'If none selected, all previous rounds are used.',
   ブレイク人数: 'Break size',
+  ブレイクチーム数: 'Break team count',
+  '第2ブレイク以降は前ラウンドの勝者（+BYE）を自動で次ステージ参加者にします。':
+    'From the second break round onward, winners from the previous round (plus BYEs) automatically advance.',
+  '参加チーム数が奇数のときは上位シードにBYEを割り当てます。':
+    'When the participant count is odd, BYEs are assigned to higher seeds.',
   境界同点の扱い: 'Cutoff tie policy',
   手動選抜: 'Manual selection',
   同点は全員含める: 'Include all tied teams',
   人数を厳密適用: 'Strict cutoff size',
   シード: 'Seed',
   シード方式: 'Seeding',
+  '毎ラウンド再シード (1 vs N)': 'Reseed each round (1 vs N)',
+  固定ブラケット: 'Fixed bracket',
+  同順位内ランダム: 'Random within tied ranks',
+  完全ランダム: 'Fully random',
   'High-Low (1 vs N)': 'High-Low (1 vs N)',
   '候補更新中...': 'Refreshing candidates...',
   ブレイク候補を更新: 'Refresh break candidates',
@@ -919,6 +944,7 @@ const en = {
   行番号をドラッグして並び替え: 'Drag row number to reorder',
   衝突: 'Conflict',
   衝突チーム: 'Conflict teams',
+  繰り上げ方式: 'Pull-up mode',
   衝突回避方式: 'Conflict avoidance mode',
   衝突回避: 'Avoid conflict',
   表彰枠: 'Max ranking',
@@ -985,6 +1011,7 @@ const en = {
   '警告コードの意味です。ドロー品質確認に使います。':
     'These warning codes help you validate draw quality.',
   重み付け: 'Weighted',
+  優先度重み合算: 'Priority-weighted aggregate',
   重要なお知らせ: 'Important notice',
   重複提出の注意: 'Duplicate submission warning',
   重複するチーム評価の送信を許可: 'Allow duplicate team evaluation submissions',
@@ -1006,7 +1033,7 @@ const en = {
   集計区分: 'Compile category',
   集計オプション: 'Compile options',
   既存レポートの選択: 'Select existing report',
-  表示するレポート: 'Report to display',
+  '表示するレポート': 'Report to display',
   '現在表示: {result}': 'Current display: {result}',
   '現在: {label} - {description}': 'Current: {label} - {description}',
   新規レポート生成: 'Generate new report',
@@ -1091,6 +1118,8 @@ const en = {
   得点の安定性: 'Score stability',
   '使用する基準を左列に並べてください。':
     'Arrange the criteria used for comparison in the left column.',
+  '使用する基準を有効化し、上から優先順に並べてください。':
+    'Enable criteria and arrange them from top to bottom in priority order.',
   '勝敗判定の方法を選択します。スコア整合を必須にするか、勝敗入力を優先するか、勝者未指定を引き分け扱いにするかを選べます。':
     'Choose winner-policy mode: require score consistency, prioritize winner input, or treat missing winner as draw.',
   '勝敗判定と引き分け時の勝敗点を設定します。':
@@ -1151,8 +1180,11 @@ const en = {
   集計結果保存: 'Save compile result',
   保存可能: 'Ready to save',
   プレビュー後に保存可能: 'Save becomes available after preview',
+  '保存時のみ履歴を作成します。必要な場合のみメモを記録してください。':
+    'History is created only on save. Add memo only when needed.',
   '保存時のみ履歴を作成します。必要に応じて名前とメモを編集してください。':
     'History is created only on save. Edit compile-result name and memo as needed.',
+  メモ: 'Memo',
   集計結果名: 'Compile-result name',
   自動生成名: 'Auto-generated name',
   'メモ (任意)': 'Memo (optional)',
@@ -1187,7 +1219,7 @@ const en = {
   フルスクリーンで表示: 'Show fullscreen',
   フルスクリーン: 'Fullscreen',
   フルスクリーン終了: 'Exit fullscreen',
-  提出状況を確認: 'Check submission status',
+  '提出状況を確認': 'Check submission status',
   公平性で詳細を見る: 'View details in fairness',
   公平性データがありません: 'Fairness data is unavailable',
   'チーム集計を含めて再計算すると公平性指標を表示できます。':
@@ -1333,15 +1365,33 @@ const en = {
   'CSV例: name,strength,preev,active,available,conflicts,available_r1':
     'CSV example: name,strength,preev,active,available,conflicts,available_r1',
   'one-up-one-down': 'one-up-one-down',
+  '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。':
+    'Stable matching is preference-based; tournament standard/extended use win brackets.',
+  '安定マッチングで使用する並び替え方式です。':
+    'Ordering strategy used by stable matching.',
   '1マッチあたりのチェア人数です。': 'Number of chairs per match.',
   '1マッチあたりのトレーニー人数です。': 'Number of trainees per match.',
   '1マッチあたりのパネル人数です。': 'Number of panels per match.',
+  '勝ち数ブラケット間の繰り上げ方法を指定します。':
+    'Configure how teams are pulled up between win brackets.',
+  'ブラケット内のペアリング方式です。': 'Pairing method used inside each bracket.',
+  '衝突回避方式を指定します。': 'Choose a conflict-avoidance mode.',
   'ブラケット間の繰り上げ方法を指定します。': 'Configure how teams are pulled up between brackets.',
   'パワーペアの奇数ブラケット処理です。': 'Odd-bracket handling method for power-paired draws.',
   'パワーペアのブラケット内ペアリング方式です。':
     'Pairing method used inside each power-pair bracket.',
   'パワーペアで使う衝突回避方式です。': 'Conflict-avoidance mode used in power-pair draws.',
   '会場をランダムに割り当てる場合に有効にします。': 'Enable to randomize venue allocation.',
+  会場割当方式: 'Venue assignment mode',
+  '優先度順（Win順）': 'Priority order (Win order)',
+  '会場の割り当て方を選択します。': 'Choose how venues are assigned.',
+  '会場優先度は会場マスタの priority を参照します。':
+    'Venue priority is taken from the venue master priority field.',
+  '優先度順では会場優先度が高い会場を、Win順が高いマッチから順に割り当てます。':
+    'In priority mode, higher-priority venues are assigned first to higher-ranked matches by win order.',
+  '会場優先度が高い順に、Win順が高いマッチから会場を割り当てます。':
+    'Assign venues in descending venue priority to matches in descending win order.',
+  '会場をランダム順で割り当てます。': 'Assign venues in random order.',
   '考慮対象にする過去ラウンドを個別に選択します。': 'Choose past rounds to consider individually.',
   '厳密アルゴリズムのチーム組み合わせ方式です。': 'Pairing method for strict team allocation.',
   '同一機関や衝突指定の対戦を避けます。': 'Avoid same-institution and conflict-marked matchups.',
@@ -1353,6 +1403,12 @@ const en = {
     'Select constraints for adjudicator allocation.',
   '全体/チーム/ジャッジ/会場のどこを生成するか選択します。':
     'Choose whether to generate all, teams, adjudicators, or venues.',
+  '安定割当または大会運用を選択します。':
+    'Select stable allocation or tournament operation.',
+  '安定マッチングまたは大会標準を選択します。':
+    'Select stable matching or tournament standard.',
+  '大会運用の割り当て戦略です。':
+    'Assignment strategy for tournament operation.',
   '伝統的アルゴリズムの割り当て戦略です。': 'Assignment strategy for the traditional algorithm.',
   '標準は簡易、厳密は制約を強めて生成します。':
     'Standard is lighter, strict applies stronger constraints.',
@@ -1362,6 +1418,20 @@ const en = {
     'Use previous rounds to reduce repeat matchups and bias.',
   '過去対戦の再マッチ回避強度です。': 'Weight for avoiding rematches against past opponents.',
   '適用する制約を複数選択できます。': 'You can select multiple constraints.',
+  '各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。':
+    'Each team ranks candidates, then pairings are built with stable matching (Gale-Shapley).',
+  '勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。':
+    'Teams are grouped by wins, then adjusted through pull-ups, pairing, side assignment, and optional conflict-reducing swaps.',
+  '勝ち数ブラケット内で組みます。人数が奇数のブラケットは下位ブラケットから繰り上げて調整します。':
+    'Teams are paired within win brackets; odd brackets are resolved by pulling teams up from lower brackets.',
+  'ブレイク参加者シードを使い、1位対最下位の順で対戦を作ります。':
+    'Use break seeds to create pairings in 1-vs-last order.',
+  '対戦とジャッジの双方の希望順を作り、安定マッチングでチェア→パネル→トレーニーの順に割り当てます。':
+    'Build preferences for debates and judges, then assign chair, panel, and trainee in order using stable matching.',
+  '部屋とジャッジを並べて上から割り当てる方式です。割当戦略と分散オプションで配り方を変えます。':
+    'Align rooms and judges and allocate top-down; assignment strategy and scatter options change the distribution.',
+  '参照集計結果が未選択のため、過去ラウンドの結果を参照せず対戦表を作成します。':
+    'No reference snapshot is selected, so the draw will be generated without past-round results.',
   '同系統のジャッジが偏らないように分散させます。':
     'Scatter panels to reduce clustering of similar judges.',
   '先にチームを選択してください。': 'Select a team first.',
@@ -1423,7 +1493,8 @@ const en = {
   '選択済み: {count}件': '{count} selected',
   順位: 'Ranking',
   '順位(序数)': 'Place',
-  '高→弱': 'High to Slight',
+  '高→実力差大': 'High to Larger Skill Gap',
+  '高→実力差小': 'High to Smaller Skill Gap',
   '高→高': 'High to High',
 } as const
 

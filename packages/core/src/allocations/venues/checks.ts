@@ -1,10 +1,11 @@
 import { filterAvailable, checkDetail } from '../../general/tools.js'
 import { sillyLogger } from '../../general/loggers.js'
 import { NeedMore } from '../../general/errors.js'
+import type { TeamEntity, VenueEntity } from '../../types/domain.js'
 
 export function checkNumsOfVenues(
-  teams: any[],
-  venues: any[],
+  teams: TeamEntity[],
+  venues: VenueEntity[],
   style: { team_num: number },
   r: number
 ): void {
@@ -18,8 +19,8 @@ export function checkNumsOfVenues(
 }
 
 export function venueAllocationPrecheck(
-  teams: any[],
-  venues: any[],
+  teams: TeamEntity[],
+  venues: VenueEntity[],
   style: { team_num: number },
   r: number
 ): void {

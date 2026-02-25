@@ -89,6 +89,42 @@ describe('allocations/teams/powerpair', () => {
     })
   })
 
+  it('prefers avoiding priority-1 institution conflicts over multiple lower priorities', () => {
+    const teams = [
+      { id: 1, details: [{ r: 1, available: true, institutions: [1, 2, 3], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, institutions: [3], speakers: [] }] },
+    ]
+    const compiledTeamResults = [
+      { id: 1, win: 2, sum: 40, margin: 5, past_sides: [], past_opponents: [] },
+      { id: 2, win: 2, sum: 39, margin: 4, past_sides: [], past_opponents: [] },
+      { id: 3, win: 2, sum: 38, margin: 3, past_sides: [], past_opponents: [] },
+      { id: 4, win: 2, sum: 37, margin: 2, past_sides: [], past_opponents: [] },
+    ]
+    const config = {
+      name: 'priority-powerpair',
+      style: { team_num: 2 },
+      institution_priority_map: { 1: 1, 2: 2, 3: 2 },
+    }
+
+    const draw = powerpair.get(
+      1,
+      teams,
+      compiledTeamResults,
+      {
+        pairing_method: 'slide',
+        avoid_conflicts: 'one_up_one_down',
+        max_swap_iterations: 8,
+      },
+      config
+    )
+
+    expect(draw.allocation.some((row: any) => row.teams.includes(1) && row.teams.includes(3))).toBe(
+      false
+    )
+  })
+
   it('rejects non two-team styles', () => {
     const teams = [
       { id: 1, details: [{ r: 1, available: true, institutions: [], speakers: [] }] },

@@ -12,7 +12,7 @@ import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
-import { buildDetailsForRounds, normalizeScoreWeights } from './shared/allocation-support.js'
+import { buildDetailsForRounds, buildIdMaps, normalizeScoreWeights } from './shared/allocation-support.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId, requireSingleTournamentPayload } from './shared/request-validators.js'
 
@@ -53,6 +53,75 @@ function resolveRounds(requestedRound: number | undefined, ...rawLists: Array<Ar
     })
   })
   return Array.from(rounds).sort((a, b) => a - b)
+}
+
+function restoreMappedId(value: unknown, reverse: Map<number, string>): string {
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue) && reverse.has(numericValue)) {
+    return reverse.get(numericValue) ?? String(value ?? '')
+  }
+  return String(value ?? '')
+}
+
+function remapCompiledTeamResults(
+  teamResults: any[],
+  teamReverse: Map<number, string>
+): any[] {
+  return teamResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, teamReverse),
+    past_opponents: Array.isArray(result?.past_opponents)
+      ? result.past_opponents.map((id: unknown) => restoreMappedId(id, teamReverse))
+      : result?.past_opponents,
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, teamReverse),
+          opponents: Array.isArray(detail?.opponents)
+            ? detail.opponents.map((id: unknown) => restoreMappedId(id, teamReverse))
+            : detail?.opponents,
+        }))
+      : result?.details,
+  }))
+}
+
+function remapCompiledSpeakerResults(
+  speakerResults: any[],
+  speakerReverse: Map<number, string>
+): any[] {
+  return speakerResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, speakerReverse),
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, speakerReverse),
+        }))
+      : result?.details,
+  }))
+}
+
+function remapCompiledAdjudicatorResults(
+  adjudicatorResults: any[],
+  adjudicatorReverse: Map<number, string>,
+  teamReverse: Map<number, string>
+): any[] {
+  return adjudicatorResults.map((result: any) => ({
+    ...result,
+    id: restoreMappedId(result?.id, adjudicatorReverse),
+    judged_teams: Array.isArray(result?.judged_teams)
+      ? result.judged_teams.map((id: unknown) => restoreMappedId(id, teamReverse))
+      : result?.judged_teams,
+    details: Array.isArray(result?.details)
+      ? result.details.map((detail: any) => ({
+          ...detail,
+          id: restoreMappedId(detail?.id, adjudicatorReverse),
+          judged_teams: Array.isArray(detail?.judged_teams)
+            ? detail.judged_teams.map((id: unknown) => restoreMappedId(id, teamReverse))
+            : detail?.judged_teams,
+        }))
+      : result?.details,
+  }))
 }
 
 type PlainRecord = Record<string, unknown>
@@ -243,27 +312,79 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
     const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
     const style = { team_num: teamNum, score_weights: scoreWeights }
 
-    const teamInstances = teams.map((team: any) => ({
-      id: String(team._id),
-      details: buildDetailsForRounds(team.details, rounds, {
-        available: true,
-        institutions: [],
-        speakers: [],
-      }),
-    }))
-    const speakerInstances = speakers.map((speaker: any) => ({ id: String(speaker._id) }))
+    const teamMaps = buildIdMaps(teams)
+    const speakerMaps = buildIdMaps(speakers)
+    const mapFromId = (id: string): number =>
+      speakerMaps.map.get(id) ??
+      teamMaps.map.get(id) ??
+      0
 
-    const compiled = rawSpeakerResults.length
+    const mappedRawTeamResults = (rawTeamResults as any[])
+      .map((result: any) => {
+        const teamId = teamMaps.map.get(String(result?.id ?? ''))
+        if (teamId === undefined) return null
+        const opponents = Array.isArray(result?.opponents)
+          ? result.opponents
+              .map((opponentId: unknown) => teamMaps.map.get(String(opponentId ?? '')))
+              .filter((value: number | undefined): value is number => value !== undefined)
+          : []
+        return {
+          ...result,
+          id: teamId,
+          from_id: mapFromId(String(result?.from_id ?? '')),
+          opponents,
+        }
+      })
+      .filter((result): result is Record<string, any> => result !== null)
+
+    const mappedRawSpeakerResults = (rawSpeakerResults as any[])
+      .map((result: any) => {
+        const speakerId = speakerMaps.map.get(String(result?.id ?? ''))
+        if (speakerId === undefined) return null
+        return {
+          ...result,
+          id: speakerId,
+          from_id: mapFromId(String(result?.from_id ?? '')),
+        }
+      })
+      .filter((result): result is Record<string, any> => result !== null)
+
+    const teamInstances = teams.map((team: any) => ({
+      id: teamMaps.map.get(String(team._id))!,
+      details: buildDetailsForRounds(
+        team.details,
+        rounds,
+        {
+          available: true,
+          institutions: [],
+          speakers: [],
+        },
+        undefined,
+        (speakerId) => speakerMaps.map.get(String(speakerId))
+      ),
+    }))
+    const speakerInstances = speakers
+      .map((speaker: any) => speakerMaps.map.get(String(speaker._id)))
+      .filter((id: number | undefined): id is number => id !== undefined)
+      .map((id) => ({ id }))
+
+    const compiledCore = mappedRawSpeakerResults.length
       ? coreResults.compileTeamResults(
-          teamInstances,
-          speakerInstances,
-          rawTeamResults,
-          rawSpeakerResults,
+          teamInstances as any,
+          speakerInstances as any,
+          mappedRawTeamResults as any,
+          mappedRawSpeakerResults as any,
           rounds,
           style
         )
-      : coreResults.compileTeamResults(teamInstances, rawTeamResults, rounds, style)
+      : coreResults.compileTeamResults(
+          teamInstances as any,
+          mappedRawTeamResults as any,
+          rounds,
+          style
+        )
 
+    const compiled = remapCompiledTeamResults(compiledCore, teamMaps.reverse)
     res.json({ data: sanitizeAggregateForPublic(compiled), errors: [] })
   } catch (err) {
     next(err)
@@ -323,13 +444,29 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
     const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
     const style = { team_num: teamNum, score_weights: scoreWeights }
 
-    const speakerInstances = speakers.map((speaker: any) => ({ id: String(speaker._id) }))
-    const compiled = coreResults.compileSpeakerResults(
-      speakerInstances,
-      rawSpeakerResults,
+    const speakerMaps = buildIdMaps(speakers)
+    const mappedRawSpeakerResults = (rawSpeakerResults as any[])
+      .map((result: any) => {
+        const speakerId = speakerMaps.map.get(String(result?.id ?? ''))
+        if (speakerId === undefined) return null
+        return {
+          ...result,
+          id: speakerId,
+          from_id: speakerMaps.map.get(String(result?.from_id ?? '')) ?? 0,
+        }
+      })
+      .filter((result): result is Record<string, any> => result !== null)
+    const speakerInstances = speakers
+      .map((speaker: any) => speakerMaps.map.get(String(speaker._id)))
+      .filter((id: number | undefined): id is number => id !== undefined)
+      .map((id) => ({ id }))
+    const compiledCore = coreResults.compileSpeakerResults(
+      speakerInstances as any,
+      mappedRawSpeakerResults as any,
       style,
       rounds
     )
+    const compiled = remapCompiledSpeakerResults(compiledCore, speakerMaps.reverse)
     res.json({ data: sanitizeAggregateForPublic(compiled), errors: [] })
   } catch (err) {
     next(err)
@@ -365,18 +502,69 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
       return
     }
 
-    const adjudicators = await getAdjudicatorModel(connection)
-      .find({ tournamentId })
-      .lean()
-      .exec()
+    const [adjudicators, teams] = await Promise.all([
+      getAdjudicatorModel(connection)
+        .find({ tournamentId })
+        .lean()
+        .exec(),
+      getTeamModel(connection)
+        .find({ tournamentId })
+        .lean()
+        .exec(),
+    ])
     const rounds = resolveRounds(round !== undefined ? Number(round) : undefined, rawAdjResults)
     if (rounds.length === 0) {
       res.json({ data: [], errors: [] })
       return
     }
 
-    const adjudicatorInstances = adjudicators.map((adj: any) => ({ id: String(adj._id) }))
-    const compiled = coreResults.compileAdjudicatorResults(adjudicatorInstances, rawAdjResults, rounds)
+    const adjudicatorMaps = buildIdMaps(adjudicators)
+    const teamMaps = buildIdMaps(teams)
+    const mappedRawAdjudicatorResults = (rawAdjResults as any[])
+      .map((result: any) => {
+        const adjudicatorId = adjudicatorMaps.map.get(String(result?.id ?? ''))
+        if (adjudicatorId === undefined) return null
+        const judgedTeams = Array.isArray(result?.judged_teams)
+          ? result.judged_teams
+              .map((teamId: unknown) => teamMaps.map.get(String(teamId ?? '')))
+              .filter((value: number | undefined): value is number => value !== undefined)
+          : []
+        return {
+          ...result,
+          id: adjudicatorId,
+          from_id: adjudicatorMaps.map.get(String(result?.from_id ?? '')) ?? 0,
+          judged_teams: judgedTeams,
+        }
+      })
+      .filter((result): result is Record<string, any> => result !== null)
+    const adjudicatorInstances = adjudicators
+      .map((adj: any) => {
+        const mappedId = adjudicatorMaps.map.get(String(adj._id))
+        if (mappedId === undefined) return null
+        return {
+          id: mappedId,
+          preev: Number((adj as any).preev ?? (adj as any).strength ?? 0),
+          details: buildDetailsForRounds(
+            (adj as any).details,
+            rounds,
+            { available: true, institutions: [], conflicts: [] },
+            undefined,
+            undefined,
+            (teamId) => teamMaps.map.get(String(teamId))
+          ),
+        }
+      })
+      .filter((adj): adj is { id: number; preev: number; details: any[] } => adj !== null)
+    const compiledCore = coreResults.compileAdjudicatorResults(
+      adjudicatorInstances as any,
+      mappedRawAdjudicatorResults as any,
+      rounds
+    )
+    const compiled = remapCompiledAdjudicatorResults(
+      compiledCore,
+      adjudicatorMaps.reverse,
+      teamMaps.reverse
+    )
     res.json({ data: sanitizeAggregateForPublic(compiled), errors: [] })
   } catch (err) {
     next(err)

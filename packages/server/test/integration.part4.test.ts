@@ -401,6 +401,10 @@ describe('Server integration', () => {
       auth: { access: { required: false, version: 1 } },
       createdBy: String(organizer._id),
     })
+    await TournamentModel.collection.updateOne(
+      { _id: creatorTournament._id },
+      { $set: { createdBy: organizer._id } }
+    )
 
     await UserModel.updateOne(
       { _id: organizer._id },
@@ -426,6 +430,7 @@ describe('Server integration', () => {
 
     const firstRun = await runStartupDataMaintenance()
     expect(firstRun.tournamentsUpdated).toBeGreaterThan(0)
+    expect(firstRun.membershipsCreatedFromCreatedBy).toBeGreaterThan(0)
 
     const migratedOpen = await TournamentModel.findById(legacyOpenTournament._id).lean().exec()
     const migratedProtected = await TournamentModel.findById(legacyProtectedTournament._id)
@@ -526,6 +531,15 @@ describe('Server integration', () => {
       .send({ name: 'Membership Open', style: 1, options: {} })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const organizerUserId = registerRes.body.data.userId as string
+
+    const initialMembership = await TournamentMemberModel.findOne({
+      tournamentId,
+      userId: organizerUserId,
+    })
+      .lean()
+      .exec()
+    expect(initialMembership?.role).toBe('organizer')
 
     const removeSelf = await organizer.delete(`/api/tournaments/${tournamentId}/users?username=organizer-c`)
     expect(removeSelf.status).toBe(200)
@@ -534,6 +548,57 @@ describe('Server integration', () => {
       .patch(`/api/tournaments/${tournamentId}`)
       .send({ name: 'Membership Open Updated' })
     expect(forbiddenPatch.status).toBe(403)
+  })
+
+  it('returns tournament manager names only to superusers in tournament list', async () => {
+    const organizer = request.agent(app)
+    const organizerRegisterRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'list-owner', password: 'password123', role: 'organizer' })
+    expect(organizerRegisterRes.status).toBe(201)
+
+    const organizerLoginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'list-owner', password: 'password123' })
+    expect(organizerLoginRes.status).toBe(200)
+
+    const organizerTournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Owner Name Open', style: 1, options: {} })
+    expect(organizerTournamentRes.status).toBe(201)
+    const tournamentId = organizerTournamentRes.body.data._id as string
+
+    const superuserPassword = 'super-password123'
+    await UserModel.create({
+      username: 'list-super',
+      role: 'superuser',
+      passwordHash: await hashPassword(superuserPassword),
+      tournaments: [],
+    })
+
+    const superuser = request.agent(app)
+    const superuserLoginRes = await superuser
+      .post('/api/auth/login')
+      .send({ username: 'list-super', password: superuserPassword })
+    expect(superuserLoginRes.status).toBe(200)
+
+    const superuserListRes = await superuser.get('/api/tournaments')
+    expect(superuserListRes.status).toBe(200)
+    const superuserTournament = superuserListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(superuserTournament).toBeTruthy()
+    expect(superuserTournament.createdByName).toBe('list-owner')
+
+    const organizerListRes = await organizer.get('/api/tournaments')
+    expect(organizerListRes.status).toBe(200)
+    const organizerTournament = organizerListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(organizerTournament).toBeTruthy()
+    expect('createdByName' in organizerTournament).toBe(false)
+
+    const publicListRes = await request(app).get('/api/tournaments')
+    expect(publicListRes.status).toBe(200)
+    const publicTournament = publicListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(publicTournament).toBeTruthy()
+    expect('createdByName' in publicTournament).toBe(false)
   })
 
   it('returns validation errors for malformed payloads and unknown routes', async () => {

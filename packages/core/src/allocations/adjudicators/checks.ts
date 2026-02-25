@@ -1,13 +1,15 @@
 import { filterAvailable, checkDetail } from '../../general/tools.js'
 import { sillyLogger } from '../../general/loggers.js'
 import { NeedMore } from '../../general/errors.js'
+import type { NumbersOfAdjudicators } from '../../types/allocations.js'
+import type { AdjudicatorEntity, TeamEntity } from '../../types/domain.js'
 
 function checkNumsOfAdjudicators(
-  teams: any[],
-  adjudicators: any[],
+  teams: TeamEntity[],
+  adjudicators: AdjudicatorEntity[],
   style: { team_num: number },
   r: number,
-  { chairs = 0, panels = 0, trainees = 0 }
+  { chairs = 0, panels = 0, trainees = 0 }: Partial<NumbersOfAdjudicators>
 ): void {
   sillyLogger(checkNumsOfAdjudicators, arguments, 'draws')
   const teamNum = style.team_num
@@ -23,12 +25,12 @@ function checkNumsOfAdjudicators(
 }
 
 export function adjudicatorAllocationPrecheck(
-  teams: any[],
-  adjudicators: any[],
-  _institutions: any[],
+  teams: TeamEntity[],
+  adjudicators: AdjudicatorEntity[],
+  _institutions: unknown[],
   style: { team_num: number },
   r: number,
-  numbers: any
+  numbers: Partial<NumbersOfAdjudicators>
 ): void {
   sillyLogger(adjudicatorAllocationPrecheck, arguments, 'draws')
   checkDetail(adjudicators, r)

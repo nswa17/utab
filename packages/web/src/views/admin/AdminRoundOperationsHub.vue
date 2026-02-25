@@ -86,6 +86,8 @@
                   v-if="selectedRound !== null"
                   :embedded="true"
                   :embedded-round="selectedRound"
+                  @update:reference-compiled-id="onDrawReferenceCompiledIdUpdate"
+                  @update:reference-compiled-rounds="onDrawReferenceCompiledRoundsUpdate"
                 />
               </section>
 
@@ -249,13 +251,6 @@
                     {{ $t('再読み込み') }}
                   </Button>
                 </div>
-                <p class="muted small">
-                  {{
-                    $t(
-                      '提出結果を集計して、このラウンド終了時点の成績を確定します。対戦表作成で選択した参照集計ラウンドに、このラウンドを加えた対象で集計します。'
-                    )
-                  }}
-                </p>
                 <section class="card soft stack compile-option-panel">
                   <h5>{{ $t('集計オプション') }}</h5>
                   <CompileOptionsEditor
@@ -444,7 +439,6 @@
     />
     <CompileSaveSnapshotModal
       v-model:open="compileWorkflow.saveModalOpen"
-      v-model:snapshot-name="compileWorkflow.snapshotNameDraft"
       v-model:snapshot-memo="compileWorkflow.snapshotMemoDraft"
       :loading="isLoading"
       @confirm="saveCompiledSnapshot"
@@ -492,6 +486,7 @@ import {
   resolveRankingTrend,
   toFiniteNumber,
 } from '@/utils/diff-indicator'
+import { isBreakRoundLike, resolveBreakStageTeamIds } from '@/utils/break-round'
 import { applyClientBaselineDiff } from '@/utils/compiled-diff'
 import {
   resolveRoundOperationStatus,
@@ -533,10 +528,16 @@ const sortedRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.
 const selectedRound = ref<number | null>(null)
 type HubTask = 'submissions' | 'compile' | 'draw' | 'publish'
 type HubTaskState = 'done' | 'ready' | 'blocked'
+type RoundReferenceDraft = {
+  compiledId: string
+  rounds: number[]
+}
 const DRAW_REFERENCE_COMPILED_ID_KEY = 'reference_compiled_id'
+const DRAW_REFERENCE_COMPILED_ROUNDS_KEY = 'reference_compiled_rounds'
 const hubTaskOrder: HubTask[] = ['draw', 'publish', 'submissions', 'compile']
 const activeTask = ref<HubTask>('draw')
 const roundTaskSelection = ref<Record<number, HubTask>>({})
+const roundReferenceDrafts = ref<Record<number, RoundReferenceDraft>>({})
 const sectionLoading = ref(true)
 const hasLoaded = ref(false)
 const actionError = ref('')
@@ -617,14 +618,14 @@ const selectedRoundData = computed(
 const selectedDraw = computed(
   () => drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
 function readDrawReferenceCompiledId(value: unknown): string {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
-  const raw = (value as Record<string, unknown>)[DRAW_REFERENCE_COMPILED_ID_KEY]
+  const raw = asRecord(value)[DRAW_REFERENCE_COMPILED_ID_KEY]
   return typeof raw === 'string' ? raw.trim() : ''
 }
-const selectedRoundReferenceCompiledId = computed(() =>
-  readDrawReferenceCompiledId(selectedDraw.value?.userDefinedData)
-)
 function normalizeCompiledRoundNumbers(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return Array.from(
@@ -635,16 +636,80 @@ function normalizeCompiledRoundNumbers(value: unknown): number[] {
     )
   ).sort((left, right) => left - right)
 }
-const selectedRoundReferenceCompiledRounds = computed<number[]>(() => {
-  const baselineId = selectedRoundReferenceCompiledId.value
-  if (!baselineId) return []
+function readDrawReferenceCompiledRounds(value: unknown): number[] {
+  return normalizeCompiledRoundNumbers(asRecord(value)[DRAW_REFERENCE_COMPILED_ROUNDS_KEY])
+}
+function isExistingCompiledId(compiledId: string): boolean {
+  const normalizedId = compiledId.trim()
+  if (!normalizedId) return false
+  return compiledHistory.value.some((item) => String(item?._id ?? '').trim() === normalizedId)
+}
+const selectedRoundReferenceDraft = computed<RoundReferenceDraft | null>(() => {
+  if (selectedRound.value === null) return null
+  return roundReferenceDrafts.value[selectedRound.value] ?? null
+})
+const selectedRoundReferenceCompiledIdFromDraw = computed(() => {
+  const compiledId = readDrawReferenceCompiledId(selectedDraw.value?.userDefinedData)
+  return isExistingCompiledId(compiledId) ? compiledId : ''
+})
+const selectedRoundReferenceCompiledId = computed(() => {
+  const draft = selectedRoundReferenceDraft.value
+  if (draft) {
+    return isExistingCompiledId(draft.compiledId) ? draft.compiledId : ''
+  }
+  return selectedRoundReferenceCompiledIdFromDraw.value
+})
+const selectedRoundReferenceCompiledRoundsFromDraw = computed(() => {
+  if (!selectedRoundReferenceCompiledIdFromDraw.value) return []
+  return readDrawReferenceCompiledRounds(selectedDraw.value?.userDefinedData)
+})
+function resolveCompiledRoundNumbersById(compiledId: string): number[] {
+  const normalizedId = compiledId.trim()
+  if (!normalizedId) return []
   const matched = compiledHistory.value.find(
-    (item) => String(item?._id ?? '').trim() === baselineId
+    (item) => String(item?._id ?? '').trim() === normalizedId
   )
   if (!matched) return []
   const payload = matched?.payload && typeof matched.payload === 'object' ? matched.payload : matched
   return normalizeCompiledRoundNumbers((payload as Record<string, any>)?.rounds)
+}
+const selectedRoundReferenceCompiledRounds = computed<number[]>(() => {
+  const draft = selectedRoundReferenceDraft.value
+  if (draft) {
+    if (!isExistingCompiledId(draft.compiledId)) return []
+    if (draft.rounds.length > 0) return draft.rounds
+    return resolveCompiledRoundNumbersById(draft.compiledId)
+  }
+  if (selectedRoundReferenceCompiledRoundsFromDraw.value.length > 0) {
+    return selectedRoundReferenceCompiledRoundsFromDraw.value
+  }
+  const baselineId = selectedRoundReferenceCompiledIdFromDraw.value
+  if (!baselineId) return []
+  return resolveCompiledRoundNumbersById(baselineId)
 })
+function updateSelectedRoundReferenceDraft(next: Partial<RoundReferenceDraft>) {
+  if (selectedRound.value === null) return
+  const roundNumber = selectedRound.value
+  const current = roundReferenceDrafts.value[roundNumber] ?? { compiledId: '', rounds: [] }
+  const compiledId =
+    typeof next.compiledId === 'string' ? next.compiledId.trim() : current.compiledId
+  const rounds = Array.isArray(next.rounds)
+    ? normalizeCompiledRoundNumbers(next.rounds)
+    : current.rounds
+  roundReferenceDrafts.value = {
+    ...roundReferenceDrafts.value,
+    [roundNumber]: {
+      compiledId,
+      rounds,
+    },
+  }
+}
+function onDrawReferenceCompiledIdUpdate(compiledId: string) {
+  updateSelectedRoundReferenceDraft({ compiledId })
+}
+function onDrawReferenceCompiledRoundsUpdate(rounds: number[]) {
+  updateSelectedRoundReferenceDraft({ rounds })
+}
 const priorRounds = computed(() => {
   if (selectedRound.value === null) return []
   return sortedRounds.value.filter((round) => round.round < selectedRound.value!)
@@ -772,6 +837,30 @@ const compiledSnapshotRoundSet = computed(() => {
   )
 })
 const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
+const selectedRoundReferenceCompiledLabel = computed(() => {
+  const baselineId = selectedRoundReferenceCompiledId.value
+  if (!baselineId) return t('未選択')
+  const matched = compiledHistory.value.find((item) => resolveCompiledDocId(item) === baselineId)
+  if (!matched) {
+    if (selectedRoundReferenceCompiledRounds.value.length > 0) {
+      return `${compileRoundRangeLabel(selectedRoundReferenceCompiledRounds.value)} / ${baselineId}`
+    }
+    return baselineId
+  }
+  const payload = normalizeCompiledDoc(matched) ?? {}
+  const rounds = normalizeCompiledRoundNumbers((payload as Record<string, any>)?.rounds)
+  return formatCompiledSnapshotOptionLabel(
+    {
+      rounds: rounds.length > 0 ? rounds : selectedRoundReferenceCompiledRounds.value,
+      createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : undefined,
+      snapshotName: String(payload.snapshot_name ?? '').trim() || undefined,
+    },
+    snapshotLocaleTag.value
+  )
+})
+const effectiveCompileTargetRoundsLabel = computed(() =>
+  compileRoundRangeLabel(effectiveCompileTargetRounds.value)
+)
 const selectedRoundLatestSavedCompiledLabel = computed(() => {
   const payload = selectedRoundLatestSavedCompiled.value
   if (!payload) return ''
@@ -795,10 +884,33 @@ const isShowingSavedCompiledForSelectedRound = computed(() => {
   if (!targetId) return false
   return String(compileDisplayPayload.value?._id ?? '').trim() === targetId
 })
+const selectedRoundIsBreakRound = computed(() => {
+  return isBreakRoundLike({
+    roundUserDefinedData: selectedRoundData.value?.userDefinedData,
+    drawUserDefinedData: selectedDraw.value?.userDefinedData,
+    allocation: selectedDraw.value?.allocation,
+  })
+})
+const selectedRoundBreakTeamIds = computed(() => {
+  if (!selectedRoundIsBreakRound.value) return new Set<string>()
+  return new Set(
+    resolveBreakStageTeamIds({
+      roundUserDefinedData: selectedRoundData.value?.userDefinedData,
+      drawUserDefinedData: selectedDraw.value?.userDefinedData,
+      allocation: selectedDraw.value?.allocation,
+    })
+  )
+})
+function filterCompileRowsForBreak(rows: any[]): any[] {
+  const breakTeamIds = selectedRoundBreakTeamIds.value
+  if (breakTeamIds.size === 0) return rows
+  return rows.filter((row) => breakTeamIds.has(String(row?.id ?? '').trim()))
+}
 const compileRowsBase = computed<any[]>(() => {
-  return Array.isArray(compileDisplayPayload.value?.compiled_team_results)
+  const rows = Array.isArray(compileDisplayPayload.value?.compiled_team_results)
     ? compileDisplayPayload.value!.compiled_team_results
     : []
+  return filterCompileRowsForBreak(rows)
 })
 const selectedCompileDiffBaselineCompiledId = computed(() => {
   const baselineId = selectedRoundReferenceCompiledId.value
@@ -814,9 +926,11 @@ const selectedCompileDiffBaselineCompiled = computed<Record<string, any> | null>
   return normalizeCompiledDoc(matched)
 })
 const selectedCompileDiffBaselineRows = computed<any[]>(() =>
-  Array.isArray(selectedCompileDiffBaselineCompiled.value?.compiled_team_results)
-    ? selectedCompileDiffBaselineCompiled.value!.compiled_team_results
-    : []
+  filterCompileRowsForBreak(
+    Array.isArray(selectedCompileDiffBaselineCompiled.value?.compiled_team_results)
+      ? selectedCompileDiffBaselineCompiled.value!.compiled_team_results
+      : []
+  )
 )
 function stripDiffFields(rows: any[]): any[] {
   return rows.map((row) => {
@@ -1332,15 +1446,6 @@ function buildCompileInputKey(
   })
 }
 
-function toSnapshotTimeString(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hours = `${date.getHours()}`.padStart(2, '0')
-  const minutes = `${date.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}`
-}
-
 function compileRoundRangeLabel(rounds: number[]): string {
   const normalized = Array.from(
     new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
@@ -1348,13 +1453,6 @@ function compileRoundRangeLabel(rounds: number[]): string {
   if (normalized.length === 0) return t('全ラウンド')
   if (normalized.length === 1) return roundLabel(normalized[0])
   return `${roundLabel(normalized[0])}-${roundLabel(normalized[normalized.length - 1])}`
-}
-
-function buildDefaultSnapshotName(source: CompileSource): string {
-  const roundsText = compileRoundRangeLabel(effectiveCompileTargetRounds.value)
-  const timestamp = toSnapshotTimeString(new Date())
-  const suffix = source === 'raw' ? `（${t('強制集計')}）` : ''
-  return `${roundsText} / ${timestamp}${suffix}`
 }
 
 function rankingTrendForRow(row: any) {
@@ -2226,7 +2324,7 @@ function openSaveSnapshotModal(rawConfirmed = false) {
     openForceCompileModal('save')
     return
   }
-  compileWorkflow.openSaveModal(buildDefaultSnapshotName(previewSource))
+  compileWorkflow.openSaveModal()
 }
 
 function onSaveSnapshotModalCancel() {
@@ -2243,13 +2341,11 @@ async function saveCompiledSnapshot() {
     return
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
-  const snapshotName = compileWorkflow.snapshotNameDraft.trim() || buildDefaultSnapshotName(source)
   const snapshotMemo = compileWorkflow.snapshotMemoDraft
   const saved = await compiledStore.saveCompiled(tournamentId.value, {
     source,
     rounds: effectiveCompileTargetRounds.value,
     options: buildCompileOptions(manualCompileOptionOverrides.value),
-    snapshotName,
     snapshotMemo,
     previewSignature: compileWorkflow.previewSignature,
     revision: compileWorkflow.previewRevision,

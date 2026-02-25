@@ -47,9 +47,19 @@
           <HelpTip :text="$t('スピーカースコア入力を無効にします。')" />
         </label>
         <label class="row small option-item">
-          <input v-model="allowLowTieWin" type="checkbox" :disabled="disabled" />
+          <input
+            v-model="allowLowTieWin"
+            type="checkbox"
+            :disabled="disabled || lockAllowLowTieWin"
+          />
           <span>{{ $t('引き分け許可') }}</span>
-          <HelpTip :text="$t('引き分け入力と低勝ち・同点勝ちを許可します。')" />
+          <HelpTip
+            :text="
+              lockAllowLowTieWin
+                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。')
+                : $t('引き分け入力と低勝ち・同点勝ちを許可します。')
+            "
+          />
         </label>
         <label class="row small option-item">
           <input v-model="scoreByMatterManner" type="checkbox" :disabled="disabled" />
@@ -96,9 +106,11 @@ import HelpTip from '@/components/common/HelpTip.vue'
 withDefaults(
   defineProps<{
     disabled?: boolean
+    lockAllowLowTieWin?: boolean
   }>(),
   {
     disabled: false,
+    lockAllowLowTieWin: false,
   }
 )
 

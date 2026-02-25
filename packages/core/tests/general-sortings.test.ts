@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   teamComparer,
+  allocationClosenessComparer,
   allocationSlightnessComparer,
   evaluateAdjudicator,
   sortAdjudicatorsWithPreev,
@@ -29,6 +30,18 @@ describe('general/sortings', () => {
     const s1 = { id: 0, teams: [1, 2] }
     const s2 = { id: 1, teams: [3, 4] }
     expect(allocationSlightnessComparer(compiled, s1, s2)).toBe(1)
+  })
+
+  it('prefers allocations with higher closeness', () => {
+    const compiled = [
+      { id: 1, win: 3, sum: 100 },
+      { id: 2, win: 3, sum: 95 },
+      { id: 3, win: 1, sum: 50 },
+      { id: 4, win: 0, sum: 30 },
+    ]
+    const s1 = { id: 0, teams: [1, 2] }
+    const s2 = { id: 1, teams: [3, 4] }
+    expect(allocationClosenessComparer(compiled, s1, s2)).toBe(-1)
   })
 
   it('evaluates adjudicator with preev weights', () => {

@@ -45,7 +45,11 @@
         <div class="overview-setting-grid">
           <article class="overview-setting-card stack">
             <Field :label="$t('スタイル')" v-slot="{ id, describedBy }">
-              <select v-model.number="tournamentForm.style" :id="id" :aria-describedby="describedBy">
+              <select
+                v-model.number="tournamentForm.style"
+                :id="id"
+                :aria-describedby="describedBy"
+              >
                 <option v-for="style in styles.styles" :key="style.id" :value="style.id">
                   {{ style.id }}: {{ style.name }}
                 </option>
@@ -66,7 +70,10 @@
             <h4>{{ $t('大会パスワード設定') }}</h4>
             <label class="switch-control" :aria-label="$t('大会パスワード設定')">
               <span class="switch-label">{{ $t('不要') }}</span>
-              <ToggleSwitch v-model="tournamentForm.accessRequired" :aria-label="$t('大会パスワード設定')" />
+              <ToggleSwitch
+                v-model="tournamentForm.accessRequired"
+                :aria-label="$t('大会パスワード設定')"
+              />
               <span class="switch-label">{{ $t('設定') }}</span>
             </label>
             <input
@@ -136,11 +143,7 @@
             />
           </Field>
           <Field :label="$t('種類')" v-slot="{ id, describedBy }">
-            <select
-              v-model="setupRoundForm.type"
-              :id="id"
-              :aria-describedby="describedBy"
-            >
+            <select v-model="setupRoundForm.type" :id="id" :aria-describedby="describedBy">
               <option value="standard">{{ $t('通常ラウンド') }}</option>
               <option value="break">{{ $t('ブレイク') }}</option>
             </select>
@@ -157,22 +160,19 @@
             </Button>
           </div>
         </form>
-        <p class="muted small">
-          {{ $t('新規ラウンドは大会セットアップのラウンドデフォルトを継承します。') }}
-        </p>
         <p v-if="setupRoundError" class="error">{{ setupRoundError }}</p>
         <p class="muted small">{{ tournamentAutosaveText }}</p>
-        <p v-if="sortedRounds.length === 0" class="muted small">{{ $t('ラウンドがまだありません。') }}</p>
+        <p v-if="sortedRounds.length === 0" class="muted small">
+          {{ $t('ラウンドがまだありません。') }}
+        </p>
         <div v-else class="stack setup-round-list">
-          <div
-            v-for="round in sortedRounds"
-            :key="round._id"
-            class="stack setup-round-item"
-          >
+          <div v-for="round in sortedRounds" :key="round._id" class="stack setup-round-item">
             <div class="row setup-round-item-head">
               <div class="stack tight">
                 <strong>{{ round.name || $t('ラウンド {round}', { round: round.round }) }}</strong>
-                <span class="muted small">{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span>
+                <span class="muted small"
+                  >{{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}</span
+                >
               </div>
               <Button
                 variant="danger"
@@ -192,131 +192,205 @@
                 :disabled="roundPublicationBusy"
               >
                 <template #status>
-                  <RoundPublicationSwitches
-                    :busy="roundPublicationBusy"
-                    :motion-opened="Boolean(round.motionOpened)"
-                    :motion-label="$t('モーション公開')"
-                    :team-allocation-opened="setupRoundTeamAllocationOpened(round.round)"
-                    :team-allocation-disabled="!setupRoundHasDraw(round.round)"
-                    :team-allocation-label="$t('チーム割り当て')"
-                    :adjudicator-allocation-opened="setupRoundAdjudicatorAllocationOpened(round.round)"
-                    :adjudicator-allocation-disabled="!setupRoundHasDraw(round.round)"
-                    :adjudicator-allocation-label="$t('ジャッジ割り当て')"
-                    @update:motion-opened="(checked) => onSetupMotionOpenedChange(round, checked)"
-                    @update:team-allocation-opened="
-                      (checked) => onSetupTeamAllocationChange(round, checked)
-                    "
-                    @update:adjudicator-allocation-opened="
-                      (checked) => onSetupAdjudicatorAllocationChange(round, checked)
-                    "
-                  />
+                  <div class="row setup-round-status-row">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="setup-round-details-open-button"
+                      :aria-pressed="isSetupRoundDetailsOpen(String(round._id)) ? 'true' : 'false'"
+                      :disabled="isLoading"
+                      @click="openSetupRoundDetails(round)"
+                    >
+                      {{ $t('ラウンド詳細設定') }}
+                    </Button>
+                    <div class="setup-round-switches-wrap">
+                      <RoundPublicationSwitches
+                        :busy="roundPublicationBusy"
+                        :motion-opened="Boolean(round.motionOpened)"
+                        :motion-label="$t('モーション公開')"
+                        :team-allocation-opened="setupRoundTeamAllocationOpened(round.round)"
+                        :team-allocation-disabled="!setupRoundHasDraw(round.round)"
+                        :team-allocation-label="$t('チーム割り当て')"
+                        :adjudicator-allocation-opened="
+                          setupRoundAdjudicatorAllocationOpened(round.round)
+                        "
+                        :adjudicator-allocation-disabled="!setupRoundHasDraw(round.round)"
+                        :adjudicator-allocation-label="$t('ジャッジ割り当て')"
+                        @update:motion-opened="
+                          (checked) => onSetupMotionOpenedChange(round, checked)
+                        "
+                        @update:team-allocation-opened="
+                          (checked) => onSetupTeamAllocationChange(round, checked)
+                        "
+                        @update:adjudicator-allocation-opened="
+                          (checked) => onSetupAdjudicatorAllocationChange(round, checked)
+                        "
+                      />
+                    </div>
+                  </div>
                 </template>
               </RoundMotionEditor>
             </section>
 
-            <details
-              class="setup-round-details"
-              :open="isSetupRoundDetailsOpen(round._id)"
-              @toggle="onSetupRoundDetailsToggle(round, $event)"
+            <div
+              v-if="isSetupRoundDetailsOpen(String(round._id))"
+              class="modal-backdrop"
+              role="presentation"
+              @click.self="closeSetupRoundDetails(String(round._id))"
             >
-              <summary class="row setup-round-details-summary">
-                <CollapseHeader
-                  :title="$t('ラウンド詳細設定')"
-                  :open="isSetupRoundDetailsOpen(round._id)"
-                />
-              </summary>
-              <div v-if="isSetupRoundDetailsOpen(round._id)" class="stack setup-round-details-body">
-                <section class="stack setup-round-basic-panel">
-                  <div v-if="setupRoundEditingId === round._id" class="stack">
-                    <div class="grid setup-round-edit-grid">
-                      <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
-                        <input
-                          v-model.number="setupRoundEditForm.round"
-                          :id="id"
-                          :aria-describedby="describedBy"
-                          type="number"
-                          min="1"
+              <div
+                class="modal card stack entity-edit-modal setup-round-details-modal"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div class="row">
+                  <strong>{{ $t('ラウンド詳細設定') }}</strong>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    @click="closeSetupRoundDetails(String(round._id))"
+                    >{{ $t('閉じる') }}</Button
+                  >
+                </div>
+                <p class="muted small">
+                  {{ round.name || $t('ラウンド {round}', { round: round.round }) }}
+                </p>
+                <div class="stack setup-round-details-body">
+                  <section class="stack setup-round-basic-panel">
+                    <div v-if="setupRoundEditingId === round._id" class="stack">
+                      <div class="grid setup-round-edit-grid">
+                        <Field :label="$t('ラウンド番号')" v-slot="{ id, describedBy }">
+                          <input
+                            v-model.number="setupRoundEditForm.round"
+                            :id="id"
+                            :aria-describedby="describedBy"
+                            type="number"
+                            min="1"
+                          />
+                        </Field>
+                        <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+                          <input
+                            v-model="setupRoundEditForm.name"
+                            :id="id"
+                            :aria-describedby="describedBy"
+                            type="text"
+                          />
+                        </Field>
+                        <Field :label="$t('種類')" v-slot="{ id, describedBy }">
+                          <select
+                            v-model="setupRoundEditForm.type"
+                            :id="id"
+                            :aria-describedby="describedBy"
+                          >
+                            <option value="standard">{{ $t('通常ラウンド') }}</option>
+                            <option value="break">{{ $t('ブレイク') }}</option>
+                          </select>
+                        </Field>
+                      </div>
+                      <section class="stack setup-round-config-group">
+                        <RoundOptionEditor
+                          v-model:evaluate-from-adjudicators="
+                            setupRoundEditForm.userDefinedData.evaluate_from_adjudicators
+                          "
+                          v-model:evaluate-from-teams="
+                            setupRoundEditForm.userDefinedData.evaluate_from_teams
+                          "
+                          v-model:chairs-always-evaluated="
+                            setupRoundEditForm.userDefinedData.chairs_always_evaluated
+                          "
+                          v-model:evaluator-in-team="
+                            setupRoundEditForm.userDefinedData.evaluator_in_team
+                          "
+                          v-model:no-speaker-score="
+                            setupRoundEditForm.userDefinedData.no_speaker_score
+                          "
+                          v-model:allow-low-tie-win="
+                            setupRoundEditForm.userDefinedData.allow_low_tie_win
+                          "
+                          v-model:score-by-matter-manner="
+                            setupRoundEditForm.userDefinedData.score_by_matter_manner
+                          "
+                          v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
+                          v-model:poi="setupRoundEditForm.userDefinedData.poi"
+                          v-model:best="setupRoundEditForm.userDefinedData.best"
+                          :lock-allow-low-tie-win="setupRoundEditForm.type === 'break'"
+                          :disabled="isLoading"
                         />
-                      </Field>
-                      <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
-                        <input
-                          v-model="setupRoundEditForm.name"
-                          :id="id"
-                          :aria-describedby="describedBy"
-                          type="text"
+                      </section>
+                      <section class="stack setup-round-config-group">
+                        <CompileOptionsEditor
+                          v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
+                          v-model:ranking-preset="
+                            setupRoundEditForm.compile.options.ranking_priority.preset
+                          "
+                          v-model:ranking-order="
+                            setupRoundEditForm.compile.options.ranking_priority.order
+                          "
+                          v-model:winner-policy="setupRoundEditForm.compile.options.winner_policy"
+                          v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
+                          v-model:merge-policy="
+                            setupRoundEditForm.compile.options.duplicate_normalization.merge_policy
+                          "
+                          v-model:poi-aggregation="
+                            setupRoundEditForm.compile.options.duplicate_normalization
+                              .poi_aggregation
+                          "
+                          v-model:best-aggregation="
+                            setupRoundEditForm.compile.options.duplicate_normalization
+                              .best_aggregation
+                          "
+                          v-model:missing-data-policy="
+                            setupRoundEditForm.compile.options.missing_data_policy
+                          "
+                          :show-winner-scoring="false"
+                          :show-source-rounds="false"
+                          :show-merge-and-missing="false"
+                          :source-round-options="
+                            compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))
+                          "
+                          :disabled="isLoading"
                         />
-                      </Field>
-                      <Field :label="$t('種類')" v-slot="{ id, describedBy }">
-                        <select
-                          v-model="setupRoundEditForm.type"
-                          :id="id"
-                          :aria-describedby="describedBy"
+                      </section>
+                      <section
+                        v-if="setupRoundEditForm.type === 'break'"
+                        class="stack setup-round-config-group"
+                      >
+                        <BreakPolicyEditor
+                          v-model:source="setupRoundEditForm.break.source"
+                          v-model:size="setupRoundEditForm.break.size"
+                          v-model:cutoff-tie-policy="setupRoundEditForm.break.cutoff_tie_policy"
+                          v-model:seeding="setupRoundEditForm.break.seeding"
+                          :disabled="isLoading"
+                        />
+                      </section>
+                      <div class="row setup-round-item-actions">
+                        <Button
+                          size="sm"
+                          :disabled="isLoading"
+                          @click="saveEditRoundFromSetup(round)"
                         >
-                          <option value="standard">{{ $t('通常ラウンド') }}</option>
-                          <option value="break">{{ $t('ブレイク') }}</option>
-                        </select>
-                      </Field>
+                          {{ $t('保存') }}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          :disabled="isLoading"
+                          @click="closeSetupRoundDetails(String(round._id))"
+                        >
+                          {{ $t('キャンセル') }}
+                        </Button>
+                      </div>
+                      <p v-if="setupRoundEditError" class="error small">
+                        {{ setupRoundEditError }}
+                      </p>
                     </div>
-                    <section class="stack setup-round-config-group">
-                      <RoundOptionEditor
-                        v-model:evaluate-from-adjudicators="setupRoundEditForm.userDefinedData.evaluate_from_adjudicators"
-                        v-model:evaluate-from-teams="setupRoundEditForm.userDefinedData.evaluate_from_teams"
-                        v-model:chairs-always-evaluated="setupRoundEditForm.userDefinedData.chairs_always_evaluated"
-                        v-model:evaluator-in-team="setupRoundEditForm.userDefinedData.evaluator_in_team"
-                        v-model:no-speaker-score="setupRoundEditForm.userDefinedData.no_speaker_score"
-                        v-model:allow-low-tie-win="setupRoundEditForm.userDefinedData.allow_low_tie_win"
-                        v-model:score-by-matter-manner="setupRoundEditForm.userDefinedData.score_by_matter_manner"
-                        v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
-                        v-model:poi="setupRoundEditForm.userDefinedData.poi"
-                        v-model:best="setupRoundEditForm.userDefinedData.best"
-                        :disabled="isLoading"
-                      />
-                    </section>
-                    <section class="stack setup-round-config-group">
-                      <CompileOptionsEditor
-                        v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
-                        v-model:ranking-preset="setupRoundEditForm.compile.options.ranking_priority.preset"
-                        v-model:ranking-order="setupRoundEditForm.compile.options.ranking_priority.order"
-                        v-model:winner-policy="setupRoundEditForm.compile.options.winner_policy"
-                        v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
-                        v-model:merge-policy="setupRoundEditForm.compile.options.duplicate_normalization.merge_policy"
-                        v-model:poi-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.poi_aggregation"
-                        v-model:best-aggregation="setupRoundEditForm.compile.options.duplicate_normalization.best_aggregation"
-                        v-model:missing-data-policy="setupRoundEditForm.compile.options.missing_data_policy"
-                        :show-winner-scoring="false"
-                        :show-source-rounds="false"
-                        :show-merge-and-missing="false"
-                        :source-round-options="compileSourceRoundSelectOptions(Number(setupRoundEditForm.round))"
-                        :disabled="isLoading"
-                      />
-                    </section>
-                    <section v-if="setupRoundEditForm.type === 'break'" class="stack setup-round-config-group">
-                      <BreakPolicyEditor
-                        v-model:source="setupRoundEditForm.break.source"
-                        v-model:size="setupRoundEditForm.break.size"
-                        v-model:cutoff-tie-policy="setupRoundEditForm.break.cutoff_tie_policy"
-                        v-model:seeding="setupRoundEditForm.break.seeding"
-                        :disabled="isLoading"
-                      />
-                    </section>
-                    <div class="row setup-round-item-actions">
-                      <Button size="sm" :disabled="isLoading" @click="saveEditRoundFromSetup(round)">
-                        {{ $t('保存') }}
-                      </Button>
-                      <Button variant="ghost" size="sm" :disabled="isLoading" @click="cancelEditRoundFromSetup">
-                        {{ $t('キャンセル') }}
-                      </Button>
-                    </div>
-                    <p v-if="setupRoundEditError" class="error small">
-                      {{ setupRoundEditError }}
+                    <p v-else class="muted small">
+                      {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
                     </p>
-                  </div>
-                  <p v-else class="muted small">
-                    {{ $t('ラウンド番号') }}: {{ round.round }} / {{ roundTypeLabel(round) }}
-                  </p>
-                </section>
+                  </section>
+                </div>
               </div>
-            </details>
+            </div>
           </div>
         </div>
       </article>
@@ -502,7 +576,9 @@
                   {{ teamInstitutionLabel(team) || $t('コンフリクトグループなし') }}
                 </span>
               </div>
-              <div class="muted entity-secondary">{{ team.speakers?.map((s) => s.name).join(', ') }}</div>
+              <div class="muted entity-secondary">
+                {{ team.speakers?.map((s) => s.name).join(', ') }}
+              </div>
               <div class="row">
                 <Button variant="ghost" size="sm" @click="startEditEntity('team', team)">
                   {{ $t('編集') }}
@@ -539,7 +615,13 @@
               </Field>
               <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
                 <template #label-suffix>
-                  <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+                  <HelpTip
+                    :text="
+                      $t(
+                        '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。'
+                      )
+                    "
+                  />
                 </template>
                 <template #default="{ id, describedBy }">
                   <input
@@ -553,12 +635,15 @@
                   />
                 </template>
               </Field>
-              <Field
-                :label="$t('事前評価')"
-                :help="$t('推奨範囲: 0〜10')"
-              >
+              <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
                 <template #label-suffix>
-                  <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+                  <HelpTip
+                    :text="
+                      $t(
+                        '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。'
+                      )
+                    "
+                  />
                 </template>
                 <template #default="{ id, describedBy }">
                   <input
@@ -601,7 +686,11 @@
                         :key="inst._id"
                         class="row small relation-item"
                       >
-                        <input v-model="adjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                        <input
+                          v-model="adjudicatorInstitutionIds"
+                          type="checkbox"
+                          :value="inst._id"
+                        />
                         <span>{{ inst.name }}</span>
                       </label>
                     </div>
@@ -668,7 +757,9 @@
             >
               <div class="entity-primary">
                 <strong>{{ adj.name }}</strong>
-                <span class="muted small entity-inline-meta">{{ adjudicatorInstitutionsLabel(adj) }}</span>
+                <span class="muted small entity-inline-meta">{{
+                  adjudicatorInstitutionsLabel(adj)
+                }}</span>
               </div>
               <div class="muted entity-secondary">
                 {{ $t('事前評価') }} {{ adj.preev ?? 0 }} / {{ $t('強さ') }} {{ adj.strength ?? 0 }}
@@ -851,10 +942,20 @@
               </Field>
               <Field :label="$t('カテゴリ')">
                 <template #label-suffix>
-                  <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+                  <HelpTip
+                    :text="
+                      $t(
+                        'institution / region / league から選択します。競合判定の粒度を揃えるために使います。'
+                      )
+                    "
+                  />
                 </template>
                 <template #default="{ id, describedBy }">
-                  <select v-model="institutionForm.category" :id="id" :aria-describedby="describedBy">
+                  <select
+                    v-model="institutionForm.category"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  >
                     <option
                       v-for="option in institutionCategoryOptions"
                       :key="`institution-category-create-${option.value}`"
@@ -961,13 +1062,19 @@
         </div>
         <section class="stack setup-round-config-group">
           <RoundOptionEditor
-            v-model:evaluate-from-adjudicators="roundDefaultsForm.userDefinedData.evaluate_from_adjudicators"
+            v-model:evaluate-from-adjudicators="
+              roundDefaultsForm.userDefinedData.evaluate_from_adjudicators
+            "
             v-model:evaluate-from-teams="roundDefaultsForm.userDefinedData.evaluate_from_teams"
-            v-model:chairs-always-evaluated="roundDefaultsForm.userDefinedData.chairs_always_evaluated"
+            v-model:chairs-always-evaluated="
+              roundDefaultsForm.userDefinedData.chairs_always_evaluated
+            "
             v-model:evaluator-in-team="roundDefaultsForm.userDefinedData.evaluator_in_team"
             v-model:no-speaker-score="roundDefaultsForm.userDefinedData.no_speaker_score"
             v-model:allow-low-tie-win="roundDefaultsForm.userDefinedData.allow_low_tie_win"
-            v-model:score-by-matter-manner="roundDefaultsForm.userDefinedData.score_by_matter_manner"
+            v-model:score-by-matter-manner="
+              roundDefaultsForm.userDefinedData.score_by_matter_manner
+            "
             v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
             v-model:poi="roundDefaultsForm.userDefinedData.poi"
             v-model:best="roundDefaultsForm.userDefinedData.best"
@@ -981,9 +1088,15 @@
             v-model:ranking-order="roundDefaultsForm.compile.options.ranking_priority.order"
             v-model:winner-policy="roundDefaultsForm.compile.options.winner_policy"
             v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
-            v-model:merge-policy="roundDefaultsForm.compile.options.duplicate_normalization.merge_policy"
-            v-model:poi-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation"
-            v-model:best-aggregation="roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation"
+            v-model:merge-policy="
+              roundDefaultsForm.compile.options.duplicate_normalization.merge_policy
+            "
+            v-model:poi-aggregation="
+              roundDefaultsForm.compile.options.duplicate_normalization.poi_aggregation
+            "
+            v-model:best-aggregation="
+              roundDefaultsForm.compile.options.duplicate_normalization.best_aggregation
+            "
             v-model:missing-data-policy="roundDefaultsForm.compile.options.missing_data_policy"
             :show-winner-scoring="false"
             :show-source-rounds="false"
@@ -1033,7 +1146,12 @@
           <Button variant="ghost" size="sm" @click="closeSetupRoundDeleteModal">
             {{ $t('キャンセル') }}
           </Button>
-          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmRemoveRoundFromSetup">
+          <Button
+            variant="danger"
+            size="sm"
+            :disabled="isLoading"
+            @click="confirmRemoveRoundFromSetup"
+          >
             {{ $t('削除') }}
           </Button>
         </div>
@@ -1142,7 +1260,13 @@
           </Field>
           <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
             <template #label-suffix>
-              <HelpTip :text="$t('強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。')" />
+              <HelpTip
+                :text="
+                  $t(
+                    '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。'
+                  )
+                "
+              />
             </template>
             <template #default="{ id, describedBy }">
               <input
@@ -1158,7 +1282,11 @@
           </Field>
           <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
             <template #label-suffix>
-              <HelpTip :text="$t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')" />
+              <HelpTip
+                :text="
+                  $t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')
+                "
+              />
             </template>
             <template #default="{ id, describedBy }">
               <input
@@ -1201,7 +1329,11 @@
                     :key="inst._id"
                     class="row small relation-item"
                   >
-                    <input v-model="editAdjudicatorInstitutionIds" type="checkbox" :value="inst._id" />
+                    <input
+                      v-model="editAdjudicatorInstitutionIds"
+                      type="checkbox"
+                      :value="inst._id"
+                    />
                     <span>{{ inst.name }}</span>
                   </label>
                 </div>
@@ -1250,7 +1382,13 @@
           </Field>
           <Field :label="$t('カテゴリ')">
             <template #label-suffix>
-              <HelpTip :text="$t('institution / region / league から選択します。競合判定の粒度を揃えるために使います。')" />
+              <HelpTip
+                :text="
+                  $t(
+                    'institution / region / league から選択します。競合判定の粒度を揃えるために使います。'
+                  )
+                "
+              />
             </template>
             <template #default="{ id, describedBy }">
               <select v-model="entityForm.category" :id="id" :aria-describedby="describedBy">
@@ -1323,7 +1461,9 @@
         <p class="muted">{{ deleteEntityPrompt }}</p>
         <p v-if="deleteEntityModalError" class="error small">{{ deleteEntityModalError }}</p>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{ $t('キャンセル') }}</Button>
+          <Button variant="ghost" size="sm" @click="closeDeleteEntityModal">{{
+            $t('キャンセル')
+          }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
             {{ $t('削除') }}
           </Button>
@@ -1363,7 +1503,6 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
-import CollapseHeader from '@/components/common/CollapseHeader.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import RoundMotionEditor from '@/components/common/RoundMotionEditor.vue'
@@ -1574,7 +1713,8 @@ const entityImportDescription = computed(() => {
 
 const entityImportExample = computed(() => {
   if (entityImportType.value === 'teams') return 'name,institution,speakers,available,available_r1'
-  if (entityImportType.value === 'adjudicators') return 'name,strength,preev,active,available,conflicts,available_r1'
+  if (entityImportType.value === 'adjudicators')
+    return 'name,strength,preev,active,available,conflicts,available_r1'
   if (entityImportType.value === 'venues') return 'name,priority,available,available_r1'
   if (entityImportType.value === 'speakers') return 'Speaker A'
   if (entityImportType.value === 'institutions') return 'Institution A,region,2'
@@ -1688,9 +1828,9 @@ const filteredTeams = computed(() => {
         )
       })
     : teams.teams
-  return filtered.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return filtered
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredAdjudicators = computed(() => {
@@ -1698,9 +1838,9 @@ const filteredAdjudicators = computed(() => {
   const filtered = q
     ? adjudicators.adjudicators.filter((adj) => adj.name?.toLowerCase().includes(q))
     : adjudicators.adjudicators
-  return filtered.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return filtered
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredSpeakers = computed(() => {
@@ -1708,9 +1848,9 @@ const filteredSpeakers = computed(() => {
   const filtered = q
     ? speakers.speakers.filter((sp) => sp.name?.toLowerCase().includes(q))
     : speakers.speakers
-  return filtered.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return filtered
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredVenues = computed(() => {
@@ -1718,9 +1858,9 @@ const filteredVenues = computed(() => {
   const filtered = q
     ? venues.venues.filter((venue) => venue.name?.toLowerCase().includes(q))
     : venues.venues
-  return filtered.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return filtered
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredInstitutions = computed(() => {
@@ -1728,9 +1868,9 @@ const filteredInstitutions = computed(() => {
   const filtered = q
     ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
     : institutions.institutions
-  return filtered.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return filtered
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredTeamSpeakerOptions = computed(() => {
@@ -1738,9 +1878,9 @@ const filteredTeamSpeakerOptions = computed(() => {
   const list = q
     ? speakers.speakers.filter((speaker) => speaker.name?.toLowerCase().includes(q))
     : speakers.speakers
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredEditTeamSpeakerOptions = computed(() => {
@@ -1748,9 +1888,9 @@ const filteredEditTeamSpeakerOptions = computed(() => {
   const list = q
     ? speakers.speakers.filter((speaker) => speaker.name?.toLowerCase().includes(q))
     : speakers.speakers
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredTeamInstitutionOptions = computed(() => {
@@ -1758,9 +1898,9 @@ const filteredTeamInstitutionOptions = computed(() => {
   const list = q
     ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
     : institutions.institutions
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 const groupedTeamInstitutionOptions = computed(() =>
   buildInstitutionOptionGroups(filteredTeamInstitutionOptions.value)
@@ -1771,9 +1911,9 @@ const filteredEditTeamInstitutionOptions = computed(() => {
   const list = q
     ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
     : institutions.institutions
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 const groupedEditTeamInstitutionOptions = computed(() =>
   buildInstitutionOptionGroups(filteredEditTeamInstitutionOptions.value)
@@ -1784,9 +1924,9 @@ const filteredAdjudicatorInstitutionOptions = computed(() => {
   const list = q
     ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
     : institutions.institutions
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 const groupedAdjudicatorInstitutionOptions = computed(() =>
   buildInstitutionOptionGroups(filteredAdjudicatorInstitutionOptions.value)
@@ -1795,9 +1935,9 @@ const groupedAdjudicatorInstitutionOptions = computed(() =>
 const filteredAdjudicatorConflictTeams = computed(() => {
   const q = adjudicatorConflictSearch.value.trim().toLowerCase()
   const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const filteredEditAdjudicatorInstitutionOptions = computed(() => {
@@ -1805,9 +1945,9 @@ const filteredEditAdjudicatorInstitutionOptions = computed(() => {
   const list = q
     ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
     : institutions.institutions
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 const groupedEditAdjudicatorInstitutionOptions = computed(() =>
   buildInstitutionOptionGroups(filteredEditAdjudicatorInstitutionOptions.value)
@@ -1816,9 +1956,9 @@ const groupedEditAdjudicatorInstitutionOptions = computed(() =>
 const filteredEditAdjudicatorConflictTeams = computed(() => {
   const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
   const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
-  return list.slice().sort((a, b) =>
-    naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? ''))
-  )
+  return list
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
 const visibleTeams = computed(() => filteredTeams.value.slice(0, teamLimit.value))
@@ -2020,9 +2160,10 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     (typeof currentAccess.password === 'string' && currentAccess.password.length > 0)
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
-  const currentInfo = nextUserDefined.info && typeof nextUserDefined.info === 'object'
-    ? { ...(nextUserDefined.info as Record<string, any>) }
-    : {}
+  const currentInfo =
+    nextUserDefined.info && typeof nextUserDefined.info === 'object'
+      ? { ...(nextUserDefined.info as Record<string, any>) }
+      : {}
   const info = includeInfo
     ? {
         ...currentInfo,
@@ -2111,7 +2252,8 @@ function queueTournamentAutosave() {
 }
 
 async function flushTournamentAutosave() {
-  if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value) return
+  if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value)
+    return
   if (isSavingTournamentAutosave.value) return
   pendingTournamentAutosave.value = false
   isSavingTournamentAutosave.value = true
@@ -2185,22 +2327,33 @@ function isSetupRoundDetailsOpen(roundId: string) {
   return setupRoundDetailsOpen.value[roundId] === true
 }
 
-function onSetupRoundDetailsToggle(round: any, event: Event) {
+function openSetupRoundDetails(round: any) {
   const roundId = String(round?._id ?? '')
   if (!roundId) return
-  const details = event.target as HTMLDetailsElement | null
-  const isOpen = Boolean(details?.open)
-  setupRoundDetailsOpen.value = isOpen ? { [roundId]: true } : {}
-  if (isOpen) {
-    startEditRoundFromSetup(round)
-  }
-  if (!isOpen && setupRoundEditingId.value === roundId) {
+  setupRoundDetailsOpen.value = { [roundId]: true }
+  startEditRoundFromSetup(round)
+}
+
+function closeSetupRoundDetails(roundId?: string) {
+  const normalizedRoundId = String(roundId ?? '').trim()
+  setupRoundDetailsOpen.value = {}
+  if (!setupRoundEditingId.value) return
+  if (!normalizedRoundId || setupRoundEditingId.value === normalizedRoundId) {
     cancelEditRoundFromSetup()
   }
 }
 
 function roundTypeValue(round: any): 'standard' | 'break' {
   return round?.userDefinedData?.break?.enabled === true ? 'break' : 'standard'
+}
+
+function applyBreakTypeConstraints(
+  userDefinedData: Record<string, any>,
+  type: 'standard' | 'break'
+) {
+  if (type === 'break') {
+    userDefinedData.allow_low_tie_win = false
+  }
 }
 
 function normalizeBreakConfigForRoundEdit(input: unknown) {
@@ -2211,13 +2364,22 @@ function normalizeBreakConfigForRoundEdit(input: unknown) {
     source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
       ? source.cutoff_tie_policy
       : breakDefaults.cutoff_tie_policy
+  const seeding =
+    source.seeding === 'high_low'
+      ? 'reseed_each_round'
+      : source.seeding === 'reseed_each_round' ||
+          source.seeding === 'fixed_bracket' ||
+          source.seeding === 'random_within_tie_group' ||
+          source.seeding === 'random_full'
+        ? source.seeding
+        : breakDefaults.seeding
   return {
     enabled: source.enabled === true,
     source: source.source === 'raw' ? 'raw' : breakDefaults.source,
     source_rounds: Array.isArray(source.source_rounds) ? source.source_rounds : [],
     size: Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : breakDefaults.size,
     cutoff_tie_policy: cutoffTiePolicy,
-    seeding: source.seeding === 'high_low' ? 'high_low' : breakDefaults.seeding,
+    seeding,
     participants: Array.isArray(source.participants) ? source.participants : [],
   }
 }
@@ -2225,18 +2387,26 @@ function normalizeBreakConfigForRoundEdit(input: unknown) {
 function compileSourceRoundOptions(targetRound: number): number[] {
   return sortedRounds.value
     .map((round) => Number(round.round))
-    .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound)
+    .filter(
+      (roundNumber) =>
+        Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound
+    )
     .sort((left, right) => left - right)
 }
 
-function compileSourceRoundSelectOptions(targetRound: number): Array<{ value: number; label: string }> {
+function compileSourceRoundSelectOptions(
+  targetRound: number
+): Array<{ value: number; label: string }> {
   return compileSourceRoundOptions(targetRound).map((roundNumber) => ({
     value: roundNumber,
     label: t('ラウンド {round}', { round: roundNumber }),
   }))
 }
 
-function normalizeCompileSourceRoundsForRound(roundNumber: number, sourceRounds: unknown): number[] {
+function normalizeCompileSourceRoundsForRound(
+  roundNumber: number,
+  sourceRounds: unknown
+): number[] {
   if (!Array.isArray(sourceRounds)) return []
   return Array.from(
     new Set(
@@ -2260,10 +2430,10 @@ async function createRoundFromSetup() {
     return
   }
 
-  const userDefinedData = buildRoundUserDefinedFromDefaults(normalizeRoundDefaults(roundDefaultsForm)) as Record<
-    string,
-    any
-  >
+  const userDefinedData = buildRoundUserDefinedFromDefaults(
+    normalizeRoundDefaults(roundDefaultsForm)
+  ) as Record<string, any>
+  applyBreakTypeConstraints(userDefinedData, setupRoundForm.type)
   if (setupRoundForm.type === 'break') {
     userDefinedData.break = {
       ...(userDefinedData.break ?? {}),
@@ -2338,6 +2508,10 @@ function startEditRoundFromSetup(round: any) {
     source_rounds: [...normalized.compile.source_rounds],
     options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
   })
+  applyBreakTypeConstraints(
+    setupRoundEditForm.userDefinedData as Record<string, any>,
+    setupRoundEditForm.type
+  )
 }
 
 function cancelEditRoundFromSetup() {
@@ -2380,14 +2554,15 @@ async function saveEditRoundFromSetup(round: any) {
       : {}
   const normalizedBreak = normalizeBreakConfigForRoundEdit(currentUserDefined.break)
   const breakSizeRaw = Number(setupRoundEditForm.break.size)
-  const breakSize = Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1
-    ? breakSizeRaw
-    : defaultRoundDefaults().break.size
+  const breakSize =
+    Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1
+      ? breakSizeRaw
+      : defaultRoundDefaults().break.size
   const breakCutoffTiePolicy =
     setupRoundEditForm.break.cutoff_tie_policy === 'include_all' ||
     setupRoundEditForm.break.cutoff_tie_policy === 'strict'
       ? setupRoundEditForm.break.cutoff_tie_policy
-      : 'manual'
+      : defaultRoundDefaults().break.cutoff_tie_policy
   const compileSourceRounds = normalizeCompileSourceRoundsForRound(
     roundNumber,
     setupRoundEditForm.compile.source_rounds
@@ -2405,7 +2580,7 @@ async function saveEditRoundFromSetup(round: any) {
       source: setupRoundEditForm.break.source === 'raw' ? 'raw' : 'submissions',
       size: breakSize,
       cutoff_tie_policy: breakCutoffTiePolicy,
-      seeding: 'high_low',
+      seeding: setupRoundEditForm.break.seeding,
     },
     compile: {
       source: setupRoundEditForm.compile.source === 'raw' ? 'raw' : 'submissions',
@@ -2413,6 +2588,7 @@ async function saveEditRoundFromSetup(round: any) {
       options: compileOptions,
     },
   }
+  applyBreakTypeConstraints(nextUserDefined, setupRoundEditForm.type)
 
   const updated = await rounds.updateRound({
     tournamentId: tournamentId.value,
@@ -2426,7 +2602,7 @@ async function saveEditRoundFromSetup(round: any) {
     return
   }
 
-  cancelEditRoundFromSetup()
+  closeSetupRoundDetails(String(round._id))
 }
 
 function speakerNamesFromIds(ids: string[]) {
@@ -2499,7 +2675,9 @@ function buildTeamDetailsPayload(options: {
         .filter((detail: { r: number }) => Number.isFinite(detail.r) && detail.r >= 1)
     : []
 
-  const roundSet = new Set<number>(options.roundNumbers.map((value) => Number(value)).filter((value) => value >= 1))
+  const roundSet = new Set<number>(
+    options.roundNumbers.map((value) => Number(value)).filter((value) => value >= 1)
+  )
   existingList.forEach((detail) => {
     roundSet.add(detail.r)
   })
@@ -2528,7 +2706,9 @@ function buildTeamDetailsPayload(options: {
 }
 
 function normalizeInstitutionCategory(value?: string): InstitutionCategory {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'region' || normalized === 'league') return normalized
   return 'institution'
 }
@@ -2770,7 +2950,8 @@ async function confirmDeleteEntity() {
   }
   const deleted = await institutions.deleteInstitution(tournamentId.value, modal.id)
   if (!deleted) {
-    deleteEntityModalError.value = institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
+    deleteEntityModalError.value =
+      institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
     institutions.error = null
     return
   }
@@ -3009,9 +3190,7 @@ async function applyEntityImport() {
     closeEntityImportModal()
   } catch (err: any) {
     const message =
-      err?.response?.data?.errors?.[0]?.message ??
-      err?.message ??
-      t('CSV取り込みに失敗しました')
+      err?.response?.data?.errors?.[0]?.message ?? err?.message ?? t('CSV取り込みに失敗しました')
     entityImportError.value = message
     csvError.value = message
   }
@@ -3103,6 +3282,14 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => setupRoundEditForm.type,
+  (nextType) => {
+    applyBreakTypeConstraints(setupRoundEditForm.userDefinedData as Record<string, any>, nextType)
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
 })
@@ -3139,8 +3326,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && editingEntity.value) {
     cancelEditEntity()
   }
-  if (event.key === 'Escape' && setupRoundEditingId.value) {
-    cancelEditRoundFromSetup()
+  if (event.key === 'Escape' && Object.keys(setupRoundDetailsOpen.value).length > 0) {
+    closeSetupRoundDetails()
   }
 }
 </script>
@@ -3265,6 +3452,28 @@ function onGlobalKeydown(event: KeyboardEvent) {
   gap: var(--space-2);
 }
 
+.setup-round-status-row {
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.setup-round-details-open-button {
+  border-color: var(--color-border);
+  white-space: nowrap;
+}
+
+.setup-round-switches-wrap {
+  margin-left: auto;
+}
+
+.setup-round-switches-wrap :deep(.publish-switch-status-row) {
+  width: auto;
+  justify-content: flex-end;
+}
+
 .setup-round-edit-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
@@ -3276,30 +3485,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
   margin-left: auto;
 }
 
-.setup-round-details {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  overflow: visible;
-}
-
-.setup-round-details-summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 10px 12px;
-  align-items: center;
-  gap: var(--space-2);
-  justify-content: flex-start;
-}
-
-.setup-round-details-summary::-webkit-details-marker {
-  display: none;
+.setup-round-details-modal {
+  width: min(1180px, 100%);
 }
 
 .setup-round-details-body {
   gap: var(--space-2);
-  padding: 0 var(--space-2) var(--space-2);
+  padding: 0;
 }
 
 .setup-round-basic-panel {
@@ -3672,6 +3864,20 @@ textarea {
 }
 
 @media (max-width: 960px) {
+  .setup-round-status-row {
+    align-items: flex-start;
+  }
+
+  .setup-round-switches-wrap {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .setup-round-switches-wrap :deep(.publish-switch-status-row) {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .entity-list-item {
     grid-template-columns: 1fr;
     align-items: start;

@@ -1,5 +1,5 @@
 import { shuffle, countCommon } from '../../general/math.js'
-import { sortTeams } from '../../general/sortings.js'
+import { sortTeams, type CompiledTeamResult } from '../../general/sortings.js'
 import { accessDetail, filterAvailable } from '../../general/tools.js'
 import { decidePositions } from '../sys.js'
 import { sillyLogger } from '../../general/loggers.js'
@@ -9,6 +9,9 @@ import {
   mergeInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
 } from '../common/institution-priority.js'
+import type { AllocationConfig, Draw } from '../../types/allocations.js'
+import type { TeamEntity } from '../../types/domain.js'
+import type { TeamDrawAlgorithmOptions } from '../../types/options.js'
 
 type OddBracketMethod = 'pullup_top' | 'pullup_bottom' | 'pullup_random'
 type PairingMethod = 'slide' | 'fold' | 'random'
@@ -21,12 +24,17 @@ type ConflictWeights = {
 
 type TeamBracket = {
   points: number
-  teams: any[]
+  teams: TeamEntity[]
 }
 
-function makeBadRequest(message: string): Error {
-  const err = new Error(message)
-  ;(err as any).status = 400
+type PairConflictProfile = {
+  institution: Record<number, number>
+  pastOpponent: number
+}
+
+function makeBadRequest(message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number }
+  err.status = 400
   return err
 }
 
@@ -77,11 +85,14 @@ function normalizeMaxIterations(value: unknown, fallback = 24): number {
   return Math.max(0, Math.floor(parsed))
 }
 
-function groupTeamsByPoints(sortedTeams: any[], compiledTeamResults: any[]): TeamBracket[] {
-  const resultById = new Map<number, any>(
-    (compiledTeamResults as any[]).map((result) => [Number(result.id), result])
+function groupTeamsByPoints(
+  sortedTeams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[]
+): TeamBracket[] {
+  const resultById = new Map<number, CompiledTeamResult>(
+    compiledTeamResults.map((result) => [Number(result.id), result])
   )
-  const grouped = new Map<number, any[]>()
+  const grouped = new Map<number, TeamEntity[]>()
   for (const team of sortedTeams) {
     const points = Number(resultById.get(team.id)?.win ?? 0)
     const current = grouped.get(points) ?? []
@@ -92,11 +103,7 @@ function groupTeamsByPoints(sortedTeams: any[], compiledTeamResults: any[]): Tea
   return pointsList.map((points) => ({ points, teams: grouped.get(points) ?? [] }))
 }
 
-function selectDonorIndex(
-  teams: any[],
-  method: OddBracketMethod,
-  randomSeed: string
-): number {
+function selectDonorIndex(teams: TeamEntity[], method: OddBracketMethod, randomSeed: string): number {
   if (teams.length === 0) return 0
   if (method === 'pullup_top') return 0
   if (method === 'pullup_bottom') return teams.length - 1
@@ -105,11 +112,7 @@ function selectDonorIndex(
   return shuffled[0] ?? 0
 }
 
-function resolveOddBrackets(
-  brackets: TeamBracket[],
-  method: OddBracketMethod,
-  randomSeed: string
-) {
+function resolveOddBrackets(brackets: TeamBracket[], method: OddBracketMethod, randomSeed: string) {
   const pullups: Array<{
     team_id: number
     from_points: number
@@ -125,11 +128,7 @@ function resolveOddBrackets(
     if (!donorSource || donorSource.teams.length === 0) {
       throw makeBadRequest('powerpair requires enough teams to resolve odd brackets')
     }
-    const donorIndex = selectDonorIndex(
-      donorSource.teams,
-      method,
-      `${randomSeed}:pullup:${index}`
-    )
+    const donorIndex = selectDonorIndex(donorSource.teams, method, `${randomSeed}:pullup:${index}`)
     const donor = donorSource.teams.splice(donorIndex, 1)[0]
     current.teams.push(donor)
     pullups.push({
@@ -148,11 +147,7 @@ function resolveOddBrackets(
   return pullups
 }
 
-function pairTeamsInBracket(
-  teams: any[],
-  method: PairingMethod,
-  randomSeed: string
-): number[][] {
+function pairTeamsInBracket(teams: TeamEntity[], method: PairingMethod, randomSeed: string): number[][] {
   if (teams.length % 2 !== 0) {
     throw makeBadRequest('powerpair bracket has an odd number of teams')
   }
@@ -186,15 +181,15 @@ function pairTeamsInBracket(
 function pairConflictScore(
   teamAId: number,
   teamBId: number,
-  teamById: Map<number, any>,
-  resultById: Map<number, any>,
+  teamById: Map<number, TeamEntity>,
+  resultById: Map<number, CompiledTeamResult>,
   round: number,
   institutionPriorityMap: Record<number, number>
-): { institution: Record<number, number>; pastOpponent: number } {
+): PairConflictProfile {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
-  const institutionsA = (accessDetail(teamA, round)?.institutions ?? []) as number[]
-  const institutionsB = (accessDetail(teamB, round)?.institutions ?? []) as number[]
+  const institutionsA = (accessDetail(teamA as TeamEntity, round).institutions ?? []) as number[]
+  const institutionsB = (accessDetail(teamB as TeamEntity, round).institutions ?? []) as number[]
   const institution =
     Object.keys(institutionPriorityMap).length > 0
       ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
@@ -218,9 +213,10 @@ function pairConflictScore(
   return { institution, pastOpponent }
 }
 
-type PairConflictProfile = ReturnType<typeof pairConflictScore>
-
-function mergePairConflictProfile(left: PairConflictProfile, right: PairConflictProfile) {
+function mergePairConflictProfile(
+  left: PairConflictProfile,
+  right: PairConflictProfile
+): PairConflictProfile {
   return {
     institution: mergeInstitutionPriorityHistograms(left.institution, right.institution),
     pastOpponent: left.pastOpponent + right.pastOpponent,
@@ -240,9 +236,7 @@ function comparePairConflictProfile(
     return 0
   }
 
-  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) {
-    return 0
-  }
+  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) return 0
   if (conflictWeights.institution <= 0) return comparePast()
   if (conflictWeights.past_opponent <= 0) return compareInstitution()
 
@@ -258,8 +252,8 @@ function comparePairConflictProfile(
 
 function applyOneUpOneDown(
   matches: number[][],
-  teamById: Map<number, any>,
-  resultById: Map<number, any>,
+  teamById: Map<number, TeamEntity>,
+  resultById: Map<number, CompiledTeamResult>,
   round: number,
   institutionPriorityMap: Record<number, number>,
   conflictWeights: ConflictWeights,
@@ -340,23 +334,17 @@ function applyOneUpOneDown(
 
 export function getTeamDrawPowerpair(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   {
     odd_bracket = 'pullup_top',
     pairing_method = 'fold',
     avoid_conflicts = 'one_up_one_down',
     conflict_weights = {},
     max_swap_iterations = 24,
-  }: {
-    odd_bracket?: string
-    pairing_method?: string
-    avoid_conflicts?: string | boolean
-    conflict_weights?: { institution?: number; past_opponent?: number }
-    max_swap_iterations?: number
-  } = {},
-  config: any
-) {
+  }: TeamDrawAlgorithmOptions = {},
+  config: AllocationConfig
+): Draw {
   sillyLogger(getTeamDrawPowerpair, arguments, 'draws')
 
   if (config?.style?.team_num !== 2) {
@@ -382,9 +370,9 @@ export function getTeamDrawPowerpair(
   const brackets = groupTeamsByPoints(sortedTeams, compiledTeamResults)
   const pullups = resolveOddBrackets(brackets, oddBracketMethod, randomSeed)
 
-  const teamById = new Map<number, any>(teams.map((team) => [Number(team.id), team]))
-  const resultById = new Map<number, any>(
-    (compiledTeamResults as any[]).map((result) => [Number(result.id), result])
+  const teamById = new Map<number, TeamEntity>(teams.map((team) => [Number(team.id), team]))
+  const resultById = new Map<number, CompiledTeamResult>(
+    compiledTeamResults.map((result) => [Number(result.id), result])
   )
   const institutionPriorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
 
@@ -395,7 +383,7 @@ export function getTeamDrawPowerpair(
     pairings_before_conflict: number[][]
     pairings_after_conflict: number[][]
   }> = []
-  const allocationRows: any[] = []
+  const allocationRows: Draw['allocation'] = []
   let nextSquareId = 0
 
   brackets.forEach((bracket, bracketIndex) => {

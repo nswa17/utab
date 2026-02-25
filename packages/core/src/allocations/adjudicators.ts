@@ -7,29 +7,54 @@ import {
   sortAdjudicators,
   sortAllocation,
   sortAdjudicatorsWithPreev,
+  type CompiledAdjudicatorResult,
+  type CompiledTeamResult,
 } from '../general/sortings.js'
 import { setMinus } from '../general/math.js'
 import * as adjfilters from './adjudicators/adjfilters.js'
 import { galeShapley } from './adjudicators/matchings.js'
 import * as traditionalMatchings from './adjudicators/traditional_matchings.js'
+import type { AllocationConfig, Draw, NumbersOfAdjudicators } from '../types/allocations.js'
+import type { AdjudicatorEntity, TeamEntity } from '../types/domain.js'
 
-type AdjFilter = (base: any, a: any, b: any, dict: any) => number
+type AllocationWithAdjudicators = Draw['allocation'][number]
+
+interface RankContext {
+  teams: TeamEntity[]
+  compiled_adjudicator_results: CompiledAdjudicatorResult[]
+  config: AllocationConfig
+  r: number
+}
+
+type GroupRankFilter = (
+  square: AllocationWithAdjudicators,
+  a: AdjudicatorEntity,
+  b: AdjudicatorEntity,
+  dict: RankContext
+) => number
+
+type AdjudicatorRankFilter = (
+  adjudicator: AdjudicatorEntity,
+  g1: AllocationWithAdjudicators,
+  g2: AllocationWithAdjudicators,
+  dict: RankContext
+) => number
 
 function getAdjudicatorRanks(
   r: number,
-  allocation: any[],
-  teams: any[],
-  adjudicators: any[],
-  compiledAdjudicatorResults: any[],
-  filterFunctions: AdjFilter[],
-  filterFunctions2: AdjFilter[],
-  config: any
+  allocation: AllocationWithAdjudicators[],
+  teams: TeamEntity[],
+  adjudicators: AdjudicatorEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  filterFunctions: GroupRankFilter[],
+  filterFunctions2: AdjudicatorRankFilter[],
+  config: AllocationConfig
 ) {
   sillyLogger(getAdjudicatorRanks, arguments, 'draws')
-  const allocationCp = [...allocation]
+  const allocationCopy = [...allocation]
   const gRanks: Record<number, number[]> = {}
   const aRanks: Record<number, number[]> = {}
-  for (const square of allocationCp) {
+  for (const square of allocationCopy) {
     adjudicators.sort(
       sortDecorator(square, filterFunctions, {
         teams,
@@ -38,10 +63,10 @@ function getAdjudicatorRanks(
         r,
       })
     )
-    gRanks[square.id] = adjudicators.map((a) => a.id)
+    gRanks[square.id] = adjudicators.map((adjudicator) => adjudicator.id)
   }
   for (const adjudicator of adjudicators) {
-    allocationCp.sort(
+    allocationCopy.sort(
       sortDecorator(adjudicator, filterFunctions2, {
         teams,
         compiled_adjudicator_results: compiledAdjudicatorResults,
@@ -49,32 +74,34 @@ function getAdjudicatorRanks(
         r,
       })
     )
-    aRanks[adjudicator.id] = allocationCp.map((ta) => ta.id)
+    aRanks[adjudicator.id] = allocationCopy.map((square) => square.id)
   }
   return [gRanks, aRanks] as const
 }
 
 function getAdjudicatorAllocationFromMatching(
-  allocation: any[],
+  allocation: AllocationWithAdjudicators[],
   matching: Record<number, number[]>,
   role: 'chairs' | 'panels' | 'trainees'
-) {
+): AllocationWithAdjudicators[] {
   sillyLogger(getAdjudicatorAllocationFromMatching, arguments, 'draws')
   const newAllocation = allocationDeepcopy(allocation)
-  for (const i in matching) {
-    const targetAllocation = newAllocation.find((g) => g.id === parseInt(i))
-    if (targetAllocation) targetAllocation[role] = matching[i]
+  for (const squareId of Object.keys(matching)) {
+    const targetAllocation = newAllocation.find((square) => square.id === Number(squareId))
+    if (targetAllocation) {
+      targetAllocation[role] = matching[Number(squareId)]
+    }
   }
   return newAllocation
 }
 
 function getMatching(
-  allocation: any[],
-  availableAdjudicators: any[],
+  allocation: AllocationWithAdjudicators[],
+  availableAdjudicators: AdjudicatorEntity[],
   gRanks: Record<number, number[]>,
   aRanks: Record<number, number[]>,
-  compiledTeamResults: any[],
-  compiledAdjudicatorResults: any[],
+  compiledTeamResults: CompiledTeamResult[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
   role: 'chairs' | 'panels' | 'trainees',
   num: number
 ) {
@@ -82,8 +109,8 @@ function getMatching(
   const sortedAdjudicators = sortAdjudicators(availableAdjudicators, compiledAdjudicatorResults)
   const sortedAllocation = sortAllocation(allocation, compiledTeamResults)
   const chairMatching = galeShapley(
-    sortedAllocation.map((a) => a.id),
-    sortedAdjudicators.map((a) => a.id),
+    sortedAllocation.map((row) => row.id),
+    sortedAdjudicators.map((adjudicator) => adjudicator.id),
     gRanks,
     aRanks,
     num
@@ -93,13 +120,13 @@ function getMatching(
 
 function getAdjudicatorDraw(
   r: number,
-  draw: any,
-  adjudicators: any[],
-  teams: any[],
-  compiledTeamResults: any[],
-  compiledAdjudicatorResults: any[],
-  { chairs, panels, trainees }: { chairs: number; panels: number; trainees: number },
-  config: any,
+  draw: Draw,
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  { chairs, panels, trainees }: NumbersOfAdjudicators,
+  config: AllocationConfig,
   {
     filters: filtersOpt = [
       'by_bubble',
@@ -110,18 +137,18 @@ function getAdjudicatorDraw(
       'by_past',
       'by_random',
     ],
-  }
-) {
+  }: { filters?: string[] } = {}
+): Draw {
   sillyLogger(getAdjudicatorDraw, arguments, 'draws')
   const availableTeams = filterAvailable(teams, r)
   const availableAdjudicators = filterAvailable(adjudicators, r)
   const allocation = draw.allocation
   const filterFunctionsAdj = filtersOpt
-    .filter((f) => adjfilterMethods1.hasOwnProperty(f))
-    .map((f) => adjfilterMethods1[f]) as AdjFilter[]
+    .filter((filterName) => Object.prototype.hasOwnProperty.call(adjfilterMethods1, filterName))
+    .map((filterName) => adjfilterMethods1[filterName]) as GroupRankFilter[]
   const filterFunctionsAdj2 = filtersOpt
-    .filter((f) => adjfilterMethods2.hasOwnProperty(f))
-    .map((f) => adjfilterMethods2[f]) as AdjFilter[]
+    .filter((filterName) => Object.prototype.hasOwnProperty.call(adjfilterMethods2, filterName))
+    .map((filterName) => adjfilterMethods2[filterName]) as AdjudicatorRankFilter[]
 
   const [gRanks, aRanks] = getAdjudicatorRanks(
     r,
@@ -144,9 +171,11 @@ function getAdjudicatorDraw(
     chairs
   )
 
-  let activeAdjudicators = ([] as number[]).concat(...newAllocation.map((s: any) => s.chairs))
+  let activeAdjudicators = ([] as number[]).concat(
+    ...newAllocation.map((square) => square.chairs ?? [])
+  )
   let remainingAdjudicatorIds = setMinus(
-    availableAdjudicators.map((a) => a.id),
+    availableAdjudicators.map((adjudicator) => adjudicator.id),
     activeAdjudicators
   )
   let remainingAdjudicators = remainingAdjudicatorIds.map((id) => findOne(adjudicators, id))
@@ -162,11 +191,11 @@ function getAdjudicatorDraw(
   )
 
   activeAdjudicators = ([] as number[]).concat(
-    ...newAllocation.map((s: any) => s.chairs),
-    ...newAllocation.map((s: any) => s.panels)
+    ...newAllocation.map((square) => square.chairs ?? []),
+    ...newAllocation.map((square) => square.panels ?? [])
   )
   remainingAdjudicatorIds = setMinus(
-    availableAdjudicators.map((a) => a.id),
+    availableAdjudicators.map((adjudicator) => adjudicator.id),
     activeAdjudicators
   )
   remainingAdjudicators = remainingAdjudicatorIds.map((id) => findOne(adjudicators, id))
@@ -181,38 +210,40 @@ function getAdjudicatorDraw(
     trainees
   )
 
-  return { r: draw.r, allocation: newAllocation }
+  return { r: draw.r, allocation: newAllocation, user_defined_data: draw.user_defined_data }
 }
 
 function getAdjudicatorDrawTraditional(
   r: number,
-  draw: any,
-  adjudicators: any[],
-  teams: any[],
-  compiledTeamResults: any[],
-  compiledAdjudicatorResults: any[],
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
-  config: any,
-  { assign = 'high_to_high', scatter = false }
-) {
+  draw: Draw,
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
+  config: AllocationConfig,
+  { assign = 'high_to_high', scatter = false }: { assign?: string; scatter?: boolean } = {}
+): Draw {
   sillyLogger(getAdjudicatorDrawTraditional, arguments, 'draws')
   const allocation = draw.allocation
   const availableAdjudicators = filterAvailable(adjudicators, r)
   const sortedAdjudicators = sortAdjudicatorsWithPreev(
     availableAdjudicators,
     compiledAdjudicatorResults,
-    config.preev_weights
+    config.preev_weights ?? []
   )
   const sortedAllocation = sortAllocation(allocation, compiledTeamResults)
 
-  const assignMap: Record<string, Function> = {
+  const assignMap = {
     high_to_high: traditionalMatchings.allocateHighToHigh,
     high_to_slight: traditionalMatchings.allocateHighToSlight,
+    high_to_close: traditionalMatchings.allocateHighToClose,
     middle_to_high: traditionalMatchings.allocateMiddleToHigh,
     middle_to_slight: traditionalMatchings.allocateMiddleToSlight,
-  }
-  const f = assignMap[assign]
-  const newAllocation = f(
+    middle_to_close: traditionalMatchings.allocateMiddleToClose,
+  } as const
+  const assigner = assignMap[(assign as keyof typeof assignMap) ?? 'high_to_high']
+  const newAllocation = assigner(
     r,
     sortedAllocation,
     sortedAdjudicators,
@@ -222,17 +253,17 @@ function getAdjudicatorDrawTraditional(
     numbersOfAdjudicators,
     { scatter }
   )
-  return { r: draw.r, allocation: newAllocation }
+  return { r: draw.r, allocation: newAllocation, user_defined_data: draw.user_defined_data }
 }
 
-const adjfilterMethods1: Record<string, Function> = {
+const adjfilterMethods1: Record<string, GroupRankFilter> = {
   by_bubble: adjfilters.filterByBubble,
   by_strength: adjfilters.filterByStrength,
   by_attendance: adjfilters.filterByAttendance,
   by_random: adjfilters.filterByRandom,
 }
 
-const adjfilterMethods2: Record<string, Function> = {
+const adjfilterMethods2: Record<string, AdjudicatorRankFilter> = {
   by_past: adjfilters.filterByPast,
   by_institution: adjfilters.filterByInstitution,
   by_conflict: adjfilters.filterByConflict,

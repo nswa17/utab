@@ -215,4 +215,42 @@ describe('index/TournamentHandler integration', () => {
     await handler.con.dbh.conn.dropDatabase()
     handler.close()
   })
+
+  it('returns legacy team-object draw shape from draws.teams.get', async () => {
+    const handler = new TournamentHandler(uri, {
+      id: 7,
+      name: 'Draw Conversion Tournament',
+      style: { team_num: 2, score_weights: [1] },
+      user_defined_data: {},
+    })
+
+    await handler.teams.create({
+      id: 1,
+      name: 'Team 1',
+      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+    })
+    await handler.teams.create({
+      id: 2,
+      name: 'Team 2',
+      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+    })
+
+    const draw = await handler.draws.teams.get(1, {
+      force: true,
+      simple: true,
+      algorithm: 'standard',
+      algorithm_options: { filters: ['by_random'], method: 'straight' },
+    })
+
+    expect(draw.r).toBe(1)
+    expect(draw.allocation).toHaveLength(1)
+    expect(Array.isArray((draw.allocation[0] as any).teams)).toBe(false)
+    expect((draw.allocation[0] as any).teams).toMatchObject({
+      og: expect.any(Number),
+      oo: expect.any(Number),
+    })
+
+    await handler.con.dbh.conn.dropDatabase()
+    handler.close()
+  })
 })

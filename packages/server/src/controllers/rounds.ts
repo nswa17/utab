@@ -19,6 +19,10 @@ import {
   type BreakCutoffTiePolicy,
   type BreakSeeding,
 } from './shared/break-config.js'
+import {
+  annotateBreakCandidatesForPreview,
+  buildBreakCandidatesFromCompiledPayload,
+} from './shared/break-candidates.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type RoundDefaults = {
@@ -62,6 +66,19 @@ function asRoundList(value: unknown): number[] {
   ).sort((left, right) => left - right)
 }
 
+function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
+  if (
+    value === 'high_low' ||
+    value === 'reseed_each_round' ||
+    value === 'fixed_bracket' ||
+    value === 'random_within_tie_group' ||
+    value === 'random_full'
+  ) {
+    return value
+  }
+  return fallback
+}
+
 function defaultRoundDefaults(): RoundDefaults {
   return {
     userDefinedData: {
@@ -78,7 +95,7 @@ function defaultRoundDefaults(): RoundDefaults {
     break: {
       source: 'submissions',
       size: 8,
-      cutoff_tie_policy: 'manual',
+      cutoff_tie_policy: 'include_all',
       seeding: 'high_low',
     },
     compile: {
@@ -139,7 +156,7 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
         breakSource.cutoff_tie_policy === 'include_all' || breakSource.cutoff_tie_policy === 'strict'
           ? (breakSource.cutoff_tie_policy as BreakCutoffTiePolicy)
           : fallback.break.cutoff_tie_policy,
-      seeding: breakSource.seeding === 'high_low' ? 'high_low' : fallback.break.seeding,
+      seeding: normalizeBreakSeeding(breakSource.seeding, fallback.break.seeding),
     },
     compile: {
       source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
@@ -179,7 +196,21 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
       options: normalizeCompileOptions(defaults.compile.options, defaults.compile.options),
     }
   }
+  const breakConfig = asRecord(merged.break)
+  if (breakConfig.enabled === true) {
+    merged.allow_low_tie_win = false
+  }
   return merged
+}
+
+function applyBreakConstraintsToUserDefined(input: unknown): Record<string, unknown> {
+  const current = asRecord(input)
+  const next: Record<string, unknown> = { ...current }
+  const breakConfig = asRecord(next.break)
+  if (breakConfig.enabled === true) {
+    next.allow_low_tie_win = false
+  }
+  return next
 }
 
 function upsertTeamAvailabilityDetail(details: unknown, roundNumber: number, available: boolean) {
@@ -304,7 +335,9 @@ export const createRound: RequestHandler = async (req, res, next) => {
       const RoundModel = getRoundModel(connection)
       const preparedPayload = payload.map((item) => ({
         ...item,
-        userDefinedData: buildRoundUserDefinedFromDefaults(roundDefaults, item.userDefinedData),
+        userDefinedData: applyBreakConstraintsToUserDefined(
+          buildRoundUserDefinedFromDefaults(roundDefaults, item.userDefinedData)
+        ),
       }))
       const created = await RoundModel.insertMany(preparedPayload, { ordered: false })
       res.status(201).json({ data: created, errors: [] })
@@ -349,7 +382,9 @@ export const createRound: RequestHandler = async (req, res, next) => {
       teamAllocationOpened,
       adjudicatorAllocationOpened,
       weightsOfAdjudicators,
-      userDefinedData: buildRoundUserDefinedFromDefaults(roundDefaults, userDefinedData),
+      userDefinedData: applyBreakConstraintsToUserDefined(
+        buildRoundUserDefinedFromDefaults(roundDefaults, userDefinedData)
+      ),
     })
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err: any) {
@@ -395,7 +430,9 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       if (item.adjudicatorAllocationOpened !== undefined)
         update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
       if (item.weightsOfAdjudicators !== undefined) update.weightsOfAdjudicators = item.weightsOfAdjudicators
-      if (item.userDefinedData !== undefined) update.userDefinedData = item.userDefinedData
+      if (item.userDefinedData !== undefined) {
+        update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
+      }
       return {
         updateOne: {
           filter: { _id: item.id, tournamentId },
@@ -468,7 +505,9 @@ export const updateRound: RequestHandler = async (req, res, next) => {
     if (adjudicatorAllocationOpened !== undefined)
       update.adjudicatorAllocationOpened = adjudicatorAllocationOpened
     if (weightsOfAdjudicators !== undefined) update.weightsOfAdjudicators = weightsOfAdjudicators
-    if (userDefinedData !== undefined) update.userDefinedData = userDefinedData
+    if (userDefinedData !== undefined) {
+      update.userDefinedData = applyBreakConstraintsToUserDefined(userDefinedData)
+    }
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
@@ -526,74 +565,24 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
     )
     const TeamModel = getTeamModel(connection)
     const teams = await TeamModel.find({ tournamentId }).lean().exec()
-    const teamsById = new Map<string, any>(teams.map((team) => [String(team._id), team]))
-
-    const candidates = (Array.isArray(payload.compiled_team_results) ? payload.compiled_team_results : [])
-      .map((result: any) => {
-        const teamId = String(result?.id ?? '')
-        const team = teamsById.get(teamId)
-        if (!team) return null
-        const detail = Array.isArray(team.details)
-          ? team.details.find((item: any) => Number(item?.r) === roundNumber)
-          : null
-        const rankingRaw = Number(result?.ranking)
-        const ranking = Number.isFinite(rankingRaw) ? rankingRaw : null
-        return {
-          teamId,
-          teamName: String(team.name ?? teamId),
-          ranking,
-          win: Number(result?.win ?? 0),
-          sum: Number(result?.sum ?? 0),
-          margin: Number(result?.margin ?? 0),
-          available: detail?.available !== false,
-          tieGroup: 0,
-          isCutoffTie: false,
-        }
-      })
-      .filter((item): item is {
-        teamId: string
-        teamName: string
-        ranking: number | null
-        win: number
-        sum: number
-        margin: number
-        available: boolean
-        tieGroup: number
-        isCutoffTie: boolean
-      } => item !== null)
-      .sort((left, right) => {
-        if (left.ranking !== null && right.ranking !== null && left.ranking !== right.ranking) {
-          return left.ranking - right.ranking
-        }
-        if (left.win !== right.win) return right.win - left.win
-        if (left.sum !== right.sum) return right.sum - left.sum
-        if (left.margin !== right.margin) return right.margin - left.margin
-        return left.teamName.localeCompare(right.teamName)
-      })
-
-    let tieGroup = 0
-    let lastRanking: number | null = null
-    candidates.forEach((candidate, index) => {
-      if (index === 0 || candidate.ranking !== lastRanking) tieGroup += 1
-      candidate.tieGroup = tieGroup
-      lastRanking = candidate.ranking
+    const teamNameById = new Map<string, string>()
+    const availabilityByTeamId = new Map<string, boolean>()
+    teams.forEach((team: any) => {
+      const teamId = String(team?._id ?? '').trim()
+      if (!teamId) return
+      teamNameById.set(teamId, String(team?.name ?? teamId))
+      const detail = Array.isArray(team?.details)
+        ? team.details.find((item: any) => Number(item?.r) === roundNumber)
+        : null
+      availabilityByTeamId.set(teamId, detail?.available !== false)
     })
 
-    if (requestedSize !== null && requestedSize > 0 && candidates.length >= requestedSize) {
-      const cutoff = candidates[requestedSize - 1]
-      if (cutoff?.ranking !== null) {
-        const betterCount = candidates.filter(
-          (candidate) => candidate.ranking !== null && candidate.ranking < cutoff.ranking!
-        ).length
-        const atCutoff = candidates.filter((candidate) => candidate.ranking === cutoff.ranking).length
-        const isTieOverflow = betterCount < requestedSize && betterCount + atCutoff > requestedSize
-        if (isTieOverflow) {
-          candidates.forEach((candidate) => {
-            candidate.isCutoffTie = candidate.ranking === cutoff.ranking
-          })
-        }
-      }
-    }
+    const baseCandidates = buildBreakCandidatesFromCompiledPayload(payload, teamNameById)
+    const candidates = annotateBreakCandidatesForPreview(
+      baseCandidates,
+      requestedSize,
+      availabilityByTeamId
+    )
 
     res.json({
       data: {
@@ -666,9 +655,15 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     }
 
     const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
+    const currentBreak = asRecord(currentUserDefined.break)
+    const breakSource = currentBreak.source === 'raw' ? 'raw' : 'submissions'
     const nextUserDefined = {
       ...currentUserDefined,
-      break: normalizedBreak,
+      break: {
+        ...normalizedBreak,
+        source: breakSource,
+      },
+      ...(normalizedBreak.enabled ? { allow_low_tie_win: false } : {}),
     }
 
     const updatedRound = await RoundModel.findOneAndUpdate(

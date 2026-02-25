@@ -10,6 +10,7 @@ export interface Tournament {
   auth?: Record<string, any>
   user_defined_data?: Record<string, any>
   createdBy?: string
+  createdByName?: string | null
   createdAt?: string
   updatedAt?: string
 }

@@ -24,23 +24,23 @@
           <thead>
             <tr>
               <th>{{ $t('作成日時') }}</th>
-              <th>{{ $t('集計結果名') }}</th>
               <th>{{ $t('考慮ラウンド') }}</th>
               <th>{{ $t('順位優先度設定') }}</th>
+              <th>{{ $t('メモ') }}</th>
               <th class="report-snapshot-actions-col"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in reportSnapshotRows" :key="row.compiledId">
-              <td>{{ row.createdAtLabel }}</td>
               <td>
-                <div class="row snapshot-label-cell">
-                  <span>{{ row.snapshotLabel }}</span>
+                <div class="row snapshot-created-cell">
+                  <span>{{ row.createdAtLabel }}</span>
                   <span v-if="row.isRawSource" class="raw-source-badge">{{ $t('強制実行') }}</span>
                 </div>
               </td>
               <td>{{ row.roundsLabel }}</td>
               <td>{{ row.rankingPriorityLabel }}</td>
+              <td>{{ row.snapshotMemoLabel }}</td>
               <td class="report-snapshot-actions-col">
                 <div class="row report-snapshot-actions">
                   <Button
@@ -813,7 +813,6 @@
     />
     <CompileSaveSnapshotModal
       v-model:open="compileWorkflow.saveModalOpen"
-      v-model:snapshot-name="compileWorkflow.snapshotNameDraft"
       v-model:snapshot-memo="compileWorkflow.snapshotMemoDraft"
       :loading="isLoading"
       :error="saveSnapshotError"
@@ -1090,17 +1089,18 @@ type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
   createdAt?: string
-  snapshotName?: string
+  snapshotMemo?: string
   compileSource: CompileSource
   compileOptions: CompileOptions
 }
 type ReportSnapshotRow = {
   compiledId: string
   createdAtLabel: string
-  snapshotLabel: string
   isRawSource: boolean
   roundsLabel: string
   rankingPriorityLabel: string
+  snapshotMemoLabel: string
+  deleteLabel: string
   isSelected: boolean
 }
 type RecomputeOptionsSnapshot = {
@@ -1229,7 +1229,7 @@ const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
         compiledId: String(item?._id ?? ''),
         rounds: normalizedRounds,
         createdAt: item?.createdAt ? String(item.createdAt) : undefined,
-        snapshotName: String(payload?.snapshot_name ?? '').trim() || undefined,
+        snapshotMemo: String(payload?.snapshot_memo ?? '').trim() || undefined,
         compileSource,
         compileOptions: normalizeCompileOptions(payload?.compile_options as CompileOptionsInput | undefined),
       }
@@ -1240,15 +1240,6 @@ const diffBaselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   baselineCompiledOptions.value.filter((option) => option.compiledId !== selectedCompiledId.value)
 )
 
-function summarizeRounds(rounds: number[]): string {
-  const normalized = Array.from(
-    new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
-  ).sort((left, right) => left - right)
-  if (normalized.length === 0) return t('未選択')
-  if (normalized.length <= 3) return normalized.map((round) => `R${round}`).join(', ')
-  return `R${normalized[0]}-R${normalized[normalized.length - 1]} (${normalized.length}${t('ラウンド')})`
-}
-
 function summarizeRoundNames(rounds: number[]): string {
   const normalized = Array.from(
     new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
@@ -1257,10 +1248,9 @@ function summarizeRoundNames(rounds: number[]): string {
   return normalized.map((round) => roundName(round)).join(', ')
 }
 
-function summarizeSnapshotLabel(option: BaselineCompiledOption): string {
-  const snapshotName = String(option.snapshotName ?? '').trim()
-  if (snapshotName.length > 0) return snapshotName
-  return summarizeRounds(option.rounds)
+function summarizeSnapshotMemo(snapshotMemo?: string): string {
+  const normalized = String(snapshotMemo ?? '').trim()
+  return normalized.length > 0 ? normalized : t('なし')
 }
 
 function summarizeRankingPriority(priority: CompileOptions['ranking_priority']): string {
@@ -1298,15 +1288,20 @@ const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
       return left.index - right.index
     })
 
-  return sorted.map(({ option }) => ({
-    compiledId: option.compiledId,
-    createdAtLabel: formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value),
-    snapshotLabel: summarizeSnapshotLabel(option),
-    isRawSource: option.compileSource === 'raw',
-    roundsLabel: summarizeRoundNames(option.rounds),
-    rankingPriorityLabel: summarizeRankingPriority(option.compileOptions.ranking_priority),
-    isSelected: option.compiledId === selectedCompiledId.value,
-  }))
+  return sorted.map(({ option }) => {
+    const createdAtLabel = formatCompiledSnapshotTimestamp(option.createdAt, snapshotLocaleTag.value)
+    const roundsLabel = summarizeRoundNames(option.rounds)
+    return {
+      compiledId: option.compiledId,
+      createdAtLabel,
+      isRawSource: option.compileSource === 'raw',
+      roundsLabel,
+      rankingPriorityLabel: summarizeRankingPriority(option.compileOptions.ranking_priority),
+      snapshotMemoLabel: summarizeSnapshotMemo(option.snapshotMemo),
+      deleteLabel: `${createdAtLabel} / ${roundsLabel}`,
+      isSelected: option.compiledId === selectedCompiledId.value,
+    }
+  })
 })
 
 function showExistingReport(compiledId: string) {
@@ -1319,7 +1314,7 @@ function showExistingReport(compiledId: string) {
 function openDeleteCompiledModal(row: ReportSnapshotRow) {
   deleteCompiledError.value = ''
   deleteTargetCompiledId.value = String(row.compiledId).trim()
-  deleteTargetSnapshotLabel.value = String(row.snapshotLabel).trim()
+  deleteTargetSnapshotLabel.value = String(row.deleteLabel).trim()
   emitReportMetric('cta_click', { cta: 'open_delete_snapshot_confirm' })
 }
 
@@ -1462,31 +1457,6 @@ function buildCompileInputKey(
     rounds: [...compileTargetRoundNumbers.value],
     options: buildCompileOptions(optionOverrides),
   })
-}
-
-function toSnapshotTimeString(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hours = `${date.getHours()}`.padStart(2, '0')
-  const minutes = `${date.getMinutes()}`.padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}`
-}
-
-function compileRoundRangeLabel(rounds: number[]): string {
-  const normalized = Array.from(
-    new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
-  ).sort((left, right) => left - right)
-  if (normalized.length === 0) return t('未選択')
-  if (normalized.length === 1) return roundName(normalized[0])
-  return `${roundName(normalized[0])}-${roundName(normalized[normalized.length - 1])}`
-}
-
-function buildDefaultSnapshotName(source: CompileSource): string {
-  const roundsText = compileRoundRangeLabel(compileTargetRoundNumbers.value)
-  const timestamp = toSnapshotTimeString(new Date())
-  const suffix = source === 'raw' ? `（${t('強制集計')}）` : ''
-  return `${roundsText} / ${timestamp}${suffix}`
 }
 
 const manualCompileInputKey = computed(() =>
@@ -2981,7 +2951,7 @@ function openSaveSnapshotModal(rawConfirmed = false) {
     openForceCompileModal('save')
     return
   }
-  compileWorkflow.openSaveModal(buildDefaultSnapshotName(source))
+  compileWorkflow.openSaveModal()
 }
 
 function onSaveSnapshotModalCancel() {
@@ -3001,12 +2971,10 @@ async function saveCompiledSnapshot() {
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
   const roundsPayload = [...compileTargetRoundNumbers.value]
-  const snapshotName = compileWorkflow.snapshotNameDraft.trim() || buildDefaultSnapshotName(source)
   const saved = await compiledStore.saveCompiled(tournamentId.value, {
     source,
     rounds: roundsPayload,
     options: buildCompileOptions(manualCompileOptionOverrides.value),
-    snapshotName,
     snapshotMemo: compileWorkflow.snapshotMemoDraft,
     previewSignature: compileWorkflow.previewSignature,
     revision: compileWorkflow.previewRevision,
@@ -3319,7 +3287,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   text-align: right;
 }
 
-.snapshot-label-cell {
+.snapshot-created-cell {
   align-items: center;
   justify-content: flex-start;
   gap: 8px;

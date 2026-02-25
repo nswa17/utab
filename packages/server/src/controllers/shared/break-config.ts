@@ -1,5 +1,10 @@
 export type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-export type BreakSeeding = 'high_low'
+export type BreakSeeding =
+  | 'high_low'
+  | 'reseed_each_round'
+  | 'fixed_bracket'
+  | 'random_within_tie_group'
+  | 'random_full'
 export type BreakParticipant = { teamId: string; seed: number }
 export type BreakConfig = {
   enabled: boolean
@@ -14,6 +19,14 @@ type NormalizeBreakOptions = {
   dedupeParticipants?: boolean
   defaultSize?: number
 }
+
+const BREAK_SEEDING_VALUES = new Set<BreakSeeding>([
+  'high_low',
+  'reseed_each_round',
+  'fixed_bracket',
+  'random_within_tie_group',
+  'random_full',
+])
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -67,13 +80,17 @@ export function normalizeBreakConfig(
   const cutoff_tie_policy: BreakCutoffTiePolicy =
     source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
       ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
-      : 'manual'
+      : 'include_all'
+  const seeding =
+    BREAK_SEEDING_VALUES.has(source.seeding as BreakSeeding)
+      ? (source.seeding as BreakSeeding)
+      : 'high_low'
   return {
     enabled,
     source_rounds: normalizeBreakSourceRounds(roundNumber, source.source_rounds),
     size,
     cutoff_tie_policy,
-    seeding: 'high_low',
+    seeding,
     participants: normalizeBreakParticipants(source.participants, options),
   }
 }

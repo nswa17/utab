@@ -34,7 +34,7 @@
     <section v-if="props.showWinnerScoring || props.showRankingPriority" class="stack compile-group">
       <div class="row compile-group-head">
         <h6 class="compile-group-title">{{ $t('順位優先度設定') }}</h6>
-        <HelpTip :text="$t('使用する基準を左列に並べてください。')" />
+        <HelpTip :text="$t('使用する基準を有効化し、上から優先順に並べてください。')" />
       </div>
       <div v-if="props.showWinnerScoring" class="grid compile-grid">
         <Field :label="$t('勝敗判定')">
@@ -74,85 +74,17 @@
         </Field>
       </div>
       <div v-if="props.showRankingPriority" class="stack compile-ranking-field">
-        <div class="grid ranking-columns">
-          <section
-            class="stack ranking-column ranking-column--active"
-            :class="{
-              'ranking-column--drop-active': rankingDropZone === 'active',
-              'ranking-column--drop-disabled': isRankingDragActive && !canDropToActive,
-            }"
-            @dragover.prevent="onRankingActiveColumnDragOver"
-            @drop.prevent="dropRankingMetricToActiveEnd"
-          >
-            <div class="row ranking-column-head">
-              <strong class="ranking-column-title">{{ $t('使用する基準') }}</strong>
-            </div>
-            <div
-              v-for="(metric, index) in activeRankingMetrics"
-              :key="`active-metric-${metric}`"
-              class="row ranking-chip ranking-chip--active"
-              :class="{
-                'ranking-chip--dragging':
-                  draggingRankingMetric?.metric === metric &&
-                  draggingRankingMetric?.source === 'active',
-                'ranking-chip--drop-target':
-                  rankingDropZone === 'active' && rankingDropTargetMetric === metric,
-              }"
-              :draggable="!props.disabled"
-              @dragstart="startRankingDrag(metric, 'active', $event)"
-              @dragover.prevent.stop="onRankingActiveChipDragOver(metric)"
-              @drop.prevent.stop="dropRankingMetricToActive(metric)"
-              @dragend="endRankingDrag"
-            >
-              <span class="ranking-rank">{{ index + 1 }}</span>
-              <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
-              <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
-              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="ranking-exclude"
-                :disabled="props.disabled || activeRankingMetrics.length <= 1"
-                @click="excludeRankingMetric(metric)"
-              >
-                {{ $t('除外') }}
-              </Button>
-            </div>
-          </section>
-          <section
-            class="stack ranking-column ranking-column--inactive"
-            :class="{
-              'ranking-column--drop-active': rankingDropZone === 'inactive',
-              'ranking-column--drop-disabled': isRankingDragActive && !canDropToInactive,
-            }"
-            @dragover.prevent="onRankingInactiveColumnDragOver"
-            @drop.prevent="dropRankingMetricToInactive"
-          >
-            <div class="row ranking-column-head">
-              <strong class="ranking-column-title">{{ $t('不使用') }}</strong>
-            </div>
-            <p v-if="inactiveRankingMetrics.length === 0" class="muted small">
-              {{ $t('不使用の指標はありません。') }}
-            </p>
-            <div
-              v-for="metric in inactiveRankingMetrics"
-              :key="`inactive-metric-${metric}`"
-              class="row ranking-chip ranking-chip--inactive"
-              :class="{
-                'ranking-chip--dragging':
-                  draggingRankingMetric?.metric === metric &&
-                  draggingRankingMetric?.source === 'inactive',
-              }"
-              :draggable="!props.disabled"
-              @dragstart="startRankingDrag(metric, 'inactive', $event)"
-              @dragend="endRankingDrag"
-            >
-              <span class="ranking-drag-handle" aria-hidden="true">⋮⋮</span>
-              <span class="ranking-chip-label">{{ rankingMetricLabel(metric) }}</span>
-              <span class="ranking-chip-help">{{ rankingMetricDescription(metric) }}</span>
-            </div>
-          </section>
-        </div>
+        <PriorityDragSelector
+          v-model="rankingOrderModel"
+          :options="rankingPriorityOptions"
+          :disabled="props.disabled"
+          :min-active="1"
+          layout="single"
+          :active-title="$t('使用する基準')"
+          :inactive-title="$t('不使用')"
+          :inactive-empty-text="$t('不使用の指標はありません。')"
+          :active-action-label="$t('除外')"
+        />
       </div>
     </section>
 
@@ -222,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watchEffect } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   CompileAggregationPolicy,
@@ -233,9 +165,9 @@ import type {
   CompileWinnerPolicy,
 } from '@/types/compiled'
 import { compileRankingMetrics } from '@/types/compiled'
-import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
+import PriorityDragSelector from '@/components/common/PriorityDragSelector.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -269,24 +201,6 @@ const missingDataPolicy = defineModel<CompileMissingDataPolicy>('missingDataPoli
 const { t } = useI18n({ useScope: 'global' })
 
 const allRankingMetrics: CompileRankingMetric[] = [...compileRankingMetrics]
-type RankingDragState = {
-  metric: CompileRankingMetric
-  source: 'active' | 'inactive'
-}
-const draggingRankingMetric = ref<RankingDragState | null>(null)
-const rankingDropZone = ref<'active' | 'inactive' | null>(null)
-const rankingDropTargetMetric = ref<CompileRankingMetric | null>(null)
-
-const isRankingDragActive = computed(() => draggingRankingMetric.value !== null)
-const canDropToActive = computed(() => isRankingDragActive.value && !props.disabled)
-const canDropToInactive = computed(
-  () => isRankingDragActive.value && draggingRankingMetric.value?.source === 'active' && !props.disabled
-)
-
-const activeRankingMetrics = computed(() => normalizeRankingOrder(rankingOrder.value))
-const inactiveRankingMetrics = computed(() =>
-  allRankingMetrics.filter((metric) => !activeRankingMetrics.value.includes(metric))
-)
 
 watchEffect(() => {
   if (!props.showRankingPriority) return
@@ -295,11 +209,27 @@ watchEffect(() => {
   }
 })
 
-function normalizeRankingOrder(value: CompileRankingMetric[] | undefined): CompileRankingMetric[] {
-  const sourceOrder = Array.isArray(value) ? value : []
+const rankingOrderModel = computed<string[]>({
+  get: () => [...normalizeRankingMetrics(rankingOrder.value)],
+  set: (next) => {
+    rankingOrder.value = normalizeRankingMetrics(next)
+  },
+})
+
+const rankingPriorityOptions = computed(() =>
+  allRankingMetrics.map((metric) => ({
+    value: metric,
+    label: rankingMetricLabel(metric),
+    description: rankingMetricDescription(metric),
+  }))
+)
+
+function normalizeRankingMetrics(value: string[] | undefined): CompileRankingMetric[] {
+  const source = Array.isArray(value) ? value : []
   const seen = new Set<CompileRankingMetric>()
   const normalized: CompileRankingMetric[] = []
-  sourceOrder.forEach((metric) => {
+  source.forEach((entry) => {
+    const metric = entry as CompileRankingMetric
     if (!allRankingMetrics.includes(metric)) return
     if (seen.has(metric)) return
     seen.add(metric)
@@ -309,128 +239,6 @@ function normalizeRankingOrder(value: CompileRankingMetric[] | undefined): Compi
     return [allRankingMetrics[0]]
   }
   return normalized
-}
-
-function setRankingOrder(next: CompileRankingMetric[]) {
-  rankingOrder.value = normalizeRankingOrder(next)
-}
-
-function excludeRankingMetric(metric: CompileRankingMetric) {
-  const next = activeRankingMetrics.value.filter((item) => item !== metric)
-  if (next.length === 0) return
-  setRankingOrder(next)
-}
-
-function startRankingDrag(
-  metric: CompileRankingMetric,
-  source: 'active' | 'inactive',
-  event: DragEvent
-) {
-  if (props.disabled) return
-  draggingRankingMetric.value = { metric, source }
-  rankingDropZone.value = null
-  rankingDropTargetMetric.value = null
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.dropEffect = 'move'
-    event.dataTransfer.setData('text/plain', metric)
-  }
-}
-
-function endRankingDrag() {
-  draggingRankingMetric.value = null
-  rankingDropZone.value = null
-  rankingDropTargetMetric.value = null
-}
-
-function onRankingActiveColumnDragOver() {
-  if (!canDropToActive.value) return
-  rankingDropZone.value = 'active'
-  rankingDropTargetMetric.value = null
-}
-
-function onRankingActiveChipDragOver(metric: CompileRankingMetric) {
-  if (!canDropToActive.value) return
-  rankingDropZone.value = 'active'
-  rankingDropTargetMetric.value = metric
-}
-
-function onRankingInactiveColumnDragOver() {
-  if (!canDropToInactive.value) return
-  rankingDropZone.value = 'inactive'
-  rankingDropTargetMetric.value = null
-}
-
-function dropRankingMetricToActive(targetMetric: CompileRankingMetric) {
-  if (props.disabled) return
-  const dragged = draggingRankingMetric.value
-  if (!dragged) return
-  const current = activeRankingMetrics.value
-  const targetIndex = current.indexOf(targetMetric)
-  if (targetIndex < 0) {
-    endRankingDrag()
-    return
-  }
-
-  if (dragged.source === 'active') {
-    const fromIndex = current.indexOf(dragged.metric)
-    if (fromIndex < 0 || fromIndex === targetIndex) {
-      endRankingDrag()
-      return
-    }
-    const next = [...current]
-    next.splice(fromIndex, 1)
-    const insertIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex
-    next.splice(insertIndex, 0, dragged.metric)
-    setRankingOrder(next)
-    endRankingDrag()
-    return
-  }
-
-  if (!current.includes(dragged.metric)) {
-    const next = [...current]
-    next.splice(targetIndex, 0, dragged.metric)
-    setRankingOrder(next)
-  }
-  endRankingDrag()
-}
-
-function dropRankingMetricToActiveEnd() {
-  if (props.disabled) return
-  const dragged = draggingRankingMetric.value
-  if (!dragged) return
-  const current = activeRankingMetrics.value
-
-  if (dragged.source === 'active') {
-    const fromIndex = current.indexOf(dragged.metric)
-    if (fromIndex < 0 || fromIndex === current.length - 1) {
-      endRankingDrag()
-      return
-    }
-    const next = [...current]
-    next.splice(fromIndex, 1)
-    next.push(dragged.metric)
-    setRankingOrder(next)
-    endRankingDrag()
-    return
-  }
-
-  if (!current.includes(dragged.metric)) {
-    setRankingOrder([...current, dragged.metric])
-  }
-  endRankingDrag()
-}
-
-function dropRankingMetricToInactive() {
-  if (props.disabled) return
-  const dragged = draggingRankingMetric.value
-  if (!dragged) return
-  if (dragged.source !== 'active') {
-    endRankingDrag()
-    return
-  }
-  excludeRankingMetric(dragged.metric)
-  endRankingDrag()
 }
 
 function rankingMetricLabel(metric: CompileRankingMetric) {
@@ -537,124 +345,6 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 
 .compile-ranking-field {
   grid-column: 1 / -1;
-}
-
-.ranking-columns {
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.9fr);
-  gap: var(--space-2);
-}
-
-@media (max-width: 900px) {
-  .ranking-columns {
-    grid-template-columns: 1fr;
-  }
-}
-
-.ranking-column {
-  gap: var(--space-1);
-  min-height: 48px;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-1);
-  background: var(--color-surface-soft);
-  transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    box-shadow 120ms ease;
-}
-
-.ranking-column-head {
-  align-items: center;
-  justify-content: flex-start;
-  padding: 2px 2px;
-}
-
-.ranking-column-title {
-  font-size: 0.86rem;
-  color: var(--color-muted);
-}
-
-.ranking-chip {
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  padding: 6px 8px;
-}
-
-.ranking-chip--active {
-  cursor: grab;
-}
-
-.ranking-chip--inactive {
-  cursor: grab;
-}
-
-.ranking-chip--dragging {
-  opacity: 0.6;
-}
-
-.ranking-chip--drop-target {
-  border-color: #1d4ed8;
-  background: #e0ecff;
-  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.25);
-}
-
-.ranking-column--drop-active {
-  border-color: #1d4ed8;
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      rgba(59, 130, 246, 0.12) 0 8px,
-      rgba(59, 130, 246, 0.22) 8px 16px
-    ),
-    #e0ecff;
-  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
-}
-
-.ranking-column--drop-disabled {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  opacity: 0.92;
-}
-
-.compile-ranking-field :deep(.ranking-exclude) {
-  min-height: 28px;
-  padding: 0 8px;
-  font-size: 0.74rem;
-}
-
-.ranking-drag-handle {
-  color: var(--color-muted);
-  letter-spacing: -0.15em;
-  user-select: none;
-}
-
-.ranking-rank {
-  min-width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface-soft);
-  color: var(--color-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.ranking-chip-label {
-  flex: 0 0 auto;
-  min-width: fit-content;
-}
-
-.ranking-chip-help {
-  flex: 1;
-  min-width: 0;
-  color: var(--color-muted);
-  font-size: 0.72rem;
-  line-height: 1.35;
 }
 
 </style>

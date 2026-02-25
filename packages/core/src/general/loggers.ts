@@ -27,15 +27,21 @@ export function getLogger(category: LogCategory = 'general'): Logger {
 }
 
 export function sillyLogger(
-  fn: Function,
-  argsLike: IArguments | any[],
+  fn: unknown,
+  argsLike: IArguments | unknown[],
   part: LogCategory = 'general',
   filename = ''
 ): void {
   const logger = getLogger(part)
-  const args = Array.from(argsLike as any[])
+  const args = Array.from(argsLike as ArrayLike<unknown>)
+  const fnName =
+    typeof fn === 'function'
+      ? fn.name
+      : typeof fn === 'object' && fn !== null && 'name' in fn
+        ? String((fn as { name?: unknown }).name ?? '')
+        : ''
   const meta = {
-    fn: fn?.name || 'anonymous',
+    fn: fnName || 'anonymous',
     file: filename ? path.basename(filename) : undefined,
     args,
   }

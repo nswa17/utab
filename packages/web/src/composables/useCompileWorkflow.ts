@@ -14,7 +14,6 @@ export function useCompileWorkflow(initialSource: CompileSource = 'submissions')
   const previewRevision = ref('')
   const previewSource = ref<CompileSource>(initialSource)
   const saveModalOpen = ref(false)
-  const snapshotNameDraft = ref('')
   const snapshotMemoDraft = ref('')
 
   const hasPreview = computed(
@@ -48,9 +47,8 @@ export function useCompileWorkflow(initialSource: CompileSource = 'submissions')
     previewSource.value = initialSource
   }
 
-  function openSaveModal(defaultName: string): boolean {
+  function openSaveModal(): boolean {
     if (!canSave.value) return false
-    snapshotNameDraft.value = defaultName
     saveModalOpen.value = true
     return true
   }
@@ -61,7 +59,6 @@ export function useCompileWorkflow(initialSource: CompileSource = 'submissions')
 
   function markSaved() {
     saveModalOpen.value = false
-    snapshotNameDraft.value = ''
     snapshotMemoDraft.value = ''
     clearPreview()
   }
@@ -69,7 +66,6 @@ export function useCompileWorkflow(initialSource: CompileSource = 'submissions')
   return proxyRefs({
     previewSource,
     saveModalOpen,
-    snapshotNameDraft,
     snapshotMemoDraft,
     hasPreview,
     previewStale,

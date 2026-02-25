@@ -47,6 +47,7 @@
             <tr>
               <th>{{ $t('大会名') }}</th>
               <th>{{ $t('スタイル') }}</th>
+              <th v-if="isSuperuser">{{ $t('管理者名') }}</th>
               <th>{{ $t('更新日') }}</th>
               <th>{{ $t('操作') }}</th>
             </tr>
@@ -62,6 +63,7 @@
                 </RouterLink>
               </td>
               <td>{{ styleName(item.style) }}</td>
+              <td v-if="isSuperuser">{{ item.createdByName || $t('不明') }}</td>
               <td>{{ formatDate(item.updatedAt ?? item.createdAt) }}</td>
               <td>
                 <div class="row">
@@ -128,6 +130,7 @@ const downloadLoadingMap = ref<Record<string, boolean>>({})
 const createError = ref<string | null>(null)
 const tournamentsLoadError = ref<string | null>(null)
 const deleteModalError = ref<string | null>(null)
+const isSuperuser = computed(() => auth.role === 'superuser')
 
 const visibleTournaments = computed(() => {
   if (auth.role === 'superuser') return tournament.tournaments

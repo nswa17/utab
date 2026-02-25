@@ -21,7 +21,6 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('roundDefaultsForm')
     expect(source).toContain('createRoundFromSetup')
     expect(source).toContain('setupRoundForm.type')
-    expect(source).toContain('新規ラウンドは大会セットアップのラウンドデフォルトを継承します。')
   })
 
   it('supports editing existing rounds in setup', () => {

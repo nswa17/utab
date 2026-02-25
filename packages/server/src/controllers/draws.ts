@@ -30,6 +30,10 @@ import {
   normalizeScoreWeights,
 } from './shared/allocation-support.js'
 import { isValidObjectId, badRequest, notFound } from './shared/http-errors.js'
+import {
+  validateAllocationOptions,
+  validateEntityDetailsShape,
+} from './shared/allocation-validation.js'
 
 const allocations = {
   teams: teamAllocations,
@@ -172,6 +176,24 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const roundsForCompile = ensureRounds(round)
     const roundsNeeded = Array.from(new Set([...roundsForCompile, round])).sort((a, b) => a - b)
 
+    teams.forEach((team) => {
+      validateEntityDetailsShape('team', `${String((team as any)._id ?? '') || 'unknown team'}`, (team as any).details)
+    })
+    adjudicators.forEach((adj) => {
+      validateEntityDetailsShape(
+        'adjudicator',
+        `${String((adj as any)._id ?? '') || 'unknown adjudicator'}`,
+        (adj as any).details
+      )
+    })
+    venues.forEach((venue) => {
+      validateEntityDetailsShape(
+        'venue',
+        `${String((venue as any)._id ?? '') || 'unknown venue'}`,
+        (venue as any).details
+      )
+    })
+
     const teamInstances = teams.map((team) => ({
       id: teamMaps.map.get(String(team._id))!,
       name: team.name,
@@ -280,8 +302,9 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       roundsForCompile
     )
 
-    const teamAlgorithm = options?.team_allocation_algorithm ?? 'standard'
-    const teamAlgorithmOptions = options?.team_allocation_algorithm_options ?? {}
+    const validatedOptions = validateAllocationOptions(options)
+    const teamAlgorithm = validatedOptions.team_allocation_algorithm
+    const teamAlgorithmOptions = validatedOptions.team_allocation_algorithm_options
     let draw =
       teamAlgorithm === 'strict'
         ? allocations.teams.strict.get(
@@ -308,9 +331,9 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
             )
     const teamUserDefinedData = extractDrawUserDefinedData(draw)
 
-    const numbersOfAdjudicators = options?.numbers_of_adjudicators ?? { chairs: 1, panels: 2, trainees: 0 }
-    const adjudicatorAlgorithm = options?.adjudicator_allocation_algorithm ?? 'standard'
-    const adjudicatorOptions = options?.adjudicator_allocation_algorithm_options ?? {}
+    const numbersOfAdjudicators = validatedOptions.numbers_of_adjudicators
+    const adjudicatorAlgorithm = validatedOptions.adjudicator_allocation_algorithm
+    const adjudicatorOptions = validatedOptions.adjudicator_allocation_algorithm_options
 
     let adjudicatorDraw = draw
     const allocationSquares = draw.allocation?.length ?? 0
@@ -345,7 +368,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
             )
     }
 
-    const venueOptions = options?.venue_allocation_algorithm_options ?? {}
+    const venueOptions = validatedOptions.venue_allocation_algorithm_options
     let venueDraw = adjudicatorDraw
     if (venues.length > 0) {
       venueDraw = allocations.venues.standard.get(
@@ -406,7 +429,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }
 
     res.json({ data: payload, errors: [] })
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.status === 400) {
+      badRequest(res, String(err?.message ?? 'Bad Request'))
+      return
+    }
+    if (err?.status === 404) {
+      notFound(res, String(err?.message ?? 'Not Found'))
+      return
+    }
     next(err)
   }
 }

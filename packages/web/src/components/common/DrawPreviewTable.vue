@@ -666,7 +666,6 @@ defineExpose({
 
 .draw-col-panel,
 .draw-col-trainee {
-  width: 1%;
   min-width: 72px;
 }
 
@@ -677,7 +676,7 @@ defineExpose({
 
 .draw-wrap-cell {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .draw-win-cell {

@@ -16,16 +16,35 @@ import {
   teamResultsPrecheck,
   resultsPrecheck,
 } from './checks.js'
+import type { SpeakerEntity, TeamEntity, AdjudicatorEntity } from '../types/domain.js'
+import type {
+  RawAdjudicatorResult,
+  RawSpeakerResult,
+  RawTeamResult,
+  AdjudicatorRoundResult,
+  CompiledAdjudicatorResult,
+  CompiledSpeakerResult,
+  CompiledTeamResult,
+  ResultsSummaryStyle,
+  SpeakerRoundResult,
+  TeamRoundResult,
+} from '../types/results.js'
+import type { Side } from '../types/domain.js'
 
-function insertRanking(list: any[], comparer: (list: any[], a: number, b: number) => number) {
+type Ranked = { id: number; ranking?: number }
+
+function insertRanking<T extends Ranked>(
+  list: T[],
+  comparer: (list: T[], a: number, b: number) => number
+): T[] {
   sillyLogger(insertRanking, arguments, 'results')
-  const ids = list.map((e) => e.id)
+  const ids = list.map((entity) => entity.id)
   if (ids.length === 0) return list
   ids.sort((a, b) => comparer(list, a, b))
   findResult(list, ids[0]).ranking = 1
   let ranking = 1
   let stay = 0
-  for (let i = 1; i < ids.length; i++) {
+  for (let i = 1; i < ids.length; i += 1) {
     if (comparer(list, ids[i], ids[i - 1]) === 1) {
       ranking += 1 + stay
       stay = 0
@@ -39,48 +58,56 @@ function insertRanking(list: any[], comparer: (list: any[], a: number, b: number
 
 function sumByEach(a: number[], b: number[]): number[] {
   const newList: number[] = []
-  for (let i = 0, M = Math.min(a.length, b.length); i < M; i++) newList.push(a[i] + b[i])
+  for (let i = 0, limit = Math.min(a.length, b.length); i < limit; i += 1) {
+    newList.push(a[i] + b[i])
+  }
   return newList
 }
 
-function getWeightedScore(scores: number[], style: any): number {
+function toUserDefinedCollection(
+  list: Array<{ user_defined_data?: Record<string, unknown> }>
+): Record<string, unknown>[] {
+  return list
+    .map((item) => item.user_defined_data)
+    .filter((value): value is Record<string, unknown> => value !== null && value !== undefined)
+}
+
+function getWeightedScore(scores: number[], style: ResultsSummaryStyle): number {
   const scoreWeights = style.score_weights
   let score = 0
   let sumWeight = 0
-  for (let i = 0; i < scores.length; i++) {
+  for (let i = 0; i < scores.length; i += 1) {
     if (scores[i] !== 0) {
       score += scores[i]
-      sumWeight += scoreWeights[i]
+      sumWeight += scoreWeights[i] ?? 0
     }
   }
   return sumWeight === 0 ? 0 : score / sumWeight
 }
 
 export function summarizeSpeakerResults(
-  speakerInstances: any[],
-  rawSpeakerResults: any[],
-  style: any,
+  speakerInstances: SpeakerEntity[],
+  rawSpeakerResults: RawSpeakerResult[],
+  style: ResultsSummaryStyle,
   r: number
-) {
+): SpeakerRoundResult[] {
   sillyLogger(summarizeSpeakerResults, arguments, 'results')
-  const speakers = speakerInstances.map((d) => d.id)
-  const results: any[] = []
+  const speakers = speakerInstances.map((speaker) => speaker.id)
+  const results: SpeakerRoundResult[] = []
   for (const id of speakers) {
-    const filtered = rawSpeakerResults.filter((dr) => dr.r === r && dr.id === id)
+    const filtered = rawSpeakerResults.filter((raw) => raw.r === r && raw.id === id)
     if (filtered.length === 0) continue
-    const scoresList = filtered.map((dr) => dr.scores)
+    const scoresList = filtered.map((raw) => raw.scores)
     const scores = scoresList
-      .reduce((a, b) => sumByEach(a, b))
-      .map((sc: number) => sc / scoresList.length)
-    const result = {
+      .reduce((left, right) => sumByEach(left, right))
+      .map((score) => score / scoresList.length)
+    const result: SpeakerRoundResult = {
       r,
       id,
       scores,
       average: getWeightedScore(scores, style),
       sum: sum(scores),
-      user_defined_data_collection: filtered
-        .map((dr) => dr.user_defined_data)
-        .filter((d) => d !== null && d !== undefined),
+      user_defined_data_collection: toUserDefinedCollection(filtered),
     }
     results.push(result)
   }
@@ -89,28 +116,26 @@ export function summarizeSpeakerResults(
 }
 
 export function summarizeAdjudicatorResults(
-  adjudicatorInstances: any[],
-  rawAdjResults: any[],
+  adjudicatorInstances: AdjudicatorEntity[],
+  rawAdjResults: RawAdjudicatorResult[],
   r: number
-) {
+): AdjudicatorRoundResult[] {
   sillyLogger(summarizeAdjudicatorResults, arguments, 'results')
-  const adjudicators = adjudicatorInstances.map((a) => a.id)
-  const results: any[] = []
+  const adjudicators = adjudicatorInstances.map((adjudicator) => adjudicator.id)
+  const results: AdjudicatorRoundResult[] = []
   for (const id of adjudicators) {
-    const filtered = rawAdjResults.filter((ar) => ar.r === r && ar.id === id)
+    const filtered = rawAdjResults.filter((raw) => raw.r === r && raw.id === id)
     if (filtered.length === 0) continue
-    const score = average(filtered.map((ar) => ar.score))
+    const score = average(filtered.map((raw) => raw.score))
     const judgedTeams = filtered[0].judged_teams
-    const comments = filtered.map((ar) => ar.comment).filter(Boolean)
+    const comments = filtered.map((raw) => raw.comment ?? '').filter(Boolean)
     results.push({
       r,
       id,
       score,
       judged_teams: judgedTeams,
       comments,
-      user_defined_data_collection: filtered
-        .map((ar) => ar.user_defined_data)
-        .filter((d) => d !== null && d !== undefined),
+      user_defined_data_collection: toUserDefinedCollection(filtered),
     })
   }
   insertRanking(results, adjudicatorSimpleComparer)
@@ -118,23 +143,23 @@ export function summarizeAdjudicatorResults(
 }
 
 export function summarizeTeamResults(
-  teamInstances: any[],
-  rawTeamResults: any[],
+  teamInstances: TeamEntity[],
+  rawTeamResults: RawTeamResult[],
   r: number,
-  style: any
-) {
+  style: ResultsSummaryStyle
+): TeamRoundResult[] {
   sillyLogger(summarizeTeamResults, arguments, 'results')
-  const results: any[] = []
-  const teams = teamInstances.map((t) => t.id)
+  const results: TeamRoundResult[] = []
+  const teams = teamInstances.map((team) => team.id)
   const teamNum = style.team_num
   for (const id of teams) {
-    const filtered = rawTeamResults.filter((tr) => tr.id === id && tr.r === r)
+    const filtered = rawTeamResults.filter((raw) => raw.id === id && raw.r === r)
     if (filtered.length === 0) continue
     let vote: number | null
     let voteRate: number | null
     let win: number
     const winValues = filtered
-      .map((tr) => (typeof tr.win === 'number' ? tr.win : Number(tr.win)))
+      .map((raw) => (typeof raw.win === 'number' ? raw.win : Number(raw.win)))
       .filter((value) => Number.isFinite(value))
     const hasFractionalWin = winValues.some((value) => value !== 0 && value !== 1)
     if (teamNum === 2) {
@@ -146,16 +171,16 @@ export function summarizeTeamResults(
       } else {
         vote =
           count(
-            filtered.map((tr) => tr.win),
+            filtered.map((raw) => raw.win),
             1
           ) -
           count(
-            filtered.map((tr) => tr.win),
+            filtered.map((raw) => raw.win),
             0
           )
         voteRate =
           count(
-            filtered.map((tr) => tr.win),
+            filtered.map((raw) => raw.win),
             1
           ) / filtered.length
         win = vote > 0 ? 1 : 0
@@ -179,9 +204,7 @@ export function summarizeTeamResults(
       vote_rate: voteRate,
       acc: filtered.length,
       margin: null,
-      user_defined_data_collection: filtered
-        .map((tr) => tr.user_defined_data)
-        .filter((d) => d !== null && d !== undefined),
+      user_defined_data_collection: toUserDefinedCollection(filtered),
     })
   }
   insertRanking(results, teamSimpleComparer)
@@ -189,22 +212,27 @@ export function summarizeTeamResults(
 }
 
 export function integrateTeamAndSpeakerResults(
-  teams: any[],
-  teamResults: any[],
-  speakerResults: any[],
+  teams: TeamEntity[],
+  teamResults: TeamRoundResult[],
+  speakerResults: SpeakerRoundResult[],
   r: number
-) {
+): TeamRoundResult[] {
   sillyLogger(integrateTeamAndSpeakerResults, arguments, 'results')
-  const results: any[] = []
+  const results: TeamRoundResult[] = []
   for (const teamResult of teamResults) {
-    const team = teams.find((t) => t.id === teamResult.id)
+    const team = teams.find((entity) => entity.id === teamResult.id)
+    if (!team) {
+      throw new Error(`team ${teamResult.id} not found`)
+    }
     const speakers = Array.from(new Set(accessDetail(team, r).speakers ?? [])) as number[]
-    const filteredSpeakerResults = ([] as any[]).concat(
-      ...speakers.map((id) => speakerResults.filter((dr) => dr.r === r && dr.id === id))
+    const filteredSpeakerResults = ([] as SpeakerRoundResult[]).concat(
+      ...speakers.map((id) => speakerResults.filter((raw) => raw.r === r && raw.id === id))
     )
     const sumScore =
-      filteredSpeakerResults.length === 0 ? null : sum(filteredSpeakerResults.map((dr) => dr.sum))
-    const result = {
+      filteredSpeakerResults.length === 0
+        ? null
+        : sum(filteredSpeakerResults.map((raw) => raw.sum))
+    const result: TeamRoundResult = {
       r: teamResult.r,
       id: teamResult.id,
       win: teamResult.win,
@@ -214,6 +242,8 @@ export function integrateTeamAndSpeakerResults(
       vote: teamResult.vote,
       vote_rate: teamResult.vote_rate,
       acc: teamResult.acc,
+      margin: null,
+      opponent_average: null,
       user_defined_data_collection: teamResult.user_defined_data_collection,
     }
     results.push(result)
@@ -222,40 +252,38 @@ export function integrateTeamAndSpeakerResults(
     if (result.sum === null) {
       result.margin = null
       result.opponent_average = null
-    } else {
-      result.margin =
-        result.sum -
-        sum(result.opponents.map((opId: number) => findResult(results, opId).sum)) /
-          result.opponents.length
-      result.opponent_average =
-        sum(result.opponents.map((opId: number) => findResult(results, opId).sum)) /
-        result.opponents.length
+      continue
     }
+    const opponentsSum = sum(
+      result.opponents.map((opponentId) => Number(findResult(results, opponentId).sum ?? 0))
+    )
+    result.margin = result.sum - opponentsSum / result.opponents.length
+    result.opponent_average = opponentsSum / result.opponents.length
   }
   insertRanking(results, teamComparer)
   return results
 }
 
 export function compileSpeakerResults(
-  speakerInstances: any[],
-  rawSpeakerResults: any[],
-  style: any,
+  speakerInstances: SpeakerEntity[],
+  rawSpeakerResults: RawSpeakerResult[],
+  style: ResultsSummaryStyle,
   rs: number[]
-) {
+): CompiledSpeakerResult[] {
   sillyLogger(compileSpeakerResults, arguments, 'results')
-  const results: any[] = []
-  const speakers = speakerInstances.map((d) => d.id)
+  const results: CompiledSpeakerResult[] = []
+  const speakers = speakerInstances.map((speaker) => speaker.id)
   const averages: Record<number, number[]> = {}
-  const details: Record<number, any[]> = {}
+  const details: Record<number, SpeakerRoundResult[]> = {}
   for (const id of speakers) {
     averages[id] = []
     details[id] = []
   }
   for (const r of rs) {
     const summarized = summarizeSpeakerResults(speakerInstances, rawSpeakerResults, style, r)
-    for (const res of summarized) {
-      averages[res.id].push(res.average)
-      details[res.id].push(res)
+    for (const result of summarized) {
+      averages[result.id].push(result.average)
+      details[result.id].push(result)
     }
   }
   for (const id of speakers) {
@@ -272,15 +300,15 @@ export function compileSpeakerResults(
 }
 
 export function compileAdjudicatorResults(
-  adjudicatorInstances: any[],
-  rawAdjResults: any[],
+  adjudicatorInstances: AdjudicatorEntity[],
+  rawAdjResults: RawAdjudicatorResult[],
   rs: number[]
-) {
+): CompiledAdjudicatorResult[] {
   sillyLogger(compileAdjudicatorResults, arguments, 'results')
-  const results: any[] = []
-  const adjudicators = adjudicatorInstances.map((a) => a.id)
+  const results: CompiledAdjudicatorResult[] = []
+  const adjudicators = adjudicatorInstances.map((adjudicator) => adjudicator.id)
   const averages: Record<number, number[]> = {}
-  const details: Record<number, any[]> = {}
+  const details: Record<number, AdjudicatorRoundResult[]> = {}
   const judgedTeams: Record<number, number[]> = {}
   const activeNum: Record<number, number> = {}
   for (const id of adjudicators) {
@@ -291,11 +319,11 @@ export function compileAdjudicatorResults(
   }
   for (const r of rs) {
     const summarized = summarizeAdjudicatorResults(adjudicatorInstances, rawAdjResults, r)
-    for (const res of summarized) {
-      averages[res.id].push(res.score)
-      details[res.id].push(res)
-      judgedTeams[res.id] = judgedTeams[res.id].concat(res.judged_teams)
-      activeNum[res.id] += 1
+    for (const result of summarized) {
+      averages[result.id].push(result.score)
+      details[result.id].push(result)
+      judgedTeams[result.id] = judgedTeams[result.id].concat(result.judged_teams)
+      activeNum[result.id] += 1
     }
   }
   for (const id of adjudicators) {
@@ -312,31 +340,54 @@ export function compileAdjudicatorResults(
   return results
 }
 
-export function compileTeamResults(...args: any[]) {
+type SimpleCompileTeamArgs = [
+  teamInstances: TeamEntity[],
+  rawTeamResults: RawTeamResult[],
+  rs: number[],
+  style: ResultsSummaryStyle,
+]
+
+type FullCompileTeamArgs = [
+  teamInstances: TeamEntity[],
+  speakerInstances: SpeakerEntity[],
+  rawTeamResults: RawTeamResult[],
+  rawSpeakerResults: RawSpeakerResult[],
+  rs: number[],
+  style: ResultsSummaryStyle,
+]
+
+export function compileTeamResults(...args: SimpleCompileTeamArgs): CompiledTeamResult[]
+export function compileTeamResults(...args: FullCompileTeamArgs): CompiledTeamResult[]
+export function compileTeamResults(
+  ...args: SimpleCompileTeamArgs | FullCompileTeamArgs
+): CompiledTeamResult[] {
   const simple = args.length === 4
-  let teamInstances: any[]
-  let rawTeamResults: any[]
+  let teamInstances: TeamEntity[]
+  let rawTeamResults: RawTeamResult[]
   let rs: number[]
-  let style: any
-  let speakerInstances: any[] = []
-  let rawSpeakerResults: any[] = []
+  let style: ResultsSummaryStyle
+  let speakerInstances: SpeakerEntity[] = []
+  let rawSpeakerResults: RawSpeakerResult[] = []
   if (simple) {
-    ;[teamInstances, rawTeamResults, rs, style] = args as any
+    ;[teamInstances, rawTeamResults, rs, style] = args as SimpleCompileTeamArgs
   } else {
-    ;[teamInstances, speakerInstances, rawTeamResults, rawSpeakerResults, rs, style] = args as any
+    ;[teamInstances, speakerInstances, rawTeamResults, rawSpeakerResults, rs, style] =
+      args as FullCompileTeamArgs
   }
+
   sillyLogger(compileTeamResults, arguments, 'results')
-  const results: any[] = []
-  const teams = teamInstances.map((t) => t.id)
+  const results: CompiledTeamResult[] = []
+  const teams = teamInstances.map((team) => team.id)
   const sums: Record<number, number[]> = {}
-  const details: Record<number, any[]> = {}
+  const details: Record<number, TeamRoundResult[]> = {}
   const margins: Record<number, number[]> = {}
   const opponentAverages: Record<number, number[]> = {}
   const wins: Record<number, number[]> = {}
   const opponents: Record<number, number[]> = {}
-  const sides: Record<number, string[]> = {}
+  const sides: Record<number, Array<Side | string>> = {}
   const votes: Record<number, number> = {}
   const accs: Record<number, number> = {}
+
   for (const id of teams) {
     sums[id] = []
     details[id] = []
@@ -348,13 +399,9 @@ export function compileTeamResults(...args: any[]) {
     votes[id] = 0
     accs[id] = 0
   }
+
   for (const r of rs) {
-    const summarizedTeamResultsBefore = summarizeTeamResults(
-      teamInstances,
-      rawTeamResults,
-      r,
-      style
-    )
+    const summarizedTeamResultsBefore = summarizeTeamResults(teamInstances, rawTeamResults, r, style)
     const summarizedTeamResults = simple
       ? summarizedTeamResultsBefore
       : integrateTeamAndSpeakerResults(
@@ -363,21 +410,22 @@ export function compileTeamResults(...args: any[]) {
           summarizeSpeakerResults(speakerInstances, rawSpeakerResults, style, r),
           r
         )
-    for (const res of summarizedTeamResults) {
-      const id = res.id
-      votes[id] += res.vote
-      opponents[id] = opponents[id].concat(res.opponents)
-      accs[id] += res.acc
-      wins[id].push(res.win)
-      sides[id].push(res.side)
+    for (const result of summarizedTeamResults) {
+      const id = result.id
+      votes[id] += result.vote ?? 0
+      opponents[id] = opponents[id].concat(result.opponents)
+      accs[id] += result.acc
+      wins[id].push(result.win)
+      sides[id].push(result.side)
       if (!simple) {
-        sums[id].push(res.sum)
-        opponentAverages[id].push(res.opponent_average)
-        margins[id].push(res.margin)
+        sums[id].push(Number(result.sum ?? 0))
+        opponentAverages[id].push(Number(result.opponent_average ?? 0))
+        margins[id].push(Number(result.margin ?? 0))
       }
-      details[id].push(res)
+      details[id].push(result)
     }
   }
+
   for (const id of teams) {
     results.push({
       id,
@@ -404,15 +452,18 @@ export const teams = {
   simple_compile: compileTeamResults,
   precheck: teamResultsPrecheck,
 }
+
 export const speakers = {
   compile: compileSpeakerResults,
   precheck: speakerResultsPrecheck,
 }
+
 export const adjudicators = {
   compile: compileAdjudicatorResults,
   precheck: adjudicatorResultsPrecheck,
 }
-export const precheck = (teamsArr: any[], speakersArr: any[], r: number) => {
+
+export const precheck = (teamsArr: TeamEntity[], speakersArr: SpeakerEntity[], r: number) => {
   sillyLogger(() => {}, [teamsArr, speakersArr, r], 'results')
   resultsPrecheck(teamsArr, speakersArr, r)
 }
