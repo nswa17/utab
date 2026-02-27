@@ -41,12 +41,21 @@ describe('round defaults', () => {
     expect(normalized.break.source).toBe('raw')
     expect(normalized.break.size).toBe(16)
     expect(normalized.break.cutoff_tie_policy).toBe('include_all')
-    expect(normalized.break.seeding).toBe('reseed_each_round')
+    expect(normalized.break.seeding).toBe('fixed_bracket')
     expect(normalized.compile.source).toBe('raw')
     expect(normalized.compile.source_rounds).toEqual([1, 2, 3])
     expect(normalized.compile.options.winner_policy).toBe('score_only')
     expect(normalized.compile.options.missing_data_policy).toBe('exclude')
     expect(normalized.compile.options.include_labels).toEqual(['teams', 'speakers'])
+  })
+
+  it('maps legacy high_low seeding to reseed_each_round', () => {
+    const normalized = normalizeRoundDefaults({
+      break: {
+        seeding: 'high_low',
+      },
+    })
+    expect(normalized.break.seeding).toBe('reseed_each_round')
   })
 
   it('builds round userDefined payload with break template', () => {
@@ -66,7 +75,7 @@ describe('round defaults', () => {
         source: 'submissions',
         size: 12,
         cutoff_tie_policy: 'strict',
-        seeding: 'reseed_each_round',
+        seeding: 'fixed_bracket',
       },
       compile: {
         source: 'raw',
@@ -91,7 +100,6 @@ describe('round defaults', () => {
     })
     expect(payload.evaluate_from_teams).toBe(false)
     expect(payload.no_speaker_score).toBe(true)
-    expect(payload.break.enabled).toBe(false)
     expect(payload.break.size).toBe(12)
     expect(payload.break.cutoff_tie_policy).toBe('strict')
     expect(payload.compile.source).toBe('raw')
@@ -117,7 +125,7 @@ describe('round defaults', () => {
         source: 'submissions',
         size: 8,
         cutoff_tie_policy: 'manual',
-        seeding: 'reseed_each_round',
+        seeding: 'fixed_bracket',
       },
       compile: {
         source: 'submissions',

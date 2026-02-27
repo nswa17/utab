@@ -14,6 +14,7 @@ describe('useReportSlideSettings', () => {
     first.setSlideLabel('speakers')
     first.updateSlideSettings('speakers', {
       maxRankingRewarded: 6,
+      rankingOrder: 'desc',
       type: 'single',
       style: 'simple',
       language: 'ja',
@@ -27,6 +28,7 @@ describe('useReportSlideSettings', () => {
 
     expect(second.slideLabel.value).toBe('speakers')
     expect(second.settingsByLabel.value.speakers.maxRankingRewarded).toBe(6)
+    expect(second.settingsByLabel.value.speakers.rankingOrder).toBe('desc')
     expect(second.settingsByLabel.value.speakers.type).toBe('single')
     expect(second.settingsByLabel.value.speakers.style).toBe('simple')
     expect(second.settingsByLabel.value.speakers.language).toBe('ja')
@@ -42,6 +44,7 @@ describe('useReportSlideSettings', () => {
 
     expect(state.slideLabel.value).toBe('teams')
     expect(state.settingsByLabel.value.teams.maxRankingRewarded).toBe(3)
+    expect(state.settingsByLabel.value.teams.rankingOrder).toBe('asc')
     expect(state.settingsByLabel.value.teams.type).toBe('listed')
     expect(state.settingsByLabel.value.teams.style).toBe('pretty')
     expect(state.settingsByLabel.value.teams.language).toBe('en')
@@ -67,6 +70,7 @@ describe('useReportSlideSettings', () => {
 
     expect(state.slideLabel.value).toBe('teams')
     expect(state.settingsByLabel.value.poi.maxRankingRewarded).toBe(3)
+    expect(state.settingsByLabel.value.poi.rankingOrder).toBe('asc')
     expect(state.settingsByLabel.value.poi.type).toBe('listed')
     expect(state.settingsByLabel.value.poi.style).toBe('pretty')
     expect(state.settingsByLabel.value.poi.language).toBe('en')
@@ -93,6 +97,7 @@ describe('useReportSlideSettings', () => {
     expect(state.settingsByLabel.value.teams.type).toBe('single')
     expect(state.settingsByLabel.value.teams.style).toBe('simple')
     expect(state.settingsByLabel.value.teams.language).toBe('en')
+    expect(state.settingsByLabel.value.teams.rankingOrder).toBe('asc')
     expect(state.settingsByLabel.value.teams.leftCredit).toBe('legacy')
     expect(state.settingsByLabel.value.teams.rightCredit).toBe('')
   })

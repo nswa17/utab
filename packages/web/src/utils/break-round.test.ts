@@ -7,8 +7,8 @@ import {
 } from './break-round'
 
 describe('break-round', () => {
-  it('detects break round from round-level break enable flag', () => {
-    expect(isBreakRoundLike({ roundUserDefinedData: { break: { enabled: true } } })).toBe(true)
+  it('detects break round from round-level break_round flag', () => {
+    expect(isBreakRoundLike({ roundUserDefinedData: { break_round: true } })).toBe(true)
   })
 
   it('detects break round from draw-level algorithm flag', () => {

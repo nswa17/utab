@@ -38,6 +38,11 @@ import {
   type BreakParticipant,
   type BreakSeeding,
 } from './shared/break-config.js'
+import { isRoundBreakEnabled } from './shared/round-break.js'
+import {
+  hasTournamentBreakPolicy,
+  normalizeTournamentBreakConfig,
+} from './shared/tournament-break.js'
 import {
   buildBreakCandidatesFromCompiledPayload,
   pickBreakTeamIdsFromCandidates,
@@ -274,30 +279,6 @@ function extractBreakTeamsFromAllocationRow(square: unknown, teamMaps: IdMaps): 
   )
   if (normalized.length !== 2) return null
   return [normalized[0], normalized[1]]
-}
-
-function normalizeBreakMatches(value: unknown): BreakMatchMeta[] {
-  if (!Array.isArray(value)) return []
-  const normalized: BreakMatchMeta[] = []
-  const seenIds = new Set<number>()
-  for (const raw of value) {
-    const id = Number((raw as any)?.id)
-    const gov = {
-      teamId: String((raw as any)?.gov?.teamId ?? '').trim(),
-      seed: Number((raw as any)?.gov?.seed),
-    }
-    const opp = {
-      teamId: String((raw as any)?.opp?.teamId ?? '').trim(),
-      seed: Number((raw as any)?.opp?.seed),
-    }
-    if (!Number.isInteger(id) || id < 1 || seenIds.has(id)) continue
-    if (!gov.teamId || !opp.teamId || gov.teamId === opp.teamId) continue
-    if (!Number.isInteger(gov.seed) || gov.seed < 1) continue
-    if (!Number.isInteger(opp.seed) || opp.seed < 1) continue
-    normalized.push({ id, gov, opp })
-    seenIds.add(id)
-  }
-  return normalized.sort((left, right) => left.id - right.id)
 }
 
 function buildBreakStageFromSavedAllocation(params: {
@@ -799,15 +780,35 @@ async function buildBreakTeamDraw(
   if (!roundDoc) {
     throw toHttpError(404, 'Round not found')
   }
+  const tournamentDoc = await TournamentModel.findById(tournamentId).lean().exec()
+  if (!tournamentDoc) {
+    throw toHttpError(404, 'Tournament not found')
+  }
 
   const roundUserDefined = asRecord((roundDoc as any).userDefinedData)
   const roundBreakRaw = asRecord(roundUserDefined.break)
-  const breakSource = roundBreakRaw.source === 'raw' ? 'raw' : 'submissions'
+  const roundBreakEnabled = isRoundBreakEnabled(round, roundUserDefined)
+  const tournamentBreakRaw = asRecord(asRecord((tournamentDoc as any).user_defined_data).break)
+  const hasTournamentBreak = hasTournamentBreakPolicy(tournamentBreakRaw)
+  const tournamentBreakConfig = normalizeTournamentBreakConfig(round, tournamentBreakRaw)
+  const breakSource = hasTournamentBreak
+    ? tournamentBreakConfig.source
+    : roundBreakRaw.source === 'raw'
+      ? 'raw'
+      : 'submissions'
   const breakConfig = normalizeBreakConfig(round, roundBreakRaw, {
     dedupeParticipants: true,
   })
-  const breakSeeding = canonicalBreakSeeding(breakConfig.seeding)
-  if (!breakConfig.enabled) {
+  const effectiveBreakPolicy = {
+    source_rounds: hasTournamentBreak ? tournamentBreakConfig.source_rounds : breakConfig.source_rounds,
+    size: hasTournamentBreak ? tournamentBreakConfig.size : breakConfig.size,
+    cutoff_tie_policy: hasTournamentBreak
+      ? tournamentBreakConfig.cutoff_tie_policy
+      : breakConfig.cutoff_tie_policy,
+    seeding: hasTournamentBreak ? tournamentBreakConfig.seeding : breakConfig.seeding,
+  }
+  const breakSeeding = canonicalBreakSeeding(effectiveBreakPolicy.seeding)
+  if (!roundBreakEnabled) {
     throw toHttpError(400, 'Break config is not enabled for this round')
   }
 
@@ -819,8 +820,6 @@ async function buildBreakTeamDraw(
   validateBreakParticipants(stageParticipants, validTeamIds)
   let fixedBracketOrderForStage: BreakParticipant[] | null = null
 
-  let derivedFromPreviousRound = false
-  let previousRound: number | null = null
   const previousRoundNumber = round - 1
   if (previousRoundNumber >= 1) {
     const previousDraw = drawDocs.find((doc: any) => Number(doc.round) === previousRoundNumber)
@@ -834,21 +833,13 @@ async function buildBreakTeamDraw(
         : normalizeBreakParticipants(previousBreakMeta.participants, {
             dedupeParticipants: true,
           })
-    const previousByesMeta = normalizeBreakParticipants(previousBreakMeta.stage_byes, {
-      dedupeParticipants: true,
-    })
-    const previousMatchesMeta = normalizeBreakMatches(previousBreakMeta.matches)
     const previousStageFromAllocation = buildBreakStageFromSavedAllocation({
       allocation: (previousDraw as any)?.allocation,
       participants: previousStageParticipants,
       teamMaps: context.teamMaps,
     })
-    const previousMatches =
-      previousStageFromAllocation.matches.length > 0
-        ? previousStageFromAllocation.matches
-        : previousMatchesMeta
-    const previousByes =
-      previousStageFromAllocation.matches.length > 0 ? previousStageFromAllocation.byes : previousByesMeta
+    const previousMatches = previousStageFromAllocation.matches
+    const previousByes = previousStageFromAllocation.byes
     if (previousByes.length > 0 || previousMatches.length > 0) {
       try {
         const winnerEntries = await resolveBreakMatchWinners(
@@ -873,8 +864,6 @@ async function buildBreakTeamDraw(
           stageParticipants = [...previousByes, ...winners].sort((left, right) => left.seed - right.seed)
         }
         validateBreakParticipants(stageParticipants, validTeamIds)
-        derivedFromPreviousRound = true
-        previousRound = previousRoundNumber
       } catch (err) {
         // Keep manual participants as a fallback only when they are explicitly configured.
         if (stageParticipants.length === 0) {
@@ -890,13 +879,7 @@ async function buildBreakTeamDraw(
     }
     const previousRoundDoc = roundDocs.find((doc: any) => Number(doc.round) === previousRoundNumber)
     const previousBreakEnabled = previousRoundDoc
-      ? normalizeBreakConfig(
-          previousRoundNumber,
-          asRecord(asRecord((previousRoundDoc as any).userDefinedData).break),
-          {
-            dedupeParticipants: true,
-          }
-        ).enabled
+      ? isRoundBreakEnabled(previousRoundNumber, asRecord((previousRoundDoc as any).userDefinedData))
       : false
     if (previousBreakEnabled) {
       throw toHttpError(400, 'No previous break stage metadata found. Configure participants manually.')
@@ -905,9 +888,9 @@ async function buildBreakTeamDraw(
       tournamentId,
       round,
       source: breakSource,
-      sourceRounds: breakConfig.source_rounds,
-      size: breakConfig.size,
-      cutoffTiePolicy: breakConfig.cutoff_tie_policy,
+      sourceRounds: effectiveBreakPolicy.source_rounds,
+      size: effectiveBreakPolicy.size,
+      cutoffTiePolicy: effectiveBreakPolicy.cutoff_tie_policy,
       teamNameById,
     })
     validateBreakParticipants(stageParticipants, validTeamIds)
@@ -921,7 +904,7 @@ async function buildBreakTeamDraw(
       tournamentId,
       round,
       source: breakSource,
-      sourceRounds: breakConfig.source_rounds,
+      sourceRounds: effectiveBreakPolicy.source_rounds,
       teamNameById,
     })
     stageParticipants = applyRandomWithinTieGroupSeeding(stageParticipants, rankingByTeamId)
@@ -967,18 +950,15 @@ async function buildBreakTeamDraw(
 
   const userDefinedData = {
     team_allocation_algorithm: 'break',
+    break_round: true,
     break: {
-      enabled: breakConfig.enabled,
-      source_rounds: breakConfig.source_rounds,
-      size: breakConfig.size,
-      cutoff_tie_policy: breakConfig.cutoff_tie_policy,
-      seeding: breakConfig.seeding,
+      source: breakSource,
+      source_rounds: effectiveBreakPolicy.source_rounds,
+      size: effectiveBreakPolicy.size,
+      cutoff_tie_policy: effectiveBreakPolicy.cutoff_tie_policy,
+      seeding: effectiveBreakPolicy.seeding,
       participants: stageParticipantsForMeta,
       stage_participants: stageParticipantsForMeta,
-      stage_byes: stage.byes,
-      matches: stage.matches,
-      derived_from_previous_round: derivedFromPreviousRound,
-      previous_round: previousRound,
     },
   }
 
@@ -1001,9 +981,7 @@ async function isBreakRoundEnabled(tournamentId: string, round: number): Promise
   const connection = await getTournamentConnection(tournamentId)
   const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
   if (!roundDoc) return false
-  return normalizeBreakConfig(round, asRecord(asRecord((roundDoc as any).userDefinedData).break), {
-    dedupeParticipants: true,
-  }).enabled
+  return isRoundBreakEnabled(round, asRecord((roundDoc as any).userDefinedData))
 }
 
 type AllocationContext = {

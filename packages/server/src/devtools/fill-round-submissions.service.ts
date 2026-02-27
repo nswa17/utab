@@ -226,7 +226,15 @@ export async function clearRoundSubmissions(
 function teamSpeakerIdsForRound(team: any, round: number): string[] {
   const details = Array.isArray(team?.details) ? team.details : []
   const roundDetail = details.find((detail: any) => Number(detail?.r) === round)
-  return normalizeIdList(roundDetail?.speakers)
+  const roundSpeakers = normalizeIdList(roundDetail?.speakers)
+  if (roundSpeakers.length > 0) return roundSpeakers
+
+  // Break round and custom operations may not carry round-specific speaker links.
+  // Fall back to any known speaker ids on the team details to keep ballot payload usable.
+  const fallbackSpeakers = normalizeIdList(
+    details.flatMap((detail: any) => (Array.isArray(detail?.speakers) ? detail.speakers : []))
+  )
+  return fallbackSpeakers
 }
 
 export async function fillRoundSubmissions(

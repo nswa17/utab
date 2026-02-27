@@ -146,19 +146,45 @@
           <div class="row report-section-nav-head">
             <h4>{{ $t('レポート表示') }}</h4>
           </div>
-          <div class="report-section-tabs" role="tablist" :aria-label="$t('レポートセクション')">
-            <button
-              v-for="section in reportSectionOptions"
-              :key="section.key"
-              type="button"
-              class="report-section-tab"
-              :class="{ active: activeReportSection === section.key }"
-              role="tab"
-              :aria-selected="activeReportSection === section.key"
-              @click="setActiveReportSection(section.key)"
-            >
-              {{ section.label }}
-            </button>
+          <div
+            class="report-section-tabs report-display-tabs"
+            :class="{ 'report-display-tabs-split': hasBreakRoundsInCompiled }"
+            role="tablist"
+            :aria-label="$t('レポート表示')"
+          >
+            <div class="report-display-group">
+              <button
+                v-for="option in reportDisplayPrelimOptions"
+                :key="option.key"
+                type="button"
+                class="report-section-tab"
+                :class="{ active: isReportDisplayActive(option) }"
+                role="tab"
+                :aria-selected="isReportDisplayActive(option)"
+                @click="setReportDisplay(option)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <span
+              v-if="hasBreakRoundsInCompiled"
+              class="report-display-divider"
+              aria-hidden="true"
+            />
+            <div v-if="hasBreakRoundsInCompiled" class="report-display-group">
+              <button
+                v-for="option in reportDisplayBreakOptions"
+                :key="option.key"
+                type="button"
+                class="report-section-tab"
+                :class="{ active: isReportDisplayActive(option) }"
+                role="tab"
+                :aria-selected="isReportDisplayActive(option)"
+                @click="setReportDisplay(option)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -168,16 +194,22 @@
 
         <section v-if="showOperationsSection" class="card stack rankings-panel" :class="{ 'operations-results': reportUxV3Enabled }">
           <div class="row result-list-head">
-            <h4>{{ reportUxV3Enabled ? $t('カテゴリ別順位一覧') : $t('一覧') }}</h4>
+            <h4>{{ operationsHeading }}</h4>
             <div class="row result-list-actions">
               <CompiledDiffBaselineSelect
-                v-if="diffBaselineCompiledOptions.length > 0"
+                v-if="rankingDiffEnabled && effectiveReportPhase !== 'break' && diffBaselineCompiledOptions.length > 0"
                 v-model="compileDiffBaselineSelection"
                 class="compile-diff-field compile-diff-field-wide"
                 :label="$t('差分比較')"
                 :options="diffBaselineCompiledOptions"
               />
-              <span v-else class="muted small">{{ $t('基準なし') }}</span>
+              <span v-else-if="rankingDiffEnabled" class="muted small">
+                {{
+                  effectiveReportPhase === 'break'
+                    ? $t('ブレイク結果では差分比較を行いません。')
+                    : $t('基準なし')
+                }}
+              </span>
               <span v-if="isDisplayedRawSource" class="raw-source-badge">{{ $t('強制実行') }}</span>
             </div>
           </div>
@@ -266,7 +298,7 @@
         </section>
 
         <section v-if="showFairnessSection" class="card stack">
-          <template v-if="teamResults.length > 0">
+          <template v-if="fairnessTeamResults.length > 0">
           <div class="fairness-summary-grid">
             <article class="overview-item">
               <div class="row overview-status-row">
@@ -524,9 +556,11 @@
             <h5 class="fairness-panel-title">{{ $t('サイド別スコア') }}</h5>
             <SideScatter
               v-if="teamHasScores && scoreEnabledFairnessRounds.length > 0"
-              :results="teamResults"
+              :results="fairnessTeamResults"
               :rounds="scoreEnabledFairnessRounds"
               :show-title="false"
+              :gov-label="govLabel"
+              :opp-label="oppLabel"
             />
             <EmptyState
               v-else-if="fairnessVisualRounds.length > 0 && scoreEnabledFairnessRounds.length === 0"
@@ -542,10 +576,12 @@
           <div v-for="round in fairnessVisualRounds" :key="round.round" class="fairness-round-visual-grid">
             <div class="fairness-round-visual-card">
               <SidePieChart
-                :results="teamResults"
+                :results="fairnessTeamResults"
                 :round="round.round"
                 :round-name="round.name"
-                :total-teams="teams.teams.length"
+                :total-teams="fairnessPieTotalTeams(round.round)"
+                :gov-label="govLabel"
+                :opp-label="oppLabel"
               />
             </div>
             <div class="fairness-round-visual-card">
@@ -653,6 +689,13 @@
                   <input v-model.number="maxRankingRewarded" type="number" min="1" />
                 </label>
                 <label class="stack slide-setting-field slide-setting-field-compact">
+                  <span class="muted">{{ $t('順位表示順') }}</span>
+                  <select v-model="slideRankingOrder">
+                    <option value="asc">{{ $t('昇順') }}</option>
+                    <option value="desc">{{ $t('降順') }}</option>
+                  </select>
+                </label>
+                <label class="stack slide-setting-field slide-setting-field-compact">
                   <span class="muted">{{ $t('タイプ') }}</span>
                   <select v-model="slideType">
                     <option value="listed">{{ $t('一覧') }}</option>
@@ -690,6 +733,7 @@
               :tournament="compiledWithSubPrizes"
               :entities="entities"
               :max-ranking-rewarded="maxRankingRewarded"
+              :ranking-order="slideRankingOrder"
               :type="slideType"
               :slide-style="slideStyle"
               :language="slideLanguage"
@@ -829,6 +873,7 @@ import { useI18n } from 'vue-i18n'
 import { useTournamentStore } from '@/stores/tournament'
 import { useCompiledStore } from '@/stores/compiled'
 import { useTeamsStore } from '@/stores/teams'
+import { useStylesStore } from '@/stores/styles'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useInstitutionsStore } from '@/stores/institutions'
@@ -903,14 +948,18 @@ import {
   DEFAULT_SLIDE_SETTINGS,
   type SlideLanguage,
   type SlideLabel,
+  type SlideRankingOrder,
   type SlideStyle,
   type SlideType,
 } from '@/utils/slides-presentation'
+import { isBreakRoundLike, resolveBreakStageTeamIds } from '@/utils/break-round'
+import { getSideShortLabel } from '@/utils/side-labels'
 
 const route = useRoute()
 const tournamentStore = useTournamentStore()
 const compiledStore = useCompiledStore()
 const teams = useTeamsStore()
+const styles = useStylesStore()
 const adjudicators = useAdjudicatorsStore()
 const rounds = useRoundsStore()
 const speakers = useSpeakersStore()
@@ -926,6 +975,11 @@ const tournamentId = computed(() => route.params.tournamentId as string)
 const currentTournament = computed(
   () => tournamentStore.tournaments.find((item) => item._id === tournamentId.value) ?? null
 )
+const currentStyle = computed(() =>
+  styles.styles.find((item) => item.id === currentTournament.value?.style)
+)
+const govLabel = computed(() => getSideShortLabel(currentStyle.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(currentStyle.value, 'opp', 'Opp'))
 const {
   slideLabel,
   currentSlideSettings,
@@ -937,6 +991,7 @@ const isLoading = computed(
     compiledStore.loading ||
     tournamentStore.loading ||
     teams.loading ||
+    styles.loading ||
     adjudicators.loading ||
     rounds.loading ||
     speakers.loading ||
@@ -955,6 +1010,7 @@ const loadError = computed(
     compiledLoadError.value ||
     tournamentStore.error ||
     teams.error ||
+    styles.error ||
     adjudicators.error ||
     rounds.error ||
     speakers.error ||
@@ -985,6 +1041,12 @@ const slideLanguage = computed<SlideLanguage>({
   get: () => currentSlideSettings.value?.language ?? DEFAULT_SLIDE_SETTINGS.language,
   set: (value) => {
     updateSlideSettings(slideLabel.value, { language: value })
+  },
+})
+const slideRankingOrder = computed<SlideRankingOrder>({
+  get: () => currentSlideSettings.value?.rankingOrder ?? DEFAULT_SLIDE_SETTINGS.rankingOrder,
+  set: (value) => {
+    updateSlideSettings(slideLabel.value, { rankingOrder: value })
   },
 })
 const defaultSlideLeftCredit = computed(() => {
@@ -1023,6 +1085,7 @@ const slideRightCredit = computed({
 const activeReportSection = ref<ReportSectionKey>('operations')
 const activeReportSectionEnteredAt = ref<number>(Date.now())
 const analysisChartsReady = ref(!reportUxV3Enabled)
+const activeReportPhase = ref<ReportResultPhase>('overall')
 const activeLabel = ref<CompiledLabel>('teams')
 const showRecomputeOptions = ref(false)
 const forceCompileModalOpen = ref(false)
@@ -1078,6 +1141,7 @@ const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
   if (!compiled.value) return undefined
   return {
     ...compiled.value,
+    compiled_team_results: announcementTeamResults.value,
     compiled_poi_results: poiResults.value,
     compiled_best_results: bestResults.value,
   }
@@ -1085,6 +1149,15 @@ const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
 type RoundSummary = { round: number; name?: string }
 type CompiledLabel = SlideLabel
 type ReportSectionKey = AdminReportSection
+type ReportResultPhase = 'overall' | 'prelim' | 'break'
+type BreakOutcomeKey =
+  | 'champion'
+  | 'grand_finalist'
+  | 'semi_finalist'
+  | 'quarter_finalist'
+  | 'octo_finalist'
+  | 'double_octo_finalist'
+  | 'break_participant'
 type BaselineCompiledOption = {
   compiledId: string
   rounds: number[]
@@ -1132,6 +1205,12 @@ type JudgeFeedbackRankingRow = {
   direction: 'strict' | 'lenient' | 'neutral'
   outlier: boolean
 }
+type ReportDisplayOption = {
+  key: string
+  section: ReportSectionKey
+  phase: ReportResultPhase
+  label: string
+}
 const sortedRounds = computed<RoundSummary[]>(() => {
   if (rounds.rounds.length > 0) {
     return rounds.rounds
@@ -1163,11 +1242,9 @@ function normalizeRoundSelection(roundNumbers: number[]): number[] {
 const availableCompileRoundNumbers = computed(() =>
   normalizeRoundSelection(sortedRounds.value.map((round) => round.round))
 )
-const teamResults = computed<any[]>(() => compiled.value?.compiled_team_results ?? [])
+const baseTeamResults = computed<any[]>(() => compiled.value?.compiled_team_results ?? [])
 const teamHasScores = computed(() =>
-  teamResults.value.some((result) =>
-    result.details?.some((detail: any) => typeof detail.sum === 'number')
-  )
+  phaseTeamResultsForDisplay.value.some((result) => result.details?.some((detail: any) => typeof detail.sum === 'number'))
 )
 
 const entities = computed(() => {
@@ -1194,14 +1271,13 @@ function isCompileLabelEnabled(label: 'teams' | 'speakers' | 'adjudicators' | 'p
   return selectedCompileLabels.value.has(label)
 }
 
-const rankingLabels = computed<CompiledLabel[]>(() => [
-  'teams',
-  'speakers',
-  'adjudicators',
-  'poi',
-  'best',
-])
+const rankingLabels = computed<CompiledLabel[]>(() =>
+  effectiveReportPhase.value === 'break'
+    ? ['teams']
+    : ['teams', 'speakers', 'adjudicators', 'poi', 'best']
+)
 const availableSlideLabels = computed<CompiledLabel[]>(() => {
+  if (effectiveReportPhase.value === 'break') return ['teams']
   if (!compiled.value) return ['teams']
   const labels: CompiledLabel[] = []
   if (isCompileLabelEnabled('teams') && compiled.value.compiled_team_results?.length) labels.push('teams')
@@ -1215,6 +1291,11 @@ const slideAvailableLabels = computed(() => availableSlideLabels.value)
 const showCategoryTabs = computed(
   () => Boolean(compiled.value) && compileExecuted.value && showOperationsSection.value
 )
+const operationsHeading = computed(() => {
+  if (effectiveReportPhase.value === 'prelim') return t('予選結果')
+  if (effectiveReportPhase.value === 'break') return t('ブレイク結果')
+  return reportUxV3Enabled ? t('カテゴリ別順位一覧') : t('一覧')
+})
 const snapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
 const baselineCompiledOptions = computed<BaselineCompiledOption[]>(() =>
   compiledHistory.value
@@ -1337,7 +1418,7 @@ const reportSectionOptions = computed<
   {
     key: 'operations',
     label: t('カテゴリ別順位一覧'),
-    description: t('集計区分ごとの順位と差分を確認'),
+    description: t('集計区分ごとの順位を確認'),
   },
   {
     key: 'announcement',
@@ -1350,6 +1431,56 @@ const reportSectionOptions = computed<
     description: t('偏り・割当と分析指標をまとめて確認'),
   },
 ])
+const reportDisplayOptions = computed<ReportDisplayOption[]>(() => {
+  const sections = reportSectionOptions.value.map((option) => option.key)
+  if (!hasBreakRoundsInCompiled.value) {
+    return sections.map((section) => ({
+      key: `${section}-overall`,
+      section,
+      phase: 'overall',
+      label:
+        section === 'operations'
+          ? t('順位一覧')
+          : section === 'announcement'
+            ? t('発表出力')
+            : t('統計'),
+    }))
+  }
+
+  return sections.flatMap((section) => [
+    {
+      key: `${section}-prelim`,
+      section,
+      phase: 'prelim' as const,
+      label:
+        section === 'operations'
+          ? t('予選順位一覧')
+          : section === 'announcement'
+            ? t('予選発表出力')
+            : t('予選統計'),
+    },
+    {
+      key: `${section}-break`,
+      section,
+      phase: 'break' as const,
+      label:
+        section === 'operations'
+          ? t('ブレイク順位一覧')
+          : section === 'announcement'
+            ? t('ブレイク発表出力')
+            : t('ブレイク結果統計'),
+    },
+  ])
+})
+const reportDisplayPrelimOptions = computed<ReportDisplayOption[]>(() => {
+  if (!hasBreakRoundsInCompiled.value) return reportDisplayOptions.value
+  return reportDisplayOptions.value.filter((option) => option.phase === 'prelim')
+})
+const reportDisplayBreakOptions = computed<ReportDisplayOption[]>(() => {
+  if (!hasBreakRoundsInCompiled.value) return []
+  return reportDisplayOptions.value.filter((option) => option.phase === 'break')
+})
+const rankingDiffEnabled = computed(() => false)
 const showOperationsSection = computed(
   () => !reportUxV3Enabled || activeReportSection.value === 'operations'
 )
@@ -1359,6 +1490,10 @@ const showFairnessSection = computed(
 const showAnnouncementSection = computed(
   () => !reportUxV3Enabled || activeReportSection.value === 'announcement'
 )
+const effectiveReportPhase = computed<ReportResultPhase>(() => {
+  if (!hasBreakRoundsInCompiled.value) return 'overall'
+  return activeReportPhase.value === 'break' ? 'break' : 'prelim'
+})
 const canShowAnalysisCharts = computed(
   () =>
     showFairnessSection.value &&
@@ -1506,17 +1641,511 @@ function mapResultRows(source: any[], label: CompiledLabel = activeLabel.value) 
   })
 }
 
-function resultSourceForLabel(compiledDoc: Record<string, any>, label: string) {
-  if (label === 'speakers') return compiledDoc.compiled_speaker_results ?? []
-  if (label === 'adjudicators') return compiledDoc.compiled_adjudicator_results ?? []
+function roundNumberFromAny(value: unknown): number | null {
+  const normalized = Number(value)
+  return Number.isInteger(normalized) && normalized >= 1 ? normalized : null
+}
+
+function normalizeCompiledRoundNumbers(compiledDoc: Record<string, any> | null | undefined): number[] {
+  if (!compiledDoc) return []
+  const roundsValue = Array.isArray(compiledDoc.rounds) ? compiledDoc.rounds : []
+  return normalizeRoundSelection(
+    roundsValue
+      .map((entry: any) => entry?.r ?? entry?.round ?? entry)
+      .map((round) => Number(round))
+      .filter((round) => Number.isInteger(round) && round >= 1)
+  )
+}
+
+function extractRoundNumbersFromTeamDetails(results: any[]): number[] {
+  return normalizeRoundSelection(
+    results.flatMap((result) =>
+      Array.isArray(result?.details) ? result.details.map((detail: any) => Number(detail?.r)) : []
+    )
+  )
+}
+
+function normalizeRankingOrderForCompiled(compiledDoc: Record<string, any>): CompileRankingMetric[] {
+  return normalizeCompileOptions(compiledDoc.compile_options as CompileOptionsInput | undefined)
+    .ranking_priority.order
+}
+
+function compareByNumericValue(
+  left: unknown,
+  right: unknown,
+  mode: 'desc' | 'asc'
+): number {
+  const leftValue =
+    typeof left === 'number' && Number.isFinite(left)
+      ? left
+      : mode === 'desc'
+        ? Number.NEGATIVE_INFINITY
+        : Number.POSITIVE_INFINITY
+  const rightValue =
+    typeof right === 'number' && Number.isFinite(right)
+      ? right
+      : mode === 'desc'
+        ? Number.NEGATIVE_INFINITY
+        : Number.POSITIVE_INFINITY
+  if (leftValue === rightValue) return 0
+  if (mode === 'desc') return leftValue > rightValue ? -1 : 1
+  return leftValue < rightValue ? -1 : 1
+}
+
+function compareTeamsByRankingMetrics(
+  left: any,
+  right: any,
+  order: CompileRankingMetric[]
+): number {
+  for (const metric of order) {
+    const mode: 'desc' | 'asc' = metric === 'sd' ? 'asc' : 'desc'
+    const compared = compareByNumericValue(left?.[metric], right?.[metric], mode)
+    if (compared !== 0) return compared
+  }
+  return 0
+}
+
+function compareTeamsByRankingOrder(
+  left: any,
+  right: any,
+  order: CompileRankingMetric[]
+): number {
+  const metricDiff = compareTeamsByRankingMetrics(left, right, order)
+  if (metricDiff !== 0) return metricDiff
+  const leftId = String(left?.id ?? '')
+  const rightId = String(right?.id ?? '')
+  if (leftId === rightId) return 0
+  return leftId < rightId ? -1 : 1
+}
+
+function numericOrZero(value: unknown): number {
+  const numeric = toFiniteNumber(value)
+  return numeric ?? 0
+}
+
+function buildRoundFilteredTeamResults(
+  source: any[],
+  targetRounds: number[],
+  rankingOrder: CompileRankingMetric[]
+): any[] {
+  const roundSet = new Set(normalizeRoundSelection(targetRounds))
+  if (roundSet.size === 0) return []
+  const filtered = source
+    .map((result: any) => {
+      const details = Array.isArray(result?.details)
+        ? result.details.filter((detail: any) => roundSet.has(Number(detail?.r)))
+        : []
+      if (details.length === 0) return null
+
+      const win = details.reduce((acc: number, detail: any) => acc + numericOrZero(detail?.win), 0)
+      const sum = details.reduce((acc: number, detail: any) => acc + numericOrZero(detail?.sum), 0)
+      const margin = details.reduce((acc: number, detail: any) => acc + numericOrZero(detail?.margin), 0)
+      const vote = details.reduce((acc: number, detail: any) => acc + numericOrZero(detail?.vote), 0)
+      const scoreSeries = details
+        .map((detail: any) => {
+          const sumValue = toFiniteNumber(detail?.sum)
+          if (sumValue !== null) return sumValue
+          const avgValue = toFiniteNumber(detail?.average)
+          if (avgValue !== null) return avgValue
+          return toFiniteNumber(detail?.win)
+        })
+        .filter((value: number | null): value is number => value !== null)
+      const average =
+        scoreSeries.length > 0
+          ? scoreSeries.reduce((acc: number, value: number) => acc + value, 0) / scoreSeries.length
+          : 0
+      const variance =
+        scoreSeries.length > 0
+          ? scoreSeries.reduce((acc: number, value: number) => acc + (value - average) ** 2, 0) /
+            scoreSeries.length
+          : 0
+      const sd = Math.sqrt(variance)
+      const pastOpponents = Array.from(
+        new Set<string>(
+          details.flatMap((detail: any) =>
+            Array.isArray(detail?.opponents) ? detail.opponents.map((opponent: any) => String(opponent ?? '').trim()) : []
+          )
+        )
+      ).filter((token: string) => token.length > 0)
+      const pastSides = details
+        .map((detail: any) => String(detail?.side ?? '').trim())
+        .filter((side: string) => side.length > 0)
+      return {
+        ...result,
+        details,
+        win: roundToThree(win),
+        sum: roundToThree(sum),
+        margin: roundToThree(margin),
+        vote: roundToThree(vote),
+        average: roundToThree(average),
+        sd: roundToThree(sd),
+        past_opponents: pastOpponents,
+        past_sides: pastSides,
+        ranking: 0,
+      }
+    })
+    .filter((row): row is any => row !== null)
+  const sorted = filtered.slice().sort((left, right) => compareTeamsByRankingOrder(left, right, rankingOrder))
+  let currentRank = 1
+  for (let index = 0; index < sorted.length; index += 1) {
+    if (index > 0) {
+      const compared = compareTeamsByRankingMetrics(sorted[index], sorted[index - 1], rankingOrder)
+      if (compared !== 0) currentRank = index + 1
+    }
+    sorted[index] = { ...sorted[index], ranking: currentRank }
+  }
+  return sorted
+}
+
+function buildRoundFilteredEntityResults(source: any[], targetRounds: number[]): any[] {
+  const roundSet = new Set(normalizeRoundSelection(targetRounds))
+  if (roundSet.size === 0) return []
+  return source
+    .map((result: any) => {
+      const details = Array.isArray(result?.details)
+        ? result.details.filter((detail: any) => roundSet.has(Number(detail?.r)))
+        : []
+      if (details.length === 0) return null
+      const sum = details.reduce((acc: number, detail: any) => acc + numericOrZero(detail?.sum), 0)
+      const averageValues = details
+        .map((detail: any) => {
+          const avgValue = toFiniteNumber(detail?.average)
+          if (avgValue !== null) return avgValue
+          const sumValue = toFiniteNumber(detail?.sum)
+          if (sumValue !== null) return sumValue
+          return toFiniteNumber(detail?.score)
+        })
+        .filter((value: number | null): value is number => value !== null)
+      const average =
+        averageValues.length > 0
+          ? averageValues.reduce((acc: number, value: number) => acc + value, 0) /
+            averageValues.length
+          : 0
+      const variance =
+        averageValues.length > 0
+          ? averageValues.reduce((acc: number, value: number) => acc + (value - average) ** 2, 0) /
+            averageValues.length
+          : 0
+      const sd = Math.sqrt(variance)
+      return {
+        ...result,
+        details,
+        sum: roundToThree(sum),
+        average: roundToThree(average),
+        sd: roundToThree(sd),
+      }
+    })
+    .filter((row): row is any => row !== null)
+}
+
+type BreakRoundMatchup = { gov: string; opp: string }
+
+function normalizeAllocationMatchups(allocation: unknown): BreakRoundMatchup[] {
+  if (!Array.isArray(allocation)) return []
+  const seen = new Set<string>()
+  const rows: BreakRoundMatchup[] = []
+  allocation.forEach((square: any) => {
+    const teamsSource = square?.teams
+    const gov = String(Array.isArray(teamsSource) ? teamsSource[0] : teamsSource?.gov ?? '').trim()
+    const opp = String(Array.isArray(teamsSource) ? teamsSource[1] : teamsSource?.opp ?? '').trim()
+    if (!gov || !opp || gov === opp) return
+    const key = [gov, opp].sort().join('::')
+    if (seen.has(key)) return
+    seen.add(key)
+    rows.push({ gov, opp })
+  })
+  return rows
+}
+
+function nextPowerOfTwo(value: number): number {
+  if (value <= 1) return 1
+  let power = 1
+  while (power < value) power *= 2
+  return power
+}
+
+function breakOutcomeForStageSize(stageSize: number): BreakOutcomeKey {
+  const bracketSize = nextPowerOfTwo(Math.max(2, stageSize))
+  if (bracketSize <= 2) return 'grand_finalist'
+  if (bracketSize <= 4) return 'semi_finalist'
+  if (bracketSize <= 8) return 'quarter_finalist'
+  if (bracketSize <= 16) return 'octo_finalist'
+  return 'double_octo_finalist'
+}
+
+function breakOutcomeOrder(outcome: BreakOutcomeKey): number {
+  if (outcome === 'champion') return 1
+  if (outcome === 'grand_finalist') return 2
+  if (outcome === 'semi_finalist') return 3
+  if (outcome === 'quarter_finalist') return 4
+  if (outcome === 'octo_finalist') return 5
+  if (outcome === 'double_octo_finalist') return 6
+  return 7
+}
+
+function breakOutcomeLabel(outcome: BreakOutcomeKey): string {
+  if (outcome === 'champion') return t('Champion')
+  if (outcome === 'grand_finalist') return t('Grand Finalist')
+  if (outcome === 'semi_finalist') return t('Semi-finalist')
+  if (outcome === 'quarter_finalist') return t('Quarter-finalist')
+  if (outcome === 'octo_finalist') return t('Octo-finalist')
+  if (outcome === 'double_octo_finalist') return t('Double-octo-finalist')
+  return t('Break Participant')
+}
+
+function buildRoundStatsByTeam(results: any[]): Map<number, Map<string, { win: number; sum: number }>> {
+  const byRound = new Map<number, Map<string, { win: number; sum: number }>>()
+  results.forEach((result: any) => {
+    const teamId = String(result?.id ?? '').trim()
+    if (!teamId) return
+    const details = Array.isArray(result?.details) ? result.details : []
+    details.forEach((detail: any) => {
+      const round = roundNumberFromAny(detail?.r)
+      if (round === null) return
+      const win = toFiniteNumber(detail?.win)
+      if (win === null) return
+      const sum = toFiniteNumber(detail?.sum) ?? 0
+      const map = byRound.get(round) ?? new Map<string, { win: number; sum: number }>()
+      map.set(teamId, { win, sum })
+      byRound.set(round, map)
+    })
+  })
+  return byRound
+}
+
+function buildBreakOutcomeRows(params: {
+  source: any[]
+  breakRounds: number[]
+  rankingOrder: CompileRankingMetric[]
+}): any[] {
+  const { source, breakRounds, rankingOrder } = params
+  if (breakRounds.length === 0) return []
+  const baseRows = buildRoundFilteredTeamResults(source, breakRounds, rankingOrder)
+  const baseRowByTeamId = new Map(
+    baseRows
+      .map((row) => [String(row?.id ?? '').trim(), row] as const)
+      .filter(([teamId]) => teamId.length > 0)
+  )
+  const roundStatsByTeam = buildRoundStatsByTeam(source)
+  const outcomeByTeam = new Map<string, { outcome: BreakOutcomeKey; round: number | null }>()
+  const breakTeamIds = new Set<string>()
+
+  breakRounds.forEach((roundNumber) => {
+    const roundConfig = roundConfigByRound.value.get(roundNumber)
+    const draw = drawByRound.value.get(roundNumber)
+    const participants = resolveBreakStageTeamIds({
+      roundUserDefinedData: roundConfig?.userDefinedData,
+      drawUserDefinedData: draw?.userDefinedData,
+      allocation: draw?.allocation,
+    })
+    const matchups = normalizeAllocationMatchups(draw?.allocation)
+    participants.forEach((teamId) => breakTeamIds.add(teamId))
+    matchups.forEach((matchup) => {
+      breakTeamIds.add(matchup.gov)
+      breakTeamIds.add(matchup.opp)
+    })
+
+    const stageSize = participants.length > 0 ? participants.length : matchups.length * 2
+    const loserOutcome = breakOutcomeForStageSize(stageSize)
+    const roundStats = roundStatsByTeam.get(roundNumber) ?? new Map<string, { win: number; sum: number }>()
+    matchups.forEach((matchup) => {
+      const govStats = roundStats.get(matchup.gov)
+      const oppStats = roundStats.get(matchup.opp)
+      if (!govStats || !oppStats) return
+      let winnerId = ''
+      let loserId = ''
+      if (govStats.win > oppStats.win) {
+        winnerId = matchup.gov
+        loserId = matchup.opp
+      } else if (oppStats.win > govStats.win) {
+        winnerId = matchup.opp
+        loserId = matchup.gov
+      } else if (govStats.sum > oppStats.sum) {
+        winnerId = matchup.gov
+        loserId = matchup.opp
+      } else if (oppStats.sum > govStats.sum) {
+        winnerId = matchup.opp
+        loserId = matchup.gov
+      }
+      if (!winnerId || !loserId) return
+      outcomeByTeam.set(loserId, { outcome: loserOutcome, round: roundNumber })
+    })
+  })
+
+  const finalRound = [...breakRounds].sort((left, right) => right - left).find((roundNumber) => {
+    const draw = drawByRound.value.get(roundNumber)
+    return normalizeAllocationMatchups(draw?.allocation).length > 0
+  })
+  if (finalRound !== undefined) {
+    const roundStats = roundStatsByTeam.get(finalRound) ?? new Map<string, { win: number; sum: number }>()
+    const finalMatchups = normalizeAllocationMatchups(drawByRound.value.get(finalRound)?.allocation)
+    if (finalMatchups.length === 1) {
+      const finalMatch = finalMatchups[0]
+      const govStats = roundStats.get(finalMatch.gov)
+      const oppStats = roundStats.get(finalMatch.opp)
+      if (govStats && oppStats) {
+        let championId = ''
+        if (govStats.win > oppStats.win) championId = finalMatch.gov
+        else if (oppStats.win > govStats.win) championId = finalMatch.opp
+        else if (govStats.sum > oppStats.sum) championId = finalMatch.gov
+        else if (oppStats.sum > govStats.sum) championId = finalMatch.opp
+        if (championId) {
+          outcomeByTeam.set(championId, { outcome: 'champion', round: finalRound })
+        }
+      }
+    }
+  }
+
+  const rows = Array.from(breakTeamIds)
+    .filter((teamId) => teamId.length > 0)
+    .map((teamId) => {
+      const baseRow = baseRowByTeamId.get(teamId) ?? {
+        id: teamId,
+        details: [],
+        institutions: [],
+        teams: [],
+        win: 0,
+        sum: 0,
+        margin: 0,
+        vote: 0,
+        average: 0,
+        sd: 0,
+        past_opponents: [],
+        past_sides: [],
+      }
+      const outcomeEntry = outcomeByTeam.get(teamId) ?? { outcome: 'break_participant' as BreakOutcomeKey, round: null }
+      return {
+        ...baseRow,
+        id: teamId,
+        break_outcome_key: outcomeEntry.outcome,
+        break_outcome: breakOutcomeLabel(outcomeEntry.outcome),
+        break_round: outcomeEntry.round,
+      }
+    })
+    .sort((left, right) => {
+      const leftOrder = breakOutcomeOrder(left.break_outcome_key)
+      const rightOrder = breakOutcomeOrder(right.break_outcome_key)
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder
+      return sortCollator.compare(entityName(String(left.id)), entityName(String(right.id)))
+    })
+
+  let currentRank = 1
+  for (let index = 0; index < rows.length; index += 1) {
+    if (index > 0) {
+      const previous = rows[index - 1]
+      if (breakOutcomeOrder(rows[index].break_outcome_key) !== breakOutcomeOrder(previous.break_outcome_key)) {
+        currentRank = index + 1
+      }
+    }
+    rows[index] = { ...rows[index], ranking: currentRank }
+  }
+  return rows
+}
+
+const compiledRoundNumbers = computed<number[]>(() => {
+  const fromPayload = normalizeCompiledRoundNumbers(compiled.value)
+  if (fromPayload.length > 0) return fromPayload
+  return extractRoundNumbersFromTeamDetails(baseTeamResults.value)
+})
+const breakRoundNumbersInCompiled = computed<number[]>(() =>
+  compiledRoundNumbers.value.filter((roundNumber) =>
+    isBreakRoundLike({
+      roundUserDefinedData: roundConfigByRound.value.get(roundNumber)?.userDefinedData,
+      drawUserDefinedData: drawByRound.value.get(roundNumber)?.userDefinedData,
+      allocation: drawByRound.value.get(roundNumber)?.allocation,
+    })
+  )
+)
+const prelimRoundNumbersInCompiled = computed<number[]>(() =>
+  compiledRoundNumbers.value.filter((roundNumber) => !breakRoundNumbersInCompiled.value.includes(roundNumber))
+)
+const hasBreakRoundsInCompiled = computed(() => breakRoundNumbersInCompiled.value.length > 0)
+
+const rankingOrderForCurrentCompiled = computed<CompileRankingMetric[]>(() => {
+  if (!compiled.value) return [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order]
+  return normalizeRankingOrderForCompiled(compiled.value)
+})
+const prelimTeamResults = computed<any[]>(() =>
+  buildRoundFilteredTeamResults(
+    baseTeamResults.value,
+    prelimRoundNumbersInCompiled.value,
+    rankingOrderForCurrentCompiled.value
+  )
+)
+const breakTeamResults = computed<any[]>(() =>
+  buildRoundFilteredTeamResults(
+    baseTeamResults.value,
+    breakRoundNumbersInCompiled.value,
+    rankingOrderForCurrentCompiled.value
+  )
+)
+const breakOutcomeRows = computed<any[]>(() =>
+  buildBreakOutcomeRows({
+    source: baseTeamResults.value,
+    breakRounds: breakRoundNumbersInCompiled.value,
+    rankingOrder: rankingOrderForCurrentCompiled.value,
+  })
+)
+const phaseTeamResultsForDisplay = computed<any[]>(() => {
+  if (effectiveReportPhase.value === 'prelim') return prelimTeamResults.value
+  if (effectiveReportPhase.value === 'break') {
+    return breakOutcomeRows.value.length > 0 ? breakOutcomeRows.value : breakTeamResults.value
+  }
+  return baseTeamResults.value
+})
+const fairnessTeamResults = computed<any[]>(() => {
+  if (effectiveReportPhase.value === 'prelim') return prelimTeamResults.value
+  if (effectiveReportPhase.value === 'break') return breakTeamResults.value
+  return baseTeamResults.value
+})
+const announcementTeamResults = computed<any[]>(() => phaseTeamResultsForDisplay.value)
+
+function teamResultsForCompiledDoc(compiledDoc: Record<string, any>, phase: ReportResultPhase): any[] {
+  const sourceRows = Array.isArray(compiledDoc.compiled_team_results) ? compiledDoc.compiled_team_results : []
+  if (phase === 'overall') return sourceRows
+  const rankingOrder = normalizeRankingOrderForCompiled(compiledDoc)
+  if (phase === 'prelim') {
+    return buildRoundFilteredTeamResults(sourceRows, prelimRoundNumbersInCompiled.value, rankingOrder)
+  }
+  return buildRoundFilteredTeamResults(sourceRows, breakRoundNumbersInCompiled.value, rankingOrder)
+}
+
+function resultSourceForLabel(
+  compiledDoc: Record<string, any>,
+  label: string,
+  options?: { phase?: ReportResultPhase; preferBreakOutcomes?: boolean }
+) {
+  const phase = options?.phase ?? 'overall'
+  const phaseRounds =
+    phase === 'prelim'
+      ? prelimRoundNumbersInCompiled.value
+      : phase === 'break'
+        ? breakRoundNumbersInCompiled.value
+        : []
+  if (label === 'speakers') {
+    const source = Array.isArray(compiledDoc.compiled_speaker_results) ? compiledDoc.compiled_speaker_results : []
+    return phase === 'overall' ? source : buildRoundFilteredEntityResults(source, phaseRounds)
+  }
+  if (label === 'adjudicators') {
+    const source = Array.isArray(compiledDoc.compiled_adjudicator_results)
+      ? compiledDoc.compiled_adjudicator_results
+      : []
+    return phase === 'overall' ? source : buildRoundFilteredEntityResults(source, phaseRounds)
+  }
   if (label === 'poi') return buildSubPrizeResultsFromCompiled(compiledDoc, 'poi')
   if (label === 'best') return buildSubPrizeResultsFromCompiled(compiledDoc, 'best')
-  return compiledDoc.compiled_team_results ?? []
+  if (phase === 'break' && options?.preferBreakOutcomes && compiledDoc === compiled.value) {
+    return breakOutcomeRows.value.length > 0 ? breakOutcomeRows.value : breakTeamResults.value
+  }
+  return teamResultsForCompiledDoc(compiledDoc, phase)
 }
 
 const activeResultsSource = computed<any[]>(() => {
   if (!compiled.value) return []
-  return resultSourceForLabel(compiled.value, activeLabel.value)
+  return resultSourceForLabel(compiled.value, activeLabel.value, {
+    phase: effectiveReportPhase.value,
+    preferBreakOutcomes: true,
+  })
 })
 
 const selectedDiffBaselineCompiled = computed<Record<string, any> | null>(() => {
@@ -1529,7 +2158,10 @@ const selectedDiffBaselineCompiled = computed<Record<string, any> | null>(() => 
 
 const selectedDiffBaselineRows = computed<any[]>(() => {
   if (!selectedDiffBaselineCompiled.value) return []
-  return resultSourceForLabel(selectedDiffBaselineCompiled.value, activeLabel.value)
+  return resultSourceForLabel(selectedDiffBaselineCompiled.value, activeLabel.value, {
+    phase: effectiveReportPhase.value,
+    preferBreakOutcomes: false,
+  })
 })
 
 function stripDiffFields(rows: any[]): any[] {
@@ -1542,21 +2174,26 @@ function stripDiffFields(rows: any[]): any[] {
 
 const activeResults = computed<any[]>(() => {
   const mapped = stripDiffFields(mapResultRows(activeResultsSource.value, activeLabel.value))
+  if (!rankingDiffEnabled.value) return mapped
+  if (effectiveReportPhase.value === 'break') return mapped
   if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineRows.value.length === 0) {
     return mapped
   }
   return applyClientBaselineDiff(mapped, stripDiffFields(selectedDiffBaselineRows.value))
 })
 const fairnessAnalysisSource = computed<any[]>(() => {
-  if (!compiled.value) return []
-  return resultSourceForLabel(compiled.value, 'teams')
+  return fairnessTeamResults.value
 })
 const selectedDiffBaselineTeamRows = computed<any[]>(() => {
   if (!selectedDiffBaselineCompiled.value) return []
-  return resultSourceForLabel(selectedDiffBaselineCompiled.value, 'teams')
+  return resultSourceForLabel(selectedDiffBaselineCompiled.value, 'teams', {
+    phase: effectiveReportPhase.value,
+    preferBreakOutcomes: false,
+  })
 })
 const fairnessAnalysisResults = computed<any[]>(() => {
   const mapped = stripDiffFields(mapResultRows(fairnessAnalysisSource.value, 'teams'))
+  if (effectiveReportPhase.value === 'break') return mapped
   if (!selectedDiffBaselineCompiledId.value || selectedDiffBaselineTeamRows.value.length === 0) {
     return mapped
   }
@@ -1564,11 +2201,17 @@ const fairnessAnalysisResults = computed<any[]>(() => {
 })
 const speakerPerformanceResults = computed<any[]>(() => {
   if (!compiled.value) return []
-  return mapResultRows(resultSourceForLabel(compiled.value, 'speakers'), 'speakers')
+  return mapResultRows(
+    resultSourceForLabel(compiled.value, 'speakers', { phase: effectiveReportPhase.value }),
+    'speakers'
+  )
 })
 const adjudicatorPerformanceResults = computed<any[]>(() => {
   if (!compiled.value) return []
-  return mapResultRows(resultSourceForLabel(compiled.value, 'adjudicators'), 'adjudicators')
+  return mapResultRows(
+    resultSourceForLabel(compiled.value, 'adjudicators', { phase: effectiveReportPhase.value }),
+    'adjudicators'
+  )
 })
 const sortedActiveResults = computed<any[]>(() => {
   const key = resultSortKey.value
@@ -1593,13 +2236,18 @@ const sortedActiveResults = computed<any[]>(() => {
 })
 const showDiffLegend = computed(
   () =>
+    rankingDiffEnabled.value &&
+    effectiveReportPhase.value !== 'break' &&
     selectedDiffBaselineCompiledId.value.length > 0 &&
     activeResults.value.some((row: any) => row?.diff?.ranking)
 )
 
 const announcementResultsSource = computed<any[]>(() => {
   if (!compiled.value) return []
-  return resultSourceForLabel(compiled.value, slideLabel.value)
+  return resultSourceForLabel(compiled.value, slideLabel.value, {
+    phase: effectiveReportPhase.value,
+    preferBreakOutcomes: true,
+  })
 })
 const announcementResults = computed<any[]>(() =>
   mapResultRows(announcementResultsSource.value, slideLabel.value)
@@ -1607,10 +2255,11 @@ const announcementResults = computed<any[]>(() =>
 
 const awardCopyRows = computed(() => {
   if (announcementResults.value.length === 0) return []
+  const rankingDirection = slideRankingOrder.value === 'desc' ? -1 : 1
   const ranked = announcementResults.value
     .filter((row) => Number.isFinite(Number(row.ranking)))
     .slice()
-    .sort((a, b) => Number(a.ranking) - Number(b.ranking))
+    .sort((a, b) => rankingDirection * (Number(a.ranking) - Number(b.ranking)))
   const max = Math.max(1, Number(maxRankingRewarded.value || 1))
   return ranked.filter((row) => Number(row.ranking) <= max)
 })
@@ -1622,7 +2271,9 @@ const awardCopyText = computed(() => {
       const teamText =
         Array.isArray(row.teams) && row.teams.length > 0 ? `（${row.teams.map((item: any) => String(item)).join('/')}）` : ''
       const metric =
-        slideLabel.value === 'poi'
+        slideLabel.value === 'teams' && effectiveReportPhase.value === 'break'
+          ? String(row?.break_outcome ?? '')
+          : slideLabel.value === 'poi'
           ? formatTimesCount(Number(row.poi ?? 0))
           : slideLabel.value === 'best'
             ? formatTimesCount(Number(row.best ?? 0))
@@ -1688,7 +2339,10 @@ const speakerTeamNameMap = computed(() => {
 })
 
 function awardMetricLabel(label: CompiledLabel) {
-  if (label === 'teams') return teamHasScores.value ? t('合計') : t('勝利数')
+  if (label === 'teams') {
+    if (effectiveReportPhase.value === 'break') return t('ブレイク結果')
+    return teamHasScores.value ? t('合計') : t('勝利数')
+  }
   if (label === 'speakers') return t('平均')
   if (label === 'adjudicators') return t('平均')
   if (label === 'poi') return t('POI合計')
@@ -1697,7 +2351,10 @@ function awardMetricLabel(label: CompiledLabel) {
 }
 
 function awardMetricValue(row: any, label: CompiledLabel): string | number {
-  if (label === 'teams') return teamHasScores.value ? Number(row?.sum ?? 0) : Number(row?.win ?? 0)
+  if (label === 'teams') {
+    if (effectiveReportPhase.value === 'break') return String(row?.break_outcome ?? '')
+    return teamHasScores.value ? Number(row?.sum ?? 0) : Number(row?.win ?? 0)
+  }
   if (label === 'speakers') return Number(row?.average ?? 0)
   if (label === 'adjudicators') return Number(row?.average ?? 0)
   if (label === 'poi') return Number(row?.poi ?? 0)
@@ -1755,6 +2412,9 @@ const participantExportRows = computed<ParticipantExportRowInput[]>(() => {
 })
 
 const tableColumns = computed(() => {
+  if (activeLabel.value === 'teams' && effectiveReportPhase.value === 'break') {
+    return ['ranking', 'id', 'break_outcome']
+  }
   if (activeLabel.value === 'poi' || activeLabel.value === 'best') {
     return ['ranking', 'id', 'teams', activeLabel.value]
   }
@@ -1947,15 +2607,16 @@ function isSpeakerScoreEnabledRound(roundNumber: number): boolean {
   return config?.userDefinedData?.no_speaker_score !== true
 }
 const summaryTargetRounds = computed(() => [...compileTargetRoundNumbers.value])
+const phaseRoundNumbers = computed<number[]>(() => {
+  if (effectiveReportPhase.value === 'prelim') return prelimRoundNumbersInCompiled.value
+  if (effectiveReportPhase.value === 'break') return breakRoundNumbersInCompiled.value
+  return compiledRoundNumbers.value
+})
 const fairnessVisualRoundNumbers = computed(() => {
-  const compiledRounds = Array.isArray(compiled.value?.rounds) ? compiled.value.rounds : []
-  const selectedRounds = normalizeRoundSelection(
-    compiledRounds.map((entry: any) => entry?.r ?? entry?.round ?? entry)
-  )
-  if (selectedRounds.length > 0) return selectedRounds
+  if (phaseRoundNumbers.value.length > 0) return phaseRoundNumbers.value
 
   const roundsFromTeamDetails = normalizeRoundSelection(
-    teamResults.value.flatMap((result) =>
+    fairnessTeamResults.value.flatMap((result) =>
       Array.isArray(result?.details) ? result.details.map((detail: any) => detail?.r) : []
     )
   )
@@ -1973,6 +2634,34 @@ const scoreEnabledFairnessRounds = computed<RoundSummary[]>(() => {
   const roundSet = new Set(scoreEnabledFairnessRoundNumbers.value)
   return fairnessVisualRounds.value.filter((round) => roundSet.has(round.round))
 })
+
+function breakParticipantCountForRound(roundNumber: number): number | undefined {
+  const roundConfig = roundConfigByRound.value.get(roundNumber)
+  const draw = drawByRound.value.get(roundNumber)
+  const participants = resolveBreakStageTeamIds({
+    roundUserDefinedData: roundConfig?.userDefinedData,
+    drawUserDefinedData: draw?.userDefinedData,
+    allocation: draw?.allocation,
+  })
+    .map((teamId) => String(teamId ?? '').trim())
+    .filter((teamId) => teamId.length > 0)
+  if (participants.length > 0) return new Set(participants).size
+
+  const matchupIds = new Set<string>()
+  normalizeAllocationMatchups(draw?.allocation).forEach((matchup) => {
+    matchupIds.add(matchup.gov)
+    matchupIds.add(matchup.opp)
+  })
+  return matchupIds.size > 0 ? matchupIds.size : undefined
+}
+
+function fairnessPieTotalTeams(roundNumber: number): number | undefined {
+  if (effectiveReportPhase.value === 'break') {
+    return breakParticipantCountForRound(roundNumber)
+  }
+  const total = teams.teams.length
+  return total > 0 ? total : undefined
+}
 
 function speakerIdsForTeamRound(teamId: string, r: number) {
   const team = teams.teams.find((item) => item._id === teamId)
@@ -2071,7 +2760,7 @@ const fairnessSideSummary = computed(() => {
   let oppAppearances = 0
   let govWins = 0
   let oppWins = 0
-  teamResults.value.forEach((team) => {
+  fairnessTeamResults.value.forEach((team) => {
     ;(team?.details ?? []).forEach((detail: any) => {
       const round = detail?.r
       if (!fairnessTargetRounds.value.has(round)) return
@@ -2113,8 +2802,9 @@ const fairnessMatchupSummary = computed(() => {
     if (!fairnessTargetRounds.value.has(roundNumber)) return
     const draw = drawByRound.value.get(roundNumber)
     ;(draw?.allocation ?? []).forEach((allocation: any) => {
-      const gov = String(allocation?.teams?.gov ?? '').trim()
-      const opp = String(allocation?.teams?.opp ?? '').trim()
+      const teamsSource = allocation?.teams
+      const gov = String(Array.isArray(teamsSource) ? teamsSource[0] : teamsSource?.gov ?? '').trim()
+      const opp = String(Array.isArray(teamsSource) ? teamsSource[1] : teamsSource?.opp ?? '').trim()
       if (!gov || !opp) return
       const pair = [gov, opp].sort().join('::')
       pairCounts.set(pair, (pairCounts.get(pair) ?? 0) + 1)
@@ -2423,6 +3113,7 @@ function optionHelp(key: string) {
 }
 
 function rankingTrendForRow(row: any) {
+  if (!rankingDiffEnabled.value) return 'na'
   return resolveRankingTrend(row?.diff?.ranking?.trend)
 }
 
@@ -2436,6 +3127,7 @@ function rankingTrendClass(row: any) {
 }
 
 function rankingTrendText(row: any) {
+  if (!rankingDiffEnabled.value) return ''
   const trend = rankingTrendForRow(row)
   const deltaText = formatSignedDelta(row?.diff?.ranking?.delta)
   if (trend === 'improved') return t('順位改善 {delta}', { delta: deltaText || '' }).trim()
@@ -2446,14 +3138,17 @@ function rankingTrendText(row: any) {
 }
 
 function rankingDeltaText(row: any) {
+  if (!rankingDiffEnabled.value) return ''
   return formatSignedDelta(row?.diff?.ranking?.delta)
 }
 
 function rankingSymbolForRow(row: any) {
+  if (!rankingDiffEnabled.value) return ''
   return rankingTrendSymbol(rankingTrendForRow(row))
 }
 
 function metricDeltaText(row: any, key: string) {
+  if (!rankingDiffEnabled.value) return ''
   return formatSignedDelta(row?.diff?.metrics?.[key]?.delta)
 }
 
@@ -2507,6 +3202,7 @@ function columnLabel(key: string) {
     teams: t('チーム'),
     poi: t('POI'),
     best: t('ベストスピーカー'),
+    break_outcome: t('ブレイク結果'),
   }
   return map[key] ?? key
 }
@@ -2555,6 +3251,27 @@ function setActiveLabel(label: string) {
 function setSlideLabel(label: string) {
   if (!['teams', 'speakers', 'adjudicators', 'poi', 'best'].includes(label)) return
   persistSlideLabel(label as CompiledLabel)
+}
+
+function setActiveReportPhase(phase: ReportResultPhase) {
+  if (phase === 'overall' && hasBreakRoundsInCompiled.value) {
+    activeReportPhase.value = 'prelim'
+    return
+  }
+  if (phase !== 'overall' && !hasBreakRoundsInCompiled.value) {
+    activeReportPhase.value = 'overall'
+    return
+  }
+  activeReportPhase.value = phase
+}
+
+function isReportDisplayActive(option: ReportDisplayOption): boolean {
+  return activeReportSection.value === option.section && effectiveReportPhase.value === option.phase
+}
+
+function setReportDisplay(option: ReportDisplayOption) {
+  setActiveReportSection(option.section)
+  setActiveReportPhase(option.phase)
 }
 
 function emitReportMetric(metric: AdminReportMetric, payload: Record<string, unknown> = {}) {
@@ -2715,7 +3432,10 @@ function downloadCsv() {
   let headerLabels: string[] = []
   let headerKeys: string[] = []
 
-  if (label === 'teams') {
+  if (label === 'teams' && effectiveReportPhase.value === 'break') {
+    headerLabels = [t('順位'), t('順位(序数)'), t('名前'), t('ブレイク結果')]
+    headerKeys = ['ranking', 'place', 'name', 'break_outcome']
+  } else if (label === 'teams') {
     headerLabels = [
       t('順位'),
       t('順位(序数)'),
@@ -2779,7 +3499,8 @@ function downloadCsv() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  if (label === 'teams') link.download = 'team_results.csv'
+  if (label === 'teams' && effectiveReportPhase.value === 'break') link.download = 'break_team_results.csv'
+  else if (label === 'teams') link.download = 'team_results.csv'
   else if (label === 'speakers') link.download = 'speaker_results.csv'
   else if (label === 'adjudicators') link.download = 'adjudicator_results.csv'
   else if (label === 'poi') link.download = 'poi_results.csv'
@@ -2805,6 +3526,7 @@ async function refresh() {
       compiledStore.fetchLatest(tournamentId.value),
       tournamentStore.fetchTournaments(),
       teams.fetchTeams(tournamentId.value),
+      styles.fetchStyles(),
       adjudicators.fetchAdjudicators(tournamentId.value),
       rounds.fetchRounds(tournamentId.value),
       speakers.fetchSpeakers(tournamentId.value),
@@ -3096,6 +3818,27 @@ watch(
   { immediate: true }
 )
 
+watch(
+  hasBreakRoundsInCompiled,
+  (enabled) => {
+    if (enabled) {
+      if (activeReportPhase.value === 'overall') activeReportPhase.value = 'prelim'
+      return
+    }
+    activeReportPhase.value = 'overall'
+  },
+  { immediate: true }
+)
+
+watch(effectiveReportPhase, (phase) => {
+  if (phase === 'break' && activeLabel.value !== 'teams') {
+    activeLabel.value = 'teams'
+  }
+  if (phase === 'break' && slideLabel.value !== 'teams') {
+    persistSlideLabel('teams')
+  }
+})
+
 watch(rankingLabels, (labels) => {
   if (!labels.includes(activeLabel.value)) {
     activeLabel.value = (labels[0] ?? 'teams') as
@@ -3173,6 +3916,7 @@ watch(tournamentId, () => {
   compileDefaultsHydrated.value = false
   manualCompileSource.value = 'submissions'
   manualCompileOptionOverrides.value = undefined
+  activeReportPhase.value = 'overall'
   closeDeleteCompiledModal()
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
@@ -3364,6 +4108,29 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-2);
 }
 
+.report-display-tabs {
+  align-items: center;
+}
+
+.report-display-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.report-display-divider {
+  align-self: stretch;
+  width: 1px;
+  background: var(--color-border);
+  margin: 0 2px;
+}
+
+.report-phase-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .report-section-nav {
   gap: var(--space-2);
 }
@@ -3400,6 +4167,12 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   background: var(--color-secondary);
   color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+.report-phase-tab {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 0.82rem;
 }
 
 .operations-results {
@@ -3501,6 +4274,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+  align-items: stretch;
 }
 
 .fairness-round-visual-card {
@@ -3508,6 +4282,8 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
 }
 
 .fairness-analysis {
@@ -3866,6 +4642,15 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 }
 
 @media (max-width: 980px) {
+  .report-display-tabs.report-display-tabs-split {
+    align-items: stretch;
+  }
+
+  .report-display-tabs.report-display-tabs-split .report-display-divider {
+    width: 100%;
+    height: 1px;
+  }
+
   .fairness-round-visual-grid {
     grid-template-columns: 1fr;
   }

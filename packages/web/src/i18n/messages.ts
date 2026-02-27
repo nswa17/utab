@@ -9,6 +9,7 @@ const en = {
   'CSV例: Speaker A': 'CSV example: Speaker A',
   'CSV例: Institution A': 'CSV example: Institution A',
   'CSV例: Institution A,region,2': 'CSV example: Institution A,region,2',
+  バックアップ: 'Backup',
   受賞者CSV: 'Awardees CSV',
   参加者CSV: 'Participants CSV',
   CSV取り込み: 'Import CSV',
@@ -150,12 +151,22 @@ const en = {
     'Manage teams, adjudicators, speakers, conflict groups, and venues.',
   '推奨順: 1. コンフリクトグループ・会場 -> 2. スピーカー・ジャッジ -> 3. チーム':
     'Recommended order: (1) conflict groups/venues -> (2) speakers/adjudicators -> (3) teams',
-  'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。':
-    'Setup is smoother when teams are added after speakers/conflict groups, and adjudicators after conflict groups.',
   大会セットアップ: 'Tournament setup',
   大会運営: 'Tournament operations',
   '結果確定・レポート': 'Finalize & reports',
   大会結果レポート: 'Tournament results report',
+  集計フェーズ: 'Result phase',
+  大会結果: 'Overall results',
+  予選結果: 'Preliminary results',
+  ブレイク結果: 'Break results',
+  Champion: 'Champion',
+  'Grand Finalist': 'Grand Finalist',
+  'Semi-finalist': 'Semi-finalist',
+  'Quarter-finalist': 'Quarter-finalist',
+  'Octo-finalist': 'Octo-finalist',
+  'Double-octo-finalist': 'Double-octo-finalist',
+  'Break Participant': 'Break participant',
+  'ブレイク結果では差分比較を行いません。': 'Diff comparison is disabled for break results.',
   レポート概要: 'Report overview',
   'ソース: {source} / ラウンド数: {count}': 'Source: {source} / Rounds: {count}',
   '順位変動あり: {count}件': 'Ranking changes: {count}',
@@ -478,6 +489,7 @@ const en = {
   スピーカー名: 'Speaker name',
   スライド: 'Slides',
   スライド言語: 'Slide language',
+  順位表示順: 'Ranking order',
   ソース: 'Source',
   ソート: 'Sort',
   ソートなし: 'No sort',
@@ -838,9 +850,14 @@ const en = {
   生結果: 'Raw results',
   生結果データ: 'Raw result data',
   ブレイク: 'Break',
+  ブレイクラウンド: 'Break round',
   勝敗点: 'Wins',
   ブレイク設定: 'Break settings',
+  'この設定は、ラウンドでブレイクが有効な場合にのみ適用されます。':
+    'These settings apply only when a round is marked as break.',
   ブレイクラウンドとして扱う: 'Enable break round mode',
+  'Onでこのラウンド以降をブレイク、Offでこのラウンド以前を通常ラウンドにします。':
+    'Turning on marks this and later rounds as break; turning off marks this and earlier rounds as standard.',
   '有効化すると、参加チーム確定時に Team.details[r].available を同期します。':
     'When enabled, Team.details[r].available is synchronized when participants are finalized.',
   参照ラウンド: 'Source rounds',
@@ -866,6 +883,7 @@ const en = {
   ブレイク候補を更新: 'Refresh break candidates',
   候補順位でシード再設定: 'Reset seeds from candidate ranking',
   ブレイク参加を保存: 'Save break participants',
+  ブレイク設定を保存: 'Save break settings',
   'ブレイク生成は対象をチームに設定してください。':
     'Set scope to Teams when using break generation.',
   'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。':
@@ -943,6 +961,7 @@ const en = {
   行追加: 'Add row',
   行番号をドラッグして並び替え: 'Drag row number to reorder',
   衝突: 'Conflict',
+  コンフリクトチーム: 'Conflict teams',
   衝突チーム: 'Conflict teams',
   繰り上げ方式: 'Pull-up mode',
   衝突回避方式: 'Conflict avoidance mode',
@@ -1039,6 +1058,13 @@ const en = {
   新規レポート生成: 'Generate new report',
   entityごとの順位一覧: 'Entity rankings',
   カテゴリ別順位一覧: 'Category rankings',
+  順位一覧: 'Rankings',
+  予選順位一覧: 'Preliminary rankings',
+  ブレイク順位一覧: 'Break rankings',
+  予選発表出力: 'Preliminary announcement outputs',
+  ブレイク発表出力: 'Break announcement outputs',
+  予選統計: 'Preliminary statistics',
+  ブレイク結果統計: 'Break-result statistics',
   データソース: 'Data source',
   集計に使うデータ: 'Data used for compile',
   集計結果: 'Compiled results',
@@ -1203,6 +1229,7 @@ const en = {
   '集計結果を保存しました。': 'Compiled results saved.',
   '新規レポートを生成します。': 'Generate a new report.',
   集計区分ごとの順位と差分を確認: 'Check rankings and deltas by entity category.',
+  集計区分ごとの順位を確認: 'Check rankings by entity category.',
   '偏り・割当と分析指標をまとめて確認': 'Review bias, allocations, and analytics together.',
   スライドと表彰出力を確認: 'Review slides and award exports.',
   発表出力: 'Announcement outputs',
@@ -1367,8 +1394,7 @@ const en = {
   'one-up-one-down': 'one-up-one-down',
   '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。':
     'Stable matching is preference-based; tournament standard/extended use win brackets.',
-  '安定マッチングで使用する並び替え方式です。':
-    'Ordering strategy used by stable matching.',
+  '安定マッチングで使用する並び替え方式です。': 'Ordering strategy used by stable matching.',
   '1マッチあたりのチェア人数です。': 'Number of chairs per match.',
   '1マッチあたりのトレーニー人数です。': 'Number of trainees per match.',
   '1マッチあたりのパネル人数です。': 'Number of panels per match.',
@@ -1403,12 +1429,9 @@ const en = {
     'Select constraints for adjudicator allocation.',
   '全体/チーム/ジャッジ/会場のどこを生成するか選択します。':
     'Choose whether to generate all, teams, adjudicators, or venues.',
-  '安定割当または大会運用を選択します。':
-    'Select stable allocation or tournament operation.',
-  '安定マッチングまたは大会標準を選択します。':
-    'Select stable matching or tournament standard.',
-  '大会運用の割り当て戦略です。':
-    'Assignment strategy for tournament operation.',
+  '安定割当または大会運用を選択します。': 'Select stable allocation or tournament operation.',
+  '安定マッチングまたは大会標準を選択します。': 'Select stable matching or tournament standard.',
+  '大会運用の割り当て戦略です。': 'Assignment strategy for tournament operation.',
   '伝統的アルゴリズムの割り当て戦略です。': 'Assignment strategy for the traditional algorithm.',
   '標準は簡易、厳密は制約を強めて生成します。':
     'Standard is lighter, strict applies stronger constraints.',

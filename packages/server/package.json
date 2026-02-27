@@ -11,6 +11,7 @@
     "start": "node dist/server.js",
     "test": "node ../../scripts/ensure-node.cjs && vitest run",
     "lint": "eslint src --ext .ts",
+    "migrate-break-compat-cleanup": "tsx src/scripts/legacy/migrate-break-compat-cleanup.ts",
     "migrate-break-stage-metadata": "tsx src/scripts/legacy/migrate-break-stage-metadata.ts",
     "reset-styles": "tsx src/scripts/reset-styles.ts",
     "seed-mock-two-matches": "tsx src/scripts/seed-mock-two-matches.ts",

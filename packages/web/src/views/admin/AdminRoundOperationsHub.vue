@@ -140,8 +140,8 @@
                   </div>
                   <DrawPreviewTable
                     :rows="publishPreviewRows"
-                    :gov-label="$t('政府')"
-                    :opp-label="$t('反対')"
+                    :gov-label="govLabel"
+                    :opp-label="oppLabel"
                     :team-visible="drawOpenedValue"
                     :adjudicator-visible="allocationOpenedValue"
                     :column-header-badges="publishPreviewColumnHeaderBadges"
@@ -230,8 +230,8 @@
                   </div>
                   <DrawPreviewTable
                     :rows="filteredSubmissionPreviewRows"
-                    :gov-label="$t('政府')"
-                    :opp-label="$t('反対')"
+                    :gov-label="govLabel"
+                    :opp-label="oppLabel"
                     :win-column-label="$t('提出累計')"
                     :team-visible="true"
                     :adjudicator-visible="true"
@@ -464,9 +464,10 @@ import AdminRoundAllocation from '@/views/admin/round/AdminRoundAllocation.vue'
 import AdminTournamentSubmissions from '@/views/admin/AdminTournamentSubmissions.vue'
 import { useRoundsStore } from '@/stores/rounds'
 import { useDrawsStore } from '@/stores/draws'
-import { useSubmissionsStore } from '@/stores/submissions'
 import { useTeamsStore } from '@/stores/teams'
 import { useCompiledStore } from '@/stores/compiled'
+import { useTournamentStore } from '@/stores/tournament'
+import { useStylesStore } from '@/stores/styles'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useVenuesStore } from '@/stores/venues'
@@ -509,6 +510,7 @@ import {
 } from '@/utils/submission-expectations'
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
+import { getSideShortLabel } from '@/utils/side-labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -516,9 +518,10 @@ const { t, locale } = useI18n({ useScope: 'global' })
 
 const roundsStore = useRoundsStore()
 const drawsStore = useDrawsStore()
-const submissionsStore = useSubmissionsStore()
 const teamsStore = useTeamsStore()
 const compiledStore = useCompiledStore()
+const tournamentStore = useTournamentStore()
+const stylesStore = useStylesStore()
 const adjudicatorsStore = useAdjudicatorsStore()
 const speakersStore = useSpeakersStore()
 const venuesStore = useVenuesStore()
@@ -542,6 +545,7 @@ const sectionLoading = ref(true)
 const hasLoaded = ref(false)
 const actionError = ref('')
 const submissionsLoadError = ref('')
+const hubSubmissions = ref<Submission[]>([])
 const compileMessage = ref('')
 const publishMessage = ref('')
 const compileManualSaveEnabled = true
@@ -591,8 +595,9 @@ const isLoading = computed(
     sectionLoading.value ||
     roundsStore.loading ||
     drawsStore.loading ||
-    submissionsStore.loading ||
     teamsStore.loading ||
+    tournamentStore.loading ||
+    stylesStore.loading ||
     adjudicatorsStore.loading ||
     speakersStore.loading ||
     venuesStore.loading ||
@@ -605,6 +610,8 @@ const loadError = computed(
     drawsStore.error ||
     submissionsLoadError.value ||
     teamsStore.error ||
+    tournamentStore.error ||
+    stylesStore.error ||
     adjudicatorsStore.error ||
     speakersStore.error ||
     venuesStore.error ||
@@ -618,6 +625,12 @@ const selectedRoundData = computed(
 const selectedDraw = computed(
   () => drawsStore.draws.find((draw) => draw.round === selectedRound.value) ?? null
 )
+const tournament = computed(() =>
+  tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
+)
+const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
@@ -1025,7 +1038,7 @@ const drawByRound = computed(() => {
 
 const submissionsByRound = computed(() => {
   const map = new Map<number, Submission[]>()
-  submissionsStore.submissions.forEach((submission) => {
+  hubSubmissions.value.forEach((submission) => {
     const roundNumber = Number(submission.round)
     if (!Number.isInteger(roundNumber) || roundNumber < 1) return
     const list = map.get(roundNumber) ?? []
@@ -1637,6 +1650,7 @@ function openSubmissionEditorModal(submissionId: string) {
 function closeSubmissionEditorModal() {
   submissionEditorModalOpen.value = false
   submissionEditorSubmissionId.value = ''
+  void refreshHubSubmissions()
 }
 
 function venueName(id: string) {
@@ -2108,8 +2122,27 @@ const filteredSubmissionPreviewRows = computed<DrawPreviewRow[]>(() => {
   )
 })
 
+async function refreshHubSubmissions() {
+  if (!tournamentId.value) {
+    hubSubmissions.value = []
+    submissionsLoadError.value = ''
+    return
+  }
+  try {
+    const res = await api.get('/submissions', { params: { tournamentId: tournamentId.value } })
+    hubSubmissions.value = Array.isArray(res.data?.data) ? (res.data.data as Submission[]) : []
+    submissionsLoadError.value = ''
+  } catch (err: any) {
+    hubSubmissions.value = []
+    submissionsLoadError.value =
+      err?.response?.data?.errors?.[0]?.message ?? t('読み込みに失敗しました。')
+  }
+}
+
 async function refresh() {
   if (!tournamentId.value) {
+    hubSubmissions.value = []
+    submissionsLoadError.value = ''
     hasLoaded.value = true
     return
   }
@@ -2118,9 +2151,11 @@ async function refresh() {
   submissionsLoadError.value = ''
   try {
     await Promise.all([
+      tournamentStore.fetchTournaments(),
+      stylesStore.fetchStyles(),
       roundsStore.fetchRounds(tournamentId.value),
       drawsStore.fetchDraws(tournamentId.value),
-      submissionsStore.fetchSubmissions({ tournamentId: tournamentId.value }),
+      refreshHubSubmissions(),
       teamsStore.fetchTeams(tournamentId.value),
       adjudicatorsStore.fetchAdjudicators(tournamentId.value),
       speakersStore.fetchSpeakers(tournamentId.value),
@@ -2128,7 +2163,6 @@ async function refresh() {
       compiledStore.fetchLatest(tournamentId.value),
       refreshCompiledHistory(),
     ])
-    submissionsLoadError.value = submissionsStore.error ?? ''
     const queryRound = Number(route.query.round)
     const hasQueryRound = Number.isInteger(queryRound) && queryRound >= 1
     if (hasQueryRound && sortedRounds.value.some((item) => item.round === queryRound)) {

@@ -2,9 +2,11 @@ export type SlideLabel = 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
 export type SlideType = 'listed' | 'single'
 export type SlideStyle = 'pretty' | 'simple'
 export type SlideLanguage = 'en' | 'ja'
+export type SlideRankingOrder = 'asc' | 'desc'
 
 export type SlideSettings = {
   maxRankingRewarded: number
+  rankingOrder: SlideRankingOrder
   type: SlideType
   style: SlideStyle
   language: SlideLanguage
@@ -18,6 +20,7 @@ export type PresentationQuery = {
   type: SlideType
   style: SlideStyle
   language: SlideLanguage
+  rankingOrder: SlideRankingOrder
   max: number
   leftCredit: string
   rightCredit: string
@@ -28,6 +31,7 @@ export type SlideRow = {
   name: string
   ranking: number
   subNames: string[]
+  rankLabel?: string
   tie: boolean
   tieCount: number
 }
@@ -43,15 +47,18 @@ export type SlideResultInput = {
   name?: unknown
   ranking?: unknown
   subNames?: unknown
+  rankLabel?: unknown
 }
 
 const SLIDE_LABELS: SlideLabel[] = ['teams', 'speakers', 'adjudicators', 'poi', 'best']
 const SLIDE_TYPES: SlideType[] = ['listed', 'single']
 const SLIDE_STYLES: SlideStyle[] = ['pretty', 'simple']
 const SLIDE_LANGUAGES: SlideLanguage[] = ['en', 'ja']
+const SLIDE_RANKING_ORDERS: SlideRankingOrder[] = ['asc', 'desc']
 
 export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {
   maxRankingRewarded: 3,
+  rankingOrder: 'asc',
   type: 'listed',
   style: 'pretty',
   language: 'en',
@@ -95,6 +102,15 @@ export function normalizeSlideLanguage(
   return SLIDE_LANGUAGES.includes(token) ? token : fallback
 }
 
+export function normalizeSlideRankingOrder(
+  value: unknown,
+  fallback: SlideRankingOrder = DEFAULT_SLIDE_SETTINGS.rankingOrder
+): SlideRankingOrder {
+  const raw = firstQueryValue(value).trim()
+  const token = raw as SlideRankingOrder
+  return SLIDE_RANKING_ORDERS.includes(token) ? token : fallback
+}
+
 export function normalizeSlideMax(value: unknown, fallback = DEFAULT_SLIDE_SETTINGS.maxRankingRewarded): number {
   const raw = firstQueryValue(value).trim()
   if (!raw) return fallback
@@ -115,6 +131,7 @@ export function parsePresentationQuery(query: Record<string, unknown>): {
     type: normalizeSlideType(query.type),
     style: normalizeSlideStyle(query.style),
     language: normalizeSlideLanguage(query.language),
+    rankingOrder: normalizeSlideRankingOrder(query.rankingOrder ?? query.order),
     max: normalizeSlideMax(query.max),
     leftCredit: firstQueryValue(query.leftCredit).trim() || fallbackLeftCredit,
     rightCredit: firstQueryValue(query.rightCredit).trim() || DEFAULT_SLIDE_SETTINGS.rightCredit,
@@ -160,12 +177,20 @@ function rowRanking(input: SlideResultInput): number {
   return Math.max(1, Math.round(ranking))
 }
 
+function rowRankLabel(input: SlideResultInput): string | undefined {
+  if (typeof input.rankLabel !== 'string') return undefined
+  const normalized = input.rankLabel.trim()
+  return normalized.length > 0 ? normalized : undefined
+}
+
 export function buildSlideRows(
   source: SlideResultInput[],
-  maxRankingRewarded: number = DEFAULT_SLIDE_SETTINGS.maxRankingRewarded
+  maxRankingRewarded: number = DEFAULT_SLIDE_SETTINGS.maxRankingRewarded,
+  rankingOrder: SlideRankingOrder = DEFAULT_SLIDE_SETTINGS.rankingOrder
 ): SlideRow[] {
   const threshold = Math.max(1, Math.round(maxRankingRewarded || DEFAULT_SLIDE_SETTINGS.maxRankingRewarded))
   const collator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
+  const normalizedRankingOrder = normalizeSlideRankingOrder(rankingOrder)
 
   const rows = source
     .map((input) => ({
@@ -173,10 +198,15 @@ export function buildSlideRows(
       name: rowName(input),
       ranking: rowRanking(input),
       subNames: normalizeSubNames(input.subNames),
+      rankLabel: rowRankLabel(input),
     }))
     .filter((row) => Number.isFinite(row.ranking) && row.ranking <= threshold)
     .sort((left, right) => {
-      if (left.ranking !== right.ranking) return left.ranking - right.ranking
+      if (left.ranking !== right.ranking) {
+        return normalizedRankingOrder === 'asc'
+          ? left.ranking - right.ranking
+          : right.ranking - left.ranking
+      }
       return collator.compare(left.name, right.name)
     })
 

@@ -41,9 +41,77 @@ const allocations = {
   venues: venueAllocations,
 }
 
+type AllocationEntityKind = 'team' | 'adjudicator' | 'venue'
+
+type AllocationEntityRef = {
+  kind: AllocationEntityKind
+  id: string
+}
+
+function normalizeIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
+}
+
+function normalizeDrawTeamsForValidation(teams: unknown): { gov: string; opp: string } | null {
+  let gov = ''
+  let opp = ''
+  if (Array.isArray(teams)) {
+    gov = String(teams[0] ?? '').trim()
+    opp = String(teams[1] ?? '').trim()
+  } else if (teams && typeof teams === 'object') {
+    const source = teams as Record<string, unknown>
+    gov = String(source.gov ?? '').trim()
+    opp = String(source.opp ?? '').trim()
+  }
+  if (!gov || !opp || gov === opp) return null
+  return { gov, opp }
+}
+
+function detailAvailableForRound(details: unknown, round: number): boolean {
+  if (!Array.isArray(details)) return true
+  const detail = details.find((item: any) => Number(item?.r) === round)
+  return detail?.available !== false
+}
+
+function collectAllocationEntityRefs(allocation: unknown): AllocationEntityRef[] {
+  if (!Array.isArray(allocation)) return []
+  const refs = new Map<string, AllocationEntityRef>()
+  const addRef = (kind: AllocationEntityKind, id: unknown) => {
+    const normalizedId = String(id ?? '').trim()
+    if (!normalizedId) return
+    refs.set(`${kind}:${normalizedId}`, { kind, id: normalizedId })
+  }
+
+  allocation.forEach((row) => {
+    if (!row || typeof row !== 'object') return
+    const source = row as Record<string, unknown>
+    const teams = normalizeDrawTeamsForValidation(source.teams)
+    if (teams) {
+      addRef('team', teams.gov)
+      addRef('team', teams.opp)
+    }
+    addRef('venue', source.venue)
+    normalizeIdList(source.chairs).forEach((id) => addRef('adjudicator', id))
+    normalizeIdList(source.panels).forEach((id) => addRef('adjudicator', id))
+    normalizeIdList(source.trainees).forEach((id) => addRef('adjudicator', id))
+  })
+
+  return Array.from(refs.values())
+}
+
+function formatUnavailableEntityMessage(round: number, refs: AllocationEntityRef[]): string {
+  const summary = refs.map((ref) => `${ref.kind}:${ref.id}`).join(', ')
+  return `allocation contains entities unavailable in round ${round}: ${summary}`
+}
+
 export const listDraws: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, public: publicParam } = req.query as {
+    const {
+      tournamentId,
+      round,
+      public: publicParam,
+    } = req.query as {
       tournamentId?: string
       round?: string | number
       public?: string
@@ -69,7 +137,10 @@ export const listDraws: RequestHandler = async (req, res, next) => {
     const draws = await DrawModel.find(filter).sort({ round: 1 }).lean().exec()
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const forcePublic =
-      publicParam === '1' || publicParam === 'true' || publicParam === 'yes' || publicParam === 'public'
+      publicParam === '1' ||
+      publicParam === 'true' ||
+      publicParam === 'yes' ||
+      publicParam === 'public'
     const data = isAdmin && !forcePublic ? draws : draws.map((draw) => sanitizeDrawForPublic(draw))
     res.json({ data, errors: [] })
   } catch (err) {
@@ -79,7 +150,15 @@ export const listDraws: RequestHandler = async (req, res, next) => {
 
 export const upsertDraw: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, allocation, userDefinedData, drawOpened, allocationOpened, locked } = req.body as {
+    const {
+      tournamentId,
+      round,
+      allocation,
+      userDefinedData,
+      drawOpened,
+      allocationOpened,
+      locked,
+    } = req.body as {
       tournamentId: string
       round: number
       allocation: unknown[]
@@ -95,6 +174,39 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
+    const [teamDocs, adjudicatorDocs, venueDocs] = await Promise.all([
+      getTeamModel(connection).find({ tournamentId }).lean().exec(),
+      getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
+      getVenueModel(connection).find({ tournamentId }).lean().exec(),
+    ])
+    const teamAvailabilityById = new Map<string, boolean>(
+      teamDocs.map((team: any) => [
+        String(team?._id ?? ''),
+        detailAvailableForRound(team?.details, round),
+      ])
+    )
+    const adjudicatorAvailabilityById = new Map<string, boolean>(
+      adjudicatorDocs.map((adjudicator: any) => [
+        String(adjudicator?._id ?? ''),
+        detailAvailableForRound(adjudicator?.details, round),
+      ])
+    )
+    const venueAvailabilityById = new Map<string, boolean>(
+      venueDocs.map((venue: any) => [
+        String(venue?._id ?? ''),
+        detailAvailableForRound(venue?.details, round),
+      ])
+    )
+    const unavailableRefs = collectAllocationEntityRefs(allocation).filter((ref) => {
+      if (ref.kind === 'team') return teamAvailabilityById.get(ref.id) === false
+      if (ref.kind === 'adjudicator') return adjudicatorAvailabilityById.get(ref.id) === false
+      return venueAvailabilityById.get(ref.id) === false
+    })
+    if (unavailableRefs.length > 0) {
+      badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
+      return
+    }
+
     const DrawModel = getDrawModel(connection)
 
     const updated = await DrawModel.findOneAndUpdate(
@@ -122,7 +234,12 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
 
 export const generateDraw: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, options, save = true } = req.body as {
+    const {
+      tournamentId,
+      round,
+      options,
+      save = true,
+    } = req.body as {
       tournamentId: string
       round: number
       options?: Record<string, any>
@@ -135,18 +252,27 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
-    const [tournament, teams, adjudicators, venues, institutions, speakers, rawTeamResults, rawSpeakerResults, rawAdjudicatorResults] =
-      await Promise.all([
-        TournamentModel.findById(tournamentId).lean().exec(),
-        getTeamModel(connection).find({ tournamentId }).lean().exec(),
-        getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
-        getVenueModel(connection).find({ tournamentId }).lean().exec(),
-        getInstitutionModel(connection).find({ tournamentId }).lean().exec(),
-        getSpeakerModel(connection).find({ tournamentId }).lean().exec(),
-        getRawTeamResultModel(connection).find({ tournamentId }).lean().exec(),
-        getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
-        getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec(),
-      ])
+    const [
+      tournament,
+      teams,
+      adjudicators,
+      venues,
+      institutions,
+      speakers,
+      rawTeamResults,
+      rawSpeakerResults,
+      rawAdjudicatorResults,
+    ] = await Promise.all([
+      TournamentModel.findById(tournamentId).lean().exec(),
+      getTeamModel(connection).find({ tournamentId }).lean().exec(),
+      getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
+      getVenueModel(connection).find({ tournamentId }).lean().exec(),
+      getInstitutionModel(connection).find({ tournamentId }).lean().exec(),
+      getSpeakerModel(connection).find({ tournamentId }).lean().exec(),
+      getRawTeamResultModel(connection).find({ tournamentId }).lean().exec(),
+      getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
+      getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec(),
+    ])
 
     if (!tournament) {
       notFound(res, 'Tournament not found')
@@ -155,15 +281,19 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
 
     const styleOption = (tournament.options as any)?.style
     const styleDoc =
-      typeof tournament.style === 'number' ? await StyleModel.findOne({ id: tournament.style }).lean().exec() : null
-    const scoreWeights = normalizeScoreWeights(styleOption?.score_weights ?? styleDoc?.score_weights)
+      typeof tournament.style === 'number'
+        ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
+        : null
+    const scoreWeights = normalizeScoreWeights(
+      styleOption?.score_weights ?? styleDoc?.score_weights
+    )
     const teamNum = styleOption?.team_num ?? styleDoc?.team_num ?? 2
     const style = { team_num: teamNum, score_weights: scoreWeights }
     const config = {
       name: tournament.name,
       style,
-      preev_weights:
-        (tournament as any).preev_weights ?? (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
+      preev_weights: (tournament as any).preev_weights ??
+        (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
       institution_priority_map: {} as Record<number, number>,
     }
 
@@ -177,7 +307,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const roundsNeeded = Array.from(new Set([...roundsForCompile, round])).sort((a, b) => a - b)
 
     teams.forEach((team) => {
-      validateEntityDetailsShape('team', `${String((team as any)._id ?? '') || 'unknown team'}`, (team as any).details)
+      validateEntityDetailsShape(
+        'team',
+        `${String((team as any)._id ?? '') || 'unknown team'}`,
+        (team as any).details
+      )
     })
     adjudicators.forEach((adj) => {
       validateEntityDetailsShape(
@@ -223,11 +357,10 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const venueInstances = venues.map((venue) => ({
       id: venueMaps.map.get(String(venue._id))!,
       name: venue.name,
-      details: buildDetailsForRounds(
-        (venue as any).details,
-        roundsNeeded,
-        { available: true, priority: 1 }
-      ),
+      details: buildDetailsForRounds((venue as any).details, roundsNeeded, {
+        available: true,
+        priority: 1,
+      }),
     }))
 
     const speakerInstances = speakers.map((speaker) => ({
@@ -239,7 +372,8 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       id: institutionMaps.map.get(String(inst._id))!,
       name: inst.name,
       category:
-        typeof (inst as any).category === 'string' && String((inst as any).category).trim().length > 0
+        typeof (inst as any).category === 'string' &&
+        String((inst as any).category).trim().length > 0
           ? String((inst as any).category).trim()
           : 'institution',
       priority: normalizeInstitutionPriority((inst as any).priority),
@@ -249,10 +383,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     )
 
     const mapFromId = (id: string) =>
-      adjudicatorMaps.map.get(id) ??
-      speakerMaps.map.get(id) ??
-      teamMaps.map.get(id) ??
-      0
+      adjudicatorMaps.map.get(id) ?? speakerMaps.map.get(id) ?? teamMaps.map.get(id) ?? 0
 
     const mappedRawTeamResults = rawTeamResults
       .map((r: any) => ({
@@ -294,7 +425,12 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
             roundsForCompile,
             style
           )
-        : coreResults.compileTeamResults(teamInstances, mappedRawTeamResults, roundsForCompile, style)
+        : coreResults.compileTeamResults(
+            teamInstances,
+            mappedRawTeamResults,
+            roundsForCompile,
+            style
+          )
 
     const compiledAdjudicatorResults = coreResults.compileAdjudicatorResults(
       adjudicatorInstances,
@@ -340,7 +476,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const availableAdjudicators = filterAvailable(adjudicatorInstances, round)
     if (
       adjudicators.length > 0 &&
-      hasSufficientAdjudicators(availableAdjudicators.length, allocationSquares, numbersOfAdjudicators)
+      hasSufficientAdjudicators(
+        availableAdjudicators.length,
+        allocationSquares,
+        numbersOfAdjudicators
+      )
     ) {
       adjudicatorDraw =
         adjudicatorAlgorithm === 'traditional'
@@ -386,17 +526,21 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
         ? square.teams.map((id: number) => teamMaps.reverse.get(id) ?? String(id))
         : square.teams
       const mappedTeams =
-        Array.isArray(teams) && teams.length === 2
-          ? { gov: teams[0], opp: teams[1] }
-          : teams
+        Array.isArray(teams) && teams.length === 2 ? { gov: teams[0], opp: teams[1] } : teams
 
       return {
         ...square,
         teams: mappedTeams,
-        chairs: (square.chairs || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-        panels: (square.panels || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-        trainees: (square.trainees || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-        venue: square.venue ? venueMaps.reverse.get(square.venue) ?? String(square.venue) : null,
+        chairs: (square.chairs || []).map(
+          (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+        ),
+        panels: (square.panels || []).map(
+          (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+        ),
+        trainees: (square.trainees || []).map(
+          (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+        ),
+        venue: square.venue ? (venueMaps.reverse.get(square.venue) ?? String(square.venue)) : null,
       }
     })
 

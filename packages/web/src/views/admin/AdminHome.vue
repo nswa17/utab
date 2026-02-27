@@ -75,7 +75,7 @@
                     size="sm"
                     @click="downloadTournamentBundle(item._id, item.name)"
                   >
-                    {{ $t('大会データ一括DL') }}
+                    {{ $t('バックアップ') }}
                   </Button>
                   <Button variant="danger" size="sm" @click="remove(item._id)">{{ $t('削除') }}</Button>
                 </div>

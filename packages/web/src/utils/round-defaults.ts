@@ -69,15 +69,11 @@ function asRoundList(value: unknown): number[] {
 }
 
 function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
-  if (
-    value === 'high_low' ||
-    value === 'reseed_each_round' ||
-    value === 'fixed_bracket' ||
-    value === 'random_within_tie_group' ||
-    value === 'random_full'
-  ) {
-    return value
-  }
+  if (value === 'high_low') return 'reseed_each_round'
+  if (value === 'reseed_each_round') return 'reseed_each_round'
+  if (value === 'fixed_bracket') return 'fixed_bracket'
+  if (value === 'random_within_tie_group') return 'random_within_tie_group'
+  if (value === 'random_full') return 'random_full'
   return fallback
 }
 
@@ -98,7 +94,7 @@ export function defaultRoundDefaults(): RoundDefaults {
       source: 'submissions',
       size: 8,
       cutoff_tie_policy: 'include_all',
-      seeding: 'reseed_each_round',
+      seeding: 'fixed_bracket',
     },
     compile: {
       source: 'submissions',
@@ -178,7 +174,6 @@ export function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults) {
     ...normalized.userDefinedData,
     hidden: false,
     break: {
-      enabled: false,
       source: normalized.break.source,
       source_rounds: [],
       size: normalized.break.size,

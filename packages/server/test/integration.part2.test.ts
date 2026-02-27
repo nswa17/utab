@@ -954,6 +954,53 @@ describe('Server integration', () => {
     expect(listRes.body.data[0].payload.submittedEntityId).toBe('judge-a')
   })
 
+  it('returns submittedBy in list responses for legacy submissions without payload actor', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'list-submitted-by-legacy', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'list-submitted-by-legacy', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'List SubmittedBy Legacy Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        scoresA: [76],
+        scoresB: [74],
+      },
+      submittedBy: 'judge-legacy',
+    })
+
+    const listRes = await agent.get(`/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`)
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data.length).toBe(1)
+    expect(listRes.body.data[0].submittedBy).toBe('judge-legacy')
+  })
+
   it('rejects ballots when only one side has score entries', async () => {
     const agent = request.agent(app)
 

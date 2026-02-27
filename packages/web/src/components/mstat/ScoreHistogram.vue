@@ -55,20 +55,23 @@ function render() {
   const titleStyle = { fontSize: '1.2rem', fontWeight: '700' as const }
 
   const styles = getComputedStyle(document.documentElement)
-  const palette = [
-    styles.getPropertyValue('--color-primary').trim() || '#2563eb',
-    styles.getPropertyValue('--color-success').trim() || '#16a34a',
-    styles.getPropertyValue('--color-warn').trim() || '#b45309',
-    styles.getPropertyValue('--color-danger').trim() || '#ef4444',
-  ]
+  const barColor = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
 
   Highcharts.chart(container.value, {
     chart: { type: 'column', backgroundColor: 'transparent' },
+    credits: { enabled: false },
+    exporting: { enabled: false },
+    legend: { enabled: false },
     title: { text: titleText, align: 'center', style: titleStyle },
     xAxis: { categories: keys.map((key) => key.toString()), title: { text: t('スコア') } },
     yAxis: { title: { text: t('件数') }, allowDecimals: false },
-    colors: palette,
-    series: [{ name: t('件数'), data, type: 'column' }],
+    plotOptions: {
+      column: {
+        borderRadius: 4,
+        maxPointWidth: 52,
+      },
+    },
+    series: [{ name: t('件数'), data, type: 'column', color: barColor }],
   })
 }
 

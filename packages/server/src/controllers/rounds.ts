@@ -19,6 +19,7 @@ import {
   type BreakCutoffTiePolicy,
   type BreakSeeding,
 } from './shared/break-config.js'
+import { isRoundBreakEnabled, withRoundBreakEnabled } from './shared/round-break.js'
 import {
   annotateBreakCandidatesForPreview,
   buildBreakCandidatesFromCompiledPayload,
@@ -67,16 +68,19 @@ function asRoundList(value: unknown): number[] {
 }
 
 function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
-  if (
-    value === 'high_low' ||
-    value === 'reseed_each_round' ||
-    value === 'fixed_bracket' ||
-    value === 'random_within_tie_group' ||
-    value === 'random_full'
-  ) {
-    return value
-  }
+  if (value === 'high_low') return 'reseed_each_round'
+  if (value === 'reseed_each_round') return 'reseed_each_round'
+  if (value === 'fixed_bracket') return 'fixed_bracket'
+  if (value === 'random_within_tie_group') return 'random_within_tie_group'
+  if (value === 'random_full') return 'random_full'
   return fallback
+}
+
+function sanitizeRoundBreakConfig(value: unknown): Record<string, unknown> {
+  const source = asRecord(value)
+  const { enabled: _legacyEnabled, ...rest } = source
+  void _legacyEnabled
+  return rest
 }
 
 function defaultRoundDefaults(): RoundDefaults {
@@ -96,7 +100,7 @@ function defaultRoundDefaults(): RoundDefaults {
       source: 'submissions',
       size: 8,
       cutoff_tie_policy: 'include_all',
-      seeding: 'high_low',
+      seeding: 'fixed_bracket',
     },
     compile: {
       source: 'submissions',
@@ -175,12 +179,13 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
     ...defaults.userDefinedData,
     ...current,
   }
+  const breakRoundEnabled = merged.break_round === true
+  merged.break_round = breakRoundEnabled
   if (!Object.prototype.hasOwnProperty.call(merged, 'hidden')) {
     merged.hidden = false
   }
   if (!Object.prototype.hasOwnProperty.call(current, 'break')) {
     merged.break = {
-      enabled: false,
       source: defaults.break.source,
       source_rounds: [],
       size: defaults.break.size,
@@ -188,6 +193,8 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
       seeding: defaults.break.seeding,
       participants: [],
     }
+  } else {
+    merged.break = sanitizeRoundBreakConfig(merged.break)
   }
   if (!Object.prototype.hasOwnProperty.call(current, 'compile')) {
     merged.compile = {
@@ -196,8 +203,7 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
       options: normalizeCompileOptions(defaults.compile.options, defaults.compile.options),
     }
   }
-  const breakConfig = asRecord(merged.break)
-  if (breakConfig.enabled === true) {
+  if (breakRoundEnabled) {
     merged.allow_low_tie_win = false
   }
   return merged
@@ -205,9 +211,13 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
 
 function applyBreakConstraintsToUserDefined(input: unknown): Record<string, unknown> {
   const current = asRecord(input)
-  const next: Record<string, unknown> = { ...current }
-  const breakConfig = asRecord(next.break)
-  if (breakConfig.enabled === true) {
+  const breakRoundEnabled = current.break_round === true
+  const next: Record<string, unknown> = {
+    ...current,
+    break_round: breakRoundEnabled,
+    break: sanitizeRoundBreakConfig(current.break),
+  }
+  if (breakRoundEnabled) {
     next.allow_low_tie_win = false
   }
   return next
@@ -631,9 +641,22 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
 
     const teams = await TeamModel.find({ tournamentId }).lean().exec()
     const teamIds = new Set(teams.map((team) => String(team._id)))
+    const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
+    const currentRoundBreakEnabled = isRoundBreakEnabled(roundNumber, currentUserDefined)
+    const breakInputRecord = asRecord(breakInput)
+    const explicitBreakEnabled =
+      typeof breakInputRecord.enabled === 'boolean' ? breakInputRecord.enabled : undefined
+    const roundBreakEnabled =
+      typeof explicitBreakEnabled === 'boolean'
+        ? explicitBreakEnabled
+        : currentRoundBreakEnabled
+    if (!roundBreakEnabled && !currentRoundBreakEnabled) {
+      badRequest(res, 'Break round is not enabled for this round')
+      return
+    }
     const normalizedBreak = normalizeBreakConfig(roundNumber, breakInput)
 
-    if (normalizedBreak.enabled) {
+    if (roundBreakEnabled) {
       const seenTeamIds = new Set<string>()
       const seenSeeds = new Set<number>()
       for (const participant of normalizedBreak.participants) {
@@ -654,17 +677,20 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       }
     }
 
-    const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
-    const currentBreak = asRecord(currentUserDefined.break)
+    const currentBreak = sanitizeRoundBreakConfig(currentUserDefined.break)
     const breakSource = currentBreak.source === 'raw' ? 'raw' : 'submissions'
-    const nextUserDefined = {
-      ...currentUserDefined,
-      break: {
-        ...normalizedBreak,
-        source: breakSource,
+    const nextUserDefined = withRoundBreakEnabled(
+      roundNumber,
+      {
+        ...currentUserDefined,
+        break: {
+          ...normalizedBreak,
+          source: breakSource,
+        },
+        ...(roundBreakEnabled ? { allow_low_tie_win: false } : {}),
       },
-      ...(normalizedBreak.enabled ? { allow_low_tie_win: false } : {}),
-    }
+      roundBreakEnabled
+    )
 
     const updatedRound = await RoundModel.findOneAndUpdate(
       { _id: id, tournamentId },
@@ -684,9 +710,9 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       // participants が未確定（空）なブレイクは、後続ラウンドで前ラウンド結果から導出される。
       // この状態で全チーム unavailable へ落とさないため、空の場合は全チームを available 扱いにする。
       const selectedTeamIds =
-        normalizedBreak.enabled && normalizedBreak.participants.length > 0
-        ? new Set(normalizedBreak.participants.map((participant) => participant.teamId))
-        : new Set<string>(teams.map((team) => String(team._id)))
+        roundBreakEnabled && normalizedBreak.participants.length > 0
+          ? new Set(normalizedBreak.participants.map((participant) => participant.teamId))
+          : new Set<string>(teams.map((team) => String(team._id)))
       const ops: any[] = teams.map((team) => {
         const teamId = String(team._id)
         const available = selectedTeamIds.has(teamId)

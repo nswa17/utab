@@ -13,9 +13,13 @@ const props = withDefaults(
     results: any[]
     rounds?: Array<{ round: number; name?: string }>
     showTitle?: boolean
+    govLabel?: string
+    oppLabel?: string
   }>(),
   {
     showTitle: true,
+    govLabel: 'Gov',
+    oppLabel: 'Opp',
   }
 )
 
@@ -67,17 +71,17 @@ function render() {
   )
 
   const styles = getComputedStyle(document.documentElement)
-  const palette = [
-    styles.getPropertyValue('--color-primary').trim() || '#2563eb',
-    styles.getPropertyValue('--color-success').trim() || '#16a34a',
-    styles.getPropertyValue('--color-warn').trim() || '#b45309',
-    styles.getPropertyValue('--color-danger').trim() || '#ef4444',
-  ]
+  const govColor = styles.getPropertyValue('--color-side-gov-card').trim() || '#eff6ff'
+  const oppColor = styles.getPropertyValue('--color-side-opp-card').trim() || '#fffbeb'
+  const govStroke = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
+  const oppStroke = styles.getPropertyValue('--color-warn').trim() || '#b45309'
   const surface = styles.getPropertyValue('--color-surface').trim() || '#ffffff'
   const border = styles.getPropertyValue('--color-border').trim() || '#e5e7eb'
 
   Highcharts.chart(container.value as HTMLElement, {
     chart: { type: 'scatter', backgroundColor: 'transparent', zoomType: 'xy' },
+    credits: { enabled: false },
+    exporting: { enabled: false },
     title: {
       text: props.showTitle ? t('サイド別スコア') : undefined,
       align: 'center',
@@ -95,12 +99,10 @@ function render() {
     },
     yAxis: { title: { text: t('スコア') } },
     legend: {
-      layout: 'vertical',
-      align: 'left',
-      verticalAlign: 'top',
-      x: 80,
-      y: 40,
-      floating: true,
+      layout: 'horizontal',
+      align: 'center',
+      verticalAlign: 'bottom',
+      floating: false,
       backgroundColor: surface,
       borderColor: border,
       borderWidth: 1,
@@ -108,7 +110,8 @@ function render() {
     plotOptions: {
       scatter: {
         marker: {
-          radius: 5,
+          radius: 7,
+          lineWidth: 2,
           states: {
             hover: { enabled: true, lineColor: 'rgb(100,100,100)' },
           },
@@ -123,18 +126,19 @@ function render() {
         },
       },
     },
-    colors: palette,
     series: [
       {
-        name: t('政府'),
+        name: props.govLabel,
         type: 'scatter',
-        color: palette[0] + '80',
+        color: govColor,
+        marker: { fillColor: govColor, lineColor: govStroke },
         data: govData,
       },
       {
-        name: t('反対'),
+        name: props.oppLabel,
         type: 'scatter',
-        color: palette[1] + '80',
+        color: oppColor,
+        marker: { fillColor: oppColor, lineColor: oppStroke },
         data: oppData,
       },
     ],
@@ -152,6 +156,6 @@ watch(
 <style scoped>
 .chart {
   width: 100%;
-  min-height: 260px;
+  min-height: 320px;
 }
 </style>

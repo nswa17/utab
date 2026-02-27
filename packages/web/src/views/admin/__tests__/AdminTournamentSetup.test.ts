@@ -20,7 +20,16 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('buildRoundUserDefinedFromDefaults(')
     expect(source).toContain('roundDefaultsForm')
     expect(source).toContain('createRoundFromSetup')
-    expect(source).toContain('setupRoundForm.type')
+    expect(source).toContain('userDefinedData.break_round = false')
+    expect(source).not.toContain('setupRoundForm.type')
+  })
+
+  it('updates break rounds with cascading switch behavior', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('onSetupRoundBreakEnabledChange')
+    expect(source).toContain('withRoundBreakEnabled')
+    expect(source).toContain('roundNumber >= targetRound')
+    expect(source).toContain('roundNumber <= targetRound')
   })
 
   it('supports editing existing rounds in setup', () => {

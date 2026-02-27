@@ -9,10 +9,13 @@ function load(path: string) {
 describe('UserRoundBallotEntry winner selection rules', () => {
   it('requires explicit winner or draw selection before submit', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
-    expect(source).toContain('const winnerSelectionMade = computed(() => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value)')
+    expect(source).toContain('const winnerSelectionMade = computed(')
+    expect(source).toContain('Boolean(effectiveWinnerId.value) || winnerDrawSelected.value')
     expect(source).toContain('const winnerDecisionError = computed(() => {')
     expect(source).toContain('if (!winnerSelectionMade.value) return winnerRequiredMessage.value')
-    expect(source).toContain("allowLowTieWin.value ? t('勝者または引き分けを選択してください。') : t('勝者を選択してください。')")
+    expect(source).toContain(
+      "allowLowTieWin.value ? t('勝者または引き分けを選択してください。') : t('勝者を選択してください。')"
+    )
     expect(source).toContain("return t('引き分けは同点時のみ選択できます。')")
     expect(source).toContain("return t('勝者は点数の大小と一致させてください。')")
   })
@@ -28,8 +31,35 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain(':disabled="submitButtonDisabled"')
     expect(source).toContain('<p v-if="validationError" class="error">{{ validationError }}</p>')
     expect(source).toContain('const validationError = computed(() => {')
-    expect(source).toContain('const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)')
+    expect(source).toContain(
+      'const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)'
+    )
     expect(source).not.toContain('winnerRequiredWarning')
     expect(source).not.toContain('submitError')
+  })
+
+  it('uses step-by-step flow before confirmation', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain("{{ $t('入力ステップ') }}")
+    expect(source).toContain('const ballotSteps = computed<BallotStep[]>(() => {')
+    expect(source).toContain('{{ nextActionLabel }}')
+    expect(source).toContain('{{ previousActionLabel }}')
+    expect(source).toContain("{{ $t('確認へ') }}")
+    expect(source).toContain('function goToNextStep() {')
+    expect(source).toContain('function goToPreviousStep() {')
+    expect(source).toContain('function goToNextAction() {')
+    expect(source).toContain('function goToPreviousAction() {')
+  })
+
+  it('supports role-by-role controls with steppers and switches', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain('const roleSequenceProgressText = computed(() => {')
+    expect(source).toContain('function goToNextRole() {')
+    expect(source).toContain('function goToPreviousRole() {')
+    expect(source).toContain("t('前のロール')")
+    expect(source).toContain("t('次のロール')")
+    expect(source).toContain("adjustCurrentRoleNumeric('score', 1)")
+    expect(source).toContain('<ToggleSwitch v-model="activeRoleBest"')
+    expect(source).toContain('<ToggleSwitch v-model="activeRolePoi"')
   })
 })

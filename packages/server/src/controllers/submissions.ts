@@ -803,6 +803,7 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
         round: 1,
         type: 1,
         payload: 1,
+        submittedBy: 1,
         createdAt: 1,
         updatedAt: 1,
       })

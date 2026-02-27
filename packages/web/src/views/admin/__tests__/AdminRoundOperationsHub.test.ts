@@ -50,8 +50,7 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('effectiveCompileTargetRounds')
     expect(source).toContain('selectedRoundReferenceCompiledLabel')
     expect(source).toContain('effectiveCompileTargetRoundsLabel')
-    expect(source).toContain("$t('参照集計結果')")
-    expect(source).toContain("$t('集計対象ラウンド: {rounds}'")
+    expect(source).toContain('成績に含めるラウンドを確認してから実行してください。')
     expect(source).toContain('このラウンドより前を一括非公開')
     expect(source).toContain('canShowPriorRoundsHideSwitch')
     expect(source).toContain('onPriorRoundsHideToggle')
@@ -118,6 +117,14 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('selectedRoundBallotGapWarning')
     expect(source).toContain('snapshotIncludesSelectedRound')
     expect(source).toContain('未提出のチーム評価があります（提出 {submitted}/{expected}）。')
+  })
+
+  it('keeps submission coverage data in a hub-local snapshot', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('const hubSubmissions = ref<Submission[]>([])')
+    expect(source).toContain('refreshHubSubmissions')
+    expect(source).toContain("api.get('/submissions', { params: { tournamentId: tournamentId.value } })")
+    expect(source).not.toContain('submissionsStore.submissions.forEach')
   })
 
   it('reads compiled rounds using r-or-round fallback for status chips', () => {

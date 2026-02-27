@@ -45,7 +45,11 @@
     </div>
 
     <section
-      :class="['stack', 'allocation-board', { card: !isEmbeddedRoute, 'allocation-board--break': isBreakRound }]"
+      :class="[
+        'stack',
+        'allocation-board',
+        { card: !isEmbeddedRoute, 'allocation-board--break': isBreakRound },
+      ]"
     >
       <LoadingState v-if="sectionLoading" />
       <template v-else>
@@ -182,7 +186,7 @@
                             ...entityPillClasses('venue', row.venue),
                           ]"
                           :title="venueName(row.venue)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('venue', row.venue)"
                           @dragstart="onDragStart('venue', row.venue)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('venue', row.venue)"
@@ -208,7 +212,7 @@
                             ...entityPillClasses('team', row.teams.gov),
                           ]"
                           :title="teamPillTitle(row.teams.gov)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('team', row.teams.gov)"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.gov)"
@@ -240,7 +244,7 @@
                             ...entityPillClasses('team', row.teams.opp),
                           ]"
                           :title="teamPillTitle(row.teams.opp)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('team', row.teams.opp)"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.opp)"
@@ -273,7 +277,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorPillTitle(adjId)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -311,7 +315,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorPillTitle(adjId)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -349,7 +353,7 @@
                             ...entityPillClasses('adjudicator', adjId),
                           ]"
                           :title="adjudicatorPillTitle(adjId)"
-                          :draggable="!locked"
+                          :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -383,7 +387,10 @@
                           <span
                             v-for="item in warningSummaryItems(rowWarningState(index).counts)"
                             :key="item.severity"
-                            :class="['warning-summary-item', `warning-summary-item--${item.severity}`]"
+                            :class="[
+                              'warning-summary-item',
+                              `warning-summary-item--${item.severity}`,
+                            ]"
                             :title="`${item.label} ${item.count}`"
                           >
                             <span class="warning-summary-icon">{{
@@ -423,7 +430,10 @@
 
         <section class="stack waiting-area board-block">
           <h4>{{ $t('未配置リスト') }}</h4>
-          <AllocationTableShell v-if="useReferenceMatchupWaitingTeams" class="waiting-matchup-allocation-wrap">
+          <AllocationTableShell
+            v-if="useReferenceMatchupWaitingTeams"
+            class="waiting-matchup-allocation-wrap"
+          >
             <table class="allocation-table waiting-matchup-allocation-table">
               <thead>
                 <tr>
@@ -498,7 +508,7 @@
                           ...entityPillClasses('venue', row.venueId),
                         ]"
                         :title="venueName(row.venueId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('venue', row.venueId)"
                         @dragstart="onDragStart('venue', row.venueId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('venue', row.venueId)"
@@ -519,7 +529,7 @@
                           ...entityPillClasses('team', teamId),
                         ]"
                         :title="teamPillTitle(teamId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('team', teamId)"
                         @dragstart="onDragStart('team', teamId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('team', teamId)"
@@ -546,7 +556,7 @@
                           ...entityPillClasses('team', teamId),
                         ]"
                         :title="teamPillTitle(teamId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('team', teamId)"
                         @dragstart="onDragStart('team', teamId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('team', teamId)"
@@ -576,7 +586,7 @@
                           ...entityPillClasses('adjudicator', adjId),
                         ]"
                         :title="adjudicatorPillTitle(adjId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('adjudicator', adjId)"
                         @dragstart="onDragStart('adjudicator', adjId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('adjudicator', adjId)"
@@ -584,7 +594,10 @@
                         <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
                         <span
                           v-if="adjudicatorAverageBadge(adjId)"
-                          :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adjId)]"
+                          :class="[
+                            'adjudicator-average-badge',
+                            adjudicatorAverageBadgeClass(adjId),
+                          ]"
                         >
                           {{ adjudicatorAverageBadge(adjId) }}
                         </span>
@@ -603,7 +616,7 @@
                           ...entityPillClasses('adjudicator', adjId),
                         ]"
                         :title="adjudicatorPillTitle(adjId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('adjudicator', adjId)"
                         @dragstart="onDragStart('adjudicator', adjId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('adjudicator', adjId)"
@@ -611,7 +624,10 @@
                         <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
                         <span
                           v-if="adjudicatorAverageBadge(adjId)"
-                          :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adjId)]"
+                          :class="[
+                            'adjudicator-average-badge',
+                            adjudicatorAverageBadgeClass(adjId),
+                          ]"
                         >
                           {{ adjudicatorAverageBadge(adjId) }}
                         </span>
@@ -630,7 +646,7 @@
                           ...entityPillClasses('adjudicator', adjId),
                         ]"
                         :title="adjudicatorPillTitle(adjId)"
-                        :draggable="!locked"
+                        :draggable="canDragEntity('adjudicator', adjId)"
                         @dragstart="onDragStart('adjudicator', adjId)"
                         @dragend="onDragEnd"
                         @click.stop="selectDetail('adjudicator', adjId)"
@@ -638,7 +654,10 @@
                         <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
                         <span
                           v-if="adjudicatorAverageBadge(adjId)"
-                          :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adjId)]"
+                          :class="[
+                            'adjudicator-average-badge',
+                            adjudicatorAverageBadgeClass(adjId),
+                          ]"
                         >
                           {{ adjudicatorAverageBadge(adjId) }}
                         </span>
@@ -671,7 +690,7 @@
                     ...entityPillClasses('venue', venue._id),
                   ]"
                   :title="venue.name"
-                  :draggable="!locked"
+                  :draggable="canDragEntity('venue', venue._id)"
                   @dragstart="onDragStart('venue', venue._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('venue', venue._id)"
@@ -701,7 +720,7 @@
                     ...entityPillClasses('team', team._id),
                   ]"
                   :title="teamPillTitle(team._id)"
-                  :draggable="!locked"
+                  :draggable="canDragEntity('team', team._id)"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('team', team._id)"
@@ -717,7 +736,9 @@
               </div>
             </div>
             <div class="stack">
-              <span class="muted">{{ $t('ジャッジ') }} ({{ waitingLooseAdjudicators.length }})</span>
+              <span class="muted"
+                >{{ $t('ジャッジ') }} ({{ waitingLooseAdjudicators.length }})</span
+              >
               <div
                 class="drop-zone list compact waiting-drop-zone"
                 :class="{ active: dragKind === 'adjudicator' }"
@@ -737,7 +758,7 @@
                     ...entityPillClasses('adjudicator', adj._id),
                   ]"
                   :title="adjudicatorPillTitle(adj._id)"
-                  :draggable="!locked"
+                  :draggable="canDragEntity('adjudicator', adj._id)"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('adjudicator', adj._id)"
@@ -964,7 +985,11 @@
               <span class="option-title">
                 {{ $t('チームアルゴリズム') }}
                 <HelpTip
-                  :text="$t('安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。')"
+                  :text="
+                    $t(
+                      '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。'
+                    )
+                  "
                 />
               </span>
               <select v-model="autoOptions.teamAlgorithm">
@@ -980,7 +1005,10 @@
                 {{ $t('このラウンドはブレイク設定ではないため、ブレイクは選択できません。') }}
               </p>
             </label>
-            <div class="stack auto-algorithm-editor" v-if="autoOptions.teamAlgorithm === 'standard'">
+            <div
+              class="stack auto-algorithm-editor"
+              v-if="autoOptions.teamAlgorithm === 'standard'"
+            >
               <div class="grid auto-detail-grid">
                 <label class="stack auto-standard-method-field">
                   <span class="option-title">
@@ -1023,7 +1051,10 @@
                 </div>
               </div>
             </div>
-            <div class="stack auto-algorithm-editor" v-else-if="autoOptions.teamAlgorithm === 'powerpair'">
+            <div
+              class="stack auto-algorithm-editor"
+              v-else-if="autoOptions.teamAlgorithm === 'powerpair'"
+            >
               <div class="grid auto-detail-grid">
                 <label class="stack">
                   <span class="option-title">
@@ -1039,7 +1070,9 @@
                       {{ option.label }}
                     </option>
                   </select>
-                  <p class="muted tiny option-help-text">{{ teamPowerpairOddBracketDescription }}</p>
+                  <p class="muted tiny option-help-text">
+                    {{ teamPowerpairOddBracketDescription }}
+                  </p>
                 </label>
                 <label class="stack">
                   <span class="option-title">
@@ -1063,7 +1096,11 @@
                     <HelpTip :text="$t('衝突回避方式を指定します。')" />
                   </span>
                   <select v-model="autoOptions.teamPowerpairAvoidConflicts">
-                    <option v-for="option in teamConflictOptions" :key="option.value" :value="option.value">
+                    <option
+                      v-for="option in teamConflictOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
                       {{ option.label }}
                     </option>
                   </select>
@@ -1116,7 +1153,10 @@
                 </label>
               </div>
             </div>
-            <div class="stack auto-algorithm-editor" v-else-if="autoOptions.teamAlgorithm === 'strict'">
+            <div
+              class="stack auto-algorithm-editor"
+              v-else-if="autoOptions.teamAlgorithm === 'strict'"
+            >
               <div class="grid auto-detail-grid">
                 <label class="stack">
                   <span class="option-title">
@@ -1172,13 +1212,20 @@
                     <HelpTip :text="$t('衝突回避方式を指定します。')" />
                   </span>
                   <select v-model="autoOptions.teamStrictAvoidConflicts">
-                    <option v-for="option in teamConflictOptions" :key="option.value" :value="option.value">
+                    <option
+                      v-for="option in teamConflictOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
                       {{ option.label }}
                     </option>
                   </select>
                   <p class="muted tiny option-help-text">{{ teamStrictConflictDescription }}</p>
                 </label>
-                <label class="stack" v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'">
+                <label
+                  class="stack"
+                  v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'"
+                >
                   <span class="option-title">
                     {{ $t('機関衝突重み') }}
                     <HelpTip :text="$t('同一属性（機関）衝突の回避強度です。')" />
@@ -1190,7 +1237,10 @@
                     step="0.1"
                   />
                 </label>
-                <label class="stack" v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'">
+                <label
+                  class="stack"
+                  v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'"
+                >
                   <span class="option-title">
                     {{ $t('過去対戦重み') }}
                     <HelpTip :text="$t('過去対戦の再マッチ回避強度です。')" />
@@ -1202,7 +1252,10 @@
                     step="0.1"
                   />
                 </label>
-                <label class="stack" v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'">
+                <label
+                  class="stack"
+                  v-if="autoOptions.teamStrictAvoidConflicts === 'one_up_one_down'"
+                >
                   <span class="option-title">
                     {{ $t('最大スワップ試行') }}
                     <HelpTip :text="$t('衝突回避のスワップ試行上限です。')" />
@@ -1241,7 +1294,10 @@
               </select>
               <p class="muted tiny option-help-text">{{ adjudicatorAlgorithmDescription }}</p>
             </label>
-            <div class="stack auto-algorithm-editor" v-if="autoOptions.adjudicatorAlgorithm === 'standard'">
+            <div
+              class="stack auto-algorithm-editor"
+              v-if="autoOptions.adjudicatorAlgorithm === 'standard'"
+            >
               <div class="grid auto-detail-grid">
                 <div class="stack filter-priority-field">
                   <span class="option-title">
@@ -1469,6 +1525,10 @@ import {
 } from '@/utils/draw-allocation-import'
 import { readAllocationTeamIds, resolveBreakStageTeamIds } from '@/utils/break-round'
 import {
+  normalizeTournamentBreakConfig,
+  type TournamentBreakConfig,
+} from '@/utils/tournament-break'
+import {
   buildEntityWarningIndex,
   buildFocusedEntitySet,
   buildRowWarningStates,
@@ -1554,9 +1614,7 @@ function withDrawReferenceCompiledId(
   const merged = normalizeDrawUserDefinedData(userDefinedData)
   const normalizedCompiledId = compiledId.trim()
   const normalizedRounds = Array.from(
-    new Set(
-      rounds.filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
-    )
+    new Set(rounds.filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1))
   ).sort((left, right) => left - right)
   if (normalizedCompiledId) {
     merged[DRAW_REFERENCE_COMPILED_ID_KEY] = normalizedCompiledId
@@ -1609,7 +1667,7 @@ const allocationImportInfo = ref<string | null>(null)
 const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
 const autoBreakSize = ref(8)
 const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('include_all')
-const autoBreakSeeding = ref<BreakSeeding>('reseed_each_round')
+const autoBreakSeeding = ref<BreakSeeding>('fixed_bracket')
 const allocationSortState = ref<{ key: AllocationSortKey; direction: AllocationSortDirection }>({
   key: 'match',
   direction: 'asc',
@@ -1639,32 +1697,8 @@ function readRoundBreakConfig(): RoundBreakConfigLike {
   return breakConfig as RoundBreakConfigLike
 }
 
-function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
-  if (!Array.isArray(sourceRounds)) return []
-  return Array.from(
-    new Set(
-      sourceRounds
-        .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
-    )
-  ).sort((left, right) => left - right)
-}
-
-function normalizeBreakParticipants(participants: unknown): RoundBreakConfig['participants'] {
-  if (!Array.isArray(participants)) return []
-  const seenTeamIds = new Set<string>()
-  const seenSeeds = new Set<number>()
-  const normalized: RoundBreakConfig['participants'] = []
-  for (const raw of participants) {
-    const teamId = String((raw as any)?.teamId ?? '').trim()
-    const seed = Number((raw as any)?.seed)
-    if (teamId.length === 0 || !Number.isInteger(seed) || seed < 1) continue
-    if (seenTeamIds.has(teamId) || seenSeeds.has(seed)) continue
-    seenTeamIds.add(teamId)
-    seenSeeds.add(seed)
-    normalized.push({ teamId, seed })
-  }
-  return normalized.sort((left, right) => left.seed - right.seed)
+function readTournamentBreakConfig(): TournamentBreakConfig {
+  return normalizeTournamentBreakConfig(tournament.value?.user_defined_data?.break)
 }
 
 function normalizeBreakSize(value: unknown): number {
@@ -1682,77 +1716,52 @@ function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSee
 }
 
 function hydrateAutoBreakPolicyFromRound() {
-  const breakConfig = readRoundBreakConfig()
-  autoBreakSource.value = 'submissions'
+  const breakConfig = readTournamentBreakConfig()
+  autoBreakSource.value = breakConfig.source
   const configuredSize = normalizeBreakSize(breakConfig.size)
   autoBreakSize.value = suggestedAutoBreakSize.value ?? configuredSize
   autoBreakCutoffTiePolicy.value =
-    breakConfig.cutoff_tie_policy === 'include_all' || breakConfig.cutoff_tie_policy === 'strict'
+    breakConfig.cutoff_tie_policy === 'manual' ||
+    breakConfig.cutoff_tie_policy === 'include_all' ||
+    breakConfig.cutoff_tie_policy === 'strict'
       ? breakConfig.cutoff_tie_policy
       : 'include_all'
-  autoBreakSeeding.value = normalizeBreakSeeding(breakConfig.seeding, 'reseed_each_round')
+  autoBreakSeeding.value = normalizeBreakSeeding(breakConfig.seeding, 'fixed_bracket')
 }
 
 async function syncAutoBreakPolicyToRound() {
   if (autoOptions.value.teamAlgorithm !== 'break' || requestScope.value !== 'teams') {
     return true
   }
-  const currentRound = roundConfig.value
-  if (!currentRound?._id) {
+  const currentTournament = tournament.value
+  if (!currentTournament?._id) {
     requestError.value = t('読み込みに失敗しました。')
     return false
   }
-  const currentBreak = readRoundBreakConfig()
   const normalizedSize = normalizeBreakSize(autoBreakSize.value)
   autoBreakSize.value = normalizedSize
-  const breakConfig: RoundBreakConfig = {
-    enabled: currentBreak.enabled === true,
-    source_rounds: normalizeBreakSourceRounds(round.value, currentBreak.source_rounds),
+  const currentUserDefined =
+    currentTournament.user_defined_data && typeof currentTournament.user_defined_data === 'object'
+      ? ({ ...(currentTournament.user_defined_data as Record<string, any>) } as Record<string, any>)
+      : {}
+  const currentBreak = readTournamentBreakConfig()
+  const breakConfig = {
+    ...currentBreak,
+    source: autoBreakSource.value,
     size: normalizedSize,
     cutoff_tie_policy: autoBreakCutoffTiePolicy.value,
     seeding: autoBreakSeeding.value,
-    participants: normalizeBreakParticipants(currentBreak.participants),
   }
-  const saved = await roundsStore.saveBreakRound({
-    tournamentId: tournamentId.value,
-    roundId: currentRound._id,
-    breakConfig,
-    syncTeamAvailability: false,
+  const updated = await tournamentStore.updateTournament({
+    tournamentId: currentTournament._id,
+    user_defined_data: {
+      ...currentUserDefined,
+      break: breakConfig,
+    },
   })
-  if (!saved) {
-    requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
+  if (!updated?._id) {
+    requestError.value = tournamentStore.error ?? t('ブレイク設定の保存に失敗しました。')
     return false
-  }
-  const latestRound =
-    roundsStore.rounds.find((item) => item._id === currentRound._id) ?? currentRound
-  const latestUserDefined =
-    latestRound.userDefinedData &&
-    typeof latestRound.userDefinedData === 'object' &&
-    !Array.isArray(latestRound.userDefinedData)
-      ? (latestRound.userDefinedData as Record<string, unknown>)
-      : {}
-  const latestBreak =
-    latestUserDefined.break &&
-    typeof latestUserDefined.break === 'object' &&
-    !Array.isArray(latestUserDefined.break)
-      ? (latestUserDefined.break as Record<string, unknown>)
-      : {}
-  if (latestBreak.source !== autoBreakSource.value) {
-    const updated = await roundsStore.updateRound({
-      tournamentId: tournamentId.value,
-      roundId: currentRound._id,
-      userDefinedData: {
-        ...latestUserDefined,
-        break: {
-          ...latestBreak,
-          source: autoBreakSource.value,
-        },
-      },
-    })
-    if (!updated) {
-      requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
-      return false
-    }
   }
   return true
 }
@@ -2012,9 +2021,7 @@ const venueAllocationModeOptions = computed(() => [
   {
     value: 'win_priority',
     label: t('優先度順（Win順）'),
-    description: t(
-      '会場優先度が高い順に、Win順が高いマッチから会場を割り当てます。'
-    ),
+    description: t('会場優先度が高い順に、Win順が高いマッチから会場を割り当てます。'),
   },
   {
     value: 'shuffle',
@@ -2039,16 +2046,12 @@ const isLoading = computed(
 )
 const currentDraw = computed(() => draws.draws.find((item) => item.round === round.value))
 const roundConfig = computed(() => roundsStore.rounds.find((item) => item.round === round.value))
-function isRoundConfiguredAsBreak(roundLike: { userDefinedData?: unknown } | null | undefined): boolean {
+function isRoundConfiguredAsBreak(
+  roundLike: { userDefinedData?: unknown } | null | undefined
+): boolean {
   const userDefined = roundLike?.userDefinedData
   if (!userDefined || typeof userDefined !== 'object' || Array.isArray(userDefined)) return false
-  const breakConfig = (userDefined as Record<string, unknown>).break
-  return (
-    !!breakConfig &&
-    typeof breakConfig === 'object' &&
-    !Array.isArray(breakConfig) &&
-    (breakConfig as Record<string, unknown>).enabled === true
-  )
+  return (userDefined as Record<string, unknown>).break_round === true
 }
 const isBreakRound = computed(() => {
   return isRoundConfiguredAsBreak(roundConfig.value)
@@ -2062,8 +2065,8 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
-const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
-const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
+const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const priorRounds = computed(() =>
   roundsStore.rounds
     .filter((item) => item.round < round.value)
@@ -2505,7 +2508,11 @@ function openAutoGenerateModal() {
     openNotice(t('ドローがロックされているため自動生成できません。'))
     return
   }
-  if (isBreakRound.value && scopeIncludesTeams.value && autoOptions.value.teamAlgorithm !== 'break') {
+  if (
+    isBreakRound.value &&
+    scopeIncludesTeams.value &&
+    autoOptions.value.teamAlgorithm !== 'break'
+  ) {
     autoOptions.value.teamAlgorithm = 'break'
   } else if (!isBreakRound.value && autoOptions.value.teamAlgorithm === 'break') {
     autoOptions.value.teamAlgorithm = 'standard'
@@ -2735,7 +2742,9 @@ async function requestAllocation() {
       ? normalizeEnumValue(autoOptions.value.teamAlgorithm, TEAM_ALGORITHM_VALUES, 'standard')
       : 'standard'
     const effectiveTeamAlgorithm =
-      !isBreakRound.value && requestedTeamAlgorithm === 'break' ? 'standard' : requestedTeamAlgorithm
+      !isBreakRound.value && requestedTeamAlgorithm === 'break'
+        ? 'standard'
+        : requestedTeamAlgorithm
     const requestedAdjudicatorAlgorithm = normalizeEnumValue(
       autoOptions.value.adjudicatorAlgorithm,
       ADJUDICATOR_ALGORITHM_VALUES,
@@ -2923,6 +2932,38 @@ function revertAllocation() {
 function detailAvailable(details: any[] | undefined, r: number) {
   const detail = details?.find((d: any) => Number(d.r) === r)
   return detail?.available !== false
+}
+
+function teamAvailableInRound(teamId: string) {
+  const team = teams.teams.find((item) => item._id === teamId)
+  if (!team) return true
+  return detailAvailable(team.details, round.value)
+}
+
+function adjudicatorAvailableInRound(adjudicatorId: string) {
+  const adjudicator = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+  if (!adjudicator) return true
+  if (adjudicator.active === false) return false
+  return detailAvailable(adjudicator.details, round.value)
+}
+
+function venueAvailableInRound(venueId: string) {
+  const venue = venues.venues.find((item) => item._id === venueId)
+  if (!venue) return true
+  return detailAvailable(venue.details, round.value)
+}
+
+function isEntityAvailableInRound(kind: 'team' | 'adjudicator' | 'venue', id: string) {
+  if (kind === 'team') return teamAvailableInRound(id)
+  if (kind === 'adjudicator') return adjudicatorAvailableInRound(id)
+  return venueAvailableInRound(id)
+}
+
+function canDragEntity(kind: 'team' | 'adjudicator' | 'venue', id: string | null | undefined) {
+  if (locked.value) return false
+  const normalizedId = String(id ?? '').trim()
+  if (!normalizedId) return false
+  return isEntityAvailableInRound(kind, normalizedId)
 }
 
 function detailForRound(details: any[] | undefined, r: number) {
@@ -3374,13 +3415,7 @@ type DetailRow = {
 }
 
 function uniqueEntityIds(values: unknown[]): string[] {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => String(value ?? '').trim())
-        .filter(Boolean)
-    )
-  )
+  return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
 }
 
 function buildTeamEntityKeys(teamIds: string[]): string[] {
@@ -3388,7 +3423,9 @@ function buildTeamEntityKeys(teamIds: string[]): string[] {
 }
 
 function buildAdjudicatorEntityKeys(adjudicatorIds: string[]): string[] {
-  return uniqueEntityIds(adjudicatorIds).map((adjudicatorId) => warningEntityKey('adj', adjudicatorId))
+  return uniqueEntityIds(adjudicatorIds).map((adjudicatorId) =>
+    warningEntityKey('adj', adjudicatorId)
+  )
 }
 
 function buildInstitutionEntityKeys(institutionIds: string[]): string[] {
@@ -3398,13 +3435,17 @@ function buildInstitutionEntityKeys(institutionIds: string[]): string[] {
   const keys = new Set<string>()
 
   teams.teams.forEach((team) => {
-    const matched = teamInstitutions(team).some((institutionId) => institutionSet.has(institutionId))
+    const matched = teamInstitutions(team).some((institutionId) =>
+      institutionSet.has(institutionId)
+    )
     if (matched) {
       keys.add(warningEntityKey('team', team._id))
     }
   })
   adjudicators.adjudicators.forEach((adj) => {
-    const matched = adjudicatorInstitutions(adj).some((institutionId) => institutionSet.has(institutionId))
+    const matched = adjudicatorInstitutions(adj).some((institutionId) =>
+      institutionSet.has(institutionId)
+    )
     if (matched) {
       keys.add(warningEntityKey('adj', adj._id))
     }
@@ -3430,7 +3471,9 @@ const detailRows = computed<DetailRow[]>(() => {
         .filter(
           (adjResult) =>
             Array.isArray(adjResult?.judged_teams) &&
-            adjResult.judged_teams.some((teamId: any) => String(teamId ?? '').trim() === normalizedTeamId)
+            adjResult.judged_teams.some(
+              (teamId: any) => String(teamId ?? '').trim() === normalizedTeamId
+            )
         )
         .map((adjResult: any) => String(adjResult?.id ?? ''))
     )
@@ -3440,6 +3483,7 @@ const detailRows = computed<DetailRow[]>(() => {
       { label: t('勝利数'), value: result?.win ?? '—' },
       { label: t('合計'), value: result?.sum ?? '—' },
       { label: t('マージン'), value: result?.margin ?? '—' },
+      { label: t('利用可'), value: teamAvailableInRound(String(id)) ? t('はい') : t('いいえ') },
       {
         label: t('コンフリクトグループ'),
         value: institutionsList.length ? institutionsList.join(', ') : '—',
@@ -3447,7 +3491,9 @@ const detailRows = computed<DetailRow[]>(() => {
       },
       {
         label: t('対戦相手'),
-        value: pastOpponentIds.length ? pastOpponentIds.map((oppId) => teamNameById(oppId)).join(', ') : '—',
+        value: pastOpponentIds.length
+          ? pastOpponentIds.map((oppId) => teamNameById(oppId)).join(', ')
+          : '—',
         highlightEntityKeys: buildTeamEntityKeys(pastOpponentIds),
       },
       {
@@ -3473,23 +3519,31 @@ const detailRows = computed<DetailRow[]>(() => {
     const institutionsList = institutionIds.map((inst) => institutionNameById(inst))
     const conflictTeamIds = uniqueEntityIds(adj ? adjudicatorConflicts(adj) : [])
     const conflictsList = conflictTeamIds.map((teamId) => teamNameById(teamId))
-    const judgedTeamIds = uniqueEntityIds(Array.isArray(result?.judged_teams) ? result.judged_teams : [])
+    const judgedTeamIds = uniqueEntityIds(
+      Array.isArray(result?.judged_teams) ? result.judged_teams : []
+    )
     return [
       { label: t('順位'), value: result?.ranking ?? '—' },
       { label: t('平均'), value: averageBadge || '—' },
+      {
+        label: t('利用可'),
+        value: adjudicatorAvailableInRound(String(id)) ? t('はい') : t('いいえ'),
+      },
       {
         label: t('コンフリクトグループ'),
         value: institutionsList.length ? institutionsList.join(', ') : '—',
         highlightEntityKeys: buildInstitutionEntityKeys(institutionIds),
       },
       {
-        label: t('衝突'),
+        label: t('コンフリクトチーム'),
         value: conflictsList.length ? conflictsList.join(', ') : '—',
         highlightEntityKeys: buildTeamEntityKeys(conflictTeamIds),
       },
       {
         label: t('担当チーム'),
-        value: judgedTeamIds.length ? judgedTeamIds.map((teamId) => teamNameById(teamId)).join(', ') : '—',
+        value: judgedTeamIds.length
+          ? judgedTeamIds.map((teamId) => teamNameById(teamId)).join(', ')
+          : '—',
         highlightEntityKeys: buildTeamEntityKeys(judgedTeamIds),
       },
       { label: t('担当数'), value: result?.num_experienced ?? result?.active_num ?? '—' },
@@ -3501,7 +3555,7 @@ const detailRows = computed<DetailRow[]>(() => {
   const detail = venue ? detailForRound(venue.details, round.value) : {}
   return [
     { label: t('優先度'), value: detail?.priority ?? '—' },
-    { label: t('有効'), value: detail?.available === false ? t('いいえ') : t('はい') },
+    { label: t('利用可'), value: venueAvailableInRound(String(id)) ? t('はい') : t('いいえ') },
     { label: t('ID'), value: id },
   ]
 })
@@ -3615,7 +3669,9 @@ function warningConflictGroupLabel(value: unknown) {
 }
 
 function warningSideLabel(value: unknown): string {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'gov') return govLabel.value
   if (normalized === 'opp') return oppLabel.value
   return ''
@@ -3927,8 +3983,10 @@ function rowWinMetrics(govTeamIds: string[], oppTeamIds: string[]) {
   }
 }
 
-function referenceRowsFromLatestDraw(draw: { allocation?: DrawAllocationRow[]; round?: number } | null) {
-  const allocationRows = Array.isArray(draw?.allocation) ? draw?.allocation ?? [] : []
+function referenceRowsFromLatestDraw(
+  draw: { allocation?: DrawAllocationRow[]; round?: number } | null
+) {
+  const allocationRows = Array.isArray(draw?.allocation) ? (draw?.allocation ?? []) : []
   return allocationRows
     .map((row, index): ReferenceUnassignedTeamRow | null => {
       const gov = String(row?.teams?.gov ?? '').trim()
@@ -3992,13 +4050,12 @@ function referenceRowsFromCompiled(targetRound: number): ReferenceUnassignedTeam
       .slice()
       .sort((left, right) => allocationSortCollator.compare(left, right))
       .join('::')
-    const current =
-      rowMap.get(key) ?? {
-        allTeamIds: [],
-        govTeamIds: [],
-        oppTeamIds: [],
-        sortLabel: '',
-      }
+    const current = rowMap.get(key) ?? {
+      allTeamIds: [],
+      govTeamIds: [],
+      oppTeamIds: [],
+      sortLabel: '',
+    }
     candidateIds.forEach((id) => {
       if (current.allTeamIds.includes(id)) return
       current.allTeamIds.push(id)
@@ -4018,7 +4075,9 @@ function referenceRowsFromCompiled(targetRound: number): ReferenceUnassignedTeam
       const normalizedOpp = value.oppTeamIds.slice()
       const distributed = value.allTeamIds
         .slice()
-        .sort((left, right) => allocationSortCollator.compare(teamNameById(left), teamNameById(right)))
+        .sort((left, right) =>
+          allocationSortCollator.compare(teamNameById(left), teamNameById(right))
+        )
       distributed.forEach((teamId) => {
         if (normalizedGov.includes(teamId) || normalizedOpp.includes(teamId)) return
         if (normalizedGov.length <= normalizedOpp.length) {
@@ -4132,14 +4191,7 @@ const waitingLooseTeams = computed(() => {
   return unassignedTeams.value.filter((team) => !coveredTeamIds.has(team._id))
 })
 
-type ReferenceWaitingSortKey =
-  | 'venue'
-  | 'gov'
-  | 'opp'
-  | 'win'
-  | 'chairs'
-  | 'panels'
-  | 'trainees'
+type ReferenceWaitingSortKey = 'venue' | 'gov' | 'opp' | 'win' | 'chairs' | 'panels' | 'trainees'
 
 const referenceWaitingSortState = ref<{
   key: ReferenceWaitingSortKey
@@ -4156,7 +4208,8 @@ function referenceWaitingSortValue(row: ReferenceUnassignedTeamRow, key: Referen
   if (key === 'win') return row.sortTopWin
   if (key === 'chairs') return row.chairIds.map((adjId) => adjudicatorNameById(adjId)).join(', ')
   if (key === 'panels') return row.panelIds.map((adjId) => adjudicatorNameById(adjId)).join(', ')
-  if (key === 'trainees') return row.traineeIds.map((adjId) => adjudicatorNameById(adjId)).join(', ')
+  if (key === 'trainees')
+    return row.traineeIds.map((adjId) => adjudicatorNameById(adjId)).join(', ')
   return ''
 }
 
@@ -4342,7 +4395,10 @@ const unsubmittedEnabled = computed(
 
 function onDragStart(kind: DragKind, id: string) {
   if (locked.value) return
-  dragPayload.value = { kind, id }
+  const normalizedId = String(id ?? '').trim()
+  if (!normalizedId) return
+  if (!isEntityAvailableInRound(kind, normalizedId)) return
+  dragPayload.value = { kind, id: normalizedId }
 }
 
 function onDragEnd() {
@@ -4389,6 +4445,10 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
+  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+    onDragEnd()
+    return
+  }
   const targetTeamId = String(row.teams[side] ?? '')
   if (targetTeamId === payload.id) {
     onDragEnd()
@@ -4411,6 +4471,10 @@ function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'tr
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'adjudicator') return
+  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+    onDragEnd()
+    return
+  }
   removeAdjudicatorFromAllocation(payload.id)
   if (!row[role].includes(payload.id)) {
     row[role] = [...row[role], payload.id]
@@ -4422,6 +4486,10 @@ function dropVenue(row: DrawAllocationRow) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
+  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+    onDragEnd()
+    return
+  }
   const targetVenueId = String(row.venue ?? '')
   if (targetVenueId === payload.id) {
     onDragEnd()
@@ -4440,6 +4508,10 @@ function dropToWaiting(kind: DragKind) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== kind) return
+  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+    onDragEnd()
+    return
+  }
   if (kind === 'team') removeTeamFromAllocation(payload.id)
   if (kind === 'adjudicator') removeAdjudicatorFromAllocation(payload.id)
   if (kind === 'venue') removeVenueFromAllocation(payload.id)
@@ -4521,12 +4593,18 @@ watch(
 )
 
 watch(
-  [compiledSnapshotOptions, round],
-  ([options]) => {
+  [compiledSnapshotOptions, round, currentDraw],
+  ([options, , draw]) => {
+    const hasSavedDraw = Boolean(draw)
+    const savedReferenceCompiledId = hasSavedDraw
+      ? readDrawReferenceCompiledId(draw?.userDefinedData)
+      : ''
+
     if (options.length === 0) {
       selectedDetailSnapshotId.value = ''
       return
     }
+
     let selected = String(selectedDetailSnapshotId.value ?? '').trim()
     if (selected) {
       const exists = options.some((option) => option.compiledId === selected)
@@ -4534,6 +4612,17 @@ watch(
       selectedDetailSnapshotId.value = ''
       selected = ''
     }
+
+    if (!selected && hasSavedDraw) {
+      const savedExists = options.some(
+        (option) => option.compiledId === savedReferenceCompiledId
+      )
+      if (savedExists) {
+        selectedDetailSnapshotId.value = savedReferenceCompiledId
+        return
+      }
+    }
+
     if (!selected && defaultDetailSnapshotId.value) {
       selectedDetailSnapshotId.value = defaultDetailSnapshotId.value
     }

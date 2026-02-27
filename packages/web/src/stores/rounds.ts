@@ -106,6 +106,40 @@ export const useRoundsStore = defineStore('rounds', () => {
     }
   }
 
+  async function bulkUpdateRounds(
+    payload: Array<{
+      id: string
+      tournamentId: string
+      round?: number
+      name?: string
+      motions?: string[]
+      motionOpened?: boolean
+      teamAllocationOpened?: boolean
+      adjudicatorAllocationOpened?: boolean
+      weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
+      userDefinedData?: Record<string, any>
+    }>
+  ) {
+    loading.value = true
+    error.value = null
+    try {
+      const res = await api.patch('/rounds', payload)
+      const updatedList = Array.isArray(res.data?.data) ? (res.data.data as Round[]) : []
+      if (updatedList.length > 0) {
+        const updatedById = new Map(updatedList.map((item) => [String(item._id), item]))
+        rounds.value = rounds.value
+          .map((item) => updatedById.get(String(item._id)) ?? item)
+          .sort((a, b) => a.round - b.round)
+      }
+      return updatedList
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update rounds'
+      return []
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function deleteRound(tournamentId: string, roundId: string) {
     loading.value = true
     error.value = null
@@ -180,6 +214,7 @@ export const useRoundsStore = defineStore('rounds', () => {
     fetchRounds,
     createRound,
     updateRound,
+    bulkUpdateRounds,
     deleteRound,
     fetchBreakCandidates,
     saveBreakRound,

@@ -7,7 +7,6 @@ export type BreakSeeding =
   | 'random_full'
 export type BreakParticipant = { teamId: string; seed: number }
 export type BreakConfig = {
-  enabled: boolean
   source_rounds: number[]
   size: number
   cutoff_tie_policy: BreakCutoffTiePolicy
@@ -73,7 +72,6 @@ export function normalizeBreakConfig(
   options: NormalizeBreakOptions = {}
 ): BreakConfig {
   const source = asRecord(input)
-  const enabled = source.enabled === true
   const sizeRaw = Number(source.size)
   const sizeDefault = Number.isInteger(options.defaultSize) ? Number(options.defaultSize) : 8
   const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : sizeDefault
@@ -81,12 +79,14 @@ export function normalizeBreakConfig(
     source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
       ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
       : 'include_all'
-  const seeding =
-    BREAK_SEEDING_VALUES.has(source.seeding as BreakSeeding)
-      ? (source.seeding as BreakSeeding)
-      : 'high_low'
+  const seeding = (() => {
+    if (source.seeding === 'high_low') return 'reseed_each_round' as BreakSeeding
+    if (BREAK_SEEDING_VALUES.has(source.seeding as BreakSeeding)) {
+      return source.seeding as BreakSeeding
+    }
+    return 'fixed_bracket' as BreakSeeding
+  })()
   return {
-    enabled,
     source_rounds: normalizeBreakSourceRounds(roundNumber, source.source_rounds),
     size,
     cutoff_tie_policy,

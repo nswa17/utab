@@ -3,6 +3,7 @@
     :is="component"
     :language="language"
     :max-ranking-rewarded="maxRankingRewarded"
+    :ranking-order="rankingOrder"
     :type="type"
     :slide-style="slideStyle"
     :left-credit="leftCredit"
@@ -16,7 +17,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SlideLanguage } from '@/utils/slides-presentation'
+import type { SlideLanguage, SlideRankingOrder } from '@/utils/slides-presentation'
 import TeamSlides from './TeamSlides.vue'
 import SpeakerSlides from './SpeakerSlides.vue'
 import AdjudicatorSlides from './AdjudicatorSlides.vue'
@@ -28,6 +29,7 @@ const props = withDefaults(
     label: 'teams' | 'speakers' | 'adjudicators' | 'poi' | 'best'
     language?: SlideLanguage
     maxRankingRewarded?: number
+    rankingOrder?: SlideRankingOrder
     type?: 'listed' | 'single'
     slideStyle?: 'pretty' | 'simple'
     leftCredit?: string
@@ -39,6 +41,7 @@ const props = withDefaults(
   {
     language: 'en',
     maxRankingRewarded: 3,
+    rankingOrder: 'asc',
     type: 'listed',
     slideStyle: 'pretty',
     leftCredit: '',

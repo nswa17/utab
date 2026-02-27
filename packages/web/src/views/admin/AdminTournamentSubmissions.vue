@@ -1329,8 +1329,8 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
-const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
-const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
+const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const contextRoundLabel = computed(() => {
   if (contextRound.value === null) return ''
   const name =

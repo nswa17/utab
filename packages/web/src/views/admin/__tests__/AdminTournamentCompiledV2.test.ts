@@ -30,6 +30,26 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain("'operations'")
   })
 
+  it('separates report views into prelim and break phases when break rounds exist', () => {
+    const source = load('src/views/admin/AdminTournamentCompiled.vue')
+    const messages = load('src/i18n/messages.ts')
+    expect(source).toContain('reportDisplayOptions')
+    expect(source).toContain('effectiveReportPhase')
+    expect(source).toContain('setActiveReportPhase')
+    expect(source).toContain('setReportDisplay')
+    expect(source).toContain('予選順位一覧')
+    expect(source).toContain('ブレイク順位一覧')
+    expect(source).toContain('予選発表出力')
+    expect(source).toContain('ブレイク発表出力')
+    expect(source).toContain('予選統計')
+    expect(source).toContain('ブレイク結果統計')
+    expect(source).toContain('breakRoundNumbersInCompiled')
+    expect(source).toContain('break_outcome')
+    expect(source).toContain('Grand Finalist')
+    expect(messages).toContain('予選結果')
+    expect(messages).toContain('ブレイク結果')
+  })
+
   it('guards new report sections behind a dedicated feature flag', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     const flags = load('src/config/feature-flags.ts')

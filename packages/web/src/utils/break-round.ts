@@ -24,12 +24,8 @@ function breakConfigFromUserDefinedData(value: unknown): Record<string, unknown>
 }
 
 function hasBreakConfigSignal(breakConfig: Record<string, unknown>): boolean {
-  if (breakConfig.enabled === true) return true
   if (readBreakParticipantTeamIds(breakConfig.participants).length > 0) return true
   if (readBreakParticipantTeamIds(breakConfig.stage_participants).length > 0) return true
-  if (breakConfig.derived_from_previous_round === true) return true
-  const previousRound = Number(breakConfig.previous_round)
-  if (Number.isInteger(previousRound) && previousRound >= 1) return true
   return false
 }
 
@@ -57,8 +53,11 @@ export function readAllocationTeamIds(allocation: unknown): string[] {
 }
 
 export function isBreakRoundLike(params: BreakRoundResolverParams): boolean {
+  const roundUserDefined = asRecord(params.roundUserDefinedData)
+  if (roundUserDefined.break_round === true) return true
   const roundBreak = breakConfigFromUserDefinedData(params.roundUserDefinedData)
   const drawUserDefined = asRecord(params.drawUserDefinedData)
+  if (drawUserDefined.break_round === true) return true
   const drawBreak = breakConfigFromUserDefinedData(params.drawUserDefinedData)
   const drawTeamAlgorithm = String(drawUserDefined.team_allocation_algorithm ?? '').trim()
   if (drawTeamAlgorithm === 'break') return true

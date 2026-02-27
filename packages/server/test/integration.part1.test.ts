@@ -40,7 +40,7 @@ async function waitForResult<T>(
   if (hasValue && lastValue !== undefined) {
     return lastValue
   }
-  throw (lastError ?? new Error('waitForResult timed out without a successful response'))
+  throw lastError ?? new Error('waitForResult timed out without a successful response')
 }
 
 beforeAll(async () => {
@@ -115,9 +115,7 @@ describe('Server integration', () => {
       throw new Error('rate-limit identity cookie was not issued')
     }
 
-    const second = await request(app)
-      .get('/api/health')
-      .set('Cookie', identityCookie.split(';')[0])
+    const second = await request(app).get('/api/health').set('Cookie', identityCookie.split(';')[0])
     expect(second.headers['set-cookie']).toBeUndefined()
   })
 
@@ -197,43 +195,37 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
 
-    const teamRes = await agent
-      .post('/api/teams')
-      .send({
-        tournamentId,
-        name: 'Team A',
-        institution: 'Uni',
-        speakers: [{ name: 'Speaker 1' }],
-        details: [{ r: 1, institutions: ['internal-inst'], speakers: ['internal-speaker'] }],
-        userDefinedData: { privateMemo: 'do-not-expose' },
-      })
+    const teamRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      institution: 'Uni',
+      speakers: [{ name: 'Speaker 1' }],
+      details: [{ r: 1, institutions: ['internal-inst'], speakers: ['internal-speaker'] }],
+      userDefinedData: { privateMemo: 'do-not-expose' },
+    })
     expect(teamRes.status).toBe(201)
     const teamId = teamRes.body.data._id
 
-    const adjudicatorRes = await agent
-      .post('/api/adjudicators')
-      .send({
-        tournamentId,
-        name: 'Judge 1',
-        strength: 5,
-        preev: 2,
-        details: [{ r: 1, institutions: ['internal-inst'] }],
-        userDefinedData: { privateMemo: 'hidden' },
-      })
+    const adjudicatorRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Judge 1',
+      strength: 5,
+      preev: 2,
+      details: [{ r: 1, institutions: ['internal-inst'] }],
+      userDefinedData: { privateMemo: 'hidden' },
+    })
     expect(adjudicatorRes.status).toBe(201)
 
-    const resultRes = await agent
-      .post('/api/results')
-      .send({
-        tournamentId,
-        round: 1,
-        payload: {
-          standings: [],
-          comment: 'internal comment',
-          user_defined_data: { private: true },
-          submittedBy: 'internal-user',
-        },
-      })
+    const resultRes = await agent.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: {
+        standings: [],
+        comment: 'internal comment',
+        user_defined_data: { private: true },
+        submittedBy: 'internal-user',
+      },
+    })
     expect(resultRes.status).toBe(201)
 
     const drawRes = await agent.post('/api/draws').send({
@@ -273,7 +265,9 @@ describe('Server integration', () => {
     expect('details' in publicTeams.body.data[0]).toBe(false)
     expect('userDefinedData' in publicTeams.body.data[0]).toBe(false)
 
-    const publicAdjudicators = await request(app).get(`/api/adjudicators?tournamentId=${tournamentId}`)
+    const publicAdjudicators = await request(app).get(
+      `/api/adjudicators?tournamentId=${tournamentId}`
+    )
     expect(publicAdjudicators.status).toBe(200)
     expect('strength' in publicAdjudicators.body.data[0]).toBe(false)
     expect('details' in publicAdjudicators.body.data[0]).toBe(false)
@@ -291,12 +285,16 @@ describe('Server integration', () => {
     expect('locked' in publicDraws.body.data[0]).toBe(false)
     expect('createdBy' in publicDraws.body.data[0]).toBe(false)
 
-    const publicCompiled = await request(app).get(`/api/compiled?tournamentId=${tournamentId}&latest=1`)
+    const publicCompiled = await request(app).get(
+      `/api/compiled?tournamentId=${tournamentId}&latest=1`
+    )
     expect(publicCompiled.status).toBe(401)
 
-    const openAccessSkipRes = await request(app).post(`/api/tournaments/${tournamentId}/access`).send({
-      action: 'skip',
-    })
+    const openAccessSkipRes = await request(app)
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({
+        action: 'skip',
+      })
     expect(openAccessSkipRes.status).toBe(200)
 
     const publicSubmission = await request(app).post('/api/submissions/feedback').send({
@@ -355,6 +353,81 @@ describe('Server integration', () => {
     expect(listRes.body.data[0].priority).toBe(4)
   })
 
+  it('rejects draw save when allocation contains round-unavailable entities', async () => {
+    const agent = request.agent(app)
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'draw-unavailable-guard', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'draw-unavailable-guard', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Draw Guard Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const unavailableTeamRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Unavailable Team',
+      details: [{ r: 1, available: false }],
+    })
+    expect(unavailableTeamRes.status).toBe(201)
+    const unavailableTeamId = unavailableTeamRes.body.data._id as string
+
+    const availableTeamRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Available Team',
+      details: [{ r: 1, available: true }],
+    })
+    expect(availableTeamRes.status).toBe(201)
+    const availableTeamId = availableTeamRes.body.data._id as string
+
+    const unavailableAdjudicatorRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Unavailable Judge',
+      strength: 3,
+      details: [{ r: 1, available: false }],
+    })
+    expect(unavailableAdjudicatorRes.status).toBe(201)
+    const unavailableAdjudicatorId = unavailableAdjudicatorRes.body.data._id as string
+
+    const unavailableVenueRes = await agent.post('/api/venues').send({
+      tournamentId,
+      name: 'Unavailable Room',
+      details: [{ r: 1, available: false, priority: 1 }],
+    })
+    expect(unavailableVenueRes.status).toBe(201)
+    const unavailableVenueId = unavailableVenueRes.body.data._id as string
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: unavailableVenueId,
+          teams: { gov: unavailableTeamId, opp: availableTeamId },
+          chairs: [unavailableAdjudicatorId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: false,
+      allocationOpened: false,
+    })
+
+    expect(drawRes.status).toBe(400)
+    const message = String(drawRes.body.errors?.[0]?.message ?? '')
+    expect(message).toContain('entities unavailable in round 1')
+    expect(message).toContain(`team:${unavailableTeamId}`)
+    expect(message).toContain(`adjudicator:${unavailableAdjudicatorId}`)
+    expect(message).toContain(`venue:${unavailableVenueId}`)
+  })
+
   it('supports legacy-style entities, raw results compilation, and draw generation', async () => {
     const agent = request.agent(app)
 
@@ -388,15 +461,11 @@ describe('Server integration', () => {
     expect(institutionRes.status).toBe(201)
     const institutionId = institutionRes.body.data._id
 
-    const speakerRes1 = await agent
-      .post('/api/speakers')
-      .send({ tournamentId, name: 'Speaker 1' })
+    const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker 1' })
     expect(speakerRes1.status).toBe(201)
     const speakerId1 = speakerRes1.body.data._id
 
-    const speakerRes2 = await agent
-      .post('/api/speakers')
-      .send({ tournamentId, name: 'Speaker 2' })
+    const speakerRes2 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker 2' })
     expect(speakerRes2.status).toBe(201)
     const speakerId2 = speakerRes2.body.data._id
 
@@ -614,7 +683,9 @@ describe('Server integration', () => {
     expect(powerpairTeamAllocRes.body.data.userDefinedData?.team_allocation_algorithm).toBe(
       'powerpair'
     )
-    expect(powerpairTeamAllocRes.body.data.userDefinedData?.powerpair?.brackets?.length).toBeGreaterThan(0)
+    expect(
+      powerpairTeamAllocRes.body.data.userDefinedData?.powerpair?.brackets?.length
+    ).toBeGreaterThan(0)
 
     const adjAllocRes = await agent.post('/api/allocations/adjudicators').send({
       tournamentId,
@@ -871,9 +942,7 @@ describe('Server integration', () => {
     expect(teamsRes.status).toBe(201)
     const teams = teamsRes.body.data as Array<{ _id: string; name: string }>
 
-    const round1Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 1, name: 'R1' })
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
     const round2Res = await agent
       .post('/api/rounds')
@@ -968,11 +1037,9 @@ describe('Server integration', () => {
       { teamId: betaId, seed: 2 },
     ])
 
-    const updatedRoundRes = await agent
-      .get(`/api/rounds/${breakRoundId}`)
-      .query({ tournamentId })
+    const updatedRoundRes = await agent.get(`/api/rounds/${breakRoundId}`).query({ tournamentId })
     expect(updatedRoundRes.status).toBe(200)
-    expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(true)
+    expect(updatedRoundRes.body.data.userDefinedData.break_round).toBe(true)
     expect(updatedRoundRes.body.data.userDefinedData.break.participants).toHaveLength(2)
 
     const updatedTeamsRes = await agent.get('/api/teams').query({ tournamentId })
@@ -1072,7 +1139,7 @@ describe('Server integration', () => {
     expect(round2Res.status).toBe(201)
     expect(round2Res.body.data.userDefinedData.evaluate_from_adjudicators).toBe(false)
     expect(round2Res.body.data.userDefinedData.no_speaker_score).toBe(false)
-    expect(round2Res.body.data.userDefinedData.break.enabled).toBe(true)
+    expect(round2Res.body.data.userDefinedData.break_round).toBe(false)
     expect(round2Res.body.data.userDefinedData.break.size).toBe(4)
     expect(round2Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('strict')
   })
@@ -1120,9 +1187,7 @@ describe('Server integration', () => {
     const alphaId = teamByName.get('Alpha')!
     const betaId = teamByName.get('Beta')!
 
-    const round1Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 1, name: 'R1' })
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
     const round2Res = await agent
       .post('/api/rounds')
@@ -1212,9 +1277,7 @@ describe('Server integration', () => {
     const alphaId = teamByName.get('Alpha')!
     const betaId = teamByName.get('Beta')!
 
-    const round1Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 1, name: 'R1' })
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
     const round2Res = await agent
       .post('/api/rounds')
@@ -1259,13 +1322,11 @@ describe('Server integration', () => {
       syncTeamAvailability: true,
     })
     expect(disableBreakRes.status).toBe(200)
-    expect(disableBreakRes.body.data.break.enabled).toBe(false)
+    expect(disableBreakRes.body.data.round?.userDefinedData?.break_round).toBe(false)
 
-    const updatedRoundRes = await agent
-      .get(`/api/rounds/${breakRoundId}`)
-      .query({ tournamentId })
+    const updatedRoundRes = await agent.get(`/api/rounds/${breakRoundId}`).query({ tournamentId })
     expect(updatedRoundRes.status).toBe(200)
-    expect(updatedRoundRes.body.data.userDefinedData.break.enabled).toBe(false)
+    expect(updatedRoundRes.body.data.userDefinedData.break_round).toBe(false)
   })
 
   it('derives first break round participants from standings when participants are empty', async () => {
@@ -1327,7 +1388,9 @@ describe('Server integration', () => {
     expect(round1Res.status).toBe(201)
     const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
     expect(round2Res.status).toBe(201)
-    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break SF' })
+    const round3Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 3, name: 'Break SF' })
     expect(round3Res.status).toBe(201)
     const round3Id = round3Res.body.data._id as string
 
@@ -1443,7 +1506,6 @@ describe('Server integration', () => {
     })
     expect(breakAllocRes.status).toBe(200)
     expect(breakAllocRes.body.data.allocation).toHaveLength(1)
-    expect(breakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(false)
     const autoParticipants = breakAllocRes.body.data.userDefinedData?.break?.participants as Array<{
       teamId: string
       seed: number
@@ -1453,9 +1515,7 @@ describe('Server integration', () => {
       new Set([gammaId, deltaId])
     )
     expect(
-      autoParticipants
-        .map((participant) => participant.seed)
-        .sort((left, right) => left - right)
+      autoParticipants.map((participant) => participant.seed).sort((left, right) => left - right)
     ).toEqual([1, 2])
     const matchTeams = breakAllocRes.body.data.allocation[0].teams
     expect([matchTeams.gov, matchTeams.opp].sort()).toEqual([gammaId, deltaId].sort())
@@ -1508,7 +1568,9 @@ describe('Server integration', () => {
 
     const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
-    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'Break QF' })
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break QF' })
     expect(round2Res.status).toBe(201)
     const round2Id = round2Res.body.data._id as string
 
@@ -1656,9 +1718,7 @@ describe('Server integration', () => {
     const gammaId = teamByName.get('Gamma')!
     const deltaId = teamByName.get('Delta')!
 
-    const round1Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 1, name: 'R1' })
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
     const round2Res = await agent
       .post('/api/rounds')
@@ -1750,10 +1810,6 @@ describe('Server integration', () => {
       { teamId: betaId, seed: 2 },
       { teamId: gammaId, seed: 3 },
     ])
-    expect(round2BreakAllocRes.body.data.userDefinedData?.break?.stage_byes).toEqual([
-      { teamId: alphaId, seed: 1 },
-    ])
-    expect(round2BreakAllocRes.body.data.userDefinedData?.break?.matches).toHaveLength(1)
 
     const saveRound2DrawRes = await agent.post('/api/draws').send({
       tournamentId,
@@ -1800,8 +1856,6 @@ describe('Server integration', () => {
     expect(round3BreakAllocRes.body.data.allocation).toHaveLength(1)
     const nextTeams = round3BreakAllocRes.body.data.allocation[0].teams
     expect([nextTeams.gov, nextTeams.opp].sort()).toEqual([alphaId, betaId].sort())
-    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(true)
-    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.previous_round).toBe(2)
   })
 
   it('derives break winners from saved draw allocation when previous break metadata is stale', async () => {
@@ -1834,13 +1888,21 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id as string
 
-    const speakerAlphaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Alpha Speaker' })
+    const speakerAlphaRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Alpha Speaker' })
     expect(speakerAlphaRes.status).toBe(201)
-    const speakerBetaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Beta Speaker' })
+    const speakerBetaRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Beta Speaker' })
     expect(speakerBetaRes.status).toBe(201)
-    const speakerGammaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Gamma Speaker' })
+    const speakerGammaRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Gamma Speaker' })
     expect(speakerGammaRes.status).toBe(201)
-    const speakerDeltaRes = await agent.post('/api/speakers').send({ tournamentId, name: 'Delta Speaker' })
+    const speakerDeltaRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Delta Speaker' })
     expect(speakerDeltaRes.status).toBe(201)
 
     const alphaSpeakerId = speakerAlphaRes.body.data._id as string
@@ -1880,9 +1942,13 @@ describe('Server integration', () => {
 
     const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
-    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'Break R1' })
+    const round2Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 2, name: 'Break R1' })
     expect(round2Res.status).toBe(201)
-    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break R2' })
+    const round3Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 3, name: 'Break R2' })
     expect(round3Res.status).toBe(201)
     const round2Id = round2Res.body.data._id as string
     const round3Id = round3Res.body.data._id as string
@@ -2088,11 +2154,25 @@ describe('Server integration', () => {
     expect(round2BreakAllocRes.status).toBe(200)
     expect(round2BreakAllocRes.body.data.allocation).toHaveLength(4)
     const round2Allocation = round2BreakAllocRes.body.data.allocation as Array<any>
-    const round2Matches = round2BreakAllocRes.body.data.userDefinedData?.break?.matches as Array<{
-      id: number
-      gov: { teamId: string; seed: number }
-      opp: { teamId: string; seed: number }
+    const stageParticipants = round2BreakAllocRes.body.data.userDefinedData?.break
+      ?.stage_participants as Array<{
+      teamId: string
+      seed: number
     }>
+    const seedByTeamId = new Map(
+      stageParticipants.map((participant) => [participant.teamId, participant.seed])
+    )
+    const round2Matches = round2Allocation.map((row, index) => ({
+      id: index + 1,
+      gov: {
+        teamId: String(row?.teams?.gov ?? ''),
+        seed: Number(seedByTeamId.get(String(row?.teams?.gov ?? '')) ?? Number.NaN),
+      },
+      opp: {
+        teamId: String(row?.teams?.opp ?? ''),
+        seed: Number(seedByTeamId.get(String(row?.teams?.opp ?? '')) ?? Number.NaN),
+      },
+    }))
     expect(round2Matches).toHaveLength(4)
 
     const winnerSeedByMatchId = new Map<number, number>([
@@ -2163,7 +2243,6 @@ describe('Server integration', () => {
       round: 3,
     })
     expect(round3BreakAllocRes.status).toBe(200)
-    expect(round3BreakAllocRes.body.data.userDefinedData?.break?.derived_from_previous_round).toBe(true)
     expect(round3BreakAllocRes.body.data.allocation).toHaveLength(2)
 
     const pairKey = (teamA: string, teamB: string) => [teamA, teamB].sort().join(':')
@@ -2260,16 +2339,16 @@ describe('Server integration', () => {
       new Set([alphaId, betaId, gammaId, deltaId])
     )
     expect(
-      participants
-        .map((participant) => participant.seed)
-        .sort((left, right) => left - right)
+      participants.map((participant) => participant.seed).sort((left, right) => left - right)
     ).toEqual([1, 2, 3, 4])
 
     const allocatedTeamIds = new Set<string>()
-    ;(breakAllocRes.body.data.allocation as Array<{ teams: { gov: string; opp: string } }>).forEach((row) => {
-      allocatedTeamIds.add(row.teams.gov)
-      allocatedTeamIds.add(row.teams.opp)
-    })
+    ;(breakAllocRes.body.data.allocation as Array<{ teams: { gov: string; opp: string } }>).forEach(
+      (row) => {
+        allocatedTeamIds.add(row.teams.gov)
+        allocatedTeamIds.add(row.teams.opp)
+      }
+    )
     expect(allocatedTeamIds).toEqual(new Set([alphaId, betaId, gammaId, deltaId]))
   })
 
@@ -2417,9 +2496,7 @@ describe('Server integration', () => {
     }>
     expect(participants).toHaveLength(4)
     expect(
-      participants
-        .map((participant) => participant.seed)
-        .sort((left, right) => left - right)
+      participants.map((participant) => participant.seed).sort((left, right) => left - right)
     ).toEqual([1, 2, 3, 4])
 
     const candidateRes = await agent.post(`/api/rounds/${round2Id}/break/candidates`).send({
@@ -2435,7 +2512,9 @@ describe('Server integration', () => {
       )
     )
 
-    const seedByTeamId = new Map(participants.map((participant) => [participant.teamId, participant.seed]))
+    const seedByTeamId = new Map(
+      participants.map((participant) => [participant.teamId, participant.seed])
+    )
     const teamIds = [alphaId, betaId, gammaId, deltaId]
     for (let leftIndex = 0; leftIndex < teamIds.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < teamIds.length; rightIndex += 1) {
@@ -2443,7 +2522,8 @@ describe('Server integration', () => {
         const rightTeamId = teamIds[rightIndex]
         const leftRank = rankingByTeamId.get(leftTeamId)
         const rightRank = rankingByTeamId.get(rightTeamId)
-        if (!Number.isInteger(leftRank) || !Number.isInteger(rightRank) || leftRank === rightRank) continue
+        if (!Number.isInteger(leftRank) || !Number.isInteger(rightRank) || leftRank === rightRank)
+          continue
         const leftSeed = seedByTeamId.get(leftTeamId)
         const rightSeed = seedByTeamId.get(rightTeamId)
         expect(Number.isInteger(leftSeed)).toBe(true)
@@ -2501,7 +2581,9 @@ describe('Server integration', () => {
     expect(round1Res.status).toBe(201)
     const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
     expect(round2Res.status).toBe(201)
-    const round3Res = await agent.post('/api/rounds').send({ tournamentId, round: 3, name: 'Break Final' })
+    const round3Res = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 3, name: 'Break Final' })
     expect(round3Res.status).toBe(201)
     const round3Id = round3Res.body.data._id as string
 
@@ -2635,5 +2717,4 @@ describe('Server integration', () => {
       expect(square.trainees?.length ?? 0).toBe(0)
     }
   })
-
 })

@@ -9,13 +9,6 @@
           {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
         </p>
       </div>
-      <p class="muted small">
-        {{
-          $t(
-            'チームはスピーカーとコンフリクトグループの追加後、ジャッジはコンフリクトグループの追加後に登録すると設定しやすくなります。'
-          )
-        }}
-      </p>
     </div>
 
     <LoadingState v-if="isSectionLoading" />
@@ -118,6 +111,34 @@
           </div>
           <p v-if="noticeSaveError" class="error small">{{ noticeSaveError }}</p>
         </article>
+
+        <article v-if="hasBreakRounds" class="overview-setting-card stack">
+          <h4>{{ $t('ブレイク設定') }}</h4>
+          <p class="muted small">
+            {{ $t('この設定は、ラウンドでブレイクが有効な場合にのみ適用されます。') }}
+          </p>
+          <BreakPolicyEditor
+            v-model:source="tournamentBreakForm.source"
+            v-model:size="tournamentBreakForm.size"
+            v-model:cutoff-tie-policy="tournamentBreakForm.cutoff_tie_policy"
+            v-model:seeding="tournamentBreakForm.seeding"
+            :show-source="false"
+            :disabled="isLoading || isSavingTournamentBreak"
+          />
+          <div class="row notice-actions">
+            <Button
+              size="sm"
+              :disabled="isLoading || isSavingTournamentBreak"
+              @click="saveTournamentBreakSettings"
+            >
+              {{ isSavingTournamentBreak ? $t('更新中...') : $t('ブレイク設定を保存') }}
+            </Button>
+            <span v-if="tournamentBreakSaved" class="muted small">{{ $t('更新しました。') }}</span>
+          </div>
+          <p v-if="tournamentBreakSaveError" class="error small">
+            {{ tournamentBreakSaveError }}
+          </p>
+        </article>
       </div>
 
       <article class="card stack setup-rounds-card">
@@ -142,12 +163,6 @@
               type="text"
             />
           </Field>
-          <Field :label="$t('種類')" v-slot="{ id, describedBy }">
-            <select v-model="setupRoundForm.type" :id="id" :aria-describedby="describedBy">
-              <option value="standard">{{ $t('通常ラウンド') }}</option>
-              <option value="break">{{ $t('ブレイク') }}</option>
-            </select>
-          </Field>
           <div class="row create-actions">
             <Button type="submit" :disabled="isLoading">{{ $t('追加') }}</Button>
             <Button
@@ -161,6 +176,7 @@
           </div>
         </form>
         <p v-if="setupRoundError" class="error">{{ setupRoundError }}</p>
+        <p v-if="setupRoundBreakError" class="error">{{ setupRoundBreakError }}</p>
         <p class="muted small">{{ tournamentAutosaveText }}</p>
         <p v-if="sortedRounds.length === 0" class="muted small">
           {{ $t('ラウンドがまだありません。') }}
@@ -206,6 +222,10 @@
                     <div class="setup-round-switches-wrap">
                       <RoundPublicationSwitches
                         :busy="roundPublicationBusy"
+                        :show-break-round-switch="true"
+                        :break-round-enabled="setupRoundBreakEnabled(round)"
+                        :break-round-disabled="isLoading || setupRoundBreakUpdating"
+                        :break-round-label="$t('ブレイクラウンド')"
                         :motion-opened="Boolean(round.motionOpened)"
                         :motion-label="$t('モーション公開')"
                         :team-allocation-opened="setupRoundTeamAllocationOpened(round.round)"
@@ -218,6 +238,9 @@
                         :adjudicator-allocation-label="$t('ジャッジ割り当て')"
                         @update:motion-opened="
                           (checked) => onSetupMotionOpenedChange(round, checked)
+                        "
+                        @update:break-round-enabled="
+                          (checked) => onSetupRoundBreakEnabledChange(round, checked)
                         "
                         @update:team-allocation-opened="
                           (checked) => onSetupTeamAllocationChange(round, checked)
@@ -276,16 +299,6 @@
                             type="text"
                           />
                         </Field>
-                        <Field :label="$t('種類')" v-slot="{ id, describedBy }">
-                          <select
-                            v-model="setupRoundEditForm.type"
-                            :id="id"
-                            :aria-describedby="describedBy"
-                          >
-                            <option value="standard">{{ $t('通常ラウンド') }}</option>
-                            <option value="break">{{ $t('ブレイク') }}</option>
-                          </select>
-                        </Field>
                       </div>
                       <section class="stack setup-round-config-group">
                         <RoundOptionEditor
@@ -313,7 +326,7 @@
                           v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
                           v-model:poi="setupRoundEditForm.userDefinedData.poi"
                           v-model:best="setupRoundEditForm.userDefinedData.best"
-                          :lock-allow-low-tie-win="setupRoundEditForm.type === 'break'"
+                          :lock-allow-low-tie-win="setupRoundEditForm.breakEnabled"
                           :disabled="isLoading"
                         />
                       </section>
@@ -352,7 +365,7 @@
                         />
                       </section>
                       <section
-                        v-if="setupRoundEditForm.type === 'break'"
+                        v-if="setupRoundEditForm.breakEnabled"
                         class="stack setup-round-config-group"
                       >
                         <BreakPolicyEditor
@@ -704,7 +717,7 @@
                 </p>
               </div>
               <div class="stack full relation-group">
-                <span class="field-label">{{ $t('衝突チーム') }}</span>
+                <span class="field-label">{{ $t('コンフリクトチーム') }}</span>
                 <input
                   v-model="adjudicatorConflictSearch"
                   type="text"
@@ -1104,7 +1117,7 @@
             :disabled="isLoading"
           />
         </section>
-        <section v-if="setupRoundForm.type === 'break'" class="stack setup-round-config-group">
+        <section class="stack setup-round-config-group">
           <BreakPolicyEditor
             v-model:source="roundDefaultsForm.break.source"
             v-model:size="roundDefaultsForm.break.size"
@@ -1347,7 +1360,7 @@
             </p>
           </div>
           <div class="stack full relation-group">
-            <span class="field-label">{{ $t('衝突チーム') }}</span>
+            <span class="field-label">{{ $t('コンフリクトチーム') }}</span>
             <input
               v-model="editAdjudicatorConflictSearch"
               type="text"
@@ -1498,6 +1511,12 @@ import {
   normalizeRoundDefaults,
   serializeRoundDefaults,
 } from '@/utils/round-defaults'
+import {
+  isRoundBreakEnabled,
+  normalizeTournamentBreakConfig,
+  withRoundBreakEnabled,
+  type TournamentBreakConfig,
+} from '@/utils/tournament-break'
 import { normalizeCompileOptions } from '@/types/compiled'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
@@ -1558,29 +1577,32 @@ const tournamentForm = reactive({
   accessPassword: '',
   infoText: '',
 })
+const tournamentBreakForm = reactive<TournamentBreakConfig>(
+  normalizeTournamentBreakConfig(undefined)
+)
 const roundDefaultsForm = reactive(defaultRoundDefaults())
 const setupRoundForm = reactive<{
   round: number
   name: string
-  type: 'standard' | 'break'
 }>({
   round: 1,
   name: '',
-  type: 'standard',
 })
 const setupRoundError = ref('')
+const setupRoundBreakError = ref('')
+const setupRoundBreakUpdating = ref(false)
 const setupRoundEditingId = ref<string | null>(null)
 const setupRoundEditForm = reactive<{
   round: number
   name: string
-  type: 'standard' | 'break'
+  breakEnabled: boolean
   userDefinedData: ReturnType<typeof defaultRoundDefaults>['userDefinedData']
   break: ReturnType<typeof defaultRoundDefaults>['break']
   compile: ReturnType<typeof defaultRoundDefaults>['compile']
 }>({
   round: 1,
   name: '',
-  type: 'standard',
+  breakEnabled: false,
   userDefinedData: { ...defaultRoundDefaults().userDefinedData },
   break: { ...defaultRoundDefaults().break },
   compile: {
@@ -1606,9 +1628,13 @@ const tournamentAutosaveError = ref('')
 const isSavingNotice = ref(false)
 const noticeSaveError = ref('')
 const noticeSaved = ref(false)
+const isSavingTournamentBreak = ref(false)
+const tournamentBreakSaveError = ref('')
+const tournamentBreakSaved = ref(false)
 let tournamentAutosaveTimer: number | null = null
 let tournamentAutosaveStatusTimer: number | null = null
 let noticeSavedTimer: number | null = null
+let tournamentBreakSavedTimer: number | null = null
 
 const teamForm = reactive({
   name: '',
@@ -1771,6 +1797,9 @@ const deleteEntityPrompt = computed(() => {
 })
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
+const hasBreakRounds = computed(() =>
+  sortedRounds.value.some((round) => isRoundBreakEnabled(round?.userDefinedData))
+)
 const setupDrawByRound = computed(() => {
   const map = new Map<number, any>()
   draws.draws.forEach((draw) => {
@@ -2094,10 +2123,16 @@ function applyTournamentForm() {
   tournamentForm.hidden = Boolean(tournament.value.user_defined_data?.hidden)
   applyAccessForm(tournament.value.auth)
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
+  applyTournamentBreakForm()
   applyRoundDefaultsForm()
   void nextTick(() => {
     isApplyingTournamentForm.value = false
   })
+}
+
+function applyTournamentBreakForm() {
+  const normalized = normalizeTournamentBreakConfig(tournament.value?.user_defined_data?.break)
+  Object.assign(tournamentBreakForm, normalized)
 }
 
 function applyRoundDefaultsForm() {
@@ -2278,9 +2313,109 @@ async function saveRoundDefaults() {
   })
 }
 
+async function saveTournamentBreakSettings() {
+  if (!tournament.value || isSavingTournamentBreak.value) return
+  isSavingTournamentBreak.value = true
+  tournamentBreakSaveError.value = ''
+  tournamentBreakSaved.value = false
+  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  delete nextUserDefined.submission_policy
+  const normalizedBreak = normalizeTournamentBreakConfig(tournamentBreakForm)
+  const updated = await tournamentStore.updateTournament({
+    tournamentId: tournament.value._id,
+    user_defined_data: {
+      ...nextUserDefined,
+      break: normalizedBreak,
+    },
+  })
+  isSavingTournamentBreak.value = false
+  if (!updated?._id) {
+    tournamentBreakSaveError.value =
+      tournamentStore.error ?? t('ブレイク設定の保存に失敗しました。')
+    return
+  }
+  Object.assign(
+    tournamentBreakForm,
+    normalizeTournamentBreakConfig(updated.user_defined_data?.break)
+  )
+  tournamentBreakSaved.value = true
+  if (tournamentBreakSavedTimer) {
+    window.clearTimeout(tournamentBreakSavedTimer)
+  }
+  tournamentBreakSavedTimer = window.setTimeout(() => {
+    tournamentBreakSaved.value = false
+  }, 1400)
+}
+
 function roundTypeLabel(round: any) {
-  const isBreak = Boolean(round?.userDefinedData?.break?.enabled)
-  return isBreak ? t('ブレイク') : t('通常ラウンド')
+  return isRoundBreakEnabled(round?.userDefinedData) ? t('ブレイク') : t('通常ラウンド')
+}
+
+function setupRoundBreakEnabled(round: any): boolean {
+  return isRoundBreakEnabled(round?.userDefinedData)
+}
+
+function applyBreakRoundConstraints(userDefinedData: Record<string, any>, breakEnabled: boolean) {
+  if (breakEnabled) {
+    userDefinedData.allow_low_tie_win = false
+  }
+}
+
+async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) {
+  if (setupRoundBreakUpdating.value) return
+  setupRoundBreakError.value = ''
+
+  const targetRound = Number(round?.round)
+  if (!Number.isInteger(targetRound) || targetRound < 1) return
+
+  const targets = sortedRounds.value.filter((item) => {
+    const roundNumber = Number(item.round)
+    if (!Number.isInteger(roundNumber) || roundNumber < 1) return false
+    return nextEnabled ? roundNumber >= targetRound : roundNumber <= targetRound
+  })
+  if (targets.length === 0) return
+
+  setupRoundBreakUpdating.value = true
+  try {
+    const payload = targets.map((item) => {
+      const currentUserDefined =
+        item?.userDefinedData && typeof item.userDefinedData === 'object'
+          ? ({ ...(item.userDefinedData as Record<string, any>) } as Record<string, any>)
+          : {}
+      const nextUserDefined = withRoundBreakEnabled(currentUserDefined, nextEnabled) as Record<
+        string,
+        any
+      >
+      applyBreakRoundConstraints(nextUserDefined, nextEnabled)
+      return {
+        id: String(item._id),
+        tournamentId: tournamentId.value,
+        userDefinedData: nextUserDefined,
+      }
+    })
+
+    const updated = await rounds.bulkUpdateRounds(payload)
+    if (updated.length === 0) {
+      setupRoundBreakError.value = rounds.error ?? t('ブレイク設定の保存に失敗しました。')
+      await rounds.fetchRounds(tournamentId.value)
+      return
+    }
+
+    if (setupRoundEditingId.value) {
+      const editingRound = sortedRounds.value.find(
+        (item) => String(item._id) === String(setupRoundEditingId.value)
+      )
+      if (editingRound) {
+        setupRoundEditForm.breakEnabled = setupRoundBreakEnabled(editingRound)
+        applyBreakRoundConstraints(
+          setupRoundEditForm.userDefinedData as Record<string, any>,
+          setupRoundEditForm.breakEnabled
+        )
+      }
+    }
+  } finally {
+    setupRoundBreakUpdating.value = false
+  }
 }
 
 async function onSetupMotionOpenedChange(round: any, checked: boolean) {
@@ -2343,19 +2478,6 @@ function closeSetupRoundDetails(roundId?: string) {
   }
 }
 
-function roundTypeValue(round: any): 'standard' | 'break' {
-  return round?.userDefinedData?.break?.enabled === true ? 'break' : 'standard'
-}
-
-function applyBreakTypeConstraints(
-  userDefinedData: Record<string, any>,
-  type: 'standard' | 'break'
-) {
-  if (type === 'break') {
-    userDefinedData.allow_low_tie_win = false
-  }
-}
-
 function normalizeBreakConfigForRoundEdit(input: unknown) {
   const source = input && typeof input === 'object' ? (input as Record<string, any>) : {}
   const breakDefaults = normalizeRoundDefaults(roundDefaultsForm).break
@@ -2374,7 +2496,6 @@ function normalizeBreakConfigForRoundEdit(input: unknown) {
         ? source.seeding
         : breakDefaults.seeding
   return {
-    enabled: source.enabled === true,
     source: source.source === 'raw' ? 'raw' : breakDefaults.source,
     source_rounds: Array.isArray(source.source_rounds) ? source.source_rounds : [],
     size: Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : breakDefaults.size,
@@ -2420,6 +2541,7 @@ function normalizeCompileSourceRoundsForRound(
 async function createRoundFromSetup() {
   if (!tournamentId.value) return
   setupRoundError.value = ''
+  setupRoundBreakError.value = ''
   const roundNumber = Number(setupRoundForm.round)
   if (!Number.isInteger(roundNumber) || roundNumber < 1) {
     setupRoundError.value = t('ラウンド番号を確認してください。')
@@ -2433,13 +2555,7 @@ async function createRoundFromSetup() {
   const userDefinedData = buildRoundUserDefinedFromDefaults(
     normalizeRoundDefaults(roundDefaultsForm)
   ) as Record<string, any>
-  applyBreakTypeConstraints(userDefinedData, setupRoundForm.type)
-  if (setupRoundForm.type === 'break') {
-    userDefinedData.break = {
-      ...(userDefinedData.break ?? {}),
-      enabled: true,
-    }
-  }
+  userDefinedData.break_round = false
 
   const created = await rounds.createRound({
     tournamentId: tournamentId.value,
@@ -2456,7 +2572,6 @@ async function createRoundFromSetup() {
   }
   setupRoundForm.round = setupSuggestedRoundNumber.value
   setupRoundForm.name = ''
-  setupRoundForm.type = 'standard'
 }
 
 function requestRemoveRoundFromSetup(roundId: string) {
@@ -2494,7 +2609,7 @@ function startEditRoundFromSetup(round: any) {
   setupRoundEditingId.value = String(round?._id ?? '')
   setupRoundEditForm.round = Number(round?.round ?? 1)
   setupRoundEditForm.name = String(round?.name ?? '')
-  setupRoundEditForm.type = roundTypeValue(round)
+  setupRoundEditForm.breakEnabled = setupRoundBreakEnabled(round)
   const userDefined = round?.userDefinedData ?? {}
   const normalized = normalizeRoundDefaults({
     userDefinedData: userDefined,
@@ -2508,9 +2623,9 @@ function startEditRoundFromSetup(round: any) {
     source_rounds: [...normalized.compile.source_rounds],
     options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
   })
-  applyBreakTypeConstraints(
+  applyBreakRoundConstraints(
     setupRoundEditForm.userDefinedData as Record<string, any>,
-    setupRoundEditForm.type
+    setupRoundEditForm.breakEnabled
   )
 }
 
@@ -2519,7 +2634,7 @@ function cancelEditRoundFromSetup() {
   setupRoundEditingId.value = null
   setupRoundEditForm.round = setupSuggestedRoundNumber.value
   setupRoundEditForm.name = ''
-  setupRoundEditForm.type = 'standard'
+  setupRoundEditForm.breakEnabled = false
   Object.assign(setupRoundEditForm.userDefinedData, defaultRoundDefaults().userDefinedData)
   Object.assign(setupRoundEditForm.break, defaultRoundDefaults().break)
   Object.assign(setupRoundEditForm.compile, {
@@ -2574,9 +2689,9 @@ async function saveEditRoundFromSetup(round: any) {
     evaluator_in_team:
       setupRoundEditForm.userDefinedData.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
     hidden: false,
+    break_round: setupRoundEditForm.breakEnabled,
     break: {
       ...normalizedBreak,
-      enabled: setupRoundEditForm.type === 'break',
       source: setupRoundEditForm.break.source === 'raw' ? 'raw' : 'submissions',
       size: breakSize,
       cutoff_tie_policy: breakCutoffTiePolicy,
@@ -2588,7 +2703,7 @@ async function saveEditRoundFromSetup(round: any) {
       options: compileOptions,
     },
   }
-  applyBreakTypeConstraints(nextUserDefined, setupRoundEditForm.type)
+  applyBreakRoundConstraints(nextUserDefined, setupRoundEditForm.breakEnabled)
 
   const updated = await rounds.updateRound({
     tournamentId: tournamentId.value,
@@ -3227,10 +3342,13 @@ watch(
     pendingTournamentAutosave.value = false
     isSavingTournamentAutosave.value = false
     isSavingNotice.value = false
+    isSavingTournamentBreak.value = false
     tournamentAutosaveStatus.value = 'idle'
     tournamentAutosaveError.value = ''
     noticeSaveError.value = ''
     noticeSaved.value = false
+    tournamentBreakSaveError.value = ''
+    tournamentBreakSaved.value = false
     if (tournamentAutosaveTimer) {
       window.clearTimeout(tournamentAutosaveTimer)
       tournamentAutosaveTimer = null
@@ -3242,6 +3360,10 @@ watch(
     if (noticeSavedTimer) {
       window.clearTimeout(noticeSavedTimer)
       noticeSavedTimer = null
+    }
+    if (tournamentBreakSavedTimer) {
+      window.clearTimeout(tournamentBreakSavedTimer)
+      tournamentBreakSavedTimer = null
     }
     if (editingEntity.value) cancelEditEntity()
     if (setupRoundEditingId.value) cancelEditRoundFromSetup()
@@ -3282,14 +3404,6 @@ watch(
   { immediate: true }
 )
 
-watch(
-  () => setupRoundEditForm.type,
-  (nextType) => {
-    applyBreakTypeConstraints(setupRoundEditForm.userDefinedData as Record<string, any>, nextType)
-  },
-  { immediate: true }
-)
-
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
 })
@@ -3310,6 +3424,10 @@ onUnmounted(() => {
   if (noticeSavedTimer) {
     window.clearTimeout(noticeSavedTimer)
     noticeSavedTimer = null
+  }
+  if (tournamentBreakSavedTimer) {
+    window.clearTimeout(tournamentBreakSavedTimer)
+    tournamentBreakSavedTimer = null
   }
 })
 

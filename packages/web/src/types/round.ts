@@ -14,7 +14,6 @@ export interface BreakParticipant {
 }
 
 export interface RoundBreakConfig {
-  enabled: boolean
   source_rounds: number[]
   size: number
   cutoff_tie_policy: BreakCutoffTiePolicy
@@ -43,6 +42,7 @@ export interface Round {
     trainee: number
   }
   userDefinedData?: Record<string, any> & {
+    break_round?: boolean
     break?: RoundBreakConfig
     compile?: RoundCompileConfig
   }
