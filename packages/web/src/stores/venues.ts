@@ -26,6 +26,7 @@ export const useVenuesStore = defineStore('venues', () => {
   async function createVenue(payload: {
     tournamentId: string
     name: string
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -50,6 +51,7 @@ export const useVenuesStore = defineStore('venues', () => {
     tournamentId: string
     venueId: string
     name?: string
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -59,6 +61,7 @@ export const useVenuesStore = defineStore('venues', () => {
       const res = await api.patch(`/venues/${payload.venueId}`, {
         tournamentId: payload.tournamentId,
         name: payload.name,
+        template: payload.template,
         details: payload.details,
         userDefinedData: payload.userDefinedData,
       })

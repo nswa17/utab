@@ -16,7 +16,7 @@ type PositionMethod = 'random' | 'adjusted'
 
 type TeamLike = {
   id: number
-  details?: Array<{ r: number; institutions?: number[] }>
+  details?: Array<{ r: number; conflicts?: number[] }>
 }
 
 type CompiledTeamResultLike = {
@@ -37,7 +37,7 @@ type StrictMatchingOptions = {
   pullup_method?: string
   position_method?: string
   avoid_conflict?: boolean
-  conflict_weights?: { institution?: number; past_opponent?: number }
+  conflict_weights?: { conflict_group?: number; past_opponent?: number }
   round?: number
   max_swap_iterations?: number
 }
@@ -263,10 +263,10 @@ type ConflictProfile = {
   pastOpponent: number
 }
 
-function getTeamInstitutions(team: TeamLike | undefined, round: number): number[] {
+function getTeamConflictGroups(team: TeamLike | undefined, round: number): number[] {
   const detail = team?.details?.find((d) => d.r === round)
-  return Array.isArray(detail?.institutions)
-    ? detail.institutions.filter((id): id is number => typeof id === 'number')
+  return Array.isArray(detail?.conflicts)
+    ? detail.conflicts.filter((id): id is number => typeof id === 'number')
     : []
 }
 
@@ -280,8 +280,8 @@ function pairConflictProfile(
 ): ConflictProfile {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
-  const institutionsA = getTeamInstitutions(teamA, round)
-  const institutionsB = getTeamInstitutions(teamB, round)
+  const institutionsA = getTeamConflictGroups(teamA, round)
+  const institutionsB = getTeamConflictGroups(teamB, round)
   const institutionOverlapProfile =
     Object.keys(institutionPriorityMap).length > 0
       ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
@@ -317,7 +317,7 @@ function mergeConflictProfiles(left: ConflictProfile, right: ConflictProfile): C
 function compareConflictProfiles(
   left: ConflictProfile,
   right: ConflictProfile,
-  conflictWeights: { institution: number; past_opponent: number }
+  conflictWeights: { conflict_group: number; past_opponent: number }
 ): number {
   const compareInstitution = () =>
     compareInstitutionPriorityHistograms(left.institution, right.institution)
@@ -327,13 +327,13 @@ function compareConflictProfiles(
     return 0
   }
 
-  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) {
+  if (conflictWeights.conflict_group <= 0 && conflictWeights.past_opponent <= 0) {
     return 0
   }
-  if (conflictWeights.institution <= 0) return comparePast()
+  if (conflictWeights.conflict_group <= 0) return comparePast()
   if (conflictWeights.past_opponent <= 0) return compareInstitution()
 
-  if (conflictWeights.institution >= conflictWeights.past_opponent) {
+  if (conflictWeights.conflict_group >= conflictWeights.past_opponent) {
     const institutionComparison = compareInstitution()
     if (institutionComparison !== 0) return institutionComparison
     return comparePast()
@@ -374,7 +374,7 @@ function resolveDp(
   }: {
     round: number
     config: StrictConfig
-    conflict_weights?: { institution?: number; past_opponent?: number }
+    conflict_weights?: { conflict_group?: number; past_opponent?: number }
     max_swap_iterations?: number
   }
 ): number[][] {
@@ -384,10 +384,10 @@ function resolveDp(
   )
   const institutionPriorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
   const conflictWeights = {
-    institution: normalizedWeight(conflict_weights?.institution, 1),
+    conflict_group: normalizedWeight(conflict_weights?.conflict_group, 1),
     past_opponent: normalizedWeight(conflict_weights?.past_opponent, 1),
   }
-  if (conflictWeights.institution === 0 && conflictWeights.past_opponent === 0) {
+  if (conflictWeights.conflict_group === 0 && conflictWeights.past_opponent === 0) {
     return matching
   }
 

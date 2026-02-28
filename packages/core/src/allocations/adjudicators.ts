@@ -21,6 +21,7 @@ type AllocationWithAdjudicators = Draw['allocation'][number]
 
 interface RankContext {
   teams: TeamEntity[]
+  compiled_team_results: CompiledTeamResult[]
   compiled_adjudicator_results: CompiledAdjudicatorResult[]
   config: AllocationConfig
   r: number
@@ -45,6 +46,7 @@ function getAdjudicatorRanks(
   allocation: AllocationWithAdjudicators[],
   teams: TeamEntity[],
   adjudicators: AdjudicatorEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   compiledAdjudicatorResults: CompiledAdjudicatorResult[],
   filterFunctions: GroupRankFilter[],
   filterFunctions2: AdjudicatorRankFilter[],
@@ -58,6 +60,7 @@ function getAdjudicatorRanks(
     adjudicators.sort(
       sortDecorator(square, filterFunctions, {
         teams,
+        compiled_team_results: compiledTeamResults,
         compiled_adjudicator_results: compiledAdjudicatorResults,
         config,
         r,
@@ -69,6 +72,7 @@ function getAdjudicatorRanks(
     allocationCopy.sort(
       sortDecorator(adjudicator, filterFunctions2, {
         teams,
+        compiled_team_results: compiledTeamResults,
         compiled_adjudicator_results: compiledAdjudicatorResults,
         config,
         r,
@@ -132,8 +136,8 @@ function getAdjudicatorDraw(
       'by_bubble',
       'by_strength',
       'by_attendance',
-      'by_conflict',
-      'by_institution',
+      'by_conflict_team',
+      'by_conflict_group',
       'by_past',
       'by_random',
     ],
@@ -155,6 +159,7 @@ function getAdjudicatorDraw(
     allocation,
     availableTeams,
     availableAdjudicators,
+    compiledTeamResults,
     compiledAdjudicatorResults,
     filterFunctionsAdj,
     filterFunctionsAdj2,
@@ -265,8 +270,8 @@ const adjfilterMethods1: Record<string, GroupRankFilter> = {
 
 const adjfilterMethods2: Record<string, AdjudicatorRankFilter> = {
   by_past: adjfilters.filterByPast,
-  by_institution: adjfilters.filterByInstitution,
-  by_conflict: adjfilters.filterByConflict,
+  by_conflict_group: adjfilters.filterByConflictGroup,
+  by_conflict_team: adjfilters.filterByConflictTeam,
 }
 
 const standard = { get: getAdjudicatorDraw }

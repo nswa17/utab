@@ -4,7 +4,7 @@ import { sanitizeTeamForPublic } from '../services/response-sanitizer.js'
 import { createTournamentEntityCrudHandlers } from './shared/tournament-entity-crud.js'
 
 const handlers = createTournamentEntityCrudHandlers({
-  fields: ['name', 'institution', 'speakers', 'details', 'userDefinedData'],
+  fields: ['name', 'template', 'details', 'userDefinedData'],
   getModel: getTeamModel,
   sanitizeForPublic: sanitizeTeamForPublic,
   invalidEntityIdMessage: 'Invalid team id',

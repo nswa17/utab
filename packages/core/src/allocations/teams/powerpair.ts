@@ -18,7 +18,7 @@ type PairingMethod = 'slide' | 'fold' | 'random'
 type AvoidConflictsMode = 'off' | 'one_up_one_down'
 
 type ConflictWeights = {
-  institution: number
+  conflict_group: number
   past_opponent: number
 }
 
@@ -70,11 +70,11 @@ function normalizeWeight(value: unknown, fallback: number): number {
 
 function normalizeConflictWeights(value: unknown): ConflictWeights {
   if (!value || typeof value !== 'object') {
-    return { institution: 1, past_opponent: 1 }
+    return { conflict_group: 1, past_opponent: 1 }
   }
   const raw = value as Record<string, unknown>
   return {
-    institution: normalizeWeight(raw.institution, 1),
+    conflict_group: normalizeWeight(raw.conflict_group, 1),
     past_opponent: normalizeWeight(raw.past_opponent, 1),
   }
 }
@@ -188,8 +188,8 @@ function pairConflictScore(
 ): PairConflictProfile {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
-  const institutionsA = (accessDetail(teamA as TeamEntity, round).institutions ?? []) as number[]
-  const institutionsB = (accessDetail(teamB as TeamEntity, round).institutions ?? []) as number[]
+  const institutionsA = (accessDetail(teamA as TeamEntity, round).conflicts ?? []) as number[]
+  const institutionsB = (accessDetail(teamB as TeamEntity, round).conflicts ?? []) as number[]
   const institution =
     Object.keys(institutionPriorityMap).length > 0
       ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
@@ -236,11 +236,11 @@ function comparePairConflictProfile(
     return 0
   }
 
-  if (conflictWeights.institution <= 0 && conflictWeights.past_opponent <= 0) return 0
-  if (conflictWeights.institution <= 0) return comparePast()
+  if (conflictWeights.conflict_group <= 0 && conflictWeights.past_opponent <= 0) return 0
+  if (conflictWeights.conflict_group <= 0) return comparePast()
   if (conflictWeights.past_opponent <= 0) return compareInstitution()
 
-  if (conflictWeights.institution >= conflictWeights.past_opponent) {
+  if (conflictWeights.conflict_group >= conflictWeights.past_opponent) {
     const institutionComparison = compareInstitution()
     if (institutionComparison !== 0) return institutionComparison
     return comparePast()

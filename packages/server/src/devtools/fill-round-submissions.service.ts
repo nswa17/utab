@@ -229,8 +229,10 @@ function teamSpeakerIdsForRound(team: any, round: number): string[] {
   const roundSpeakers = normalizeIdList(roundDetail?.speakers)
   if (roundSpeakers.length > 0) return roundSpeakers
 
-  // Break round and custom operations may not carry round-specific speaker links.
-  // Fall back to any known speaker ids on the team details to keep ballot payload usable.
+  const templateSpeakers = normalizeIdList(team?.template?.speakers)
+  if (templateSpeakers.length > 0) return templateSpeakers
+
+  // Fall back to any known speaker ids on team details to keep ballot payload usable.
   const fallbackSpeakers = normalizeIdList(
     details.flatMap((detail: any) => (Array.isArray(detail?.speakers) ? detail.speakers : []))
   )

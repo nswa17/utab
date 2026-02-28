@@ -6,10 +6,10 @@ import {
 } from '../src/allocations/adjudicators.js'
 
 const teams = [
-  { id: 1, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-  { id: 2, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-  { id: 3, details: [{ r: 1, available: true, institutions: [3], speakers: [] }] },
-  { id: 4, details: [{ r: 1, available: true, institutions: [4], speakers: [] }] },
+  { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+  { id: 2, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+  { id: 3, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
+  { id: 4, details: [{ r: 1, available: true, conflicts: [4], speakers: [] }] },
 ]
 
 const compiledTeamResults = [
@@ -20,10 +20,10 @@ const compiledTeamResults = [
 ]
 
 const adjudicators = [
-  { id: 10, preev: 90, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 11, preev: 80, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 12, preev: 70, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 13, preev: 60, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
+  { id: 10, preev: 90, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 11, preev: 80, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 12, preev: 70, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 13, preev: 60, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
 ]
 
 const compiledAdjudicatorResults = [

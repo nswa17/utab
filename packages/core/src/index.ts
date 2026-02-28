@@ -296,9 +296,18 @@ export class TournamentHandler {
         const institutionPriorityMap = Object.fromEntries(
           institutions.map((institution) => [institution.id, normalizeInstitutionPriority(institution.priority)])
         )
+        const institutionCategoryMap = Object.fromEntries(
+          institutions.map((institution) => [
+            institution.id,
+            String(institution.category ?? 'institution')
+              .trim()
+              .toLowerCase() || 'institution',
+          ])
+        )
         const configWithInstitutionPriority: AllocationConfig = {
           ...config,
           institution_priority_map: institutionPriorityMap,
+          institution_category_map: institutionCategoryMap,
         }
 
         if (!force) {

@@ -16,6 +16,85 @@ interface TeamFilterContext {
   compiled_team_results: CompiledTeamResult[]
   r: number
   config?: AllocationConfig
+  teams?: TeamFilterEntity[]
+}
+
+function normalizeInstitutionCategory(value: unknown): string {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return normalized.length > 0 ? normalized : 'institution'
+}
+
+function uniqueNumbers(values: unknown[]): number[] {
+  const out: number[] = []
+  values.forEach((value) => {
+    if (typeof value !== 'number') return
+    if (out.includes(value)) return
+    out.push(value)
+  })
+  return out
+}
+
+function teamSchoolIds(
+  team: TeamFilterEntity,
+  r: number,
+  config?: AllocationConfig
+): number[] {
+  const conflicts = uniqueNumbers((accessDetail(team, r).conflicts as unknown[]) ?? [])
+  const categoryMap = config?.institution_category_map
+  if (!categoryMap || Object.keys(categoryMap).length === 0) {
+    return conflicts
+  }
+  return conflicts.filter(
+    (institutionId) => normalizeInstitutionCategory(categoryMap[institutionId]) === 'institution'
+  )
+}
+
+function countSchoolOverlap(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0) return 0
+  const bSet = new Set<number>(b)
+  let overlap = 0
+  a.forEach((schoolId) => {
+    if (bSet.has(schoolId)) overlap += 1
+  })
+  return overlap
+}
+
+function siblingPastOpponentSchools(
+  team: TeamFilterEntity,
+  {
+    teams,
+    compiled_team_results,
+    r,
+    config,
+  }: Pick<TeamFilterContext, 'teams' | 'compiled_team_results' | 'r' | 'config'>
+): number[] {
+  if (!Array.isArray(teams) || teams.length === 0) return []
+
+  const selfSchools = teamSchoolIds(team, r, config)
+  if (selfSchools.length === 0) return []
+  const selfSchoolSet = new Set<number>(selfSchools)
+
+  const teamById = new Map<number, TeamFilterEntity>(teams.map((entry) => [entry.id, entry]))
+  const siblings = teams.filter((entry) => {
+    if (entry.id === team.id) return false
+    const schools = teamSchoolIds(entry, r, config)
+    return schools.some((schoolId) => selfSchoolSet.has(schoolId))
+  })
+  if (siblings.length === 0) return []
+
+  const schoolSet = new Set<number>()
+  siblings.forEach((sibling) => {
+    const siblingResult = findOne(compiled_team_results, sibling.id)
+    const pastOpponents = Array.isArray(siblingResult.past_opponents)
+      ? siblingResult.past_opponents
+      : []
+    pastOpponents.forEach((opponentId) => {
+      const opponentTeam = teamById.get(opponentId)
+      if (!opponentTeam) return
+      teamSchoolIds(opponentTeam, r, config).forEach((schoolId) => schoolSet.add(schoolId))
+    })
+  })
+  return Array.from(schoolSet)
 }
 
 export function filterByRandom(
@@ -72,33 +151,25 @@ export function filterByStrength(
   return 0
 }
 
-export function filterByInstitution(
+export function filterByConflictGroup(
   team: TeamFilterEntity,
   a: TeamFilterEntity,
   b: TeamFilterEntity,
   { r, config }: Pick<TeamFilterContext, 'r' | 'config'>
 ): number {
-  const aInstitutions = accessDetail(a, r).institutions as number[]
-  const bInstitutions = accessDetail(b, r).institutions as number[]
-  const teamInstitutions = accessDetail(team, r).institutions as number[]
+  const aConflicts = accessDetail(a, r).conflicts as number[]
+  const bConflicts = accessDetail(b, r).conflicts as number[]
+  const teamConflicts = accessDetail(team, r).conflicts as number[]
   const priorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
   if (Object.keys(priorityMap).length > 0) {
-    const aHistogram = buildInstitutionPriorityHistogram(
-      aInstitutions || [],
-      teamInstitutions || [],
-      priorityMap
-    )
-    const bHistogram = buildInstitutionPriorityHistogram(
-      bInstitutions || [],
-      teamInstitutions || [],
-      priorityMap
-    )
+    const aHistogram = buildInstitutionPriorityHistogram(aConflicts || [], teamConflicts || [], priorityMap)
+    const bHistogram = buildInstitutionPriorityHistogram(bConflicts || [], teamConflicts || [], priorityMap)
     return compareInstitutionPriorityHistograms(aHistogram, bHistogram)
   }
-  const aConflicts = countCommon(aInstitutions || [], teamInstitutions || [])
-  const bConflicts = countCommon(bInstitutions || [], teamInstitutions || [])
-  if (aConflicts < bConflicts) return -1
-  if (aConflicts > bConflicts) return 1
+  const aOverlap = countCommon(aConflicts || [], teamConflicts || [])
+  const bOverlap = countCommon(bConflicts || [], teamConflicts || [])
+  if (aOverlap < bOverlap) return -1
+  if (aOverlap > bOverlap) return 1
   return 0
 }
 
@@ -116,10 +187,28 @@ export function filterByPastOpponent(
   return 0
 }
 
+export function filterBySiblingPastOpponentSchool(
+  team: TeamFilterEntity,
+  a: TeamFilterEntity,
+  b: TeamFilterEntity,
+  context: TeamFilterContext
+): number {
+  const siblingOpponentSchools = siblingPastOpponentSchools(team, context)
+  if (siblingOpponentSchools.length === 0) return 0
+  const aSchools = teamSchoolIds(a, context.r, context.config)
+  const bSchools = teamSchoolIds(b, context.r, context.config)
+  const aOverlap = countSchoolOverlap(aSchools, siblingOpponentSchools)
+  const bOverlap = countSchoolOverlap(bSchools, siblingOpponentSchools)
+  if (aOverlap > bOverlap) return 1
+  if (aOverlap < bOverlap) return -1
+  return 0
+}
+
 export default {
   filterByRandom,
   filterBySide,
-  filterByInstitution,
+  filterByConflictGroup,
   filterByPastOpponent,
+  filterBySiblingPastOpponentSchool,
   filterByStrength,
 }

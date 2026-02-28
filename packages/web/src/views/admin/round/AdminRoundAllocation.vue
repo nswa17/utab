@@ -895,16 +895,16 @@
 
     <ImportTextModal
       :open="showAllocationImportModal"
-      v-model:text="allocationImportText"
       :title="$t('対戦表組み合わせ取込')"
-      :help-text="$t('CSV/TSVを貼り付けるかファイル選択して、非空セルだけ対戦表へ反映します。')"
-      :placeholder="$t('例: match,venue,gov,opp,chairs,panels,trainees')"
+      :help-text="$t('CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。ヘッダー行は必須です。')"
       :description="
         $t(
           '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ準備で取り込み）。'
         )
       "
-      :example="'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,,,Team D,,Judge D,'"
+      :example="allocationImportTemplate"
+      :template-content="allocationImportTemplate"
+      :template-filename="allocationImportTemplateFilename"
       :error="allocationImportError"
       :disabled="locked"
       @file-change="handleAllocationImportFile"
@@ -1664,6 +1664,11 @@ const selectedDetailSnapshotId = ref('')
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
 const allocationImportInfo = ref<string | null>(null)
+const allocationImportTemplate =
+  'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,Room 2,Team C,Team D,Judge D,,Judge E'
+const allocationImportTemplateFilename = computed(
+  () => `round_${round.value}_draw_import_template.csv`
+)
 const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
 const autoBreakSize = ref(8)
 const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('include_all')
@@ -1769,7 +1774,7 @@ async function syncAutoBreakPolicyToRound() {
 const autoOptions = ref({
   teamAlgorithm: 'standard',
   teamMethod: 'original',
-  teamFilters: ['by_strength', 'by_side', 'by_past_opponent', 'by_institution'],
+  teamFilters: ['by_strength', 'by_side', 'by_past_opponent', 'by_conflict_group'],
   teamPowerpairOddBracket: 'pullup_top',
   teamPowerpairPairingMethod: 'fold',
   teamPowerpairAvoidConflicts: 'one_up_one_down',
@@ -1788,8 +1793,8 @@ const autoOptions = ref({
     'by_bubble',
     'by_strength',
     'by_attendance',
-    'by_conflict',
-    'by_institution',
+    'by_conflict_team',
+    'by_conflict_group',
     'by_past',
   ],
   adjudicatorAssign: 'high_to_high',
@@ -1817,7 +1822,7 @@ const teamFilterOptions = computed(() => [
     description: t('同じ相手との再戦を避ける方向に評価します。'),
   },
   {
-    value: 'by_institution',
+    value: 'by_conflict_group',
     label: t('同一機関回避'),
     description: t('同じコンフリクトグループどうしの対戦を避ける方向に評価します。'),
   },
@@ -1825,6 +1830,18 @@ const teamFilterOptions = computed(() => [
     value: 'by_random',
     label: t('ランダム'),
     description: t('同点時の並びを固定シードでランダム化し、偏りを分散します。'),
+  },
+  {
+    value: 'by_sibling_past_opponent_school',
+    label: t('同校別チームの過去対戦校回避'),
+    description: t('同校の別チームが過去に当たった学校との対戦を避ける方向に評価します。'),
+  },
+  {
+    value: 'spread_sides_by_school',
+    label: t('同校サイド分散'),
+    description: t(
+      '安定マッチング後にGov/Oppを再調整し、同じ学校の複数チームでサイド偏りが小さくなるようにします。'
+    ),
   },
 ])
 
@@ -1949,32 +1966,32 @@ const teamStrictPositionOptions = computed(() => [
 const adjudicatorFilterOptions = computed(() => [
   {
     value: 'by_bubble',
-    label: t('バブル'),
-    description: t('現行実装では優先度は変わりません（将来拡張用）。'),
+    label: t('バブル配慮'),
+    description: t('勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ強度を調整します。'),
   },
   {
     value: 'by_strength',
-    label: t('強さ'),
+    label: t('実力マッチ'),
     description: t('ジャッジ評価（結果＋preev）が近い部屋を優先します。'),
   },
   {
     value: 'by_attendance',
-    label: t('出席'),
+    label: t('担当偏り回避'),
     description: t('担当回数の偏りを減らす方向に評価します。'),
   },
   {
-    value: 'by_conflict',
-    label: t('衝突'),
+    value: 'by_conflict_team',
+    label: t('個別衝突回避'),
     description: t('個別衝突に登録されたチームとの同席を避けます。'),
   },
   {
-    value: 'by_institution',
-    label: t('機関'),
+    value: 'by_conflict_group',
+    label: t('同一機関回避'),
     description: t('同一機関の衝突が少ない部屋を優先します。'),
   },
   {
     value: 'by_past',
-    label: t('過去'),
+    label: t('過去担当回避'),
     description: t('過去に担当したチームとの再担当を避けます。'),
   },
   {
@@ -2533,6 +2550,7 @@ function closeAutoGenerateModal() {
 
 function openAllocationImportModal() {
   allocationImportError.value = null
+  allocationImportText.value = ''
   if (isBreakRound.value) {
     openNotice(t('ブレイクラウンドのため取り込みできません。'))
     return
@@ -2543,6 +2561,7 @@ function openAllocationImportModal() {
 function closeAllocationImportModal() {
   showAllocationImportModal.value = false
   allocationImportError.value = null
+  allocationImportText.value = ''
 }
 
 async function handleAllocationImportFile(event: Event) {
@@ -2663,12 +2682,21 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
 
 const TEAM_ALGORITHM_VALUES = ['standard', 'powerpair', 'strict', 'break'] as const
 const TEAM_STANDARD_METHOD_VALUES = ['original', 'straight', 'weighted', 'custom'] as const
+const TEAM_STANDARD_SIDE_SPREAD_FILTER = 'spread_sides_by_school' as const
 const TEAM_STANDARD_FILTER_VALUES = [
   'by_strength',
   'by_side',
   'by_past_opponent',
-  'by_institution',
+  'by_conflict_group',
   'by_random',
+  'by_sibling_past_opponent_school',
+  TEAM_STANDARD_SIDE_SPREAD_FILTER,
+] as const
+const TEAM_STANDARD_FILTER_DEFAULTS = [
+  'by_strength',
+  'by_side',
+  'by_past_opponent',
+  'by_conflict_group',
 ] as const
 const TEAM_STRICT_PAIRING_VALUES = ['random', 'fold', 'slide', 'sort', 'adjusted'] as const
 const TEAM_STRICT_PULLUP_VALUES = ['fromtop', 'frombottom', 'random'] as const
@@ -2681,8 +2709,8 @@ const ADJUDICATOR_STANDARD_FILTER_VALUES = [
   'by_bubble',
   'by_strength',
   'by_attendance',
-  'by_conflict',
-  'by_institution',
+  'by_conflict_team',
+  'by_conflict_group',
   'by_past',
   'by_random',
 ] as const
@@ -2750,6 +2778,17 @@ async function requestAllocation() {
       ADJUDICATOR_ALGORITHM_VALUES,
       'standard'
     )
+    const normalizedStandardTeamFilters = normalizeUniqueStringList(
+      autoOptions.value.teamFilters,
+      TEAM_STANDARD_FILTER_VALUES,
+      TEAM_STANDARD_FILTER_DEFAULTS
+    )
+    const spreadSidesBySchool = normalizedStandardTeamFilters.includes(
+      TEAM_STANDARD_SIDE_SPREAD_FILTER
+    )
+    const standardTeamFilters = normalizedStandardTeamFilters.filter(
+      (value) => value !== TEAM_STANDARD_SIDE_SPREAD_FILTER
+    )
 
     const teamOptions =
       effectiveTeamAlgorithm === 'strict'
@@ -2766,7 +2805,7 @@ async function requestAllocation() {
             ),
             avoid_conflict: autoOptions.value.teamStrictAvoidConflicts === 'one_up_one_down',
             conflict_weights: {
-              institution: normalizeNonNegativeNumber(
+              conflict_group: normalizeNonNegativeNumber(
                 autoOptions.value.teamStrictConflictInstitutionWeight,
                 1
               ),
@@ -2803,7 +2842,7 @@ async function requestAllocation() {
                 'one_up_one_down'
               ),
               conflict_weights: {
-                institution: normalizeNonNegativeNumber(
+                conflict_group: normalizeNonNegativeNumber(
                   autoOptions.value.teamPowerpairConflictInstitutionWeight,
                   1
                 ),
@@ -2825,11 +2864,8 @@ async function requestAllocation() {
                   TEAM_STANDARD_METHOD_VALUES,
                   'original'
                 ),
-                filters: normalizeUniqueStringList(
-                  autoOptions.value.teamFilters,
-                  TEAM_STANDARD_FILTER_VALUES,
-                  TEAM_STANDARD_FILTER_VALUES
-                ),
+                filters: standardTeamFilters,
+                spread_sides_by_school: spreadSidesBySchool,
               }
     const adjudicatorOptions =
       requestedAdjudicatorAlgorithm === 'traditional'
@@ -2943,7 +2979,6 @@ function teamAvailableInRound(teamId: string) {
 function adjudicatorAvailableInRound(adjudicatorId: string) {
   const adjudicator = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
   if (!adjudicator) return true
-  if (adjudicator.active === false) return false
   return detailAvailable(adjudicator.details, round.value)
 }
 
@@ -2999,21 +3034,20 @@ function institutionCategoryById(value: string): ConflictGroupCategory {
 function teamInstitutions(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
-  const base = ([] as string[]).concat(detail.institutions ?? [])
-  if (team.institution) base.push(String(team.institution))
+  const base = ([] as string[]).concat(detail.conflicts ?? [], team?.template?.conflicts ?? [])
   return normalizeInstitutions(base)
 }
 
 function adjudicatorInstitutions(adj: any) {
   if (!adj) return []
   const detail = detailForRound(adj.details, round.value)
-  return normalizeInstitutions(detail.institutions ?? [])
+  return normalizeInstitutions(([] as string[]).concat(detail.conflicts ?? [], adj?.template?.conflicts ?? []))
 }
 
 function adjudicatorConflicts(adj: any) {
   if (!adj) return []
   const detail = detailForRound(adj.details, round.value)
-  return (detail.conflicts ?? []).map((id: any) => String(id))
+  return ([] as any[]).concat(detail.conflict_teams ?? [], adj?.template?.conflict_teams ?? []).map((id: any) => String(id))
 }
 
 const compiledTeamMap = computed(() => {
@@ -3910,9 +3944,7 @@ const availableVenues = computed(() =>
 )
 
 const availableAdjudicators = computed(() =>
-  adjudicators.adjudicators.filter(
-    (adj) => adj.active !== false && detailAvailable(adj.details, round.value)
-  )
+  adjudicators.adjudicators.filter((adj) => detailAvailable(adj.details, round.value))
 )
 
 const unassignedTeams = computed(() => {

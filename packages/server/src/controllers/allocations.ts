@@ -1000,6 +1000,7 @@ type AllocationContext = {
     style: { team_num: number; score_weights: number[] }
     preev_weights: number[]
     institution_priority_map: Record<number, number>
+    institution_category_map: Record<number, string>
   }
 }
 
@@ -1077,6 +1078,7 @@ async function buildAllocationContext(
     preev_weights:
       (tournament as any).preev_weights ?? (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
     institution_priority_map: {} as Record<number, number>,
+    institution_category_map: {} as Record<number, string>,
   }
 
   const teamMaps = buildIdMaps(teams)
@@ -1087,6 +1089,14 @@ async function buildAllocationContext(
     institutions.map((inst) => [
       institutionMaps.map.get(String(inst._id))!,
       normalizeInstitutionPriority((inst as any).priority),
+    ])
+  )
+  config.institution_category_map = Object.fromEntries(
+    institutions.map((inst) => [
+      institutionMaps.map.get(String(inst._id))!,
+      String((inst as any).category ?? 'institution')
+        .trim()
+        .toLowerCase() || 'institution',
     ])
   )
   const speakerMaps = buildIdMaps(speakers)
@@ -1121,7 +1131,15 @@ async function buildAllocationContext(
     details: buildDetailsForRounds(
       (team as any).details,
       roundsNeeded,
-      { available: true, institutions: [], speakers: [] },
+      {
+        available: (team as any)?.template?.available !== false,
+        conflicts: Array.isArray((team as any)?.template?.conflicts)
+          ? (team as any).template.conflicts
+          : [],
+        speakers: Array.isArray((team as any)?.template?.speakers)
+          ? (team as any).template.speakers
+          : [],
+      },
       (id) => institutionMaps.map.get(id),
       (id) => speakerMaps.map.get(id)
     ),
@@ -1134,7 +1152,15 @@ async function buildAllocationContext(
     details: buildDetailsForRounds(
       (adj as any).details,
       roundsNeeded,
-      { available: true, institutions: [], conflicts: [] },
+      {
+        available: (adj as any)?.template?.available !== false,
+        conflicts: Array.isArray((adj as any)?.template?.conflicts)
+          ? (adj as any).template.conflicts
+          : [],
+        conflict_teams: Array.isArray((adj as any)?.template?.conflict_teams)
+          ? (adj as any).template.conflict_teams
+          : [],
+      },
       (id) => institutionMaps.map.get(id),
       undefined,
       (id) => teamMaps.map.get(id)
@@ -1144,7 +1170,13 @@ async function buildAllocationContext(
   const venueInstances = venues.map((venue) => ({
     id: venueMaps.map.get(String(venue._id))!,
     name: venue.name,
-    details: buildDetailsForRounds((venue as any).details, roundsNeeded, { available: true, priority: 1 }),
+    details: buildDetailsForRounds((venue as any).details, roundsNeeded, {
+      available: (venue as any)?.template?.available !== false,
+      priority:
+        typeof (venue as any)?.template?.priority === 'number'
+          ? (venue as any).template.priority
+          : 1,
+    }),
   }))
 
   const speakerInstances = speakers.map((speaker) => ({

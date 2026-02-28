@@ -282,11 +282,14 @@ async function main() {
       const team = await TeamModel.create({
         tournamentId,
         name: seed.name,
-        institution: seed.institutionName,
-        speakers: seed.speakers.map((name) => ({ name })),
+        template: {
+          available: true,
+          conflicts: [seed.institutionId],
+          speakers: speakerIds,
+        },
         details: [
-          { r: 1, available: true, institutions: [seed.institutionId], speakers: speakerIds },
-          { r: 2, available: true, institutions: [seed.institutionId], speakers: speakerIds },
+          { r: 1, available: true, conflicts: [seed.institutionId], speakers: speakerIds },
+          { r: 2, available: true, conflicts: [seed.institutionId], speakers: speakerIds },
         ],
       })
       seededTeams.push({ id: String(team._id), name: seed.name, speakerIds })
@@ -298,22 +301,30 @@ async function main() {
           tournamentId,
           name: 'Judge 1',
           strength: 5,
-          active: true,
           preev: 0,
+          template: {
+            available: true,
+            conflicts: [String(instA._id)],
+            conflict_teams: [],
+          },
           details: [
-            { r: 1, available: true, institutions: [String(instA._id)], conflicts: [] },
-            { r: 2, available: true, institutions: [String(instA._id)], conflicts: [] },
+            { r: 1, available: true, conflicts: [String(instA._id)], conflict_teams: [] },
+            { r: 2, available: true, conflicts: [String(instA._id)], conflict_teams: [] },
           ],
         },
         {
           tournamentId,
           name: 'Judge 2',
           strength: 4,
-          active: true,
           preev: 0,
+          template: {
+            available: true,
+            conflicts: [String(instB._id)],
+            conflict_teams: [],
+          },
           details: [
-            { r: 1, available: true, institutions: [String(instB._id)], conflicts: [] },
-            { r: 2, available: true, institutions: [String(instB._id)], conflicts: [] },
+            { r: 1, available: true, conflicts: [String(instB._id)], conflict_teams: [] },
+            { r: 2, available: true, conflicts: [String(instB._id)], conflict_teams: [] },
           ],
         },
       ],

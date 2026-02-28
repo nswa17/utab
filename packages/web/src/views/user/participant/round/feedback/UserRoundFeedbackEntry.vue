@@ -289,10 +289,10 @@ function speakersForTeam(teamId: string) {
   if (detailSpeakerIds.size > 0) {
     return speakersStore.speakers.filter((speaker) => detailSpeakerIds.has(speaker._id))
   }
-  const speakerNames = new Set<string>(
-    (team.speakers ?? []).map((speaker: any) => String(speaker?.name ?? '')).filter(Boolean)
+  const templateSpeakerIds = new Set<string>(
+    (team.template?.speakers ?? []).map((id: any) => String(id ?? '')).filter(Boolean)
   )
-  return speakersStore.speakers.filter((speaker) => speakerNames.has(speaker.name))
+  return speakersStore.speakers.filter((speaker) => templateSpeakerIds.has(speaker._id))
 }
 
 const actorMode = computed<'team' | 'adjudicator'>(() => {

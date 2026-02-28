@@ -4,13 +4,20 @@ type TeamAlgorithm = 'standard' | 'strict' | 'powerpair' | 'break'
 type AdjudicatorAlgorithm = 'standard' | 'traditional'
 type DetailEntityKind = 'team' | 'adjudicator' | 'venue'
 
-const teamStandardFilters = ['by_strength', 'by_side', 'by_past_opponent', 'by_institution', 'by_random'] as const
+const teamStandardFilters = [
+  'by_strength',
+  'by_side',
+  'by_past_opponent',
+  'by_sibling_past_opponent_school',
+  'by_conflict_group',
+  'by_random',
+] as const
 const adjudicatorStandardFilters = [
   'by_bubble',
   'by_strength',
   'by_attendance',
-  'by_conflict',
-  'by_institution',
+  'by_conflict_team',
+  'by_conflict_group',
   'by_past',
   'by_random',
 ] as const
@@ -24,12 +31,13 @@ const teamStandardOptionsSchema = z
     method: z.enum(['original', 'straight', 'weighted', 'custom']).optional(),
     filters: z.array(z.enum(teamStandardFilters)).optional(),
     weights: z.array(nonNegativeNumberSchema).optional(),
+    spread_sides_by_school: z.boolean().optional(),
   })
   .strict()
 
 const strictConflictWeightsSchema = z
   .object({
-    institution: nonNegativeNumberSchema.optional(),
+    conflict_group: nonNegativeNumberSchema.optional(),
     past_opponent: nonNegativeNumberSchema.optional(),
   })
   .strict()
@@ -108,7 +116,7 @@ const teamDetailSchema = z
   .object({
     r: positiveRoundSchema,
     available: z.boolean().optional(),
-    institutions: z.array(z.string().min(1)).optional(),
+    conflicts: z.array(z.string().min(1)).optional(),
     speakers: z.array(z.string().min(1)).optional(),
   })
   .passthrough()
@@ -117,8 +125,8 @@ const adjudicatorDetailSchema = z
   .object({
     r: positiveRoundSchema,
     available: z.boolean().optional(),
-    institutions: z.array(z.string().min(1)).optional(),
     conflicts: z.array(z.string().min(1)).optional(),
+    conflict_teams: z.array(z.string().min(1)).optional(),
   })
   .passthrough()
 

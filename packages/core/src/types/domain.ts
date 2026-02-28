@@ -18,13 +18,13 @@ export interface RoundDetailBase {
 }
 
 export interface TeamRoundDetail extends RoundDetailBase {
-  institutions?: number[]
+  conflicts?: number[]
   speakers?: number[]
 }
 
 export interface AdjudicatorRoundDetail extends RoundDetailBase {
-  institutions?: number[]
   conflicts?: number[]
+  conflict_teams?: number[]
 }
 
 export interface VenueRoundDetail extends RoundDetailBase {
@@ -34,7 +34,6 @@ export interface VenueRoundDetail extends RoundDetailBase {
 export interface TeamEntity {
   id: number
   name?: string
-  institution?: string
   details: TeamRoundDetail[]
   user_defined_data?: UserDefinedData
 }

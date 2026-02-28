@@ -1720,7 +1720,10 @@ function teamSpeakerNames(teamId: string, round: number): string[] {
       return speakers.speakers.find((speaker) => speaker._id === id)?.name ?? id
     })
   }
-  return (team.speakers ?? []).map((speaker: any) => String(speaker?.name ?? '')).filter(Boolean)
+  const templateSpeakerIds = (team.template?.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
+  return templateSpeakerIds.map((id: string) => {
+    return speakers.speakers.find((speaker) => speaker._id === id)?.name ?? id
+  })
 }
 
 function speakerName(

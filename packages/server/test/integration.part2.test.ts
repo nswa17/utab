@@ -314,6 +314,293 @@ describe('Server integration', () => {
     expect(compiledList.body.data.payload.compiled_team_results.length).toBe(2)
   })
 
+  it('covers setup-to-report workflow with bulk entity import, break rounds, and submissions', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'workflow-e2e-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'workflow-e2e-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const stylesRes = await agent.get('/api/styles')
+    expect(stylesRes.status).toBe(200)
+    const styleId = stylesRes.body.data[0].id ?? 1
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Workflow Coverage Open',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 2,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const prelimRoundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Prelim 1',
+      motions: ['This House would ...'],
+    })
+    expect(prelimRoundRes.status).toBe(201)
+
+    const breakRoundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Break Final',
+    })
+    expect(breakRoundRes.status).toBe(201)
+    const breakRoundId = breakRoundRes.body.data._id as string
+
+    const speakersRes = await agent.post('/api/speakers').send([
+      { tournamentId, name: 'Speaker Alpha' },
+      { tournamentId, name: 'Speaker Beta' },
+      { tournamentId, name: 'Speaker Gamma' },
+      { tournamentId, name: 'Speaker Delta' },
+    ])
+    expect(speakersRes.status).toBe(201)
+    expect(speakersRes.body.data.length).toBe(4)
+    const speakerIdByName = new Map<string, string>(
+      (speakersRes.body.data as Array<{ _id: string; name: string }>).map((speaker) => [
+        speaker.name,
+        speaker._id,
+      ])
+    )
+
+    const teamsRes = await agent.post('/api/teams').send([
+      {
+        tournamentId,
+        name: 'Team Alpha',
+        details: [
+          { r: 1, speakers: [speakerIdByName.get('Speaker Alpha')] },
+          { r: 2, speakers: [speakerIdByName.get('Speaker Alpha')] },
+        ],
+      },
+      {
+        tournamentId,
+        name: 'Team Beta',
+        details: [
+          { r: 1, speakers: [speakerIdByName.get('Speaker Beta')] },
+          { r: 2, speakers: [speakerIdByName.get('Speaker Beta')] },
+        ],
+      },
+      {
+        tournamentId,
+        name: 'Team Gamma',
+        details: [
+          { r: 1, speakers: [speakerIdByName.get('Speaker Gamma')] },
+          { r: 2, speakers: [speakerIdByName.get('Speaker Gamma')] },
+        ],
+      },
+      {
+        tournamentId,
+        name: 'Team Delta',
+        details: [
+          { r: 1, speakers: [speakerIdByName.get('Speaker Delta')] },
+          { r: 2, speakers: [speakerIdByName.get('Speaker Delta')] },
+        ],
+      },
+    ])
+    expect(teamsRes.status).toBe(201)
+    expect(teamsRes.body.data.length).toBe(4)
+    const teamIdByName = new Map<string, string>(
+      (teamsRes.body.data as Array<{ _id: string; name: string }>).map((team) => [
+        team.name,
+        team._id,
+      ])
+    )
+
+    const adjudicatorsRes = await agent.post('/api/adjudicators').send([
+      { tournamentId, name: 'Judge 1', strength: 6 },
+      { tournamentId, name: 'Judge 2', strength: 5 },
+    ])
+    expect(adjudicatorsRes.status).toBe(201)
+    expect(adjudicatorsRes.body.data.length).toBe(2)
+    const adjudicatorIdByName = new Map<string, string>(
+      (adjudicatorsRes.body.data as Array<{ _id: string; name: string }>).map((row) => [
+        row.name,
+        row._id,
+      ])
+    )
+
+    const setBreakRes = await agent.patch(`/api/rounds/${breakRoundId}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: [
+          { teamId: teamIdByName.get('Team Alpha'), seed: 1 },
+          { teamId: teamIdByName.get('Team Beta'), seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    })
+    expect(setBreakRes.status).toBe(200)
+    expect(setBreakRes.body.data.break.participants).toHaveLength(2)
+
+    const prelimDrawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: 'Room 1',
+          teams: {
+            gov: teamIdByName.get('Team Alpha'),
+            opp: teamIdByName.get('Team Gamma'),
+          },
+          chairs: [adjudicatorIdByName.get('Judge 1')],
+          panels: [],
+          trainees: [],
+        },
+        {
+          venue: 'Room 2',
+          teams: {
+            gov: teamIdByName.get('Team Beta'),
+            opp: teamIdByName.get('Team Delta'),
+          },
+          chairs: [adjudicatorIdByName.get('Judge 2')],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(prelimDrawRes.status).toBe(201)
+
+    const round1Ballot1 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamIdByName.get('Team Alpha'),
+      teamBId: teamIdByName.get('Team Gamma'),
+      winnerId: teamIdByName.get('Team Alpha'),
+      speakerIdsA: [speakerIdByName.get('Speaker Alpha')],
+      speakerIdsB: [speakerIdByName.get('Speaker Gamma')],
+      scoresA: [76],
+      scoresB: [72],
+      submittedEntityId: adjudicatorIdByName.get('Judge 1'),
+    })
+    expect(round1Ballot1.status).toBe(201)
+
+    const round1Ballot2 = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamIdByName.get('Team Beta'),
+      teamBId: teamIdByName.get('Team Delta'),
+      winnerId: teamIdByName.get('Team Beta'),
+      speakerIdsA: [speakerIdByName.get('Speaker Beta')],
+      speakerIdsB: [speakerIdByName.get('Speaker Delta')],
+      scoresA: [75],
+      scoresB: [71],
+      submittedEntityId: adjudicatorIdByName.get('Judge 2'),
+    })
+    expect(round1Ballot2.status).toBe(201)
+
+    const round1Feedback = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: adjudicatorIdByName.get('Judge 1'),
+      score: 8,
+      comment: 'clear feedback',
+      submittedEntityId: teamIdByName.get('Team Alpha'),
+    })
+    expect(round1Feedback.status).toBe(201)
+
+    const breakAllocRes = await agent.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(breakAllocRes.status).toBe(200)
+    expect(breakAllocRes.body.data.allocation).toHaveLength(1)
+
+    const breakDrawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: (breakAllocRes.body.data.allocation as Array<any>).map((square) => ({
+        ...square,
+        chairs: [adjudicatorIdByName.get('Judge 1')],
+        panels: [],
+        trainees: [],
+      })),
+      userDefinedData: breakAllocRes.body.data.userDefinedData,
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(breakDrawRes.status).toBe(201)
+
+    const breakMatch = breakDrawRes.body.data.allocation[0]
+    const breakBallotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 2,
+      teamAId: breakMatch.teams.gov,
+      teamBId: breakMatch.teams.opp,
+      winnerId: teamIdByName.get('Team Alpha'),
+      speakerIdsA:
+        breakMatch.teams.gov === teamIdByName.get('Team Alpha')
+          ? [speakerIdByName.get('Speaker Alpha')]
+          : [speakerIdByName.get('Speaker Beta')],
+      speakerIdsB:
+        breakMatch.teams.opp === teamIdByName.get('Team Alpha')
+          ? [speakerIdByName.get('Speaker Alpha')]
+          : [speakerIdByName.get('Speaker Beta')],
+      scoresA: breakMatch.teams.gov === teamIdByName.get('Team Alpha') ? [77] : [73],
+      scoresB: breakMatch.teams.opp === teamIdByName.get('Team Alpha') ? [77] : [73],
+      submittedEntityId: adjudicatorIdByName.get('Judge 1'),
+    })
+    expect(breakBallotRes.status).toBe(201)
+
+    const round2BallotsRes = await agent.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=2&type=ballot`
+    )
+    expect(round2BallotsRes.status).toBe(200)
+    expect(round2BallotsRes.body.data.length).toBe(1)
+
+    const compiledRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        include_labels: ['teams', 'speakers', 'adjudicators'],
+      },
+    })
+    expect(compiledRes.status).toBe(201)
+    const roundNames = (compiledRes.body.data.payload.rounds as Array<{ name: string }>).map(
+      (round) => round.name
+    )
+    expect(roundNames).toContain('Prelim 1')
+    expect(roundNames).toContain('Break Final')
+    expect(compiledRes.body.data.payload.compiled_team_results.length).toBe(4)
+
+    const teamResults = compiledRes.body.data.payload.compiled_team_results as Array<any>
+    const alphaResult = teamResults.find((row) => row.id === teamIdByName.get('Team Alpha'))
+    const betaResult = teamResults.find((row) => row.id === teamIdByName.get('Team Beta'))
+    expect(alphaResult).toBeTruthy()
+    expect(betaResult).toBeTruthy()
+    expect(alphaResult.win).toBeGreaterThan(betaResult.win)
+
+    const latestCompiledRes = await agent.get(`/api/compiled?tournamentId=${tournamentId}&latest=1`)
+    expect(latestCompiledRes.status).toBe(200)
+    expect(latestCompiledRes.body.data._id).toBe(compiledRes.body.data._id)
+
+    const teamReportRes = await agent.post('/api/compiled/teams').send({
+      tournamentId,
+      source: 'submissions',
+    })
+    expect(teamReportRes.status).toBe(201)
+    expect(teamReportRes.body.data.results.length).toBe(4)
+    expect(
+      (teamReportRes.body.data.rounds as Array<{ name: string }>).some(
+        (round) => round.name === 'Break Final'
+      )
+    ).toBe(true)
+  })
+
   it('rejects impossible submitted entities based on draw allocation and round settings', async () => {
     const agent = request.agent(app)
 

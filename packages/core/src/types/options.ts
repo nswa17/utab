@@ -4,13 +4,14 @@ export interface TeamDrawAlgorithmOptions {
   filters?: string[]
   method?: 'original' | 'straight' | 'weighted' | 'custom'
   weights?: number[]
+  spread_sides_by_school?: boolean
   pairing_method?: string
   pullup_method?: string
   position_method?: string
   avoid_conflict?: boolean
   odd_bracket?: string
   avoid_conflicts?: string | boolean
-  conflict_weights?: { institution?: number; past_opponent?: number }
+  conflict_weights?: { conflict_group?: number; past_opponent?: number }
   max_swap_iterations?: number
 }
 

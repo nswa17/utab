@@ -31,19 +31,17 @@
         />
       </label>
 
-      <label class="stack">
-        <span class="option-title">{{ dataLabelText }}</span>
-        <textarea
-          v-model="textModel"
-          class="import-textarea"
-          :rows="rows"
-          :placeholder="placeholder"
-          :disabled="disabled"
-        />
-      </label>
-
       <p v-if="description" class="muted small">{{ description }}</p>
       <pre v-if="example" class="import-example">{{ example }}</pre>
+      <Button
+        v-if="templateContent"
+        variant="secondary"
+        size="sm"
+        class="template-download-button"
+        @click="downloadTemplate"
+      >
+        {{ templateLabelText }}
+      </Button>
       <p v-if="error" class="error">{{ error }}</p>
 
       <div class="row import-modal-actions">
@@ -75,17 +73,17 @@ const props = withDefaults(
     modeLabel?: string
     modeOptions?: ModeOption[]
     fileLabel?: string
-    dataLabel?: string
     fileAccept?: string
-    placeholder?: string
     description?: string
     example?: string
+    templateContent?: string
+    templateFilename?: string
+    templateLabel?: string
     error?: string | null
     submitLabel?: string
     cancelLabel?: string
     closeLabel?: string
     disabled?: boolean
-    rows?: number
     showFileInput?: boolean
   }>(),
   {
@@ -93,17 +91,17 @@ const props = withDefaults(
     modeLabel: '',
     modeOptions: () => [],
     fileLabel: '',
-    dataLabel: '',
     fileAccept: '.csv,.tsv,text/csv,text/tab-separated-values,text/plain',
-    placeholder: '',
     description: '',
     example: '',
+    templateContent: '',
+    templateFilename: '',
+    templateLabel: '',
     error: '',
     submitLabel: '',
     cancelLabel: '',
     closeLabel: '',
     disabled: false,
-    rows: 8,
     showFileInput: true,
   }
 )
@@ -115,16 +113,31 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n({ useScope: 'global' })
-const textModel = defineModel<string>('text', { default: '' })
 const modeModel = defineModel('mode', { default: '' })
 
 const hasModeOptions = computed(() => props.modeOptions.length > 0)
 const modeLabelText = computed(() => props.modeLabel || t('取り込み方式'))
 const fileLabelText = computed(() => props.fileLabel || t('CSV/TSVファイル'))
-const dataLabelText = computed(() => props.dataLabel || t('取り込みデータ'))
+const templateLabelText = computed(
+  () => props.templateLabel || t('CSVテンプレートをダウンロード')
+)
 const submitLabelText = computed(() => props.submitLabel || t('取り込み'))
 const cancelLabelText = computed(() => props.cancelLabel || t('取消'))
 const closeLabelText = computed(() => props.closeLabel || t('閉じる'))
+
+function downloadTemplate() {
+  if (!props.templateContent) return
+  const bom = '\uFEFF'
+  const blob = new Blob([bom, props.templateContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = props.templateFilename.trim() || 'import-template.csv'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <style scoped>
@@ -190,11 +203,6 @@ const closeLabelText = computed(() => props.closeLabel || t('閉じる'))
   filter: brightness(0.96);
 }
 
-.import-textarea {
-  min-height: 160px;
-  resize: vertical;
-}
-
 .import-example {
   margin: 0;
   border: 1px solid var(--color-border);
@@ -205,6 +213,10 @@ const closeLabelText = computed(() => props.closeLabel || t('閉じる'))
   font-size: 12px;
   line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.template-download-button {
+  width: 100%;
 }
 
 .import-modal-actions {

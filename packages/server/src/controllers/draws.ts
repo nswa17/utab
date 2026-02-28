@@ -295,6 +295,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       preev_weights: (tournament as any).preev_weights ??
         (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
       institution_priority_map: {} as Record<number, number>,
+      institution_category_map: {} as Record<number, string>,
     }
 
     const teamMaps = buildIdMaps(teams)
@@ -334,7 +335,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       details: buildDetailsForRounds(
         (team as any).details,
         roundsNeeded,
-        { available: true, institutions: [], speakers: [] },
+        {
+          available: (team as any)?.template?.available !== false,
+          conflicts: Array.isArray((team as any)?.template?.conflicts)
+            ? (team as any).template.conflicts
+            : [],
+          speakers: Array.isArray((team as any)?.template?.speakers)
+            ? (team as any).template.speakers
+            : [],
+        },
         (id) => institutionMaps.map.get(id),
         (id) => speakerMaps.map.get(id)
       ),
@@ -347,7 +356,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       details: buildDetailsForRounds(
         (adj as any).details,
         roundsNeeded,
-        { available: true, institutions: [], conflicts: [] },
+        {
+          available: (adj as any)?.template?.available !== false,
+          conflicts: Array.isArray((adj as any)?.template?.conflicts)
+            ? (adj as any).template.conflicts
+            : [],
+          conflict_teams: Array.isArray((adj as any)?.template?.conflict_teams)
+            ? (adj as any).template.conflict_teams
+            : [],
+        },
         (id) => institutionMaps.map.get(id),
         undefined,
         (id) => teamMaps.map.get(id)
@@ -358,8 +375,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       id: venueMaps.map.get(String(venue._id))!,
       name: venue.name,
       details: buildDetailsForRounds((venue as any).details, roundsNeeded, {
-        available: true,
-        priority: 1,
+        available: (venue as any)?.template?.available !== false,
+        priority:
+          typeof (venue as any)?.template?.priority === 'number'
+            ? (venue as any).template.priority
+            : 1,
       }),
     }))
 
@@ -380,6 +400,14 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }))
     config.institution_priority_map = Object.fromEntries(
       institutionInstances.map((inst) => [inst.id, inst.priority])
+    )
+    config.institution_category_map = Object.fromEntries(
+      institutionInstances.map((inst) => [
+        inst.id,
+        String(inst.category ?? 'institution')
+          .trim()
+          .toLowerCase() || 'institution',
+      ])
     )
 
     const mapFromId = (id: string) =>

@@ -17,6 +17,17 @@ const en = {
   '大会データの一括ダウンロードに失敗しました。': 'Failed to download the tournament data bundle.',
   CSV取り込みに失敗しました: 'CSV import failed.',
   'CSV/TSVファイル': 'CSV/TSV file',
+  CSVテンプレートをダウンロード: 'Download CSV template',
+  'CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。':
+    'Select a CSV/TSV file and apply only non-empty cells to the draw.',
+  'CSV/TSVファイルを選択して一括取り込みできます。':
+    'Select a CSV/TSV file to import in bulk.',
+  'CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。ヘッダー行は必須です。':
+    'Select a CSV/TSV file and apply only non-empty cells to the draw. A header row is required.',
+  'CSV/TSVファイルを選択して一括取り込みできます。ヘッダー行は必須です。':
+    'Select a CSV/TSV file to import in bulk. A header row is required.',
+  'ヘッダー行は必須です。テンプレートをダウンロードして列名を維持したまま入力してください。':
+    'A header row is required. Download the template and keep column names unchanged.',
   'CSV/TSVを貼り付けてラウンドのジャッジ割当を一括反映します。':
     'Paste CSV/TSV to bulk-apply adjudicator assignments for this round.',
   ジャッジ組み合わせ取込: 'Import adjudicator pairings',
@@ -544,6 +555,9 @@ const en = {
   '対戦表公開（チームのみ）': 'Publish draw (teams only)',
   '対戦表公開（ジャッジのみ）': 'Publish draw (adjudicators only)',
   バブル: 'Bubble',
+  バブル配慮: 'Bubble consideration',
+  '勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ強度を調整します。':
+    'Prioritize rooms near the middle of the standings and tune adjudicator strength by room.',
   パスワード: 'Password',
   パスワードを表示: 'Show password',
   パスワードを隠す: 'Hide password',

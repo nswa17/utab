@@ -974,6 +974,47 @@ describe('Server integration', () => {
     expect(team2.ranking).toBe(1)
   })
 
+  it('exports tournament bundle with RFC5987 content-disposition when tournament name has non-ASCII', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'bundle-export-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'bundle-export-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentName = '日本語大会🙂'
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: tournamentName, style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const exportRes = await agent.get(`/api/tournaments/${tournamentId}/export`).send()
+    expect(exportRes.status).toBe(200)
+    expect(exportRes.headers['content-type']).toContain('application/zip')
+
+    const contentDisposition = String(exportRes.headers['content-disposition'] ?? '')
+    expect(contentDisposition).toContain('attachment;')
+    expect(contentDisposition).toContain('filename=')
+    expect(contentDisposition).toContain("filename*=UTF-8''")
+
+    const fallbackMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+    expect(fallbackMatch?.[1]).toBeTruthy()
+    expect(/^[\x20-\x7E]+$/.test(String(fallbackMatch?.[1]))).toBe(true)
+
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+    expect(utf8Match?.[1]).toBeTruthy()
+    const decodedName = decodeURIComponent(String(utf8Match?.[1]))
+    expect(decodedName).toContain('日本語大会')
+    expect(decodedName).toContain(`${tournamentId}-`)
+    expect(decodedName.endsWith('.zip')).toBe(true)
+  })
+
   it('adds and removes tournament users', async () => {
     const agent = request.agent(app)
 

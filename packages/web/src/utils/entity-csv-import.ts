@@ -35,6 +35,7 @@ export type BuildEntityImportPayloadOptions = {
   tournamentId: string
   roundNumbers: number[]
   teams: NamedEntity[]
+  speakers: NamedEntity[]
   institutions: NamedEntity[]
   institutionCategoryLabel: (value?: string) => string
   institutionPriorityValue: (value?: number) => number
@@ -59,11 +60,12 @@ const knownStaticHeaders = new Set([
   'speakers',
   'strength',
   'preev',
-  'active',
   'available',
   'availability',
   'conflict',
   'conflicts',
+  'conflict_team',
+  'conflict_teams',
 ])
 
 function detectDelimiter(line: string): ',' | '\t' {
@@ -296,10 +298,17 @@ export function buildEntityImportPayload(
   options: BuildEntityImportPayloadOptions
 ): BuildEntityImportPayloadResult {
   const parsed = parseEntityCsv(options.text)
+  if (!parsed.hasHeader) {
+    return {
+      payload: [],
+      errors: ['1行目にCSVヘッダーが必要です。テンプレートをダウンロードして列名を揃えてください。'],
+    }
+  }
   const reader = createCsvColumnReader(parsed)
   const payload: Array<Record<string, unknown>> = []
   const rounds = normalizeRoundNumbers(options.roundNumbers)
   const teamLookup = createNamedEntityLookup(options.teams)
+  const speakerLookup = createNamedEntityLookup(options.speakers)
   const institutionLookup = createNamedEntityLookup(options.institutions)
 
   for (const row of parsed.rows) {
@@ -308,7 +317,7 @@ export function buildEntityImportPayload(
       if (!name) continue
       const institutionCell = reader.read(row, ['institution'], 1)
       const speakersCell = reader.read(row, ['speakers'], 2)
-      const speakers = splitList(speakersCell).map((speakerName) => ({ name: speakerName }))
+      const speakerIds = resolveNamedEntityIds(speakersCell, speakerLookup)
 
       const defaultAvailable = toBooleanCell(
         reader.read(row, ['available', 'availability'], 3),
@@ -317,20 +326,26 @@ export function buildEntityImportPayload(
       const institutionIds = resolveNamedEntityIds(institutionCell, institutionLookup)
       const details =
         rounds.length > 0 &&
-        (defaultAvailable === false || reader.hasRoundAvailabilityColumns)
+        (defaultAvailable === false ||
+          institutionIds.length > 0 ||
+          speakerIds.length > 0 ||
+          reader.hasRoundAvailabilityColumns)
           ? rounds.map((round) => ({
               r: round,
               available: toBooleanCell(reader.readRound(row, 'availability', round), defaultAvailable),
-              institutions: institutionIds,
-              speakers: [] as string[],
+              conflicts: institutionIds,
+              speakers: speakerIds,
             }))
           : undefined
 
       payload.push({
         tournamentId: options.tournamentId,
         name,
-        institution: institutionCell || undefined,
-        speakers,
+        template: {
+          available: defaultAvailable,
+          conflicts: institutionIds,
+          speakers: speakerIds,
+        },
         details,
       })
       continue
@@ -342,18 +357,17 @@ export function buildEntityImportPayload(
 
       const strength = toFiniteNumber(reader.read(row, ['strength'], 1), 0)
       const preev = toFiniteNumber(reader.read(row, ['preev'], 2), 0)
-      const active = toBooleanCell(reader.read(row, ['active'], 3), true)
 
       const institutionIds = resolveNamedEntityIds(
-        reader.read(row, ['institutions', 'institution']),
+        reader.read(row, ['conflicts', 'conflict', 'institutions', 'institution']),
         institutionLookup
       )
       const defaultAvailable = toBooleanCell(
-        reader.read(row, ['available', 'availability'], 4),
+        reader.read(row, ['available', 'availability'], 3),
         true
       )
-      const baseConflicts = resolveNamedEntityIds(
-        reader.read(row, ['conflicts', 'conflict'], 5),
+      const baseConflictTeams = resolveNamedEntityIds(
+        reader.read(row, ['conflict_teams', 'conflict_team'], 4),
         teamLookup
       )
 
@@ -361,7 +375,7 @@ export function buildEntityImportPayload(
         rounds.length > 0 &&
         (defaultAvailable === false ||
           institutionIds.length > 0 ||
-          baseConflicts.length > 0 ||
+          baseConflictTeams.length > 0 ||
           reader.hasRoundAvailabilityColumns ||
           reader.hasRoundConflictColumns)
 
@@ -378,8 +392,8 @@ export function buildEntityImportPayload(
             return {
               r: round,
               available,
-              institutions: institutionIds,
-              conflicts: Array.from(new Set([...baseConflicts, ...roundConflicts])),
+              conflicts: institutionIds,
+              conflict_teams: Array.from(new Set([...baseConflictTeams, ...roundConflicts])),
             }
           })
         : undefined
@@ -389,7 +403,11 @@ export function buildEntityImportPayload(
         name,
         strength,
         preev,
-        active,
+        template: {
+          available: defaultAvailable,
+          conflicts: institutionIds,
+          conflict_teams: baseConflictTeams,
+        },
         details,
       })
       continue
@@ -416,6 +434,10 @@ export function buildEntityImportPayload(
       payload.push({
         tournamentId: options.tournamentId,
         name,
+        template: {
+          available: defaultAvailable,
+          priority,
+        },
         details,
         userDefinedData: {
           availableDefault: defaultAvailable,

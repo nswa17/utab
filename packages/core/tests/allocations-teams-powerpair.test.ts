@@ -4,12 +4,12 @@ import { powerpair } from '../src/allocations/teams.js'
 describe('allocations/teams/powerpair', () => {
   it('creates bracketed pairings and records pullup metadata', () => {
     const teams = [
-      { id: 1, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-      { id: 2, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-      { id: 3, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-      { id: 4, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-      { id: 5, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-      { id: 6, details: [{ r: 1, available: true, institutions: [3], speakers: [] }] },
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 5, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 6, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
     ]
     const compiledTeamResults = [
       { id: 1, win: 3, sum: 90, margin: 10, past_sides: [], past_opponents: [] },
@@ -53,10 +53,10 @@ describe('allocations/teams/powerpair', () => {
 
   it('applies one-up-one-down swaps to reduce adjacent conflicts', () => {
     const teams = [
-      { id: 1, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-      { id: 2, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-      { id: 3, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-      { id: 4, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
     ]
     const compiledTeamResults = [
       { id: 1, win: 2, sum: 40, margin: 5, past_sides: [], past_opponents: [] },
@@ -83,18 +83,18 @@ describe('allocations/teams/powerpair', () => {
     )
 
     draw.allocation.forEach((row: any) => {
-      const left = teams.find((team) => team.id === row.teams[0])?.details?.[0]?.institutions?.[0]
-      const right = teams.find((team) => team.id === row.teams[1])?.details?.[0]?.institutions?.[0]
+      const left = teams.find((team) => team.id === row.teams[0])?.details?.[0]?.conflicts?.[0]
+      const right = teams.find((team) => team.id === row.teams[1])?.details?.[0]?.conflicts?.[0]
       expect(left).not.toBe(right)
     })
   })
 
   it('prefers avoiding priority-1 institution conflicts over multiple lower priorities', () => {
     const teams = [
-      { id: 1, details: [{ r: 1, available: true, institutions: [1, 2, 3], speakers: [] }] },
-      { id: 2, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-      { id: 3, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-      { id: 4, details: [{ r: 1, available: true, institutions: [3], speakers: [] }] },
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1, 2, 3], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
     ]
     const compiledTeamResults = [
       { id: 1, win: 2, sum: 40, margin: 5, past_sides: [], past_opponents: [] },
@@ -127,10 +127,10 @@ describe('allocations/teams/powerpair', () => {
 
   it('rejects non two-team styles', () => {
     const teams = [
-      { id: 1, details: [{ r: 1, available: true, institutions: [], speakers: [] }] },
-      { id: 2, details: [{ r: 1, available: true, institutions: [], speakers: [] }] },
-      { id: 3, details: [{ r: 1, available: true, institutions: [], speakers: [] }] },
-      { id: 4, details: [{ r: 1, available: true, institutions: [], speakers: [] }] },
+      { id: 1, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
     ]
     const compiledTeamResults = teams.map((team) => ({
       id: team.id,

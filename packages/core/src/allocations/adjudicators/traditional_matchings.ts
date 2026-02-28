@@ -35,15 +35,15 @@ function isConflict(
   adjudicator: AdjudicatorEntity,
   teams: TeamEntity[]
 ): boolean {
-  const adjInstitutions = accessDetail(adjudicator, r).institutions as number[]
-  const adjConflicts = accessDetail(adjudicator, r).conflicts as number[]
+  const adjInstitutions = accessDetail(adjudicator, r).conflicts as number[]
+  const adjConflicts = accessDetail(adjudicator, r).conflict_teams as number[]
   const teamInstitutions = ([] as number[]).concat(
     ...square.teams.map(
       (teamId) =>
         (accessDetail(
           teams.find((team) => team.id === teamId) as TeamEntity,
           r
-        ).institutions as number[]) || []
+        ).conflicts as number[]) || []
     )
   )
   if (teamInstitutions.some((institutionId) => adjInstitutions?.includes(institutionId))) return true

@@ -25,8 +25,8 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     tournamentId: string
     name: string
     strength: number
-    active?: boolean
     preev?: number
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -52,8 +52,8 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     adjudicatorId: string
     name?: string
     strength?: number
-    active?: boolean
     preev?: number
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -64,8 +64,8 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
         tournamentId: payload.tournamentId,
         name: payload.name,
         strength: payload.strength,
-        active: payload.active,
         preev: payload.preev,
+        template: payload.template,
         details: payload.details,
         userDefinedData: payload.userDefinedData,
       })

@@ -17,6 +17,7 @@ const router: Router = Router()
 const createBodySchema = z.object({
   tournamentId: z.string().min(1),
   name: z.string().min(1),
+  template: z.any().optional(),
   details: z.any().optional(),
   userDefinedData: z.any().optional(),
 })
@@ -37,12 +38,16 @@ const updateSchema = {
     .object({
       tournamentId: z.string().min(1),
       name: z.string().min(1).optional(),
+      template: z.any().optional(),
       details: z.any().optional(),
       userDefinedData: z.any().optional(),
     })
     .refine(
       (data) =>
-        data.name !== undefined || data.details !== undefined || data.userDefinedData !== undefined,
+        data.name !== undefined ||
+        data.template !== undefined ||
+        data.details !== undefined ||
+        data.userDefinedData !== undefined,
       { message: 'update payload is required' }
     ),
 }
@@ -54,12 +59,16 @@ const bulkUpdateSchema = {
         id: z.string().min(1),
         tournamentId: z.string().min(1),
         name: z.string().min(1).optional(),
+        template: z.any().optional(),
         details: z.any().optional(),
         userDefinedData: z.any().optional(),
       })
       .refine(
         (data) =>
-          data.name !== undefined || data.details !== undefined || data.userDefinedData !== undefined,
+          data.name !== undefined ||
+          data.template !== undefined ||
+          data.details !== undefined ||
+          data.userDefinedData !== undefined,
         { message: 'update payload is required' }
       )
   ),

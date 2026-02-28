@@ -9,6 +9,10 @@ const baseTeams = [
 ]
 
 const baseInstitutions = [{ _id: 'inst-a', name: 'Institution A' }]
+const baseSpeakers = [
+  { _id: 'speaker-a', name: 'Alice' },
+  { _id: 'speaker-b', name: 'Bob' },
+]
 
 function build(options: {
   type: 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
@@ -21,6 +25,7 @@ function build(options: {
     tournamentId,
     roundNumbers: options.roundNumbers ?? [1, 2, 3],
     teams: baseTeams,
+    speakers: baseSpeakers,
     institutions: baseInstitutions,
     institutionCategoryLabel: (value) => String(value ?? 'institution'),
     institutionPriorityValue: (value) => {
@@ -35,8 +40,8 @@ describe('entity csv import', () => {
     const result = build({
       type: 'adjudicators',
       text: [
-        'name,strength,preev,active,available,conflicts,available_r1,availability_r2,conflict_r2',
-        'Judge A,6,2,true,false,Team A,1,,Team B',
+        'name,strength,preev,available,conflicts,conflict_teams,available_r1,availability_r2,conflict_r2',
+        'Judge A,6,2,false,Institution A,Team A,1,,Team B',
       ].join('\n'),
     })
 
@@ -46,11 +51,15 @@ describe('entity csv import', () => {
     expect(adjudicator.name).toBe('Judge A')
     expect(adjudicator.strength).toBe(6)
     expect(adjudicator.preev).toBe(2)
-    expect(adjudicator.active).toBe(true)
+    expect(adjudicator.template).toEqual({
+      available: false,
+      conflicts: ['inst-a'],
+      conflict_teams: ['team-a'],
+    })
     expect(adjudicator.details).toEqual([
-      { r: 1, available: true, institutions: [], conflicts: ['team-a'] },
-      { r: 2, available: false, institutions: [], conflicts: ['team-a', 'team-b'] },
-      { r: 3, available: false, institutions: [], conflicts: ['team-a'] },
+      { r: 1, available: true, conflicts: ['inst-a'], conflict_teams: ['team-a'] },
+      { r: 2, available: false, conflicts: ['inst-a'], conflict_teams: ['team-a', 'team-b'] },
+      { r: 3, available: false, conflicts: ['inst-a'], conflict_teams: ['team-a'] },
     ])
   })
 
@@ -64,6 +73,7 @@ describe('entity csv import', () => {
     expect(result.payload).toHaveLength(1)
     const venue = result.payload[0] as any
     expect(venue.name).toBe('Room 101')
+    expect(venue.template).toEqual({ available: false, priority: 2 })
     expect(venue.userDefinedData).toEqual({ availableDefault: false })
     expect(venue.details).toEqual([
       { r: 1, available: false, priority: 2 },
@@ -83,10 +93,14 @@ describe('entity csv import', () => {
     expect(result.payload).toHaveLength(1)
     const team = result.payload[0] as any
     expect(team.name).toBe('Team New')
-    expect(team.speakers).toEqual([{ name: 'Alice' }, { name: 'Bob' }])
+    expect(team.template).toEqual({
+      available: true,
+      conflicts: ['inst-a'],
+      speakers: ['speaker-a', 'speaker-b'],
+    })
     expect(team.details).toEqual([
-      { r: 1, available: true, institutions: ['inst-a'], speakers: [] },
-      { r: 2, available: false, institutions: ['inst-a'], speakers: [] },
+      { r: 1, available: true, conflicts: ['inst-a'], speakers: ['speaker-a', 'speaker-b'] },
+      { r: 2, available: false, conflicts: ['inst-a'], speakers: ['speaker-a', 'speaker-b'] },
     ])
   })
 
@@ -110,18 +124,14 @@ describe('entity csv import', () => {
     expect(result.errors.some((message) => message.includes('重複'))).toBe(true)
   })
 
-  it('keeps no-header fallback behavior for venues', () => {
+  it('returns an error when header row is missing', () => {
     const result = build({
       type: 'venues',
       text: 'Room 101,2,false',
       roundNumbers: [1, 2],
     })
 
-    expect(result.errors).toEqual([])
-    expect(result.payload).toHaveLength(1)
-    expect((result.payload[0] as any).details).toEqual([
-      { r: 1, available: false, priority: 2 },
-      { r: 2, available: false, priority: 2 },
-    ])
+    expect(result.payload).toEqual([])
+    expect(result.errors[0]).toContain('1行目にCSVヘッダーが必要です')
   })
 })

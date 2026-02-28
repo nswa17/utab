@@ -590,15 +590,92 @@
                 </span>
               </div>
               <div class="muted entity-secondary">
-                {{ team.speakers?.map((s) => s.name).join(', ') }}
+                {{ teamSpeakerNames(team).join(', ') }}
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="startEditEntity('team', team)">
-                  {{ $t('編集') }}
+                <Button variant="ghost" size="sm" @click="toggleEntityInlineEdit('team', team)">
+                  {{ isEntityInlineEditing('team', team._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeTeam(team._id)">
                   {{ $t('削除') }}
                 </Button>
+              </div>
+              <div v-if="isEntityInlineEditing('team', team._id)" class="entity-inline-editor stack">
+                <div class="inline-edit-row">
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('名前') }}</span>
+                    <input v-model="entityForm.name" type="text" />
+                  </label>
+                </div>
+                <div v-if="detailRows.length > 0" class="stack entity-round-details">
+                  <div v-for="row in detailRows" :key="`team-inline-round-${row.r}`" class="detail-row">
+                    <div class="row detail-row-head">
+                      <button
+                        type="button"
+                        class="round-collapse-toggle"
+                        @click="toggleRoundDetailExpanded(Number(row.r))"
+                      >
+                        <span>{{ isRoundDetailExpanded(Number(row.r)) ? '−' : '+' }}</span>
+                        <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
+                      </button>
+                      <label class="row small round-detail-switch">
+                        <ToggleSwitch
+                          v-model="row.available"
+                          :aria-label="$t('ラウンド {round} を有効化', { round: row.r })"
+                        />
+                        <span class="muted small">{{ $t('有効') }}</span>
+                      </label>
+                    </div>
+                    <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
+                      <label class="stack round-detail-inline-field">
+                        <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
+                        <div class="relation-picker compact-relation-picker">
+                          <template v-if="groupedRoundDetailInstitutionOptions.length > 0">
+                            <div
+                              v-for="group in groupedRoundDetailInstitutionOptions"
+                              :key="`team-inline-round-inst-group-${row.r}-${group.category}`"
+                              class="relation-subgroup"
+                            >
+                              <p class="muted small relation-subgroup-header">
+                                <span class="relation-subgroup-title">{{ group.label }}</span>
+                                <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                              </p>
+                              <label
+                                v-for="inst in group.items"
+                                :key="`team-inline-inst-${row.r}-${inst._id}`"
+                                class="row small relation-item relation-choice"
+                              >
+                                <input v-model="row.conflicts" type="checkbox" :value="inst._id" />
+                                <span>{{ inst.name }}</span>
+                              </label>
+                            </div>
+                          </template>
+                          <p v-else class="muted small relation-empty">{{ $t('候補がありません。') }}</p>
+                        </div>
+                      </label>
+                      <label class="stack round-detail-inline-field">
+                        <span class="field-label">{{ $t('スピーカー') }}</span>
+                        <div class="relation-picker compact-relation-picker">
+                          <label
+                            v-for="speaker in roundDetailSpeakerOptions"
+                            :key="`team-inline-speaker-${row.r}-${speaker._id}`"
+                            class="row small relation-item relation-choice"
+                          >
+                            <input v-model="row.speakers" type="checkbox" :value="speaker._id" />
+                            <span>{{ speaker.name }}</span>
+                          </label>
+                          <p v-if="roundDetailSpeakerOptions.length === 0" class="muted small relation-empty">
+                            {{ $t('候補がありません。') }}
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="row modal-actions">
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -670,12 +747,6 @@
                   />
                 </template>
               </Field>
-              <div class="availability-control">
-                <label class="row small">
-                  <input v-model="adjudicatorForm.active" type="checkbox" />
-                  <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
-                </label>
-              </div>
               <div class="stack full relation-group">
                 <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
                 <input
@@ -778,12 +849,146 @@
                 {{ $t('事前評価') }} {{ adj.preev ?? 0 }} / {{ $t('強さ') }} {{ adj.strength ?? 0 }}
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="startEditEntity('adjudicator', adj)">
-                  {{ $t('編集') }}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  @click="toggleEntityInlineEdit('adjudicator', adj)"
+                >
+                  {{
+                    isEntityInlineEditing('adjudicator', adj._id) ? $t('閉じる') : $t('編集')
+                  }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeAdjudicator(adj._id)">
                   {{ $t('削除') }}
                 </Button>
+              </div>
+              <div
+                v-if="isEntityInlineEditing('adjudicator', adj._id)"
+                class="entity-inline-editor stack"
+              >
+                <div class="inline-edit-row">
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('名前') }}</span>
+                    <input v-model="entityForm.name" type="text" />
+                  </label>
+                  <label class="inline-control">
+                    <span class="inline-control-label">{{ $t('強さ') }}</span>
+                    <div class="number-stepper">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormScore('strength', -0.5)"
+                      >
+                        -
+                      </Button>
+                      <input v-model.number="entityForm.strength" type="number" min="0" max="10" step="0.1" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormScore('strength', 0.5)"
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </label>
+                  <label class="inline-control">
+                    <span class="inline-control-label">{{ $t('事前評価') }}</span>
+                    <div class="number-stepper">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormScore('preev', -0.5)"
+                      >
+                        -
+                      </Button>
+                      <input v-model.number="entityForm.preev" type="number" min="0" max="10" step="0.1" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormScore('preev', 0.5)"
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </label>
+                </div>
+                <div v-if="detailRows.length > 0" class="stack entity-round-details">
+                  <div v-for="row in detailRows" :key="`adj-inline-round-${row.r}`" class="detail-row">
+                    <div class="row detail-row-head">
+                      <button
+                        type="button"
+                        class="round-collapse-toggle"
+                        @click="toggleRoundDetailExpanded(Number(row.r))"
+                      >
+                        <span>{{ isRoundDetailExpanded(Number(row.r)) ? '−' : '+' }}</span>
+                        <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
+                      </button>
+                      <label class="row small round-detail-switch">
+                        <ToggleSwitch
+                          v-model="row.available"
+                          :aria-label="$t('ラウンド {round} を有効化', { round: row.r })"
+                        />
+                        <span class="muted small">{{ $t('有効') }}</span>
+                      </label>
+                    </div>
+                    <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
+                      <label class="stack round-detail-inline-field">
+                        <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
+                        <div class="relation-picker compact-relation-picker">
+                          <template v-if="groupedRoundDetailInstitutionOptions.length > 0">
+                            <div
+                              v-for="group in groupedRoundDetailInstitutionOptions"
+                              :key="`adj-inline-round-inst-group-${row.r}-${group.category}`"
+                              class="relation-subgroup"
+                            >
+                              <p class="muted small relation-subgroup-header">
+                                <span class="relation-subgroup-title">{{ group.label }}</span>
+                                <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
+                              </p>
+                              <label
+                                v-for="inst in group.items"
+                                :key="`adj-inline-inst-${row.r}-${inst._id}`"
+                                class="row small relation-item relation-choice"
+                              >
+                                <input v-model="row.conflicts" type="checkbox" :value="inst._id" />
+                                <span>{{ inst.name }}</span>
+                              </label>
+                            </div>
+                          </template>
+                          <p v-else class="muted small relation-empty">{{ $t('候補がありません。') }}</p>
+                        </div>
+                      </label>
+                      <label class="stack round-detail-inline-field">
+                        <span class="field-label">{{ $t('コンフリクトチーム') }}</span>
+                        <div class="relation-picker compact-relation-picker">
+                          <label
+                            v-for="teamOption in roundDetailTeamOptions"
+                            :key="`adj-inline-team-${row.r}-${teamOption._id}`"
+                            class="row small relation-item relation-choice"
+                          >
+                            <input
+                              v-model="row.conflict_teams"
+                              type="checkbox"
+                              :value="teamOption._id"
+                            />
+                            <span>{{ teamOption.name }}</span>
+                          </label>
+                          <p v-if="roundDetailTeamOptions.length === 0" class="muted small relation-empty">
+                            {{ $t('候補がありません。') }}
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="row modal-actions">
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -849,12 +1054,65 @@
                 <strong>{{ venue.name }}</strong>
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="startEditEntity('venue', venue)">
-                  {{ $t('編集') }}
+                <Button variant="ghost" size="sm" @click="toggleEntityInlineEdit('venue', venue)">
+                  {{ isEntityInlineEditing('venue', venue._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeVenue(venue._id)">
                   {{ $t('削除') }}
                 </Button>
+              </div>
+              <div v-if="isEntityInlineEditing('venue', venue._id)" class="entity-inline-editor stack">
+                <div class="inline-edit-row">
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('名前') }}</span>
+                    <input v-model="entityForm.name" type="text" />
+                  </label>
+                </div>
+                <div v-if="detailRows.length > 0" class="stack entity-round-details">
+                  <div v-for="row in detailRows" :key="`venue-inline-round-${row.r}`" class="detail-row">
+                    <div class="row detail-row-head detail-row-head--compact">
+                      <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
+                      <label class="row small round-detail-switch">
+                        <ToggleSwitch
+                          v-model="row.available"
+                          :aria-label="$t('ラウンド {round} を有効化', { round: row.r })"
+                        />
+                        <span class="muted small">{{ $t('有効') }}</span>
+                      </label>
+                      <label class="row small round-priority-inline">
+                        <span class="field-label">{{ $t('優先度') }}</span>
+                        <div class="number-stepper">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            @click="adjustDetailPriority(row, -1)"
+                          >
+                            -
+                          </Button>
+                          <input
+                            v-model.number="row.priority"
+                            type="number"
+                            min="1"
+                            :aria-label="$t('ラウンド {round} の優先度', { round: row.r })"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            @click="adjustDetailPriority(row, 1)"
+                          >
+                            +
+                          </Button>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="row modal-actions">
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -920,12 +1178,24 @@
                 <strong>{{ speaker.name }}</strong>
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="startEditEntity('speaker', speaker)">
-                  {{ $t('編集') }}
+                <Button variant="ghost" size="sm" @click="toggleEntityInlineEdit('speaker', speaker)">
+                  {{ isEntityInlineEditing('speaker', speaker._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeSpeaker(speaker._id)">
                   {{ $t('削除') }}
                 </Button>
+              </div>
+              <div v-if="isEntityInlineEditing('speaker', speaker._id)" class="entity-inline-editor stack">
+                <div class="inline-edit-row">
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('名前') }}</span>
+                    <input v-model="entityForm.name" type="text" />
+                  </label>
+                </div>
+                <div class="row modal-actions">
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -1035,12 +1305,61 @@
                 </span>
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="startEditEntity('institution', inst)">
-                  {{ $t('編集') }}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  @click="toggleEntityInlineEdit('institution', inst)"
+                >
+                  {{ isEntityInlineEditing('institution', inst._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeInstitution(inst._id)">
                   {{ $t('削除') }}
                 </Button>
+              </div>
+              <div
+                v-if="isEntityInlineEditing('institution', inst._id)"
+                class="entity-inline-editor stack"
+              >
+                <div class="inline-edit-row institution-inline-row">
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('名前') }}</span>
+                    <input v-model="entityForm.name" type="text" />
+                  </label>
+                  <label class="inline-control inline-control--grow">
+                    <span class="inline-control-label">{{ $t('カテゴリ') }}</span>
+                    <select v-model="entityForm.category">
+                      <option
+                        v-for="option in institutionCategoryOptions"
+                        :key="`institution-inline-category-${option.value}`"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="inline-control institution-priority-inline">
+                    <span class="inline-control-label">{{ $t('優先度') }}</span>
+                    <div class="number-stepper">
+                      <Button type="button" variant="ghost" size="sm" @click="adjustEntityFormPriority(-0.1)">
+                        -
+                      </Button>
+                      <input
+                        v-model.number="entityForm.priority"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        :aria-label="$t('優先度')"
+                      />
+                      <Button type="button" variant="ghost" size="sm" @click="adjustEntityFormPriority(0.1)">
+                        +
+                      </Button>
+                    </div>
+                  </label>
+                </div>
+                <div class="row modal-actions">
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -1173,295 +1492,18 @@
 
     <ImportTextModal
       :open="activeSection === 'data' && showEntityImportModal"
-      v-model:text="entityImportText"
       :title="entityImportTitle"
       :help-text="entityImportHelpText"
-      :placeholder="entityImportPlaceholder"
       :description="entityImportDescription"
       :example="entityImportExample"
+      :template-content="entityImportTemplate"
+      :template-filename="entityImportTemplateFilename"
       :error="entityImportError"
       :disabled="isLoading"
       @file-change="handleEntityImportFile"
       @close="closeEntityImportModal"
       @submit="applyEntityImport"
     />
-
-    <div
-      v-if="activeSection === 'data' && editingEntity"
-      class="modal-backdrop"
-      role="presentation"
-      @click.self="cancelEditEntity"
-    >
-      <div class="modal card stack entity-edit-modal" role="dialog" aria-modal="true">
-        <div class="row">
-          <strong>{{ editingTitle }}</strong>
-          <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('閉じる') }}</Button>
-        </div>
-        <div class="grid aligned-field-grid" v-if="editingEntity.type === 'team'">
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
-            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
-          </Field>
-          <Field class="full" :label="$t('コンフリクトグループ')">
-            <div class="stack relation-group">
-              <input
-                v-model="editTeamInstitutionSearch"
-                type="text"
-                :placeholder="$t('コンフリクトグループ名で検索')"
-              />
-              <div class="relation-picker">
-                <template v-if="groupedEditTeamInstitutionOptions.length > 0">
-                  <div
-                    v-for="group in groupedEditTeamInstitutionOptions"
-                    :key="`edit-team-inst-${group.category}`"
-                    class="relation-subgroup"
-                  >
-                    <p class="muted small relation-subgroup-header">
-                      <span class="relation-subgroup-title">{{ group.label }}</span>
-                      <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
-                    </p>
-                    <label
-                      v-for="inst in group.items"
-                      :key="inst._id"
-                      class="row small relation-item"
-                    >
-                      <input v-model="editTeamInstitutionIds" type="checkbox" :value="inst._id" />
-                      <span>{{ inst.name }}</span>
-                    </label>
-                  </div>
-                </template>
-                <p v-else class="muted small relation-empty">
-                  {{ $t('該当するコンフリクトグループがありません。') }}
-                </p>
-              </div>
-              <p class="muted small">
-                {{ $t('選択済み: {count}件', { count: editTeamInstitutionIds.length }) }}
-              </p>
-            </div>
-          </Field>
-          <Field class="full" :label="$t('既存スピーカーから選択')" v-slot="{ id, describedBy }">
-            <div class="stack relation-group">
-              <input
-                v-model="editTeamSpeakerSearch"
-                type="text"
-                :id="id"
-                :aria-describedby="describedBy"
-                :placeholder="$t('スピーカー名で絞り込み')"
-              />
-              <div class="relation-picker">
-                <label
-                  v-for="speaker in filteredEditTeamSpeakerOptions"
-                  :key="speaker._id"
-                  class="row small relation-item"
-                >
-                  <input
-                    v-model="editTeamSelectedSpeakerIds"
-                    type="checkbox"
-                    :value="speaker._id"
-                  />
-                  <span>{{ speaker.name }}</span>
-                </label>
-              </div>
-              <p class="muted small">
-                {{ $t('選択済み: {count}名', { count: editTeamSelectedSpeakerIds.length }) }}
-              </p>
-            </div>
-          </Field>
-        </div>
-        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'adjudicator'">
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
-            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
-          </Field>
-          <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
-            <template #label-suffix>
-              <HelpTip
-                :text="
-                  $t(
-                    '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。'
-                  )
-                "
-              />
-            </template>
-            <template #default="{ id, describedBy }">
-              <input
-                v-model.number="entityForm.strength"
-                type="number"
-                min="0"
-                max="10"
-                step="0.1"
-                :id="id"
-                :aria-describedby="describedBy"
-              />
-            </template>
-          </Field>
-          <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
-            <template #label-suffix>
-              <HelpTip
-                :text="
-                  $t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。')
-                "
-              />
-            </template>
-            <template #default="{ id, describedBy }">
-              <input
-                v-model.number="entityForm.preev"
-                type="number"
-                min="0"
-                max="10"
-                step="0.1"
-                :id="id"
-                :aria-describedby="describedBy"
-              />
-            </template>
-          </Field>
-          <div class="availability-control">
-            <label class="row small">
-              <input v-model="entityForm.active" type="checkbox" />
-              <span>{{ $t('大会参加可能（デフォルト値）') }}</span>
-            </label>
-          </div>
-          <div class="stack full relation-group">
-            <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
-            <input
-              v-model="editAdjudicatorInstitutionSearch"
-              type="text"
-              :placeholder="$t('コンフリクトグループ名で検索')"
-            />
-            <div class="relation-picker">
-              <template v-if="groupedEditAdjudicatorInstitutionOptions.length > 0">
-                <div
-                  v-for="group in groupedEditAdjudicatorInstitutionOptions"
-                  :key="group.category"
-                  class="relation-subgroup"
-                >
-                  <p class="muted small relation-subgroup-header">
-                    <span class="relation-subgroup-title">{{ group.label }}</span>
-                    <span>{{ $t('{count}件', { count: group.items.length }) }}</span>
-                  </p>
-                  <label
-                    v-for="inst in group.items"
-                    :key="inst._id"
-                    class="row small relation-item"
-                  >
-                    <input
-                      v-model="editAdjudicatorInstitutionIds"
-                      type="checkbox"
-                      :value="inst._id"
-                    />
-                    <span>{{ inst.name }}</span>
-                  </label>
-                </div>
-              </template>
-              <p v-else class="muted small relation-empty">
-                {{ $t('該当するコンフリクトグループがありません。') }}
-              </p>
-            </div>
-            <p class="muted small">
-              {{ $t('選択済み: {count}件', { count: editAdjudicatorInstitutionIds.length }) }}
-            </p>
-          </div>
-          <div class="stack full relation-group">
-            <span class="field-label">{{ $t('コンフリクトチーム') }}</span>
-            <input
-              v-model="editAdjudicatorConflictSearch"
-              type="text"
-              :placeholder="$t('検索してチームを絞り込む')"
-            />
-            <div class="relation-picker">
-              <label
-                v-for="team in filteredEditAdjudicatorConflictTeams"
-                :key="team._id"
-                class="row small relation-item"
-              >
-                <input v-model="editAdjudicatorConflictIds" type="checkbox" :value="team._id" />
-                <span>{{ team.name }}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'venue'">
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
-            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
-          </Field>
-          <div class="availability-control">
-            <label class="row small">
-              <input v-model="entityForm.active" type="checkbox" />
-              <span>{{ $t('使用可能（デフォルト値）') }}</span>
-            </label>
-          </div>
-        </div>
-        <div class="grid aligned-field-grid" v-else-if="editingEntity.type === 'institution'">
-          <Field :label="$t('コンフリクトグループ')" required v-slot="{ id, describedBy }">
-            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
-          </Field>
-          <Field :label="$t('カテゴリ')">
-            <template #label-suffix>
-              <HelpTip
-                :text="
-                  $t(
-                    'institution / region / league から選択します。競合判定の粒度を揃えるために使います。'
-                  )
-                "
-              />
-            </template>
-            <template #default="{ id, describedBy }">
-              <select v-model="entityForm.category" :id="id" :aria-describedby="describedBy">
-                <option
-                  v-for="option in institutionCategoryOptions"
-                  :key="`institution-category-edit-${option.value}`"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </template>
-          </Field>
-          <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
-            <input
-              v-model.number="entityForm.priority"
-              type="number"
-              min="0"
-              step="0.1"
-              :id="id"
-              :aria-describedby="describedBy"
-            />
-          </Field>
-        </div>
-        <div class="grid aligned-field-grid" v-else>
-          <Field :label="$t('名前')" required v-slot="{ id, describedBy }">
-            <input v-model="entityForm.name" type="text" :id="id" :aria-describedby="describedBy" />
-          </Field>
-        </div>
-        <div v-if="editingEntity.type === 'venue' && detailRows.length > 0" class="card stack">
-          <h4>{{ $t('ラウンド詳細') }}</h4>
-          <div v-for="row in detailRows" :key="row.r" class="detail-row">
-            <div class="row">
-              <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
-              <label class="row small">
-                <input v-model="row.available" type="checkbox" />
-                {{ $t('有効') }}
-              </label>
-            </div>
-            <div class="grid">
-              <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="row.priority"
-                  type="number"
-                  min="1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
-              </Field>
-            </div>
-          </div>
-        </div>
-        <p v-if="entityError" class="error">{{ entityError }}</p>
-        <p v-if="csvError" class="error">{{ csvError }}</p>
-        <div class="row">
-          <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
-          <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
-        </div>
-      </div>
-    </div>
 
     <div
       v-if="activeSection === 'data' && deleteEntityModal"
@@ -1648,7 +1690,6 @@ const adjudicatorForm = reactive({
   name: '',
   strength: 5,
   preev: 0,
-  active: true,
 })
 const adjudicatorInstitutionIds = ref<string[]>([])
 const adjudicatorInstitutionSearch = ref('')
@@ -1708,43 +1749,49 @@ const entityImportTitle = computed(() => {
 })
 
 const entityImportHelpText = computed(() =>
-  t('CSV/TSVを貼り付けるか、ファイルを選択して一括取り込みできます。')
+  t('CSV/TSVファイルを選択して一括取り込みできます。ヘッダー行は必須です。')
 )
 
-const entityImportPlaceholder = computed(() => {
-  if (entityImportType.value === 'teams') {
-    return t('CSV例: name,institution,speakers,available,available_r1')
-  }
-  if (entityImportType.value === 'adjudicators') {
-    return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
-  }
-  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
-  if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
-  if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
-  return ''
-})
-
-const entityImportDescription = computed(() => {
-  if (entityImportType.value === 'teams') {
-    return t('CSV例: name,institution,speakers,available,available_r1')
-  }
-  if (entityImportType.value === 'adjudicators') {
-    return t('CSV例: name,strength,preev,active,available,conflicts,available_r1')
-  }
-  if (entityImportType.value === 'venues') return t('CSV例: name,priority,available,available_r1')
-  if (entityImportType.value === 'speakers') return t('CSV例: Speaker A')
-  if (entityImportType.value === 'institutions') return t('CSV例: Institution A,region,2')
-  return ''
-})
+const entityImportDescription = computed(() =>
+  t('ヘッダー行は必須です。テンプレートをダウンロードして列名を維持したまま入力してください。')
+)
 
 const entityImportExample = computed(() => {
-  if (entityImportType.value === 'teams') return 'name,institution,speakers,available,available_r1'
+  if (entityImportType.value === 'teams')
+    return 'name,institution,speakers,available,available_r1\nTeam A,Institution A,Alice|Bob,true,true\nTeam B,Institution A,Bob,false,true'
   if (entityImportType.value === 'adjudicators')
-    return 'name,strength,preev,active,available,conflicts,available_r1'
-  if (entityImportType.value === 'venues') return 'name,priority,available,available_r1'
-  if (entityImportType.value === 'speakers') return 'Speaker A'
-  if (entityImportType.value === 'institutions') return 'Institution A,region,2'
+    return 'name,strength,preev,available,conflicts,conflict_teams,available_r1\nJudge A,5,0,true,Institution A,Team A,true\nJudge B,4,1,false,Institution A,Team B,false'
+  if (entityImportType.value === 'venues')
+    return 'name,priority,available,available_r1\nRoom 101,1,true,true\nRoom 102,2,false,true'
+  if (entityImportType.value === 'speakers') return 'name\nSpeaker A\nSpeaker B'
+  if (entityImportType.value === 'institutions')
+    return 'name,category,priority\nInstitution A,region,2\nInstitution B,institution,1'
   return ''
+})
+
+const entityImportTemplate = computed(() => {
+  if (entityImportType.value === 'teams') {
+    return 'name,institution,speakers,available,available_r1\nTeam A,Institution A,Alice|Bob,true,true\nTeam B,Institution A,Bob,false,true'
+  }
+  if (entityImportType.value === 'adjudicators') {
+    return 'name,strength,preev,available,conflicts,conflict_teams,available_r1\nJudge A,5,0,true,Institution A,Team A,true\nJudge B,4,1,false,Institution A,Team B,false'
+  }
+  if (entityImportType.value === 'venues') {
+    return 'name,priority,available,available_r1\nRoom 101,1,true,true\nRoom 102,2,false,true'
+  }
+  if (entityImportType.value === 'speakers') return 'name\nSpeaker A\nSpeaker B'
+  if (entityImportType.value === 'institutions')
+    return 'name,category,priority\nInstitution A,region,2\nInstitution B,institution,1'
+  return ''
+})
+
+const entityImportTemplateFilename = computed(() => {
+  if (entityImportType.value === 'teams') return 'teams_import_template.csv'
+  if (entityImportType.value === 'adjudicators') return 'adjudicators_import_template.csv'
+  if (entityImportType.value === 'venues') return 'venues_import_template.csv'
+  if (entityImportType.value === 'speakers') return 'speakers_import_template.csv'
+  if (entityImportType.value === 'institutions') return 'institutions_import_template.csv'
+  return 'import_template.csv'
 })
 
 const teamSearch = ref('')
@@ -1771,21 +1818,30 @@ const entityForm = reactive<any>({
   name: '',
   strength: 5,
   preev: 0,
-  active: true,
   category: 'institution',
   priority: 1,
 })
-const editTeamSpeakerSearch = ref('')
-const editTeamSelectedSpeakerIds = ref<string[]>([])
-const editTeamInstitutionIds = ref<string[]>([])
-const editTeamInstitutionSearch = ref('')
-const editAdjudicatorInstitutionIds = ref<string[]>([])
-const editAdjudicatorInstitutionSearch = ref('')
-const editAdjudicatorConflictIds = ref<string[]>([])
-const editAdjudicatorConflictSearch = ref('')
 const entityError = ref<string | null>(null)
 const detailRows = ref<any[]>([])
 const csvError = ref<string | null>(null)
+const roundDetailInstitutionOptions = computed(() =>
+  institutions.institutions
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
+)
+const groupedRoundDetailInstitutionOptions = computed(() =>
+  buildInstitutionOptionGroups(roundDetailInstitutionOptions.value)
+)
+const roundDetailSpeakerOptions = computed(() =>
+  speakers.speakers
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
+)
+const roundDetailTeamOptions = computed(() =>
+  teams.teams
+    .slice()
+    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
+)
 const deleteEntityPrompt = computed(() => {
   if (!deleteEntityModal.value) return ''
   const { type } = deleteEntityModal.value
@@ -1844,11 +1900,7 @@ const filteredTeams = computed(() => {
   const q = teamSearch.value.trim().toLowerCase()
   const filtered = q
     ? teams.teams.filter((team) => {
-        const speakersText =
-          team.speakers
-            ?.map((s: any) => s.name)
-            .join(', ')
-            .toLowerCase() ?? ''
+        const speakersText = teamSpeakerNames(team).join(', ').toLowerCase()
         const institutionText = teamInstitutionLabel(team).toLowerCase()
         return (
           team.name?.toLowerCase().includes(q) ||
@@ -1912,16 +1964,6 @@ const filteredTeamSpeakerOptions = computed(() => {
     .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 })
 
-const filteredEditTeamSpeakerOptions = computed(() => {
-  const q = editTeamSpeakerSearch.value.trim().toLowerCase()
-  const list = q
-    ? speakers.speakers.filter((speaker) => speaker.name?.toLowerCase().includes(q))
-    : speakers.speakers
-  return list
-    .slice()
-    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
-})
-
 const filteredTeamInstitutionOptions = computed(() => {
   const q = teamInstitutionSearch.value.trim().toLowerCase()
   const list = q
@@ -1933,19 +1975,6 @@ const filteredTeamInstitutionOptions = computed(() => {
 })
 const groupedTeamInstitutionOptions = computed(() =>
   buildInstitutionOptionGroups(filteredTeamInstitutionOptions.value)
-)
-
-const filteredEditTeamInstitutionOptions = computed(() => {
-  const q = editTeamInstitutionSearch.value.trim().toLowerCase()
-  const list = q
-    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
-    : institutions.institutions
-  return list
-    .slice()
-    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
-})
-const groupedEditTeamInstitutionOptions = computed(() =>
-  buildInstitutionOptionGroups(filteredEditTeamInstitutionOptions.value)
 )
 
 const filteredAdjudicatorInstitutionOptions = computed(() => {
@@ -1963,27 +1992,6 @@ const groupedAdjudicatorInstitutionOptions = computed(() =>
 
 const filteredAdjudicatorConflictTeams = computed(() => {
   const q = adjudicatorConflictSearch.value.trim().toLowerCase()
-  const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
-  return list
-    .slice()
-    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
-})
-
-const filteredEditAdjudicatorInstitutionOptions = computed(() => {
-  const q = editAdjudicatorInstitutionSearch.value.trim().toLowerCase()
-  const list = q
-    ? institutions.institutions.filter((inst) => inst.name?.toLowerCase().includes(q))
-    : institutions.institutions
-  return list
-    .slice()
-    .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
-})
-const groupedEditAdjudicatorInstitutionOptions = computed(() =>
-  buildInstitutionOptionGroups(filteredEditAdjudicatorInstitutionOptions.value)
-)
-
-const filteredEditAdjudicatorConflictTeams = computed(() => {
-  const q = editAdjudicatorConflictSearch.value.trim().toLowerCase()
   const list = q ? teams.teams.filter((team) => team.name?.toLowerCase().includes(q)) : teams.teams
   return list
     .slice()
@@ -2085,24 +2093,6 @@ async function copyParticipantUrl() {
     copyStatus.value = 'error'
     copyError.value = t('クリップボードへのコピーに失敗しました。')
   }
-}
-
-const editingTitle = computed(() => {
-  if (!editingEntity.value) return ''
-  const label = entityTypeLabel(editingEntity.value.type)
-  const name = String(entityForm.name ?? '').trim()
-  return name ? `${label}${t('編集')}: ${name}` : `${label}${t('編集')}`
-})
-
-function entityTypeLabel(type: string) {
-  const map: Record<string, string> = {
-    team: t('チーム'),
-    adjudicator: t('ジャッジ'),
-    venue: t('会場'),
-    speaker: t('スピーカー'),
-    institution: t('コンフリクトグループ'),
-  }
-  return map[type] ?? type
 }
 
 function applyAccessForm(authValue: unknown) {
@@ -2720,12 +2710,6 @@ async function saveEditRoundFromSetup(round: any) {
   closeSetupRoundDetails(String(round._id))
 }
 
-function speakerNamesFromIds(ids: string[]) {
-  return ids
-    .map((id) => speakers.speakers.find((item) => item._id === id)?.name ?? '')
-    .filter(Boolean)
-}
-
 function resolveInstitutionName(id: string) {
   if (!id) return ''
   return institutions.institutions.find((inst) => inst._id === id)?.name ?? ''
@@ -2749,30 +2733,131 @@ function institutionLabel(value?: string) {
   return matched?.name ?? token
 }
 
-function resolveInstitutionId(value?: string) {
-  if (!value) return ''
-  const token = String(value)
-  const matched = institutions.institutions.find((inst) => inst._id === token)
-  return matched?._id ?? ''
-}
-
 function resolveTeamInstitutionIds(entity: any): string[] {
   const idsFromDetails: string[] = Array.isArray(entity?.details)
     ? entity.details.flatMap((detail: any) =>
-        (detail?.institutions ?? []).map((id: any) => String(id ?? '').trim())
+        (detail?.conflicts ?? []).map((id: any) => String(id ?? '').trim())
       )
     : []
-  const detailIds = Array.from(new Set(idsFromDetails.filter(Boolean)))
-  if (detailIds.length > 0) return detailIds
-
-  const directId = resolveInstitutionId(entity?.institution)
-  return directId ? [directId] : []
+  const idsFromTemplate: string[] = Array.isArray(entity?.template?.conflicts)
+    ? entity.template.conflicts.map((id: any) => String(id ?? '').trim())
+    : []
+  return Array.from(new Set([...idsFromDetails, ...idsFromTemplate].filter(Boolean)))
 }
 
 function teamInstitutionLabel(entity: any) {
   const detailNames = resolveInstitutionNames(resolveTeamInstitutionIds(entity))
-  if (detailNames.length > 0) return detailNames.join(', ')
-  return institutionLabel(entity?.institution)
+  return detailNames.length > 0 ? detailNames.join(', ') : ''
+}
+
+function resolveTeamSpeakerIds(entity: any): string[] {
+  const detailIds: string[] = Array.isArray(entity?.details)
+    ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
+    : []
+  const templateIds: string[] = Array.isArray(entity?.template?.speakers)
+    ? entity.template.speakers.map((id: any) => String(id))
+    : []
+  return Array.from(new Set([...detailIds, ...templateIds].filter(Boolean)))
+}
+
+function teamSpeakerNames(entity: any): string[] {
+  const speakerIds = resolveTeamSpeakerIds(entity)
+  return speakerIds
+    .map((id) => speakers.speakers.find((item) => item._id === id)?.name ?? '')
+    .filter(Boolean)
+}
+
+function normalizeRoundDetailIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((entry: any) => String(entry ?? '').trim())
+        .filter((entry) => entry.length > 0)
+    )
+  )
+}
+
+function managedRoundsForEntity(entity: any): number[] {
+  const fromManaged = managedRoundNumbers.value
+    .map((round) => Number(round))
+    .filter((round) => Number.isInteger(round) && round >= 1)
+  const fromDetails = Array.isArray(entity?.details)
+    ? entity.details
+        .map((detail: any) => Number(detail?.r))
+        .filter((round: number) => Number.isInteger(round) && round >= 1)
+    : []
+  return Array.from(new Set([...fromManaged, ...fromDetails])).sort((left, right) => left - right)
+}
+
+function buildTeamEditDetailRows(entity: any) {
+  const rounds = managedRoundsForEntity(entity)
+  const template = entity?.template ?? {}
+  const defaultAvailable =
+    typeof template.available === 'boolean' ? Boolean(template.available) : true
+  const defaultConflicts = normalizeRoundDetailIds(template?.conflicts ?? template?.institutions ?? [])
+  const defaultSpeakers = normalizeRoundDetailIds(template?.speakers)
+
+  return rounds.map((roundNumber) => {
+    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    return {
+      r: roundNumber,
+      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      conflicts: normalizeRoundDetailIds(
+        detail?.conflicts ?? detail?.institutions ?? defaultConflicts
+      ),
+      speakers: normalizeRoundDetailIds(detail?.speakers ?? defaultSpeakers),
+    }
+  })
+}
+
+function buildAdjudicatorEditDetailRows(entity: any) {
+  const rounds = managedRoundsForEntity(entity)
+  const template = entity?.template ?? {}
+  const defaultAvailable =
+    typeof template.available === 'boolean' ? Boolean(template.available) : true
+  const defaultConflicts = normalizeRoundDetailIds(template?.conflicts ?? template?.institutions ?? [])
+  const defaultConflictTeams = normalizeRoundDetailIds(template?.conflict_teams)
+
+  return rounds.map((roundNumber) => {
+    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    const hasConflictTeams = Array.isArray(detail?.conflict_teams)
+    return {
+      r: roundNumber,
+      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      conflicts: normalizeRoundDetailIds(
+        hasConflictTeams
+          ? detail?.conflicts
+          : detail?.institutions ?? detail?.conflicts ?? defaultConflicts
+      ),
+      conflict_teams: normalizeRoundDetailIds(
+        hasConflictTeams ? detail?.conflict_teams : detail?.conflicts ?? defaultConflictTeams
+      ),
+    }
+  })
+}
+
+function buildVenueEditDetailRows(entity: any) {
+  const rounds = managedRoundsForEntity(entity)
+  const template = entity?.template ?? {}
+  const defaultAvailable =
+    typeof template.available === 'boolean'
+      ? Boolean(template.available)
+      : typeof entity?.userDefinedData?.availableDefault === 'boolean'
+        ? Boolean(entity.userDefinedData.availableDefault)
+        : true
+  const defaultPriority = Number.isFinite(Number(template?.priority))
+    ? Number(template.priority)
+    : 1
+
+  return rounds.map((roundNumber) => {
+    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    return {
+      r: roundNumber,
+      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      priority: Number.isFinite(Number(detail?.priority)) ? Number(detail.priority) : defaultPriority,
+    }
+  })
 }
 
 function buildTeamDetailsPayload(options: {
@@ -2815,9 +2900,17 @@ function buildTeamDetailsPayload(options: {
   return rounds.map((roundNumber) => ({
     r: roundNumber,
     available: availableByRound.get(roundNumber) ?? true,
-    institutions: options.selectedInstitutionIds.slice(),
+    conflicts: options.selectedInstitutionIds.slice(),
     speakers: options.selectedSpeakerIds.slice(),
   }))
+}
+
+function buildTeamTemplatePayload(options: { selectedInstitutionIds: string[]; selectedSpeakerIds: string[] }) {
+  return {
+    available: true,
+    conflicts: options.selectedInstitutionIds.slice(),
+    speakers: options.selectedSpeakerIds.slice(),
+  }
 }
 
 function normalizeInstitutionCategory(value?: string): InstitutionCategory {
@@ -2860,46 +2953,43 @@ function institutionPriorityValue(value?: number) {
   return Math.round(parsed * 1000) / 1000
 }
 
-function resolveTeamSpeakerIds(entity: any): string[] {
-  const detailIds: string[] = Array.isArray(entity.details)
-    ? entity.details.flatMap((detail: any) => (detail?.speakers ?? []).map((id: any) => String(id)))
-    : []
-  const normalizedDetailIds = Array.from(new Set(detailIds.filter(Boolean)))
-  return normalizedDetailIds
-}
-
 function resolveAdjudicatorInstitutionIds(entity: any): string[] {
-  if (!Array.isArray(entity.details)) return []
-  const ids = entity.details.flatMap((detail: any) =>
-    (detail?.institutions ?? []).map((id: any) => String(id))
-  )
-  return Array.from(new Set(ids.filter(Boolean)))
+  const detailIds = Array.isArray(entity?.details)
+    ? entity.details.flatMap((detail: any) => (detail?.conflicts ?? []).map((id: any) => String(id)))
+    : []
+  const templateIds = Array.isArray(entity?.template?.conflicts)
+    ? entity.template.conflicts.map((id: any) => String(id))
+    : []
+  return Array.from(new Set([...detailIds, ...templateIds].filter(Boolean)))
 }
 
 function resolveAdjudicatorConflictIds(entity: any): string[] {
-  if (!Array.isArray(entity.details)) return []
-  const ids = entity.details.flatMap((detail: any) =>
-    (detail?.conflicts ?? []).map((id: any) => String(id))
-  )
-  return Array.from(new Set(ids.filter(Boolean)))
+  const detailIds = Array.isArray(entity?.details)
+    ? entity.details.flatMap((detail: any) =>
+        (detail?.conflict_teams ?? []).map((id: any) => String(id))
+      )
+    : []
+  const templateIds = Array.isArray(entity?.template?.conflict_teams)
+    ? entity.template.conflict_teams.map((id: any) => String(id))
+    : []
+  return Array.from(new Set([...detailIds, ...templateIds].filter(Boolean)))
 }
 
 async function handleCreateTeam() {
   if (!teamForm.name) return
-  const selectedNames = speakerNamesFromIds(teamSelectedSpeakerIds.value)
-  const speakersList = Array.from(new Set(selectedNames)).map((name) => ({
-    name,
-  }))
   const details = buildTeamDetailsPayload({
     selectedInstitutionIds: teamInstitutionIds.value,
     selectedSpeakerIds: teamSelectedSpeakerIds.value,
     roundNumbers: managedRoundNumbers.value,
   })
+  const template = buildTeamTemplatePayload({
+    selectedInstitutionIds: teamInstitutionIds.value,
+    selectedSpeakerIds: teamSelectedSpeakerIds.value,
+  })
   await teams.createTeam({
     tournamentId: tournamentId.value,
     name: teamForm.name,
-    institution: teamInstitutionIds.value[0] || undefined,
-    speakers: speakersList,
+    template,
     details,
   })
   teamForm.name = ''
@@ -2918,22 +3008,26 @@ async function handleCreateAdjudicator() {
       ? targetRounds.map((roundNumber) => ({
           r: roundNumber,
           available: true,
-          institutions: adjudicatorInstitutionIds.value.slice(),
-          conflicts: adjudicatorConflictIds.value.slice(),
+          conflicts: adjudicatorInstitutionIds.value.slice(),
+          conflict_teams: adjudicatorConflictIds.value.slice(),
         }))
       : undefined
+  const template = {
+    available: true,
+    conflicts: adjudicatorInstitutionIds.value.slice(),
+    conflict_teams: adjudicatorConflictIds.value.slice(),
+  }
   await adjudicators.createAdjudicator({
     tournamentId: tournamentId.value,
     name: adjudicatorForm.name,
     strength: adjudicatorForm.strength,
-    active: adjudicatorForm.active,
     preev: adjudicatorForm.preev,
+    template,
     details,
   })
   adjudicatorForm.name = ''
   adjudicatorForm.strength = 5
   adjudicatorForm.preev = 0
-  adjudicatorForm.active = true
   adjudicatorInstitutionIds.value = []
   adjudicatorInstitutionSearch.value = ''
   adjudicatorConflictIds.value = []
@@ -2955,6 +3049,10 @@ async function handleCreateVenue() {
   await venues.createVenue({
     tournamentId: tournamentId.value,
     name: venueForm.name,
+    template: {
+      available: defaultAvailable,
+      priority: 1,
+    },
     details,
     userDefinedData: {
       availableDefault: defaultAvailable,
@@ -3093,45 +3191,102 @@ function removeInstitution(id: string) {
   openDeleteEntityModal('institution', id)
 }
 
+function isEntityInlineEditing(type: string, id: string): boolean {
+  return (
+    Boolean(editingEntity.value) &&
+    String(editingEntity.value?.type ?? '') === String(type) &&
+    String(editingEntity.value?.id ?? '') === String(id)
+  )
+}
+
+function toggleEntityInlineEdit(type: string, entity: any) {
+  const id = String(entity?._id ?? '').trim()
+  if (!id) return
+  if (isEntityInlineEditing(type, id)) {
+    cancelEditEntity()
+    return
+  }
+  startEditEntity(type, entity)
+}
+
+const roundDetailExpanded = ref<Record<string, boolean>>({})
+
+function roundDetailExpandKey(roundNumber: number): string {
+  const current = editingEntity.value
+  return `${String(current?.type ?? '')}:${String(current?.id ?? '')}:${Number(roundNumber)}`
+}
+
+function isRoundDetailExpanded(roundNumber: number): boolean {
+  if (!editingEntity.value) return false
+  const key = roundDetailExpandKey(roundNumber)
+  return roundDetailExpanded.value[key] !== false
+}
+
+function toggleRoundDetailExpanded(roundNumber: number) {
+  if (!editingEntity.value) return
+  const key = roundDetailExpandKey(roundNumber)
+  const current = roundDetailExpanded.value[key] !== false
+  roundDetailExpanded.value = {
+    ...roundDetailExpanded.value,
+    [key]: !current,
+  }
+}
+
+function resetRoundDetailExpanded(rows: Array<{ r: number }>) {
+  if (!editingEntity.value) {
+    roundDetailExpanded.value = {}
+    return
+  }
+  const next: Record<string, boolean> = {}
+  rows.forEach((row, index) => {
+    next[roundDetailExpandKey(Number(row.r))] = index === 0
+  })
+  roundDetailExpanded.value = next
+}
+
+function adjustDetailPriority(row: any, delta: number) {
+  const current = Number(row?.priority ?? 1)
+  const next = Number.isFinite(current) ? current + delta : 1
+  row.priority = Math.max(1, Math.round(next))
+}
+
+function adjustEntityFormScore(field: 'strength' | 'preev', delta: number) {
+  const current = Number(entityForm[field] ?? 0)
+  const next = Number.isFinite(current) ? current + delta : 0
+  const clamped = Math.min(10, Math.max(0, next))
+  entityForm[field] = Math.round(clamped * 10) / 10
+}
+
+function adjustEntityFormPriority(delta: number) {
+  const current = Number(entityForm.priority ?? 1)
+  const next = Number.isFinite(current) ? current + delta : 1
+  entityForm.priority = Math.round(Math.max(0, next) * 1000) / 1000
+}
+
 function startEditEntity(type: string, entity: any) {
   editingEntity.value = { type, id: entity._id }
   entityForm.name = entity.name ?? ''
   entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
-  entityForm.active = entity.active ?? true
   entityForm.category = institutionCategoryLabel(entity.category)
   entityForm.priority = institutionPriorityValue(entity.priority)
-  if (type === 'venue') {
-    entityForm.active =
-      typeof entity.userDefinedData?.availableDefault === 'boolean'
-        ? Boolean(entity.userDefinedData.availableDefault)
-        : true
+  if (type === 'team') {
+    detailRows.value = buildTeamEditDetailRows(entity)
+  } else if (type === 'adjudicator') {
+    detailRows.value = buildAdjudicatorEditDetailRows(entity)
+  } else if (type === 'venue') {
+    detailRows.value = buildVenueEditDetailRows(entity)
+  } else {
+    detailRows.value = []
   }
-  editTeamSelectedSpeakerIds.value = type === 'team' ? resolveTeamSpeakerIds(entity) : []
-  editTeamSpeakerSearch.value = ''
-  editTeamInstitutionIds.value = type === 'team' ? resolveTeamInstitutionIds(entity) : []
-  editTeamInstitutionSearch.value = ''
-  editAdjudicatorInstitutionIds.value =
-    type === 'adjudicator' ? resolveAdjudicatorInstitutionIds(entity) : []
-  editAdjudicatorInstitutionSearch.value = ''
-  editAdjudicatorConflictIds.value =
-    type === 'adjudicator' ? resolveAdjudicatorConflictIds(entity) : []
-  editAdjudicatorConflictSearch.value = ''
-  detailRows.value = type === 'venue' ? buildDetailRows(entity) : []
+  resetRoundDetailExpanded(detailRows.value)
   entityError.value = null
 }
 
 function cancelEditEntity() {
   editingEntity.value = null
   detailRows.value = []
-  editTeamSelectedSpeakerIds.value = []
-  editTeamSpeakerSearch.value = ''
-  editTeamInstitutionIds.value = []
-  editTeamInstitutionSearch.value = ''
-  editAdjudicatorInstitutionIds.value = []
-  editAdjudicatorInstitutionSearch.value = ''
-  editAdjudicatorConflictIds.value = []
-  editAdjudicatorConflictSearch.value = ''
+  roundDetailExpanded.value = {}
 }
 
 async function saveEntityEdit() {
@@ -3140,109 +3295,123 @@ async function saveEntityEdit() {
 
   const id = editingEntity.value.id
   if (editingEntity.value.type === 'team') {
-    const selectedNames = speakerNamesFromIds(editTeamSelectedSpeakerIds.value)
-    const speakersList = Array.from(new Set(selectedNames)).map((name: string) => ({ name }))
-    const existingTeam = teams.teams.find((item) => item._id === id)
-    const details = buildTeamDetailsPayload({
-      selectedInstitutionIds: editTeamInstitutionIds.value,
-      selectedSpeakerIds: editTeamSelectedSpeakerIds.value,
-      roundNumbers: managedRoundNumbers.value,
-      existingDetails: existingTeam?.details,
-    })
-    await teams.updateTeam({
+    const details = detailRows.value.map((row: any) => ({
+      r: Number(row?.r),
+      available: row?.available !== false,
+      conflicts: normalizeRoundDetailIds(row?.conflicts),
+      speakers: normalizeRoundDetailIds(row?.speakers),
+    }))
+    const firstDetail = details[0]
+    const template = {
+      available: firstDetail ? firstDetail.available !== false : true,
+      conflicts: firstDetail ? normalizeRoundDetailIds(firstDetail.conflicts) : [],
+      speakers: firstDetail ? normalizeRoundDetailIds(firstDetail.speakers) : [],
+    }
+    const updated = await teams.updateTeam({
       tournamentId: tournamentId.value,
       teamId: id,
       name: entityForm.name,
-      institution: editTeamInstitutionIds.value[0] || undefined,
-      speakers: speakersList,
-      details,
+      template,
+      details: details.length > 0 ? details : undefined,
     })
+    if (!updated?._id) {
+      entityError.value = teams.error ?? t('チームの更新に失敗しました。')
+      teams.error = null
+      return
+    }
   } else if (editingEntity.value.type === 'adjudicator') {
-    const targetRounds = managedRoundNumbers.value.length > 0 ? managedRoundNumbers.value : [1]
-    const existing = adjudicators.adjudicators.find((item) => item._id === id)
-    const details =
-      targetRounds.length > 0 &&
-      (editAdjudicatorInstitutionIds.value.length > 0 ||
-        editAdjudicatorConflictIds.value.length > 0)
-        ? targetRounds.map((roundNumber) => {
-            const currentDetail = existing?.details?.find(
-              (detail: any) => Number(detail.r) === Number(roundNumber)
-            )
-            return {
-              r: roundNumber,
-              available: currentDetail?.available ?? true,
-              institutions: editAdjudicatorInstitutionIds.value.slice(),
-              conflicts: editAdjudicatorConflictIds.value.slice(),
-            }
-          })
-        : undefined
-    await adjudicators.updateAdjudicator({
+    const details = detailRows.value.map((row: any) => ({
+      r: Number(row?.r),
+      available: row?.available !== false,
+      conflicts: normalizeRoundDetailIds(row?.conflicts),
+      conflict_teams: normalizeRoundDetailIds(row?.conflict_teams),
+    }))
+    const firstDetail = details[0]
+    const template = {
+      available: firstDetail ? firstDetail.available !== false : true,
+      conflicts: firstDetail ? normalizeRoundDetailIds(firstDetail.conflicts) : [],
+      conflict_teams: firstDetail ? normalizeRoundDetailIds(firstDetail.conflict_teams) : [],
+    }
+    const updated = await adjudicators.updateAdjudicator({
       tournamentId: tournamentId.value,
       adjudicatorId: id,
       name: entityForm.name,
       strength: Number(entityForm.strength),
       preev: Number(entityForm.preev),
-      active: Boolean(entityForm.active),
-      details,
+      template,
+      details: details.length > 0 ? details : undefined,
     })
+    if (!updated?._id) {
+      entityError.value = adjudicators.error ?? t('ジャッジの更新に失敗しました。')
+      adjudicators.error = null
+      return
+    }
   } else if (editingEntity.value.type === 'venue') {
-    const details = detailRows.value.length > 0 ? detailRows.value.map((row) => ({ ...row })) : []
-    await venues.updateVenue({
+    const details = detailRows.value.map((row: any) => ({
+      r: Number(row?.r),
+      available: row?.available !== false,
+      priority: Number.isFinite(Number(row?.priority)) ? Number(row.priority) : 1,
+    }))
+    const firstDetail = details[0]
+    const template = {
+      available: firstDetail ? firstDetail.available !== false : true,
+      priority: firstDetail ? firstDetail.priority : 1,
+    }
+    const updated = await venues.updateVenue({
       tournamentId: tournamentId.value,
       venueId: id,
       name: entityForm.name,
-      details: details.map((row: any) => ({
-        r: row.r,
-        available: row.available,
-        priority: row.priority ?? 1,
-      })),
+      template,
+      details: details.length > 0 ? details : undefined,
       userDefinedData: {
-        availableDefault: Boolean(entityForm.active),
+        availableDefault: firstDetail ? firstDetail.available !== false : true,
       },
     })
+    if (!updated?._id) {
+      entityError.value = venues.error ?? t('会場の更新に失敗しました。')
+      venues.error = null
+      return
+    }
   } else if (editingEntity.value.type === 'speaker') {
-    await speakers.updateSpeaker({
+    const updated = await speakers.updateSpeaker({
       tournamentId: tournamentId.value,
       speakerId: id,
       name: entityForm.name,
     })
+    if (!updated?._id) {
+      entityError.value = speakers.error ?? t('スピーカーの更新に失敗しました。')
+      speakers.error = null
+      return
+    }
   } else if (editingEntity.value.type === 'institution') {
     const category = institutionCategoryLabel(entityForm.category)
     const priority = institutionPriorityValue(entityForm.priority)
-    await institutions.updateInstitution({
+    const updated = await institutions.updateInstitution({
       tournamentId: tournamentId.value,
       institutionId: id,
       name: entityForm.name,
       category,
       priority,
     })
+    if (!updated?._id) {
+      entityError.value = institutions.error ?? t('コンフリクトグループの更新に失敗しました。')
+      institutions.error = null
+      return
+    }
   }
   cancelEditEntity()
 }
 
-function buildDetailRows(entity: any) {
-  if (!managedRoundNumbers.value.length) return []
-  const defaultAvailable =
-    typeof entity.userDefinedData?.availableDefault === 'boolean'
-      ? Boolean(entity.userDefinedData.availableDefault)
-      : true
-  return managedRoundNumbers.value.map((roundNumber) => {
-    const existing =
-      (entity.details ?? []).find((d: any) => Number(d.r) === Number(roundNumber)) ?? {}
-    return {
-      r: roundNumber,
-      available: existing.available ?? defaultAvailable,
-      priority: existing.priority ?? 1,
-    }
-  })
-}
-
 function adjudicatorInstitutionsLabel(adjudicator: any) {
-  const ids: string[] = Array.isArray(adjudicator?.details)
+  const detailIds: string[] = Array.isArray(adjudicator?.details)
     ? adjudicator.details.flatMap((detail: any) =>
-        (detail?.institutions ?? []).map((id: any) => String(id))
+        (detail?.conflicts ?? []).map((id: any) => String(id))
       )
     : []
+  const templateIds: string[] = Array.isArray(adjudicator?.template?.conflicts)
+    ? adjudicator.template.conflicts.map((id: any) => String(id))
+    : []
+  const ids = [...detailIds, ...templateIds]
   const unique = Array.from(
     new Set(
       ids
@@ -3266,6 +3435,10 @@ async function importEntitiesFromText(type: EntityTabKey, text: string) {
     teams: teams.teams.map((team) => ({
       _id: String(team._id),
       name: String(team.name ?? ''),
+    })),
+    speakers: speakers.speakers.map((speaker) => ({
+      _id: String(speaker._id),
+      name: String(speaker.name ?? ''),
     })),
     institutions: institutions.institutions.map((institution) => ({
       _id: String(institution._id),
@@ -3774,9 +3947,149 @@ textarea {
 .detail-row {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-3);
+  padding: 8px var(--space-2);
   display: grid;
+  gap: var(--space-2);
+}
+
+.entity-inline-editor {
+  grid-column: 1 / -1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-surface-muted);
+  gap: var(--space-2);
+}
+
+.entity-round-details {
+  gap: var(--space-2);
+}
+
+.inline-edit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+}
+
+.inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inline-control--grow {
+  flex: 1 1 300px;
+}
+
+.inline-control-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inline-control input:not([type='checkbox']),
+.inline-control select {
+  min-height: 40px;
+  height: 40px;
+  margin: 0;
+}
+
+.inline-control--grow input:not([type='checkbox']),
+.inline-control--grow select {
+  width: 100%;
+}
+
+.detail-row-head {
+  justify-content: flex-start;
+  align-items: center;
   gap: var(--space-3);
+  flex-wrap: nowrap;
+}
+
+.detail-row-head--compact {
+  justify-content: flex-start;
+}
+
+.detail-row-head--compact > strong {
+  margin-right: 16px;
+}
+
+.round-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 16px;
+}
+
+.round-detail-switch {
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: 4px;
+}
+
+.round-detail-inline-line {
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+}
+
+.round-detail-inline-field {
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
+.compact-relation-picker {
+  max-height: 144px;
+}
+
+.relation-choice {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.round-priority-inline {
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: 8px;
+}
+
+.institution-inline-row {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+}
+
+.institution-priority-inline {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.number-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.number-stepper :deep(.btn--sm) {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 10px;
+}
+
+.number-stepper input {
+  width: 86px;
+  min-height: 40px;
+  height: 40px;
+  text-align: center;
+  margin: 0;
 }
 
 .entity-switch {
@@ -3949,7 +4262,7 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.entity-list-item .row {
+.entity-list-item > .row {
   justify-content: flex-end;
   gap: var(--space-1);
 }
@@ -4001,12 +4314,32 @@ textarea {
     align-items: start;
   }
 
-  .entity-list-item .row {
+  .entity-list-item > .row {
     justify-content: flex-start;
   }
 
   .team-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-row-head,
+  .round-detail-inline-line,
+  .institution-inline-row,
+  .inline-edit-row {
+    flex-wrap: wrap;
+  }
+
+  .round-collapse-toggle {
+    margin-right: 0;
+  }
+
+  .detail-row-head--compact > strong {
+    margin-right: 0;
+  }
+
+  .round-detail-switch,
+  .round-priority-inline {
+    margin-left: 0;
   }
 }
 

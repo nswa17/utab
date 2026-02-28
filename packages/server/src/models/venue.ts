@@ -9,10 +9,19 @@ const venueDetailSchema = new Schema(
   { _id: false }
 )
 
+const venueTemplateSchema = new Schema(
+  {
+    available: { type: Boolean, default: true },
+    priority: { type: Number, default: 1 },
+  },
+  { _id: false }
+)
+
 const venueSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
     name: { type: String, required: true },
+    template: { type: venueTemplateSchema, default: () => ({}) },
     details: { type: [venueDetailSchema], default: [] },
     userDefinedData: { type: Schema.Types.Mixed, default: {} },
   },

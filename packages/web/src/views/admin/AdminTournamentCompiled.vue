@@ -284,7 +284,10 @@
                 {{ $t('CSVダウンロード') }}
               </Button>
             </div>
-            <div v-if="activeLabel === 'adjudicators'" class="row section-download-row">
+            <div
+              v-if="activeLabel === 'adjudicators' && showCommentSheetCsvDownloadButton"
+              class="row section-download-row"
+            >
               <Button
                 variant="secondary"
                 class="section-download-button"
@@ -968,6 +971,7 @@ const draws = useDrawsStore()
 const submissions = useSubmissionsStore()
 const { t, locale } = useI18n({ useScope: 'global' })
 const reportUxV3Enabled = isAdminReportsUxV3Enabled()
+const showCommentSheetCsvDownloadButton = false
 const compileManualSaveEnabled = true
 const compileWorkflow = useCompileWorkflow('submissions')
 
@@ -2299,10 +2303,13 @@ function resolveInstitutionName(token: string): string {
 
 function collectTeamInstitutionNames(team: any): string[] {
   const set = new Set<string>()
-  const direct = String(team?.institution ?? '').trim()
-  if (direct) set.add(resolveInstitutionName(direct))
+  ;(team?.template?.conflicts ?? []).forEach((institutionId: any) => {
+    const token = String(institutionId ?? '').trim()
+    if (!token) return
+    set.add(resolveInstitutionName(token))
+  })
   ;(team?.details ?? []).forEach((detail: any) => {
-    ;(detail?.institutions ?? []).forEach((institutionId: any) => {
+    ;(detail?.conflicts ?? []).forEach((institutionId: any) => {
       const token = String(institutionId ?? '').trim()
       if (!token) return
       set.add(resolveInstitutionName(token))
@@ -2313,8 +2320,13 @@ function collectTeamInstitutionNames(team: any): string[] {
 
 function collectAdjudicatorInstitutionNames(adjudicator: any): string[] {
   const set = new Set<string>()
+  ;(adjudicator?.template?.conflicts ?? []).forEach((institutionId: any) => {
+    const token = String(institutionId ?? '').trim()
+    if (!token) return
+    set.add(resolveInstitutionName(token))
+  })
   ;(adjudicator?.details ?? []).forEach((detail: any) => {
-    ;(detail?.institutions ?? []).forEach((institutionId: any) => {
+    ;(detail?.conflicts ?? []).forEach((institutionId: any) => {
       const token = String(institutionId ?? '').trim()
       if (!token) return
       set.add(resolveInstitutionName(token))
@@ -2327,6 +2339,11 @@ const speakerTeamNameMap = computed(() => {
   const byId = new Map<string, string>()
   teams.teams.forEach((team) => {
     const teamName = String(team.name ?? '')
+    ;(team.template?.speakers ?? []).forEach((speakerId: any) => {
+      const token = String(speakerId ?? '').trim()
+      if (!token || byId.has(token)) return
+      byId.set(token, teamName)
+    })
     ;(team.details ?? []).forEach((detail: any) => {
       ;(detail?.speakers ?? []).forEach((speakerId: any) => {
         const token = String(speakerId ?? '').trim()
@@ -2404,7 +2421,7 @@ const participantExportRows = computed<ParticipantExportRowInput[]>(() => {
       id: String(adjudicator._id),
       name: String(adjudicator.name ?? ''),
       institutions: collectAdjudicatorInstitutionNames(adjudicator),
-      active: adjudicator.active === true,
+      active: adjudicator.template?.available !== false,
     })
   })
 

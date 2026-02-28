@@ -355,9 +355,9 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
         team.details,
         rounds,
         {
-          available: true,
-          institutions: [],
-          speakers: [],
+          available: team?.template?.available !== false,
+          conflicts: Array.isArray(team?.template?.conflicts) ? team.template.conflicts : [],
+          speakers: Array.isArray(team?.template?.speakers) ? team.template.speakers : [],
         },
         undefined,
         (speakerId) => speakerMaps.map.get(String(speakerId))
@@ -547,7 +547,15 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
           details: buildDetailsForRounds(
             (adj as any).details,
             rounds,
-            { available: true, institutions: [], conflicts: [] },
+            {
+              available: (adj as any)?.template?.available !== false,
+              conflicts: Array.isArray((adj as any)?.template?.conflicts)
+                ? (adj as any).template.conflicts
+                : [],
+              conflict_teams: Array.isArray((adj as any)?.template?.conflict_teams)
+                ? (adj as any).template.conflict_teams
+                : [],
+            },
             undefined,
             undefined,
             (teamId) => teamMaps.map.get(String(teamId))

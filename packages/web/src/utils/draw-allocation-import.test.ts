@@ -95,4 +95,10 @@ describe('draw allocation import', () => {
     expect(result.errors).toEqual([])
     expect(result.allocation[1].chairs).toEqual(['adj-b'])
   })
+
+  it('requires header row', () => {
+    const parsed = parseDrawAllocationImportText('1,Room 1,Team A,Team B,Judge A')
+    expect(parsed.entries).toEqual([])
+    expect(parsed.errors[0]).toContain('1行目にCSVヘッダーが必要です')
+  })
 })

@@ -995,11 +995,21 @@ async function buildCompiledPayloadFromRaw(
       const team = teamId ? teamById.get(teamId) : null
       return {
         id: numericId,
-        details: buildDetailsForRounds((team as any)?.details, rounds, {
-          available: true,
-          institutions: [],
-          speakers: [],
-        }, undefined, (speakerId) => speakerMaps.map.get(String(speakerId))),
+        details: buildDetailsForRounds(
+          (team as any)?.details,
+          rounds,
+          {
+            available: (team as any)?.template?.available !== false,
+            conflicts: Array.isArray((team as any)?.template?.conflicts)
+              ? (team as any).template.conflicts
+              : [],
+            speakers: Array.isArray((team as any)?.template?.speakers)
+              ? (team as any).template.speakers
+              : [],
+          },
+          undefined,
+          (speakerId) => speakerMaps.map.get(String(speakerId))
+        ),
       }
     })
     .filter((team): team is { id: number; details: any[] } => team !== null)
@@ -1021,7 +1031,15 @@ async function buildCompiledPayloadFromRaw(
         details: buildDetailsForRounds(
           (adjudicator as any)?.details,
           rounds,
-          { available: true, institutions: [], conflicts: [] },
+          {
+            available: (adjudicator as any)?.template?.available !== false,
+            conflicts: Array.isArray((adjudicator as any)?.template?.conflicts)
+              ? (adjudicator as any).template.conflicts
+              : [],
+            conflict_teams: Array.isArray((adjudicator as any)?.template?.conflict_teams)
+              ? (adjudicator as any).template.conflict_teams
+              : [],
+          },
           undefined,
           undefined,
           (teamId) => teamMaps.map.get(String(teamId))
@@ -1076,8 +1094,11 @@ async function buildCompiledPayloadFromRaw(
   const teamMeta = new Map<string, { institutions: string[] }>()
   teams.forEach((team: any) => {
     const institutions = new Set<string>()
-    if (team.institution) institutions.add(team.institution)
-    const detailInstitutions = team.details?.flatMap((detail: any) => detail.institutions ?? []) ?? []
+    const templateConflicts = Array.isArray(team?.template?.conflicts) ? team.template.conflicts : []
+    templateConflicts.forEach((inst: string) => {
+      if (inst) institutions.add(String(inst))
+    })
+    const detailInstitutions = team.details?.flatMap((detail: any) => detail.conflicts ?? []) ?? []
     detailInstitutions.forEach((inst: string) => {
       if (inst) institutions.add(String(inst))
     })
@@ -1104,8 +1125,11 @@ async function buildCompiledPayloadFromRaw(
   const adjudicatorMeta = new Map<string, { institutions: string[] }>()
   adjudicators.forEach((adj: any) => {
     const institutions = new Set<string>()
+    ;(adj?.template?.conflicts ?? []).forEach((inst: string) => {
+      if (inst) institutions.add(String(inst))
+    })
     adj.details?.forEach((detail: any) => {
-      ;(detail.institutions ?? []).forEach((inst: string) => {
+      ;(detail.conflicts ?? []).forEach((inst: string) => {
         if (inst) institutions.add(String(inst))
       })
     })
@@ -1686,7 +1710,15 @@ async function buildCompiledPayloadFromSubmissions(
         details: buildDetailsForRounds(
           (adjudicator as any)?.details,
           rounds,
-          { available: true, institutions: [], conflicts: [] },
+          {
+            available: (adjudicator as any)?.template?.available !== false,
+            conflicts: Array.isArray((adjudicator as any)?.template?.conflicts)
+              ? (adjudicator as any).template.conflicts
+              : [],
+            conflict_teams: Array.isArray((adjudicator as any)?.template?.conflict_teams)
+              ? (adjudicator as any).template.conflict_teams
+              : [],
+          },
           undefined,
           undefined,
           (teamId) => teamMaps.map.get(String(teamId))
@@ -1734,9 +1766,11 @@ async function buildCompiledPayloadFromSubmissions(
   const teamMeta = new Map<string, { institutions: string[] }>()
   teams.forEach((team) => {
     const institutions = new Set<string>()
-    if (team.institution) institutions.add(String(team.institution))
+    ;(team?.template?.conflicts ?? []).forEach((inst: string) => {
+      if (inst) institutions.add(String(inst))
+    })
     team.details?.forEach((detail: any) => {
-      ;(detail.institutions ?? []).forEach((inst: string) => {
+      ;(detail.conflicts ?? []).forEach((inst: string) => {
         if (inst) institutions.add(String(inst))
       })
     })
@@ -1746,8 +1780,11 @@ async function buildCompiledPayloadFromSubmissions(
   const adjudicatorMeta = new Map<string, { institutions: string[] }>()
   adjudicators.forEach((adj: any) => {
     const institutions = new Set<string>()
+    ;(adj?.template?.conflicts ?? []).forEach((inst: string) => {
+      if (inst) institutions.add(String(inst))
+    })
     adj.details?.forEach((detail: any) => {
-      ;(detail.institutions ?? []).forEach((inst: string) => {
+      ;(detail.conflicts ?? []).forEach((inst: string) => {
         if (inst) institutions.add(String(inst))
       })
     })

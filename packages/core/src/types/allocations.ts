@@ -47,4 +47,5 @@ export interface AllocationConfig {
   }
   preev_weights?: number[]
   institution_priority_map?: Record<number, number>
+  institution_category_map?: Record<number, string>
 }

@@ -1056,6 +1056,13 @@ function speakerEntriesFromDetail(team: any): SpeakerEntry[] {
   if (!team) return []
   const detail = team.details?.find((d: any) => Number(d.r) === Number(round.value))
   const ids = (detail?.speakers ?? []).map((id: string) => String(id)).filter(Boolean)
+  if (ids.length === 0 && Array.isArray(team?.template?.speakers)) {
+    const templateIds = team.template.speakers.map((id: any) => String(id)).filter(Boolean)
+    return templateIds.map((id: string) => ({
+      id,
+      name: speakersStore.speakers.find((speaker) => speaker._id === id)?.name ?? id,
+    }))
+  }
   if (ids.length === 0) return []
   return ids.map((id: string) => ({
     id,
@@ -1063,24 +1070,12 @@ function speakerEntriesFromDetail(team: any): SpeakerEntry[] {
   }))
 }
 
-function speakerEntriesFromTeam(team: any): SpeakerEntry[] {
-  if (!team) return []
-  return (
-    team.speakers?.map((speaker: any, index: number) => ({
-      id: `${team._id}:${index}`,
-      name: speaker.name,
-    })) ?? []
-  )
-}
-
 const teamASpeakerEntries = computed(() => {
-  const detailEntries = speakerEntriesFromDetail(selectedTeamA.value)
-  return detailEntries.length > 0 ? detailEntries : speakerEntriesFromTeam(selectedTeamA.value)
+  return speakerEntriesFromDetail(selectedTeamA.value)
 })
 
 const teamBSpeakerEntries = computed(() => {
-  const detailEntries = speakerEntriesFromDetail(selectedTeamB.value)
-  return detailEntries.length > 0 ? detailEntries : speakerEntriesFromTeam(selectedTeamB.value)
+  return speakerEntriesFromDetail(selectedTeamB.value)
 })
 
 const roundConfig = computed(() => rounds.rounds.find((item) => item.round === Number(round.value)))

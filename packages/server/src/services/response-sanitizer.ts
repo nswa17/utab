@@ -149,7 +149,16 @@ function sanitizeDrawAllocation(
 
 export function sanitizeTeamForPublic(team: unknown): PlainRecord {
   const source = asRecord(team)
-  return pick(source, ['_id', 'tournamentId', 'name', 'institution', 'speakers'])
+  const template = asRecord(source.template)
+  const speakers = Array.isArray(template.speakers)
+    ? template.speakers
+        .map((speakerId) => toStringToken(speakerId))
+        .filter((speakerId) => speakerId.length > 0)
+    : []
+  return {
+    ...pick(source, ['_id', 'tournamentId', 'name']),
+    template: { speakers },
+  }
 }
 
 export function sanitizeSpeakerForPublic(speaker: unknown): PlainRecord {
