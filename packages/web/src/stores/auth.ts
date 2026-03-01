@@ -43,14 +43,15 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
+    error.value = null
     try {
       await api.post('/auth/logout')
-    } catch {
-      // Keep logout idempotent on the client even if the server session is already gone.
+      clearAuthState()
+      initialized.value = true
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Logout failed'
+      throw err
     }
-    clearAuthState()
-    error.value = null
-    initialized.value = true
   }
 
   async function fetchMe() {
