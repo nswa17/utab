@@ -1,16 +1,5 @@
 <template>
   <section class="stack">
-    <p v-if="activeSection === 'overview'" class="muted small">
-      {{ $t('大会の基本情報と公開設定を管理します。') }}
-    </p>
-    <div v-else class="stack tight data-guide-header">
-      <div class="row data-guide-row">
-        <p class="muted small">
-          {{ $t('チーム・ジャッジ・スピーカー・コンフリクトグループ・会場を管理します。') }}
-        </p>
-      </div>
-    </div>
-
     <LoadingState v-if="isSectionLoading" />
 
     <template v-else-if="tournament && activeSection === 'overview'">
@@ -302,7 +291,7 @@
         </form>
         <p v-if="setupRoundError" class="error">{{ setupRoundError }}</p>
         <p v-if="setupRoundBreakError" class="error">{{ setupRoundBreakError }}</p>
-        <p class="muted small">{{ tournamentAutosaveText }}</p>
+        <p v-if="tournamentAutosaveText" class="muted small">{{ tournamentAutosaveText }}</p>
         <p v-if="sortedRounds.length === 0" class="muted small">
           {{ $t('ラウンドがまだありません。') }}
         </p>
@@ -528,32 +517,17 @@
       </article>
 
       <article class="card stack overview-qr-card">
-        <div class="row overview-qr-head">
-          <h4>{{ $t('参加者アクセス用QRコード') }}</h4>
-        </div>
-        <p class="muted small">{{ $t('参加者がスマホで読み取って大会ページを開けます。') }}</p>
         <div v-if="participantUrl" class="qr-grid">
           <div class="stack qr-content">
+            <h4>{{ $t('参加者アクセス用QRコード') }}</h4>
             <div class="muted small">{{ $t('大会アクセスURL') }}</div>
             <code class="qr-url">{{ participantUrl }}</code>
             <div class="row qr-actions">
-              <Button variant="secondary" size="sm" @click="copyParticipantUrl">
+              <Button class="qr-copy-button" variant="secondary" size="sm" @click="copyParticipantUrl">
                 {{ copyStatus === 'copied' ? $t('コピーしました。') : $t('URLをコピー') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                :href="participantUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {{ $t('参加者画面を開く') }}
               </Button>
             </div>
             <p v-if="copyStatus === 'error'" class="error small">{{ copyError }}</p>
-            <p class="muted small">
-              {{ $t('大会パスワードが必要な場合、参加者は表示された画面で入力します。') }}
-            </p>
           </div>
           <div class="qr-box">
             <LoadingState v-if="qrLoading" />
@@ -566,6 +540,9 @@
             <p v-else class="muted small">{{ $t('QRコードを生成できませんでした。') }}</p>
             <p v-if="qrError" class="error">{{ qrError }}</p>
           </div>
+        </div>
+        <div v-else class="stack qr-content">
+          <h4>{{ $t('参加者アクセス用QRコード') }}</h4>
         </div>
       </article>
     </template>
@@ -2228,7 +2205,7 @@ const tournamentAutosaveText = computed(() => {
   if (tournamentAutosaveStatus.value === 'error') {
     return tournamentAutosaveError.value || t('大会設定の保存に失敗しました。')
   }
-  return t('大会設定（重要なお知らせを除く）の変更は自動で保存されます。')
+  return ''
 })
 const infoPreviewHtml = computed(() => renderMarkdown(tournamentForm.infoText ?? ''))
 
@@ -4264,10 +4241,6 @@ function onGlobalKeydown(event: KeyboardEvent) {
   margin: 0;
 }
 
-.overview-qr-head {
-  justify-content: space-between;
-}
-
 .qr-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
@@ -4287,6 +4260,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   border: 1px dashed var(--color-border);
   background: var(--color-surface-muted);
   justify-self: end;
+  align-self: start;
 }
 
 .qr-image {
@@ -4317,8 +4291,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
   min-width: 140px;
 }
 
-.qr-actions :deep(.btn--secondary:last-child) {
-  min-width: 160px;
+.qr-copy-button {
+  width: 100%;
 }
 
 .grid .full {

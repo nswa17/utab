@@ -60,8 +60,7 @@ const DEFAULT_BRAND_NAME = resolveBrandName()
 function resolveBrandName(): string {
   const raw = import.meta.env.VITE_BRAND_NAME
   if (typeof raw !== 'string') return 'UTab'
-  const normalized = raw.trim()
-  return normalized.length > 0 ? normalized : 'UTab'
+  return raw.trim()
 }
 
 export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {

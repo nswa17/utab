@@ -4,7 +4,7 @@
       <div class="row">
         <img class="logo" :src="brandLogoUrl" :alt="brandName" />
         <div>
-          <h1>{{ brandName }}</h1>
+          <h1 v-if="brandName">{{ brandName }}</h1>
           <p class="muted">{{ $t('大会管理へログイン') }}</p>
         </div>
       </div>
