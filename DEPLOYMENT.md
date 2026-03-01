@@ -21,7 +21,7 @@ pnpm --filter @utab/web test
 `staging` と `production` で分離して設定する。
 
 - Server: `NODE_ENV`, `MONGODB_URI`, `SESSION_SECRET`, `CORS_ORIGIN`
-- Web: `VITE_API_URL`, `VITE_BRAND_NAME`(任意), `VITE_BRAND_LOGO_URL`(任意)
+- Web: `VITE_API_URL`, `VITE_APP_TITLE`(任意), `VITE_BRAND_NAME`(任意), `VITE_BRAND_LOGO_URL`(任意)
 
 本番環境では必ず `https://` の URL を使う。
 
@@ -30,6 +30,7 @@ pnpm --filter @utab/web test
   - `CORS_ORIGIN=https://tab.example.com`
 - Web（production 例）
   - `VITE_API_URL=https://api.tab.example.com/api`
+  - `VITE_APP_TITLE=UTab`
   - `VITE_BRAND_NAME=UTab` (任意)
   - `VITE_BRAND_LOGO_URL=/logo.png` (任意)
 
@@ -72,6 +73,7 @@ DNS 反映後に、両方のドメインで HTTPS が有効化されているこ
    - `change-me-session-secret-at-least-32-chars`
    - `https://YOUR_VPS_IP`
 2. `packages/web/.env.production` の以下を編集する
+   - `VITE_APP_TITLE`（ブラウザタブ名）
    - `VITE_BRAND_NAME`
    - `VITE_BRAND_LOGO_URL`（`/logo.png` 以外にしたい場合）
 3. ロゴ画像を `packages/web/public/logo.png` に上書きする
