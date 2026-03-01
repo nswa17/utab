@@ -7,87 +7,166 @@
 
         <div v-else class="stack">
           <section class="card stack report-setup-card">
-            <section class="stack report-generate-block">
+            <section v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary-card">
               <div class="row report-setup-head">
-                <h4>{{ $t('新規レポート生成') }}</h4>
+                <h4>{{ $t('提出状況') }}</h4>
               </div>
-              <section v-if="roundSubmissionSummaries.length > 0" class="stack submission-summary-card">
-                <Table hover striped>
-                  <thead>
-                    <tr>
-                      <th>{{ $t('ラウンド') }}</th>
-                      <th>Ballot</th>
-                      <th>Feedback</th>
-                      <th>{{ $t('操作') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="summary in roundSubmissionSummaries" :key="summary.round">
-                      <td>{{ roundName(summary.round) }}</td>
-                      <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
-                      <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
-                      <td>
-                        <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
-                          {{ $t('提出状況を確認') }}
-                        </RouterLink>
-                      </td>
-                    </tr>
-                  </tbody>
-                </Table>
-              </section>
-              <div class="row compile-actions">
-                <CompiledSnapshotSelect
-                  :model-value="selectedCompiledId"
-                  class="report-existing-select"
-                  :label="$t('表示するレポート')"
-                  :options="reportSnapshotSelectOptions"
-                  :placeholder="$t('未選択')"
-                  :disabled="isLoading"
-                  @update:model-value="onSelectedCompiledChange"
-                />
-                <Button
-                  variant="secondary"
-                  @click="compileManualSaveEnabled ? runDefaultPreview() : runCompile()"
-                  :disabled="isLoading || !canRunCompile"
-                >
-                  {{ compileManualSaveEnabled ? $t('仮集計') : $t('レポート生成') }}
-                </Button>
-                <Button
-                  variant="secondary"
-                  @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
-                  :disabled="isLoading || !canRunCompile"
-                >
-                  {{ $t('強制仮集計') }}
-                </Button>
-                <Button
-                  v-if="compileManualSaveEnabled"
-                  @click="openSaveSnapshotModal"
-                  :disabled="isLoading || !canSavePreview"
-                >
-                  {{ $t('集計結果を保存') }}
-                </Button>
-                <Button variant="secondary" @click="openRecomputeOptions">
-                  {{ $t('詳細設定') }}
-                </Button>
-              </div>
-              <p v-if="compileActionError" class="error small">{{ compileActionError }}</p>
-              <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
-                {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
-              </p>
-              <div v-if="isRawModeActive" class="card stack migration-guide">
-                <h5>{{ $t('提出データ一本化ガイド') }}</h5>
-                <ol class="migration-guide-list">
-                  <li>{{ $t('大会運営の提出状況タブで不足提出を解消し、重複提出を整理します。') }}</li>
-                  <li>{{ $t('生結果での補正が必要な場合は、提出データ編集へ反映して再集計します。') }}</li>
-                  <li>{{ $t('提出データソースに戻して再計算し、確定した集計結果を選択して出力します。') }}</li>
-                </ol>
-                <div class="row migration-guide-actions">
-                  <RouterLink :to="submissionsOperationsLink" class="migration-guide-link">
-                    {{ submissionOperationsLinkLabel }}
-                  </RouterLink>
-                </div>
-              </div>
+              <Table striped>
+                <thead>
+                  <tr>
+                    <th>{{ $t('ラウンド') }}</th>
+                    <th>Ballot</th>
+                    <th>Feedback</th>
+                    <th>{{ $t('操作') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="summary in roundSubmissionSummaries"
+                    :key="summary.round"
+                  >
+                    <td>{{ roundName(summary.round) }}</td>
+                    <td>{{ summarizeSubmissionCell(summary, 'ballot') }}</td>
+                    <td>{{ summarizeSubmissionCell(summary, 'feedback') }}</td>
+                    <td class="row submission-actions">
+                      <RouterLink :to="submissionOperationsLinkForRound(summary.round)" class="submission-link">
+                        {{ $t('提出状況を確認') }}
+                      </RouterLink>
+                    </td>
+                  </tr>
+                </tbody>
+              </Table>
             </section>
+
+            <div class="report-setup-grid">
+              <section class="card soft stack report-generate-block">
+                <div class="row report-setup-head">
+                  <h4>{{ $t('新規仮集計') }}</h4>
+                </div>
+
+                <div class="compile-step-inline">
+                  <div class="row compile-step-head">
+                    <span class="compile-step-badge">1</span>
+                    <h5>{{ $t('ラウンド選択') }}</h5>
+                  </div>
+                  <div class="row compile-step-controls round-checkboxes round-checkboxes-right">
+                    <label
+                      v-for="round in sortedRounds"
+                      :key="`compile-round-${round.round}`"
+                      class="round-checkbox-item"
+                    >
+                      <input v-model="compileRounds" type="checkbox" :value="round.round" :disabled="isLoading" />
+                      <span>{{ round.name ?? $t('ラウンド {round}', { round: round.round }) }}</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="compile-step-inline">
+                  <div class="row compile-step-head">
+                    <span class="compile-step-badge">2</span>
+                    <h5>{{ $t('集計実行') }}</h5>
+                  </div>
+                  <div class="row compile-step-controls compile-actions-inline">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      @click="compileManualSaveEnabled ? runDefaultPreview() : runCompile()"
+                      :disabled="isLoading || !canRunPrimaryCompile"
+                    >
+                      {{ compileManualSaveEnabled ? $t('集計') : $t('レポート生成') }}
+                    </Button>
+                    <Button
+                      v-if="!compileManualSaveEnabled || showForceCompileAfterError"
+                      variant="secondary"
+                      size="sm"
+                      @click="openForceCompileModal(compileManualSaveEnabled ? 'preview' : 'compile')"
+                      :disabled="isLoading || !canRunPrimaryCompile"
+                    >
+                      {{ $t('強制集計') }}
+                    </Button>
+                    <Button variant="secondary" size="sm" @click="openRecomputeOptions">
+                      {{ $t('詳細設定') }}
+                    </Button>
+                  </div>
+                </div>
+
+                <div v-if="compileManualSaveEnabled" class="compile-step-inline">
+                  <div class="row compile-step-head">
+                    <span class="compile-step-badge">3</span>
+                    <h5>{{ $t('集計結果を保存') }}</h5>
+                  </div>
+                  <div class="row compile-step-controls compile-actions-inline">
+                    <Button size="sm" @click="openSaveSnapshotModal" :disabled="isLoading || !canSavePreview">
+                      {{ $t('集計結果を保存') }}
+                    </Button>
+                  </div>
+                </div>
+
+                <p v-if="compileActionError" class="error small">{{ compileActionError }}</p>
+                <p v-if="compileManualSaveEnabled && compileWorkflow.previewStale" class="muted warning">
+                  {{ $t('設定が変更されました。保存前に仮集計を実行してください。') }}
+                </p>
+              </section>
+
+              <section class="card soft stack report-existing-block">
+                <div class="row report-setup-head">
+                  <h4>{{ $t('既存レポート') }}</h4>
+                </div>
+                <div v-if="reportSnapshotRows.length > 0" class="existing-report-table">
+                  <div class="existing-report-table-head">
+                    <span class="existing-report-col-label">{{ $t('日時') }}</span>
+                    <span class="existing-report-col-label">{{ $t('考慮ラウンド') }}</span>
+                    <span class="existing-report-col-label">{{ $t('メモ') }}</span>
+                    <span class="existing-report-col-action">{{ $t('操作') }}</span>
+                  </div>
+                  <ul
+                    class="existing-report-list"
+                    :class="{ 'existing-report-list-scroll': reportSnapshotRows.length > 5 }"
+                  >
+                    <li v-for="row in reportSnapshotRows" :key="row.compiledId" class="existing-report-row">
+                      <div class="existing-report-cell">
+                        <strong>{{ row.createdAtLabel }}</strong>
+                      </div>
+                      <div class="existing-report-cell existing-report-rounds-cell">
+                        <strong class="existing-report-rounds-text">{{ row.roundsLabel }}</strong>
+                      </div>
+                      <div class="existing-report-cell">
+                        <span class="existing-report-memo">
+                          {{
+                            row.isRawSource
+                              ? row.snapshotMemoLabel === t('なし')
+                                ? t('強制実行')
+                                : `${row.snapshotMemoLabel} / ${t('強制実行')}`
+                              : row.snapshotMemoLabel
+                          }}
+                        </span>
+                      </div>
+                      <div class="row existing-report-actions">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          class="existing-report-action-button"
+                          :disabled="isLoading || selectedCompiledId === row.compiledId"
+                          @click="onSelectedCompiledChange(row.compiledId)"
+                        >
+                          {{ $t('表示') }}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          class="existing-report-action-button"
+                          :disabled="isLoading"
+                          @click="openDeleteCompiledModal(row)"
+                        >
+                          {{ $t('削除') }}
+                        </Button>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                <p v-else class="muted small">{{ $t('保存済みレポートがありません。') }}</p>
+              </section>
+            </div>
           </section>
 
       <template v-if="compiled">
@@ -753,7 +832,7 @@
             v-model:best-aggregation="compileBestAggregation"
             v-model:missing-data-policy="compileMissingDataPolicy"
             :show-winner-scoring="false"
-            :show-source-rounds="true"
+            :show-source-rounds="false"
             :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
             :disabled="isLoading"
           />
@@ -836,7 +915,6 @@ import Button from '@/components/common/Button.vue'
 import Table from '@/components/common/Table.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 import CategoryRankingTable from '@/components/common/CategoryRankingTable.vue'
-import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import CompiledDiffBaselineSelect from '@/components/common/CompiledDiffBaselineSelect.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import CompileForceRunModal from '@/components/common/CompileForceRunModal.vue'
@@ -957,6 +1035,7 @@ const isLoading = computed(
 const hasLoaded = ref(false)
 const compiledLoadError = ref('')
 const compileActionError = ref('')
+const showForceCompileAfterError = ref(false)
 const forceCompileError = ref('')
 const saveSnapshotError = ref('')
 const deleteCompiledError = ref('')
@@ -1129,10 +1208,6 @@ type ReportSnapshotRow = {
   rankingPriorityLabel: string
   snapshotMemoLabel: string
   deleteLabel: string
-}
-type ReportSnapshotSelectOption = {
-  value: string
-  label: string
 }
 type RecomputeOptionsSnapshot = {
   compileRounds: number[]
@@ -1326,29 +1401,11 @@ const reportSnapshotRows = computed<ReportSnapshotRow[]>(() => {
   })
 })
 
-const reportSnapshotSelectOptions = computed<ReportSnapshotSelectOption[]>(() =>
-  reportSnapshotRows.value.map((row) => ({
-    value: row.compiledId,
-    label: row.isRawSource
-      ? `${row.createdAtLabel} / ${row.roundsLabel} (${t('強制実行')})`
-      : `${row.createdAtLabel} / ${row.roundsLabel}`,
-  }))
-)
-
-const selectedReportSnapshotRow = computed<ReportSnapshotRow | null>(
-  () => reportSnapshotRows.value.find((row) => row.compiledId === selectedCompiledId.value) ?? null
-)
-
 function onSelectedCompiledChange(compiledId: string) {
   const targetId = String(compiledId).trim()
   if (targetId === selectedCompiledId.value) return
   selectedCompiledId.value = targetId
   if (targetId) emitReportMetric('cta_click', { cta: 'select_existing_report' })
-}
-
-function openDeleteSelectedCompiledModal() {
-  if (!selectedReportSnapshotRow.value) return
-  openDeleteCompiledModal(selectedReportSnapshotRow.value)
 }
 
 function openDeleteCompiledModal(row: ReportSnapshotRow) {
@@ -1477,14 +1534,14 @@ const canRunCompile = computed(() => {
     (option) => option.compiledId === selectedDiffBaselineCompiledId.value
   )
 })
+const canRunPrimaryCompile = computed(
+  () => canRunCompile.value && compileTargetRoundNumbers.value.length > 0
+)
 const canSavePreview = computed(() => compileManualSaveEnabled && compileWorkflow.canSave)
 const displayedCompileSource = computed<'submissions' | 'raw'>(() =>
   compiled.value?.compile_source === 'raw' ? 'raw' : 'submissions'
 )
 const isDisplayedRawSource = computed(() => displayedCompileSource.value === 'raw')
-const isRawModeActive = computed(
-  () => isDisplayedRawSource.value
-)
 const compileTargetRoundNumbers = computed(() => normalizeRoundSelection(compileRounds.value))
 const compileIncludeLabelsFromRounds = computed(() =>
   includeLabelsFromRoundDetailsAny(
@@ -2616,7 +2673,7 @@ function isSpeakerScoreEnabledRound(roundNumber: number): boolean {
   const config = roundConfigByRound.value.get(roundNumber)
   return config?.userDefinedData?.no_speaker_score !== true
 }
-const summaryTargetRounds = computed(() => [...compileTargetRoundNumbers.value])
+const summaryTargetRounds = computed(() => [...availableCompileRoundNumbers.value])
 const phaseRoundNumbers = computed<number[]>(() => {
   if (effectiveReportPhase.value === 'prelim') return prelimRoundNumbersInCompiled.value
   if (effectiveReportPhase.value === 'break') return breakRoundNumbersInCompiled.value
@@ -2732,33 +2789,6 @@ const roundSubmissionSummaries = computed<RoundSubmissionSummary[]>(() =>
       },
     }
   })
-)
-const submissionIssueRound = computed<number | null>(() => {
-  const missing = roundSubmissionSummaries.value.find(
-    (summary) => summary.ballot.missing + summary.feedback.missing > 0
-  )
-  if (missing) return missing.round
-  const needsReview = roundSubmissionSummaries.value.find(
-    (summary) =>
-      summary.ballot.duplicates +
-        summary.feedback.duplicates +
-        summary.ballot.unknown +
-        summary.feedback.unknown >
-      0
-  )
-  if (needsReview) return needsReview.round
-  const fallback = summaryTargetRounds.value[summaryTargetRounds.value.length - 1]
-  return Number.isInteger(fallback) ? fallback : null
-})
-const submissionsOperationsLink = computed(() => {
-  const basePath = `/admin/${tournamentId.value}/operations`
-  if (submissionIssueRound.value === null) return `${basePath}?task=submissions`
-  return `${basePath}?task=submissions&round=${submissionIssueRound.value}`
-})
-const submissionOperationsLinkLabel = computed(() =>
-  submissionIssueRound.value === null
-    ? t('提出状況タブへ')
-    : t('提出状況タブへ（{round}）', { round: roundName(submissionIssueRound.value) })
 )
 
 function submissionOperationsLinkForRound(roundNumber: number): string {
@@ -3640,15 +3670,18 @@ async function runPreviewWithSource(
     inputKey
   )
   compileExecuted.value = true
+  showForceCompileAfterError.value = false
   trackCompileMetric('preview_run', source)
   return true
 }
 
 async function runDefaultPreview() {
   compileActionError.value = ''
+  showForceCompileAfterError.value = false
   const success = await runPreviewWithSource('submissions')
   if (!success) {
-    compileActionError.value = compiledStore.error ?? t('仮集計に失敗しました。')
+    compileActionError.value = compiledStore.error ?? t('集計に失敗しました。')
+    showForceCompileAfterError.value = true
   }
 }
 
@@ -3656,6 +3689,7 @@ async function runCompile() {
   if (!tournamentId.value || !canRunCompile.value) return
   emitReportMetric('cta_click', { cta: 'run_compile' })
   compileActionError.value = ''
+  showForceCompileAfterError.value = false
   const success = await executeCompile('submissions')
   if (!success) {
     compileActionError.value = compiledStore.error ?? t('レポート生成に失敗しました。')
@@ -3890,6 +3924,21 @@ watch(
 )
 
 watch(
+  availableCompileRoundNumbers,
+  (roundNumbers) => {
+    if (roundNumbers.length === 0) {
+      compileRounds.value = []
+      return
+    }
+    const roundSet = new Set(roundNumbers)
+    const filtered = compileRounds.value.filter((round) => roundSet.has(round))
+    if (filtered.length === compileRounds.value.length) return
+    compileRounds.value = filtered
+  },
+  { immediate: true }
+)
+
+watch(
   selectedCompiledId,
   (nextId) => {
     if (!nextId) {
@@ -3946,6 +3995,7 @@ watch(tournamentId, () => {
   compileDefaultsHydrated.value = false
   manualCompileSource.value = 'submissions'
   manualCompileOptionOverrides.value = undefined
+  showForceCompileAfterError.value = false
   activeReportPhase.value = 'overall'
   closeDeleteCompiledModal()
   compileWorkflow.clearPreview()
@@ -4025,8 +4075,9 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .report-setup-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 .report-setup-card {
@@ -4040,19 +4091,225 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   flex-wrap: wrap;
 }
 
+.report-setup-grid .report-setup-head h4 {
+  margin: 0;
+}
+
 .report-generate-block {
   gap: var(--space-3);
 }
 
-.report-existing-select {
-  flex: 1 1 340px;
-  min-width: min(420px, 100%);
-  max-width: 100%;
-  margin-right: auto;
+.compile-step-head {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.compile-step-head h5 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.compile-step-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-2);
+}
+
+.compile-step-controls {
+  width: 100%;
+  min-height: 34px;
+}
+
+.round-checkboxes {
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.round-checkboxes-right {
+  justify-content: flex-end;
+}
+
+.round-checkbox-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--color-surface-muted);
+  font-size: 0.85rem;
+}
+
+.round-checkbox-item input {
+  margin: 0;
+}
+
+.compile-actions-inline {
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.compile-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-secondary);
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.report-existing-block {
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.report-existing-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .submission-summary-card {
   gap: var(--space-3);
+}
+
+.submission-actions {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+.existing-report-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.existing-report-list-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.existing-report-table {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.existing-report-table-head {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.82fr) minmax(0, 2fr) minmax(70px, 0.45fr) minmax(132px, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.existing-report-col-label {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--color-muted);
+  min-width: 0;
+}
+
+.existing-report-col-action {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--color-muted);
+  min-width: 0;
+  text-align: center;
+  justify-self: stretch;
+}
+
+.existing-report-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.82fr) minmax(0, 2fr) minmax(70px, 0.45fr) minmax(132px, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0 var(--space-2);
+  min-height: 54px;
+}
+
+.existing-report-row:last-child {
+  border-bottom: 0;
+}
+
+.existing-report-cell {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.existing-report-cell strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.existing-report-rounds-cell {
+  white-space: normal;
+  overflow: visible;
+}
+
+.existing-report-rounds-cell .existing-report-rounds-text {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.existing-report-memo {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.existing-report-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  white-space: nowrap;
+}
+
+.existing-report-actions .existing-report-action-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
 }
 
 .overview-item {
@@ -4441,34 +4698,6 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   background: var(--color-surface-muted);
 }
 
-.migration-guide {
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  gap: var(--space-2);
-}
-
-.migration-guide-list {
-  margin: 0;
-  padding-left: 20px;
-  display: grid;
-  gap: 4px;
-}
-
-.migration-guide-actions {
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.migration-guide-link {
-  color: var(--color-primary);
-  text-decoration: none;
-  font-size: 0.85rem;
-}
-
-.migration-guide-link:hover {
-  text-decoration: underline;
-}
-
 .raw-source-notice {
   margin: 0;
 }
@@ -4664,6 +4893,10 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 }
 
 @media (max-width: 980px) {
+  .report-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-display-tabs.report-display-tabs-split {
     align-items: stretch;
   }
@@ -4679,6 +4912,28 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
   .fairness-performance-grid {
     grid-template-columns: 1fr;
+  }
+
+  .compile-step-inline {
+    align-items: flex-start;
+  }
+
+  .round-checkboxes {
+    flex-basis: 100%;
+  }
+
+  .round-checkboxes-right {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .compile-actions-inline {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .report-existing-actions {
+    justify-content: flex-start;
   }
 }
 

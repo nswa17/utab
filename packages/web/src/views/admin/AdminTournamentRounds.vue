@@ -366,7 +366,7 @@
         <h4>{{ $t('ラウンド削除') }}</h4>
         <p class="muted">
           {{
-            $t('ラウンド {round} を削除しますか？', {
+            $t('{round} を削除しますか？', {
               round:
                 roundDeleteModalRound.name ||
                 $t('ラウンド {round}', { round: roundDeleteModalRound.round }),
