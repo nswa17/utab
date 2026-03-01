@@ -1061,6 +1061,7 @@ describe('Server integration', () => {
       syncTeamAvailability: true,
     })
     expect(saveBreakRes.status).toBe(200)
+    expect(saveBreakRes.body.data.break.cutoff_tie_policy).toBe('manual')
     expect(saveBreakRes.body.data.break.participants).toEqual([
       { teamId: alphaId, seed: 1 },
       { teamId: betaId, seed: 2 },
@@ -1069,6 +1070,7 @@ describe('Server integration', () => {
     const updatedRoundRes = await agent.get(`/api/rounds/${breakRoundId}`).query({ tournamentId })
     expect(updatedRoundRes.status).toBe(200)
     expect(updatedRoundRes.body.data.userDefinedData.break_round).toBe(true)
+    expect(updatedRoundRes.body.data.userDefinedData.break.cutoff_tie_policy).toBe('manual')
     expect(updatedRoundRes.body.data.userDefinedData.break.participants).toHaveLength(2)
 
     const updatedTeamsRes = await agent.get('/api/teams').query({ tournamentId })

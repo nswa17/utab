@@ -178,7 +178,9 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
         return Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : fallback.break.size
       })(),
       cutoff_tie_policy:
-        breakSource.cutoff_tie_policy === 'include_all' || breakSource.cutoff_tie_policy === 'strict'
+        breakSource.cutoff_tie_policy === 'manual' ||
+        breakSource.cutoff_tie_policy === 'include_all' ||
+        breakSource.cutoff_tie_policy === 'strict'
           ? (breakSource.cutoff_tie_policy as BreakCutoffTiePolicy)
           : fallback.break.cutoff_tie_policy,
       seeding: normalizeBreakSeeding(breakSource.seeding, fallback.break.seeding),

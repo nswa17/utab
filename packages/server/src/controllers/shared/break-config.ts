@@ -76,7 +76,9 @@ export function normalizeBreakConfig(
   const sizeDefault = Number.isInteger(options.defaultSize) ? Number(options.defaultSize) : 8
   const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : sizeDefault
   const cutoff_tie_policy: BreakCutoffTiePolicy =
-    source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
+    source.cutoff_tie_policy === 'manual' ||
+    source.cutoff_tie_policy === 'include_all' ||
+    source.cutoff_tie_policy === 'strict'
       ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
       : 'include_all'
   const seeding = (() => {
