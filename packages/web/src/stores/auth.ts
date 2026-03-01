@@ -15,6 +15,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => Boolean(userId.value))
 
+  function clearAuthState() {
+    userId.value = null
+    username.value = null
+    role.value = null
+    tournaments.value = []
+  }
+
   async function login(name: string, password: string) {
     loading.value = true
     error.value = null
@@ -36,12 +43,15 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    await api.post('/auth/logout')
-    userId.value = null
-    username.value = null
-    role.value = null
-    tournaments.value = []
-    initialized.value = true
+    error.value = null
+    try {
+      await api.post('/auth/logout')
+      clearAuthState()
+      initialized.value = true
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Logout failed'
+      throw err
+    }
   }
 
   async function fetchMe() {
@@ -52,10 +62,7 @@ export const useAuthStore = defineStore('auth', () => {
       role.value = res.data?.data?.role ?? null
       tournaments.value = res.data?.data?.tournaments ?? []
     } catch {
-      userId.value = null
-      username.value = null
-      role.value = null
-      tournaments.value = []
+      clearAuthState()
     } finally {
       initialized.value = true
     }

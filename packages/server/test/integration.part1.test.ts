@@ -307,6 +307,31 @@ describe('Server integration', () => {
     expect(publicSubmission.status).toBe(201)
   })
 
+  it('supports idempotent logout even after session is already destroyed', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'logout-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'logout-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const logoutRes = await agent.post('/api/auth/logout').send()
+    expect(logoutRes.status).toBe(200)
+    expect(logoutRes.body.data?.success).toBe(true)
+
+    const meAfterLogout = await agent.get('/api/auth/me')
+    expect(meAfterLogout.status).toBe(401)
+
+    const secondLogoutRes = await agent.post('/api/auth/logout').send()
+    expect(secondLogoutRes.status).toBe(200)
+    expect(secondLogoutRes.body.data?.success).toBe(true)
+  })
+
   it('supports institution category and priority fields', async () => {
     const agent = request.agent(app)
     const registerRes = await agent
