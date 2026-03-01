@@ -15,6 +15,7 @@ import {
 import { requireTournamentAdmin } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 import {
+  compileAdjudicatorRankingMetrics,
   compileAggregationPolicies,
   compileDuplicateMergePolicies,
   compileIncludeLabels,
@@ -39,6 +40,11 @@ const compileOptionsSchema = z
       .object({
         preset: z.enum(compileRankingPresets).optional(),
         order: z.array(z.enum(compileRankingMetrics)).min(1).optional(),
+      })
+      .optional(),
+    adjudicator_ranking_priority: z
+      .object({
+        order: z.array(z.enum(compileAdjudicatorRankingMetrics)).min(1).optional(),
       })
       .optional(),
     winner_policy: z.enum(compileWinnerPolicies).optional(),

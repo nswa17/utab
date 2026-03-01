@@ -1438,7 +1438,7 @@ select {
 }
 
 .focused-round-feedback {
-  background: color-mix(in srgb, #fffbeb 72%, var(--color-surface));
+  background: var(--color-surface-muted);
 }
 
 .round-visibility-note {
@@ -1473,16 +1473,11 @@ select {
   font-weight: 700;
 }
 
-.round-visibility-chip.is-open {
-  color: #166534;
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
+.round-visibility-chip.is-open,
 .round-visibility-chip.is-closed {
-  color: #9a3412;
-  border-color: #fed7aa;
-  background: #fff7ed;
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .round-toggle {
@@ -1669,11 +1664,11 @@ select {
 }
 
 .gov-card {
-  background: var(--color-side-gov-card, #eff6ff);
+  background: var(--color-surface-muted);
 }
 
 .opp-card {
-  background: var(--color-side-opp-card, #fffbeb);
+  background: var(--color-surface-muted);
 }
 
 .side-chip {

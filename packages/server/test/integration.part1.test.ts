@@ -575,6 +575,9 @@ describe('Server integration', () => {
         preset: 'custom',
         order: ['win', 'sum', 'margin', 'vote', 'average', 'sd'],
       },
+      adjudicator_ranking_priority: {
+        order: ['average'],
+      },
       winner_policy: 'score_only',
       tie_points: 0.5,
       duplicate_normalization: {
@@ -706,6 +709,32 @@ describe('Server integration', () => {
     })
     expect(venueAllocRes.status).toBe(200)
     expect(venueAllocRes.body.data.allocation.length).toBeGreaterThan(0)
+
+    const compiledAdjSnapshotRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'raw',
+      options: {
+        ...compileOptions,
+        include_labels: ['teams', 'adjudicators'],
+      },
+    })
+    expect(compiledAdjSnapshotRes.status).toBe(201)
+    const adjudicatorSnapshotId = compiledAdjSnapshotRes.body.data._id as string
+
+    const splitSnapshotAllocRes = await agent.post('/api/allocations').send({
+      tournamentId,
+      round: 1,
+      snapshotIdTeams: snapshotId,
+      snapshotIdAdjudicators: adjudicatorSnapshotId,
+      options: {
+        team_allocation_algorithm: 'standard',
+        adjudicator_allocation_algorithm: 'standard',
+        numbers_of_adjudicators: { chairs: 1, panels: 0, trainees: 0 },
+        venue_allocation_algorithm_options: { shuffle: false },
+      },
+    })
+    expect(splitSnapshotAllocRes.status).toBe(200)
+    expect(splitSnapshotAllocRes.body.data.allocation.length).toBeGreaterThan(0)
 
     const missingSnapshotRes = await agent.post('/api/allocations/teams').send({
       tournamentId,
@@ -1079,6 +1108,12 @@ describe('Server integration', () => {
       style: styleId,
       options: { style: { team_num: 2, score_weights: [1] } },
       user_defined_data: {
+        break: {
+          source: 'raw',
+          size: 16,
+          cutoff_tie_policy: 'include_all',
+          seeding: 'high_low',
+        },
         round_defaults: {
           userDefinedData: {
             evaluate_from_adjudicators: false,
@@ -1090,12 +1125,6 @@ describe('Server integration', () => {
             poi: false,
             best: true,
             allow_low_tie_win: false,
-          },
-          break: {
-            source: 'raw',
-            size: 16,
-            cutoff_tie_policy: 'include_all',
-            seeding: 'high_low',
           },
         },
       },
@@ -1357,13 +1386,11 @@ describe('Server integration', () => {
         },
       },
       user_defined_data: {
-        round_defaults: {
-          break: {
-            source: 'raw',
-            size: 8,
-            cutoff_tie_policy: 'manual',
-            seeding: 'high_low',
-          },
+        break: {
+          source: 'raw',
+          size: 2,
+          cutoff_tie_policy: 'manual',
+          seeding: 'high_low',
         },
       },
     })

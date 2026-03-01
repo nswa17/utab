@@ -299,6 +299,8 @@ const en = {
     'No compiled reference is available. You can continue reviewing allocations without one.',
   '対戦表作成で選択中の参照集計結果を利用します。':
     'Auto-generation uses the reference compile result selected in draw builder.',
+  '対戦表作成でチーム/ジャッジごとの参照ラウンドを選び、「確定」で参照集計を自動確定します。':
+    'In draw creation, choose source rounds per team/adjudicator and use Finalize to auto-save reference compile results.',
   '参照集計結果を選ぶと、チーム/ジャッジの順位や平均を配置表に表示できます。近い実力同士の対戦確認や割り当て調整に使ってください。':
     'Selecting a compiled reference shows team/adjudicator rankings and averages in the allocation table. Use it to verify power matching and adjust assignments.',
   '配置表の順位・平均表示に使います。':
@@ -412,17 +414,26 @@ const en = {
   '読み込みに失敗しました。': 'Failed to load data.',
   '未提出のチーム評価があります（提出 {submitted}/{expected}）。':
     'Some ballots are still missing (submitted {submitted}/{expected}).',
+  '未提出のジャッジ評価があります（提出 {submitted}/{expected}）。':
+    'Some adjudicator feedback submissions are still missing (submitted {submitted}/{expected}).',
+  '未完了（提出 {submitted}/{expected}）':
+    'Pending (submitted {submitted}/{expected})',
   'SUM算出 {calculated}/{expected}': 'Calculated SUM {calculated}/{expected}',
   'SUM算出 {count}件': 'Calculated SUM {count} submissions',
   '提出者情報が不足したチーム評価が {count} 件あります。提出状況タブで提出者を補完してください。':
     '{count} ballots have missing submitter information. Fill submitter IDs in the submissions tab.',
+  '提出者情報が不足したジャッジ評価が {count} 件あります。提出状況タブで提出者を補完してください。':
+    '{count} adjudicator feedback entries have missing submitter information. Fill submitter IDs in the submissions tab.',
   '提出者情報不足: {count}': 'Missing submitter info: {count}',
   提出SUM: 'Submitted SUM',
   提出累計: 'Submitted cumulative',
+  ジャッジスコア: 'Adjudicator score',
   暫定: 'Provisional',
   未算出: 'Not calculated',
   '選択ラウンドのチーム評価が揃っていないため、集計を実行できません。':
     'Cannot run compile because selected round ballots are incomplete.',
+  '選択ラウンドのジャッジ評価が揃っていないため、集計を実行できません。':
+    'Cannot run compile because selected round adjudicator feedback is incomplete.',
   '選択ラウンドのチーム評価が揃っていないため、次ラウンド対戦を生成できません。':
     'Cannot generate next-round draw because selected round ballots are incomplete.',
   '最新集計結果に選択ラウンドが含まれていません。先に集計を実行してください。':
@@ -841,6 +852,16 @@ const en = {
   提出一覧: 'Submissions',
   提出状況: 'Submission status',
   提出状況確認: 'Submission status review',
+  '提出確認・ラウンド結果集計': 'Submission review & round result compile',
+  ラウンド結果確認: 'Round result review',
+  '再読み込み時に、提出データから集計レポートを自動再計算します（未提出は除外）。':
+    'On reload, the compile report is recalculated automatically from submissions (missing submissions are excluded).',
+  'このステップでは再読み込み時に集計レポートを再計算します（未提出除外）。':
+    'In this step, the compile report is recalculated on reload (missing submissions excluded).',
+  '集計レポートを再計算しました（未提出は除外）。':
+    'Recalculated compile report (missing submissions excluded).',
+  '集計結果を再計算できませんでした。提出データを確認して再読み込みしてください。':
+    'Could not recalculate compile results. Check submissions and reload.',
   '提出がありません。': 'No submissions.',
   提出数: 'Submissions',
   '提出数（ラウンド別）': 'Submissions by round',
@@ -874,6 +895,45 @@ const en = {
     'Turning on marks this and later rounds as break; turning off marks this and earlier rounds as standard.',
   '有効化すると、参加チーム確定時に Team.details[r].available を同期します。':
     'When enabled, Team.details[r].available is synchronized when participants are finalized.',
+  参照ラウンド確定: 'Finalize source rounds',
+  参照ラウンド選択: 'Select source rounds',
+  'チーム・ジャッジごとに参照するラウンドを選択し、「確定」で参照集計を自動で確定します。確定後に配置を編集できます。':
+    'Select source rounds for teams and adjudicators, then finalize to auto-save reference compile results. Placement editing is available after finalization.',
+  '参照ラウンドは確定済みです。必要な場合のみ変更してください。':
+    'Source rounds are finalized. Change them only when needed.',
+  '参照ラウンドがないため、このまま配置を開始できます。':
+    'No source rounds are available, so you can start placement now.',
+  '集計に使う参照ラウンドを選択し、「確定」で参照集計を保存します。必要な場合は「詳細」で集計条件を調整してください。':
+    "Select source rounds for compile, then click Finalize to save reference compile results. Use Details to adjust compile settings when needed.",
+  '参照集計の確定に使う集計条件を設定します。':
+    'Configure compile settings used when finalizing reference compile results.',
+  共通結果参照ラウンド: 'Shared result source rounds',
+  'チーム・ジャッジで参照ラウンドを個別に設定する':
+    'Set source rounds separately for teams and adjudicators',
+  確定済み: 'Finalized',
+  未確定: 'Not finalized',
+  チーム参照ラウンド: 'Team source rounds',
+  ジャッジ参照ラウンド: 'Adjudicator source rounds',
+  チーム結果参照ラウンド: 'Team result source rounds',
+  ジャッジ結果参照ラウンド: 'Adjudicator result source rounds',
+  '複数選択可（Ctrl/Cmd + クリック）': 'Multi-select (Ctrl/Cmd + click)',
+  '複数選択可（チェックで選択）': 'Select multiple with checkboxes',
+  '選択中: {rounds}': 'Selected: {rounds}',
+  参照ラウンドを変更: 'Change source rounds',
+  'チーム参照: {team}': 'Team source: {team}',
+  'チーム参照: {team} / ジャッジ参照: {adjudicators}':
+    'Team source: {team} / Adjudicator source: {adjudicators}',
+  'チーム結果参照: {team}': 'Team result source: {team}',
+  'チーム結果参照: {team} / ジャッジ結果参照: {adjudicators}':
+    'Team result source: {team} / Adjudicator result source: {adjudicators}',
+  'チーム参照ラウンドを1つ以上選択してください。': 'Select at least one team source round.',
+  'ジャッジ参照ラウンドを1つ以上選択してください。': 'Select at least one adjudicator source round.',
+  'チーム結果参照ラウンドを1つ以上選択してください。':
+    'Select at least one team result source round.',
+  'ジャッジ結果参照ラウンドを1つ以上選択してください。':
+    'Select at least one adjudicator result source round.',
+  '参照集計の確定に失敗しました。': 'Failed to finalize reference compile results.',
+  '先に参照ラウンドを確定してください。': 'Finalize source rounds before continuing.',
   参照ラウンド: 'Source rounds',
   '未選択時は直前までの全ラウンドを参照します。': 'If none selected, all previous rounds are used.',
   ブレイク人数: 'Break size',
@@ -898,6 +958,8 @@ const en = {
   候補順位でシード再設定: 'Reset seeds from candidate ranking',
   ブレイク参加を保存: 'Save break participants',
   ブレイク設定を保存: 'Save break settings',
+  'ブレイクラウンドが未設定のため、保存できません。':
+    'Cannot save because no break round is enabled.',
   'ブレイク生成は対象をチームに設定してください。':
     'Set scope to Teams when using break generation.',
   'Round のブレイク設定を参照して、シード順で対戦カードを生成します（1 vs N, 2 vs N-1 ...）。':
@@ -905,6 +967,9 @@ const en = {
   '選択中 {selected}/{total}': 'Selected {selected}/{total}',
   'ブレイク候補の取得に失敗しました。': 'Failed to load break candidates.',
   'ブレイク設定の保存に失敗しました。': 'Failed to save break settings.',
+  'チーム順位優先度の保存に失敗しました。': 'Failed to save team ranking priority.',
+  'ジャッジ順位優先度の保存に失敗しました。':
+    'Failed to save adjudicator ranking priority.',
   'シードは1以上の整数で入力してください。': 'Seed must be an integer of 1 or greater.',
   'シード番号が重複しています。': 'Seed numbers must be unique.',
   新規登録: 'Sign up',
@@ -1149,7 +1214,12 @@ const en = {
     'Defines which metric breaks ties first when ranks are tied.',
   '勝敗判定・引き分け時ポイント・順位優先度を設定します。':
     'Configure winner policy, draw points, and ranking priority.',
+  勝敗判定設定: 'Winner-policy settings',
   順位優先度設定: 'Ranking priority settings',
+  チーム順位優先度設定: 'Team ranking priority settings',
+  チーム順位優先度を保存: 'Save team ranking priority',
+  ジャッジ順位優先度設定: 'Adjudicator ranking priority settings',
+  ジャッジ順位優先度を保存: 'Save adjudicator ranking priority',
   勝敗ポイント: 'Win points',
   総得点: 'Total points',
   得失点差: 'Point differential',
@@ -1496,6 +1566,8 @@ const en = {
     "Select 'Your details' to show tasks.",
   'タスクはありません。': 'No tasks.',
   スピーカー名で絞り込み: 'Filter by speaker name',
+  '該当するスピーカーがありません。': 'No matching speakers found.',
+  '該当するチームがありません。': 'No matching teams found.',
   'スコア入力を確認してください。': 'Please check the score inputs.',
   '提出・対戦情報で提出者ジャッジを選択してください。':
     'Please select the submitter adjudicator in "Submission & matchup details".',

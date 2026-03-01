@@ -112,11 +112,8 @@
           <p v-if="noticeSaveError" class="error small">{{ noticeSaveError }}</p>
         </article>
 
-        <article v-if="hasBreakRounds" class="overview-setting-card stack">
+        <article class="overview-setting-card stack">
           <h4>{{ $t('ブレイク設定') }}</h4>
-          <p class="muted small">
-            {{ $t('この設定は、ラウンドでブレイクが有効な場合にのみ適用されます。') }}
-          </p>
           <BreakPolicyEditor
             v-model:source="tournamentBreakForm.source"
             v-model:size="tournamentBreakForm.size"
@@ -128,15 +125,94 @@
           <div class="row notice-actions">
             <Button
               size="sm"
-              :disabled="isLoading || isSavingTournamentBreak"
+              :disabled="isLoading || isSavingTournamentBreak || !hasBreakRounds"
               @click="saveTournamentBreakSettings"
             >
               {{ isSavingTournamentBreak ? $t('更新中...') : $t('ブレイク設定を保存') }}
             </Button>
+            <span v-if="!hasBreakRounds" class="muted small">
+              {{ $t('ブレイクラウンドが未設定のため、保存できません。') }}
+            </span>
             <span v-if="tournamentBreakSaved" class="muted small">{{ $t('更新しました。') }}</span>
           </div>
           <p v-if="tournamentBreakSaveError" class="error small">
             {{ tournamentBreakSaveError }}
+          </p>
+        </article>
+
+        <article class="overview-setting-card ranking-priority-card stack">
+          <h4>{{ $t('チーム順位優先度設定') }}</h4>
+          <p class="muted small">
+            {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
+          </p>
+          <RankingPriorityEditor
+            v-model="tournamentTeamRankingForm.order"
+            :title="$t('チーム順位優先度設定')"
+            :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+            :options="teamRankingPriorityOptions"
+            :disabled="isLoading || isSavingTournamentTeamRanking"
+            :min-active="1"
+            :active-title="$t('使用する基準')"
+            :inactive-title="$t('不使用')"
+            :inactive-empty-text="$t('不使用の指標はありません。')"
+            :active-action-label="$t('除外')"
+          />
+          <div class="row notice-actions">
+            <Button
+              size="sm"
+              :disabled="isLoading || isSavingTournamentTeamRanking"
+              @click="saveTournamentTeamRankingSettings"
+            >
+              {{
+                isSavingTournamentTeamRanking
+                  ? $t('更新中...')
+                  : $t('チーム順位優先度を保存')
+              }}
+            </Button>
+            <span v-if="tournamentTeamRankingSaved" class="muted small">{{
+              $t('更新しました。')
+            }}</span>
+          </div>
+          <p v-if="tournamentTeamRankingSaveError" class="error small">
+            {{ tournamentTeamRankingSaveError }}
+          </p>
+        </article>
+
+        <article class="overview-setting-card ranking-priority-card stack">
+          <h4>{{ $t('ジャッジ順位優先度設定') }}</h4>
+          <p class="muted small">
+            {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
+          </p>
+          <RankingPriorityEditor
+            v-model="tournamentAdjudicatorRankingForm.order"
+            :title="$t('ジャッジ順位優先度設定')"
+            :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+            :options="adjudicatorRankingPriorityOptions"
+            :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
+            :min-active="1"
+            :active-title="$t('使用する基準')"
+            :inactive-title="$t('不使用')"
+            :inactive-empty-text="$t('不使用の指標はありません。')"
+            :active-action-label="$t('除外')"
+          />
+          <div class="row notice-actions">
+            <Button
+              size="sm"
+              :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
+              @click="saveTournamentAdjudicatorRankingSettings"
+            >
+              {{
+                isSavingTournamentAdjudicatorRanking
+                  ? $t('更新中...')
+                  : $t('ジャッジ順位優先度を保存')
+              }}
+            </Button>
+            <span v-if="tournamentAdjudicatorRankingSaved" class="muted small">{{
+              $t('更新しました。')
+            }}</span>
+          </div>
+          <p v-if="tournamentAdjudicatorRankingSaveError" class="error small">
+            {{ tournamentAdjudicatorRankingSaveError }}
           </p>
         </article>
       </div>
@@ -209,16 +285,6 @@
               >
                 <template #status>
                   <div class="row setup-round-status-row">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="setup-round-details-open-button"
-                      :aria-pressed="isSetupRoundDetailsOpen(String(round._id)) ? 'true' : 'false'"
-                      :disabled="isLoading"
-                      @click="openSetupRoundDetails(round)"
-                    >
-                      {{ $t('ラウンド詳細設定') }}
-                    </Button>
                     <div class="setup-round-switches-wrap">
                       <RoundPublicationSwitches
                         :busy="roundPublicationBusy"
@@ -250,6 +316,16 @@
                         "
                       />
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="setup-round-details-open-button"
+                      :aria-pressed="isSetupRoundDetailsOpen(String(round._id)) ? 'true' : 'false'"
+                      :disabled="isLoading"
+                      @click="openSetupRoundDetails(round)"
+                    >
+                      {{ $t('ラウンド詳細設定') }}
+                    </Button>
                   </div>
                 </template>
               </RoundMotionEditor>
@@ -333,12 +409,6 @@
                       <section class="stack setup-round-config-group">
                         <CompileOptionsEditor
                           v-model:source-rounds="setupRoundEditForm.compile.source_rounds"
-                          v-model:ranking-preset="
-                            setupRoundEditForm.compile.options.ranking_priority.preset
-                          "
-                          v-model:ranking-order="
-                            setupRoundEditForm.compile.options.ranking_priority.order
-                          "
                           v-model:winner-policy="setupRoundEditForm.compile.options.winner_policy"
                           v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
                           v-model:merge-policy="
@@ -537,18 +607,23 @@
                     :placeholder="$t('スピーカー名で絞り込み')"
                   />
                   <div class="relation-picker">
-                    <label
-                      v-for="speaker in filteredTeamSpeakerOptions"
-                      :key="speaker._id"
-                      class="row small relation-item"
-                    >
-                      <input
-                        v-model="teamSelectedSpeakerIds"
-                        type="checkbox"
-                        :value="speaker._id"
-                      />
-                      <span>{{ speaker.name }}</span>
-                    </label>
+                    <template v-if="filteredTeamSpeakerOptions.length > 0">
+                      <label
+                        v-for="speaker in filteredTeamSpeakerOptions"
+                        :key="speaker._id"
+                        class="row small relation-item"
+                      >
+                        <input
+                          v-model="teamSelectedSpeakerIds"
+                          type="checkbox"
+                          :value="speaker._id"
+                        />
+                        <span>{{ speaker.name }}</span>
+                      </label>
+                    </template>
+                    <p v-else class="muted small relation-empty">
+                      {{ $t('該当するスピーカーがありません。') }}
+                    </p>
                   </div>
                   <p class="muted small">
                     {{ $t('選択済み: {count}名', { count: teamSelectedSpeakerIds.length }) }}
@@ -795,14 +870,19 @@
                   :placeholder="$t('検索してチームを絞り込む')"
                 />
                 <div class="relation-picker">
-                  <label
-                    v-for="team in filteredAdjudicatorConflictTeams"
-                    :key="team._id"
-                    class="row small relation-item"
-                  >
-                    <input v-model="adjudicatorConflictIds" type="checkbox" :value="team._id" />
-                    <span>{{ team.name }}</span>
-                  </label>
+                  <template v-if="filteredAdjudicatorConflictTeams.length > 0">
+                    <label
+                      v-for="team in filteredAdjudicatorConflictTeams"
+                      :key="team._id"
+                      class="row small relation-item"
+                    >
+                      <input v-model="adjudicatorConflictIds" type="checkbox" :value="team._id" />
+                      <span>{{ team.name }}</span>
+                    </label>
+                  </template>
+                  <p v-else class="muted small relation-empty">
+                    {{ $t('該当するチームがありません。') }}
+                  </p>
                 </div>
               </div>
               <div class="row entity-submit-row">
@@ -1416,8 +1496,6 @@
         <section class="stack setup-round-config-group">
           <CompileOptionsEditor
             v-model:source-rounds="roundDefaultsForm.compile.source_rounds"
-            v-model:ranking-preset="roundDefaultsForm.compile.options.ranking_priority.preset"
-            v-model:ranking-order="roundDefaultsForm.compile.options.ranking_priority.order"
             v-model:winner-policy="roundDefaultsForm.compile.options.winner_policy"
             v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
             v-model:merge-policy="
@@ -1433,15 +1511,6 @@
             :show-winner-scoring="false"
             :show-source-rounds="false"
             :show-merge-and-missing="false"
-            :disabled="isLoading"
-          />
-        </section>
-        <section class="stack setup-round-config-group">
-          <BreakPolicyEditor
-            v-model:source="roundDefaultsForm.break.source"
-            v-model:size="roundDefaultsForm.break.size"
-            v-model:cutoff-tie-policy="roundDefaultsForm.break.cutoff_tie_policy"
-            v-model:seeding="roundDefaultsForm.break.seeding"
             :disabled="isLoading"
           />
         </section>
@@ -1559,7 +1628,19 @@ import {
   withRoundBreakEnabled,
   type TournamentBreakConfig,
 } from '@/utils/tournament-break'
-import { normalizeCompileOptions } from '@/types/compiled'
+import {
+  compileAdjudicatorRankingMetrics,
+  compileRankingMetrics,
+  type CompileAdjudicatorRankingMetric,
+  normalizeCompileOptions,
+  type CompileRankingMetric,
+} from '@/types/compiled'
+import {
+  defaultTournamentAdjudicatorRankingConfig,
+  defaultTournamentTeamRankingConfig,
+  normalizeTournamentAdjudicatorRankingConfig,
+  normalizeTournamentTeamRankingConfig,
+} from '@/utils/tournament-team-ranking'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -1571,6 +1652,7 @@ import RoundPublicationSwitches from '@/components/common/RoundPublicationSwitch
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
+import RankingPriorityEditor from '@/components/common/RankingPriorityEditor.vue'
 
 const route = useRoute()
 const tournamentStore = useTournamentStore()
@@ -1622,6 +1704,8 @@ const tournamentForm = reactive({
 const tournamentBreakForm = reactive<TournamentBreakConfig>(
   normalizeTournamentBreakConfig(undefined)
 )
+const tournamentTeamRankingForm = reactive(defaultTournamentTeamRankingConfig())
+const tournamentAdjudicatorRankingForm = reactive(defaultTournamentAdjudicatorRankingConfig())
 const roundDefaultsForm = reactive(defaultRoundDefaults())
 const setupRoundForm = reactive<{
   round: number
@@ -1673,10 +1757,78 @@ const noticeSaved = ref(false)
 const isSavingTournamentBreak = ref(false)
 const tournamentBreakSaveError = ref('')
 const tournamentBreakSaved = ref(false)
+const isSavingTournamentTeamRanking = ref(false)
+const tournamentTeamRankingSaveError = ref('')
+const tournamentTeamRankingSaved = ref(false)
+const isSavingTournamentAdjudicatorRanking = ref(false)
+const tournamentAdjudicatorRankingSaveError = ref('')
+const tournamentAdjudicatorRankingSaved = ref(false)
 let tournamentAutosaveTimer: number | null = null
 let tournamentAutosaveStatusTimer: number | null = null
 let noticeSavedTimer: number | null = null
 let tournamentBreakSavedTimer: number | null = null
+let tournamentTeamRankingSavedTimer: number | null = null
+let tournamentAdjudicatorRankingSavedTimer: number | null = null
+
+const teamRankingPriorityOptions = computed(() =>
+  compileRankingMetrics.map((metric) => ({
+    value: metric,
+    label: teamRankingMetricLabel(metric),
+    description: teamRankingMetricDescription(metric),
+  }))
+)
+
+const adjudicatorRankingPriorityOptions = computed(() =>
+  compileAdjudicatorRankingMetrics.map((metric) => ({
+    value: metric,
+    label: adjudicatorRankingMetricLabel(metric),
+    description: adjudicatorRankingMetricDescription(metric),
+  }))
+)
+
+function teamRankingMetricLabel(metric: CompileRankingMetric): string {
+  const labels: Record<CompileRankingMetric, string> = {
+    win: t('勝敗ポイント'),
+    sum: t('総得点'),
+    margin: t('得失点差'),
+    vote: t('ジャッジ支持数'),
+    average: t('平均得点'),
+    sd: t('得点の安定性'),
+  }
+  return labels[metric]
+}
+
+function teamRankingMetricDescription(metric: CompileRankingMetric): string {
+  const descriptions: Record<CompileRankingMetric, string> = {
+    win: t('勝ち=1点、引き分けは設定ポイント'),
+    sum: t('得点の合計値'),
+    margin: t('得点差の合計値'),
+    vote: t('ジャッジの支持数'),
+    average: t('平均得点'),
+    sd: t('得点のばらつき（小さいほど上位）'),
+  }
+  return descriptions[metric]
+}
+
+function adjudicatorRankingMetricLabel(metric: CompileAdjudicatorRankingMetric): string {
+  const labels: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('平均点'),
+    sd: t('標準偏差'),
+    num_experienced: t('ジャッジ担当回数'),
+    num_experienced_chair: t('チェア担当回数'),
+  }
+  return labels[metric]
+}
+
+function adjudicatorRankingMetricDescription(metric: CompileAdjudicatorRankingMetric): string {
+  const descriptions: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('評価スコアの平均（高いほど上位）'),
+    sd: t('評価スコアのばらつき（小さいほど上位）'),
+    num_experienced: t('割り当てられた担当回数（多いほど上位）'),
+    num_experienced_chair: t('チェア担当回数（多いほど上位）'),
+  }
+  return descriptions[metric]
+}
 
 const teamForm = reactive({
   name: '',
@@ -2100,9 +2252,14 @@ function applyAccessForm(authValue: unknown) {
   const access =
     auth.access && typeof auth.access === 'object' ? (auth.access as Record<string, any>) : {}
   const required = access.required === true
+  const hasPassword = access.hasPassword === true
   const savedAccessPassword = typeof access.password === 'string' ? String(access.password) : ''
   tournamentForm.accessRequired = required
-  tournamentForm.accessPassword = required ? savedAccessPassword : ''
+  if (savedAccessPassword.length > 0) {
+    tournamentForm.accessPassword = savedAccessPassword
+  } else if (!hasPassword) {
+    tournamentForm.accessPassword = ''
+  }
 }
 
 function applyTournamentForm() {
@@ -2114,6 +2271,8 @@ function applyTournamentForm() {
   applyAccessForm(tournament.value.auth)
   tournamentForm.infoText = String(tournament.value.user_defined_data?.info?.text ?? '')
   applyTournamentBreakForm()
+  applyTournamentTeamRankingForm()
+  applyTournamentAdjudicatorRankingForm()
   applyRoundDefaultsForm()
   void nextTick(() => {
     isApplyingTournamentForm.value = false
@@ -2125,10 +2284,23 @@ function applyTournamentBreakForm() {
   Object.assign(tournamentBreakForm, normalized)
 }
 
+function applyTournamentTeamRankingForm() {
+  const normalized = normalizeTournamentTeamRankingConfig(
+    tournament.value?.user_defined_data?.team_ranking_priority
+  )
+  Object.assign(tournamentTeamRankingForm, normalized)
+}
+
+function applyTournamentAdjudicatorRankingForm() {
+  const normalized = normalizeTournamentAdjudicatorRankingConfig(
+    tournament.value?.user_defined_data?.adjudicator_ranking_priority
+  )
+  Object.assign(tournamentAdjudicatorRankingForm, normalized)
+}
+
 function applyRoundDefaultsForm() {
   const normalized = normalizeRoundDefaults(tournament.value?.user_defined_data?.round_defaults)
   Object.assign(roundDefaultsForm.userDefinedData, normalized.userDefinedData)
-  Object.assign(roundDefaultsForm.break, normalized.break)
   Object.assign(roundDefaultsForm.compile, {
     ...normalized.compile,
     source_rounds: [...normalized.compile.source_rounds],
@@ -2206,7 +2378,11 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
       authPayload.access.password = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
     }
   } else {
-    authPayload.access.password = null
+    if (passwordInput.length > 0) {
+      authPayload.access.password = passwordInput
+    } else if (!currentHasPassword) {
+      authPayload.access.password = null
+    }
   }
   const updated = await tournamentStore.updateTournament({
     tournamentId: tournament.value._id,
@@ -2290,6 +2466,26 @@ async function flushTournamentAutosave() {
   }
 }
 
+function serializeRoundDefaultsForTournamentStorage() {
+  const normalized = serializeRoundDefaults(roundDefaultsForm) as Record<string, any>
+  const normalizedCompile = normalizeCompileOptions(
+    normalized?.compile?.options ?? normalized?.compile
+  ) as Record<string, any>
+  const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
+    normalizedCompile
+  void _ignoredRankingPriority
+  return {
+    userDefinedData: normalized.userDefinedData,
+    compile: {
+      source: normalized?.compile?.source === 'raw' ? 'raw' : 'submissions',
+      source_rounds: Array.isArray(normalized?.compile?.source_rounds)
+        ? normalized.compile.source_rounds
+        : [],
+      options: compileOptionsWithoutRanking,
+    },
+  }
+}
+
 async function saveRoundDefaults() {
   if (!tournament.value) return
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
@@ -2298,7 +2494,7 @@ async function saveRoundDefaults() {
     tournamentId: tournament.value._id,
     user_defined_data: {
       ...nextUserDefined,
-      round_defaults: serializeRoundDefaults(roundDefaultsForm),
+      round_defaults: serializeRoundDefaultsForTournamentStorage(),
     },
   })
 }
@@ -2334,6 +2530,76 @@ async function saveTournamentBreakSettings() {
   }
   tournamentBreakSavedTimer = window.setTimeout(() => {
     tournamentBreakSaved.value = false
+  }, 1400)
+}
+
+async function saveTournamentTeamRankingSettings() {
+  if (!tournament.value || isSavingTournamentTeamRanking.value) return
+  isSavingTournamentTeamRanking.value = true
+  tournamentTeamRankingSaveError.value = ''
+  tournamentTeamRankingSaved.value = false
+  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  delete nextUserDefined.submission_policy
+  const normalizedTeamRanking = normalizeTournamentTeamRankingConfig(tournamentTeamRankingForm)
+  const updated = await tournamentStore.updateTournament({
+    tournamentId: tournament.value._id,
+    user_defined_data: {
+      ...nextUserDefined,
+      team_ranking_priority: normalizedTeamRanking,
+    },
+  })
+  isSavingTournamentTeamRanking.value = false
+  if (!updated?._id) {
+    tournamentTeamRankingSaveError.value =
+      tournamentStore.error ?? t('チーム順位優先度の保存に失敗しました。')
+    return
+  }
+  Object.assign(
+    tournamentTeamRankingForm,
+    normalizeTournamentTeamRankingConfig(updated.user_defined_data?.team_ranking_priority)
+  )
+  tournamentTeamRankingSaved.value = true
+  if (tournamentTeamRankingSavedTimer) {
+    window.clearTimeout(tournamentTeamRankingSavedTimer)
+  }
+  tournamentTeamRankingSavedTimer = window.setTimeout(() => {
+    tournamentTeamRankingSaved.value = false
+  }, 1400)
+}
+
+async function saveTournamentAdjudicatorRankingSettings() {
+  if (!tournament.value || isSavingTournamentAdjudicatorRanking.value) return
+  isSavingTournamentAdjudicatorRanking.value = true
+  tournamentAdjudicatorRankingSaveError.value = ''
+  tournamentAdjudicatorRankingSaved.value = false
+  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  delete nextUserDefined.submission_policy
+  const normalizedAdjudicatorRanking = normalizeTournamentAdjudicatorRankingConfig(
+    tournamentAdjudicatorRankingForm
+  )
+  const updated = await tournamentStore.updateTournament({
+    tournamentId: tournament.value._id,
+    user_defined_data: {
+      ...nextUserDefined,
+      adjudicator_ranking_priority: normalizedAdjudicatorRanking,
+    },
+  })
+  isSavingTournamentAdjudicatorRanking.value = false
+  if (!updated?._id) {
+    tournamentAdjudicatorRankingSaveError.value =
+      tournamentStore.error ?? t('ジャッジ順位優先度の保存に失敗しました。')
+    return
+  }
+  Object.assign(
+    tournamentAdjudicatorRankingForm,
+    normalizeTournamentAdjudicatorRankingConfig(updated.user_defined_data?.adjudicator_ranking_priority)
+  )
+  tournamentAdjudicatorRankingSaved.value = true
+  if (tournamentAdjudicatorRankingSavedTimer) {
+    window.clearTimeout(tournamentAdjudicatorRankingSavedTimer)
+  }
+  tournamentAdjudicatorRankingSavedTimer = window.setTimeout(() => {
+    tournamentAdjudicatorRankingSaved.value = false
   }, 1400)
 }
 
@@ -2470,7 +2736,7 @@ function closeSetupRoundDetails(roundId?: string) {
 
 function normalizeBreakConfigForRoundEdit(input: unknown) {
   const source = input && typeof input === 'object' ? (input as Record<string, any>) : {}
-  const breakDefaults = normalizeRoundDefaults(roundDefaultsForm).break
+  const breakDefaults = normalizeTournamentBreakConfig(tournamentBreakForm)
   const sizeRaw = Number(source.size)
   const cutoffTiePolicy =
     source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
@@ -2542,9 +2808,28 @@ async function createRoundFromSetup() {
     return
   }
 
-  const userDefinedData = buildRoundUserDefinedFromDefaults(
-    normalizeRoundDefaults(roundDefaultsForm)
-  ) as Record<string, any>
+  const normalizedDefaults = normalizeRoundDefaults(roundDefaultsForm)
+  const userDefinedData = buildRoundUserDefinedFromDefaults(normalizedDefaults) as Record<string, any>
+  const compileOptions = normalizeCompileOptions(userDefinedData?.compile?.options)
+  const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
+    compileOptions as Record<string, any>
+  void _ignoredRankingPriority
+  const breakDefaults = normalizeTournamentBreakConfig(tournamentBreakForm)
+  userDefinedData.break = {
+    source: breakDefaults.source,
+    source_rounds: [...breakDefaults.source_rounds],
+    size: breakDefaults.size,
+    cutoff_tie_policy: breakDefaults.cutoff_tie_policy,
+    seeding: breakDefaults.seeding,
+    participants: [],
+  }
+  userDefinedData.compile = {
+    source: userDefinedData?.compile?.source === 'raw' ? 'raw' : normalizedDefaults.compile.source,
+    source_rounds: Array.isArray(userDefinedData?.compile?.source_rounds)
+      ? userDefinedData.compile.source_rounds
+      : [],
+    options: compileOptionsWithoutRanking,
+  }
   userDefinedData.break_round = false
 
   const created = await rounds.createRound({
@@ -2625,8 +2910,9 @@ function cancelEditRoundFromSetup() {
   setupRoundEditForm.round = setupSuggestedRoundNumber.value
   setupRoundEditForm.name = ''
   setupRoundEditForm.breakEnabled = false
+  const normalizedBreakDefaults = normalizeTournamentBreakConfig(tournamentBreakForm)
   Object.assign(setupRoundEditForm.userDefinedData, defaultRoundDefaults().userDefinedData)
-  Object.assign(setupRoundEditForm.break, defaultRoundDefaults().break)
+  Object.assign(setupRoundEditForm.break, normalizedBreakDefaults)
   Object.assign(setupRoundEditForm.compile, {
     ...defaultRoundDefaults().compile,
     source_rounds: [...defaultRoundDefaults().compile.source_rounds],
@@ -2657,22 +2943,26 @@ async function saveEditRoundFromSetup(round: any) {
     round?.userDefinedData && typeof round.userDefinedData === 'object'
       ? ({ ...(round.userDefinedData as Record<string, any>) } as Record<string, any>)
       : {}
+  const breakDefaults = normalizeTournamentBreakConfig(tournamentBreakForm)
   const normalizedBreak = normalizeBreakConfigForRoundEdit(currentUserDefined.break)
   const breakSizeRaw = Number(setupRoundEditForm.break.size)
   const breakSize =
     Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1
       ? breakSizeRaw
-      : defaultRoundDefaults().break.size
+      : breakDefaults.size
   const breakCutoffTiePolicy =
     setupRoundEditForm.break.cutoff_tie_policy === 'include_all' ||
     setupRoundEditForm.break.cutoff_tie_policy === 'strict'
       ? setupRoundEditForm.break.cutoff_tie_policy
-      : defaultRoundDefaults().break.cutoff_tie_policy
+      : breakDefaults.cutoff_tie_policy
   const compileSourceRounds = normalizeCompileSourceRoundsForRound(
     roundNumber,
     setupRoundEditForm.compile.source_rounds
   )
   const compileOptions = normalizeCompileOptions(setupRoundEditForm.compile.options)
+  const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
+    compileOptions as Record<string, any>
+  void _ignoredRankingPriority
   const nextUserDefined: Record<string, any> = {
     ...currentUserDefined,
     ...setupRoundEditForm.userDefinedData,
@@ -2690,7 +2980,7 @@ async function saveEditRoundFromSetup(round: any) {
     compile: {
       source: setupRoundEditForm.compile.source === 'raw' ? 'raw' : 'submissions',
       source_rounds: compileSourceRounds,
-      options: compileOptions,
+      options: compileOptionsWithoutRanking,
     },
   }
   applyBreakRoundConstraints(nextUserDefined, setupRoundEditForm.breakEnabled)
@@ -3516,12 +3806,18 @@ watch(
     isSavingTournamentAutosave.value = false
     isSavingNotice.value = false
     isSavingTournamentBreak.value = false
+    isSavingTournamentTeamRanking.value = false
+    isSavingTournamentAdjudicatorRanking.value = false
     tournamentAutosaveStatus.value = 'idle'
     tournamentAutosaveError.value = ''
     noticeSaveError.value = ''
     noticeSaved.value = false
     tournamentBreakSaveError.value = ''
     tournamentBreakSaved.value = false
+    tournamentTeamRankingSaveError.value = ''
+    tournamentTeamRankingSaved.value = false
+    tournamentAdjudicatorRankingSaveError.value = ''
+    tournamentAdjudicatorRankingSaved.value = false
     if (tournamentAutosaveTimer) {
       window.clearTimeout(tournamentAutosaveTimer)
       tournamentAutosaveTimer = null
@@ -3537,6 +3833,14 @@ watch(
     if (tournamentBreakSavedTimer) {
       window.clearTimeout(tournamentBreakSavedTimer)
       tournamentBreakSavedTimer = null
+    }
+    if (tournamentTeamRankingSavedTimer) {
+      window.clearTimeout(tournamentTeamRankingSavedTimer)
+      tournamentTeamRankingSavedTimer = null
+    }
+    if (tournamentAdjudicatorRankingSavedTimer) {
+      window.clearTimeout(tournamentAdjudicatorRankingSavedTimer)
+      tournamentAdjudicatorRankingSavedTimer = null
     }
     if (editingEntity.value) cancelEditEntity()
     if (setupRoundEditingId.value) cancelEditRoundFromSetup()
@@ -3601,6 +3905,14 @@ onUnmounted(() => {
   if (tournamentBreakSavedTimer) {
     window.clearTimeout(tournamentBreakSavedTimer)
     tournamentBreakSavedTimer = null
+  }
+  if (tournamentTeamRankingSavedTimer) {
+    window.clearTimeout(tournamentTeamRankingSavedTimer)
+    tournamentTeamRankingSavedTimer = null
+  }
+  if (tournamentAdjudicatorRankingSavedTimer) {
+    window.clearTimeout(tournamentAdjudicatorRankingSavedTimer)
+    tournamentAdjudicatorRankingSavedTimer = null
   }
 })
 
@@ -3684,6 +3996,25 @@ function onGlobalKeydown(event: KeyboardEvent) {
   flex-wrap: wrap;
 }
 
+.ranking-priority-card :deep(.ranking-priority-group) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: var(--space-2);
+}
+
+.ranking-priority-card :deep(.ranking-priority-group-head) {
+  display: none;
+}
+
+.ranking-priority-card :deep(.priority-dnd-single) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .overview-setting-card h4 {
   margin: 0;
   font-size: 1rem;
@@ -3746,7 +4077,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .setup-round-status-row {
   width: 100%;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -3754,15 +4085,17 @@ function onGlobalKeydown(event: KeyboardEvent) {
 .setup-round-details-open-button {
   border-color: var(--color-border);
   white-space: nowrap;
-}
-
-.setup-round-switches-wrap {
   margin-left: auto;
 }
 
+.setup-round-switches-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .setup-round-switches-wrap :deep(.publish-switch-status-row) {
-  width: auto;
-  justify-content: flex-end;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .setup-round-edit-grid {

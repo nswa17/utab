@@ -31,12 +31,12 @@
       </div>
     </section>
 
-    <section v-if="props.showWinnerScoring || props.showRankingPriority" class="stack compile-group">
+    <section v-if="props.showWinnerScoring" class="stack compile-group">
       <div class="row compile-group-head">
-        <h6 class="compile-group-title">{{ $t('順位優先度設定') }}</h6>
-        <HelpTip :text="$t('使用する基準を有効化し、上から優先順に並べてください。')" />
+        <h6 class="compile-group-title">{{ $t('勝敗判定設定') }}</h6>
+        <HelpTip :text="$t('勝敗判定と引き分け時の勝敗点を設定します。')" />
       </div>
-      <div v-if="props.showWinnerScoring" class="grid compile-grid">
+      <div class="grid compile-grid">
         <Field :label="$t('勝敗判定')">
           <template #default="{ id, describedBy }">
             <select
@@ -72,19 +72,6 @@
             <HelpTip :text="$t('引き分けを許可する設定のときに、各チームへ与える勝敗点です。')" />
           </template>
         </Field>
-      </div>
-      <div v-if="props.showRankingPriority" class="stack compile-ranking-field">
-        <PriorityDragSelector
-          v-model="rankingOrderModel"
-          :options="rankingPriorityOptions"
-          :disabled="props.disabled"
-          :min-active="1"
-          layout="single"
-          :active-title="$t('使用する基準')"
-          :inactive-title="$t('不使用')"
-          :inactive-empty-text="$t('不使用の指標はありません。')"
-          :active-action-label="$t('除外')"
-        />
       </div>
     </section>
 
@@ -154,27 +141,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watchEffect } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type {
   CompileAggregationPolicy,
   CompileDuplicateMergePolicy,
   CompileMissingDataPolicy,
-  CompileRankingMetric,
-  CompileRankingPreset,
   CompileWinnerPolicy,
 } from '@/types/compiled'
-import { compileRankingMetrics } from '@/types/compiled'
 import Field from '@/components/common/Field.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
-import PriorityDragSelector from '@/components/common/PriorityDragSelector.vue'
 
 const props = withDefaults(
   defineProps<{
     disabled?: boolean
     showSourceRounds?: boolean
     showWinnerScoring?: boolean
-    showRankingPriority?: boolean
     showMergeAndMissing?: boolean
     sourceRoundOptions?: Array<{ value: number; label: string; disabled?: boolean }>
   }>(),
@@ -182,88 +162,18 @@ const props = withDefaults(
     disabled: false,
     showSourceRounds: false,
     showWinnerScoring: true,
-    showRankingPriority: true,
     showMergeAndMissing: true,
     sourceRoundOptions: () => [],
   }
 )
 
 const sourceRounds = defineModel<number[]>('sourceRounds', { default: () => [] })
-const rankingPreset = defineModel<CompileRankingPreset>('rankingPreset', { required: true })
-const rankingOrder = defineModel<CompileRankingMetric[]>('rankingOrder', { required: true })
 const winnerPolicy = defineModel<CompileWinnerPolicy>('winnerPolicy', { required: true })
 const tiePoints = defineModel<number>('tiePoints', { required: true })
 const mergePolicy = defineModel<CompileDuplicateMergePolicy>('mergePolicy', { required: true })
 const poiAggregation = defineModel<CompileAggregationPolicy>('poiAggregation', { required: true })
 const bestAggregation = defineModel<CompileAggregationPolicy>('bestAggregation', { required: true })
 const missingDataPolicy = defineModel<CompileMissingDataPolicy>('missingDataPolicy', { required: true })
-
-const { t } = useI18n({ useScope: 'global' })
-
-const allRankingMetrics: CompileRankingMetric[] = [...compileRankingMetrics]
-
-watchEffect(() => {
-  if (!props.showRankingPriority) return
-  if (rankingPreset.value !== 'custom') {
-    rankingPreset.value = 'custom'
-  }
-})
-
-const rankingOrderModel = computed<string[]>({
-  get: () => [...normalizeRankingMetrics(rankingOrder.value)],
-  set: (next) => {
-    rankingOrder.value = normalizeRankingMetrics(next)
-  },
-})
-
-const rankingPriorityOptions = computed(() =>
-  allRankingMetrics.map((metric) => ({
-    value: metric,
-    label: rankingMetricLabel(metric),
-    description: rankingMetricDescription(metric),
-  }))
-)
-
-function normalizeRankingMetrics(value: string[] | undefined): CompileRankingMetric[] {
-  const source = Array.isArray(value) ? value : []
-  const seen = new Set<CompileRankingMetric>()
-  const normalized: CompileRankingMetric[] = []
-  source.forEach((entry) => {
-    const metric = entry as CompileRankingMetric
-    if (!allRankingMetrics.includes(metric)) return
-    if (seen.has(metric)) return
-    seen.add(metric)
-    normalized.push(metric)
-  })
-  if (normalized.length === 0) {
-    return [allRankingMetrics[0]]
-  }
-  return normalized
-}
-
-function rankingMetricLabel(metric: CompileRankingMetric) {
-  const labels: Record<CompileRankingMetric, string> = {
-    win: t('勝敗ポイント'),
-    sum: t('総得点'),
-    margin: t('得失点差'),
-    vote: t('ジャッジ支持数'),
-    average: t('平均得点'),
-    sd: t('得点の安定性'),
-  }
-  return labels[metric]
-}
-
-function rankingMetricDescription(metric: CompileRankingMetric) {
-  const descriptions: Record<CompileRankingMetric, string> = {
-    win: t('勝ち=1点、引き分けは設定ポイント'),
-    sum: t('得点の合計値'),
-    margin: t('得点−失点の差分合計'),
-    vote: t('勝者に選ばれた票数'),
-    average: t('1試合あたりの平均点'),
-    sd: t('得点のばらつき（小さいほど安定）'),
-  }
-  return descriptions[metric]
-}
 
 function isSourceRoundSelected(roundNumber: number) {
   return sourceRounds.value.includes(roundNumber)
@@ -341,10 +251,6 @@ function toggleSourceRound(roundNumber: number, event: Event) {
 .source-round-item {
   align-items: center;
   gap: var(--space-2);
-}
-
-.compile-ranking-field {
-  grid-column: 1 / -1;
 }
 
 </style>

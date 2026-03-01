@@ -37,7 +37,7 @@
               'step-chip-complete': isStepCompleted(step.id),
             }"
           >
-            <span class="step-chip-index">{{ index + 1 }}</span>
+            <span class="step-chip-index">{{ isStepCompleted(step.id) ? '✓' : index + 1 }}</span>
             <span class="step-chip-label">{{ step.label }}</span>
           </li>
         </ol>
@@ -46,7 +46,22 @@
       <div class="card stack ballot-sheet">
         <h4 class="sheet-title">{{ currentStepTitle }}</h4>
 
-        <div v-if="scoreInputReady && isSpeakerStep" class="grid speaker-bulk-grid">
+        <div v-if="scoreInputReady && isSubmitterStep" class="stack submitter-step">
+          <label class="stack">
+            <span class="field-label">{{ $t('提出者ジャッジ') }}</span>
+            <select v-model="identityId">
+              <option value="">{{ $t('未選択') }}</option>
+              <option v-for="adj in submitterOptions" :key="adj._id" :value="adj._id">
+                {{ adj.name }}
+              </option>
+            </select>
+          </label>
+          <p v-if="!hasSubmitterCandidateRestriction" class="muted small">
+            {{ $t('提出候補の制限がないため、全ジャッジを表示しています。') }}
+          </p>
+        </div>
+
+        <div v-else-if="scoreInputReady && isSpeakerStep" class="grid speaker-bulk-grid">
           <div class="stack team-column">
             <div class="row team-column-header">
               <span class="side-chip gov-chip">{{ govLabel }}</span>
@@ -63,7 +78,6 @@
                   <span class="role-description">{{ role.long ?? '' }}</span>
                 </div>
                 <label class="stack">
-                  <span class="muted">{{ $t('Speaker') }}</span>
                   <select v-model="speakerIdsA[index]" :disabled="teamASpeakerEntries.length === 0">
                     <option value="">{{ $t('スピーカーを選択') }}</option>
                     <option
@@ -94,7 +108,6 @@
                   <span class="role-description">{{ role.long ?? '' }}</span>
                 </div>
                 <label class="stack">
-                  <span class="muted">{{ $t('Speaker') }}</span>
                   <select v-model="speakerIdsB[index]" :disabled="teamBSpeakerEntries.length === 0">
                     <option value="">{{ $t('スピーカーを選択') }}</option>
                     <option
@@ -134,7 +147,6 @@
               </div>
 
               <p class="selected-speaker-line">
-                <span class="selected-speaker-label">{{ $t('Speaker') }}</span>
                 <strong class="selected-speaker-name">{{ activeRoleSpeakerLabel }}</strong>
               </p>
 
@@ -227,11 +239,10 @@
                 </label>
               </template>
 
-              <div class="stack">
+              <div v-if="showActiveRoleTotalScore" class="stack">
                 <span class="score-field-label">{{ $t('Total Score') }}</span>
                 <div class="score-total-box">{{ activeRoleTotalScore }}</div>
               </div>
-              <p class="score-range-hint">{{ activeRoleRangeHint }}</p>
 
               <div v-if="bestEnabled" class="row toggle-field">
                 <span class="toggle-title">{{ $t('Best Debater') }}</span>
@@ -283,16 +294,7 @@
         </div>
 
         <div v-else-if="scoreInputReady && isWinnerStep" class="stack winner-step">
-          <label class="stack">
-            <span class="field-label">{{ $t('提出者ジャッジ') }}</span>
-            <select v-model="identityId">
-              <option value="">{{ $t('未選択') }}</option>
-              <option v-for="adj in submitterOptions" :key="adj._id" :value="adj._id">
-                {{ adj.name }}
-              </option>
-            </select>
-          </label>
-          <label class="stack">
+          <label class="row winner-selection-row">
             <span class="field-label">{{ $t('勝者') }}</span>
             <select v-model="winnerSelectionValue">
               <option value="">{{ $t('勝者を選択') }}</option>
@@ -303,9 +305,6 @@
               </option>
             </select>
           </label>
-          <p v-if="!hasSubmitterCandidateRestriction" class="muted small">
-            {{ $t('提出候補の制限がないため、全ジャッジを表示しています。') }}
-          </p>
           <p v-if="noSpeakerScore" class="muted">
             {{ $t('このラウンドはスピーカースコアを入力しません。') }}
           </p>
@@ -506,7 +505,7 @@ function parseQueryList(value: unknown) {
 
 const teamAId = ref('')
 const teamBId = ref('')
-type BallotStepId = 'speaker' | 'score' | 'winner'
+type BallotStepId = 'submitter' | 'speaker' | 'score' | 'winner'
 type BallotStep = { id: BallotStepId; label: string; title: string }
 type RoleSide = 'gov' | 'opp'
 const DRAW_WINNER_OPTION_VALUE = '__draw__'
@@ -655,9 +654,13 @@ const scoreInputReady = computed(() => {
 
 const ballotSteps = computed<BallotStep[]>(() => {
   if (noSpeakerScore.value) {
-    return [{ id: 'winner', label: t('勝者入力'), title: t('勝者入力') }]
+    return [
+      { id: 'submitter', label: t('提出者入力'), title: t('提出者入力') },
+      { id: 'winner', label: t('勝者入力'), title: t('勝者入力') },
+    ]
   }
   return [
+    { id: 'submitter', label: t('提出者入力'), title: t('提出者入力') },
     { id: 'speaker', label: t('Speaker入力'), title: t('Speaker入力') },
     { id: 'score', label: t('スコア入力'), title: t('スコア入力') },
     { id: 'winner', label: t('勝者入力'), title: t('勝者入力') },
@@ -672,6 +675,7 @@ const currentStepTitle = computed(
 const currentStepIndexDisplay = computed(() =>
   Math.min(activeStepIndex.value + 1, Math.max(1, ballotSteps.value.length))
 )
+const isSubmitterStep = computed(() => currentStepId.value === 'submitter')
 const isSpeakerStep = computed(() => currentStepId.value === 'speaker')
 const isScoreStep = computed(() => currentStepId.value === 'score')
 const isWinnerStep = computed(() => currentStepId.value === 'winner')
@@ -687,8 +691,11 @@ const scoreStepError = computed(() => {
   if (!scoresValid.value) return t('スコア入力を確認してください。')
   return ''
 })
+const submitterStepError = computed(() => {
+  if (!identityReady.value) return t('提出者ジャッジを選択してください。')
+  return ''
+})
 const winnerStepError = computed(() => {
-  if (!identityReady.value) return t('提出・対戦情報で提出者ジャッジを選択してください。')
   if (winnerDecisionError.value) return winnerDecisionError.value
   return ''
 })
@@ -704,14 +711,17 @@ const canSubmit = computed(() => {
 const validationError = computed(() => {
   if (!scoreInputReady.value) return ''
   if (!selectedTeamA.value || !selectedTeamB.value) return t('チーム情報が不足しています。')
-  if (isSpeakerStep.value) return speakerStepError.value
-  if (isScoreStep.value) return scoreStepError.value || speakerStepError.value
-  return winnerStepError.value || scoreStepError.value || speakerStepError.value
+  if (isSubmitterStep.value) return submitterStepError.value
+  if (isSpeakerStep.value) return speakerStepError.value || submitterStepError.value
+  if (isScoreStep.value) return scoreStepError.value || speakerStepError.value || submitterStepError.value
+  return winnerStepError.value || scoreStepError.value || speakerStepError.value || submitterStepError.value
 })
 const stepActionDisabled = computed(() => {
   if (submissions.loading || !scoreInputReady.value) return true
-  if (isSpeakerStep.value) return Boolean(speakerStepError.value)
-  if (isScoreStep.value) return Boolean(scoreStepError.value || speakerStepError.value)
+  if (isSubmitterStep.value) return Boolean(submitterStepError.value)
+  if (isSpeakerStep.value) return Boolean(speakerStepError.value || submitterStepError.value)
+  if (isScoreStep.value)
+    return Boolean(scoreStepError.value || speakerStepError.value || submitterStepError.value)
   return false
 })
 const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)
@@ -877,6 +887,12 @@ function readNumericValue(side: RoleSide, category: 'score' | 'matter' | 'manner
   return clampByRange(raw, index)
 }
 
+function normalizeDisplayValue(value: number, index: number) {
+  if (!Number.isFinite(value)) return scoreRange(index).default
+  const decimals = Math.max(countDecimals(Number(scoreRange(index).unit) || 1), 0)
+  return Number(value.toFixed(decimals))
+}
+
 function writeNumericValue(
   side: RoleSide,
   category: 'score' | 'matter' | 'manner',
@@ -908,14 +924,6 @@ function writeNumericValue(
 }
 
 const activeRoleRange = computed(() => scoreRange(currentRoleEntry.value?.index ?? 0))
-const activeRoleRangeHint = computed(() => {
-  const range = activeRoleRange.value
-  return t('入力範囲: {from}〜{to} (刻み {unit})', {
-    from: range.from,
-    to: range.to,
-    unit: range.unit,
-  })
-})
 
 const activeRoleScore = computed({
   get: () => {
@@ -1019,13 +1027,14 @@ const activeRoleTotalScore = computed(() => {
   const entry = currentRoleEntry.value
   if (!entry) return 0
   if (useMatterManner.value) {
-    return (
+    const total =
       readNumericValue(entry.side, 'matter', entry.index) +
       readNumericValue(entry.side, 'manner', entry.index)
-    )
+    return normalizeDisplayValue(total, entry.index)
   }
-  return readNumericValue(entry.side, 'score', entry.index)
+  return normalizeDisplayValue(readNumericValue(entry.side, 'score', entry.index), entry.index)
 })
+const showActiveRoleTotalScore = computed(() => useMatterManner.value)
 
 function adjustCurrentRoleNumeric(category: 'score' | 'matter' | 'manner', direction: -1 | 1) {
   const entry = currentRoleEntry.value
@@ -1319,15 +1328,6 @@ function initScores() {
 
 function scoreRange(index: number) {
   return getRangeForIndex(speakerRanges.value, index, defaultSpeakerRange)
-}
-
-function scoreRangeHint(index: number) {
-  const range = scoreRange(index)
-  return t('入力範囲: {from}〜{to} (刻み {unit})', {
-    from: range.from,
-    to: range.to,
-    unit: range.unit,
-  })
 }
 
 function speakerTotal(matter: number | undefined, manner: number | undefined) {
@@ -2136,7 +2136,7 @@ onUnmounted(() => {
 
 .role-description {
   color: color-mix(in srgb, var(--color-text) 84%, white);
-  font-size: clamp(1.05rem, 3.5vw, 1.35rem);
+  font-size: clamp(0.94rem, 3.1vw, 1.18rem);
   font-weight: 600;
 }
 
@@ -2153,12 +2153,6 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   padding: 6px 8px;
   gap: 8px;
-}
-
-.selected-speaker-label {
-  color: color-mix(in srgb, var(--color-text) 70%, white);
-  font-size: clamp(0.95rem, 3.2vw, 1.08rem);
-  font-weight: 600;
 }
 
 .selected-speaker-name {
@@ -2215,13 +2209,6 @@ onUnmounted(() => {
   background: var(--color-surface);
 }
 
-.score-range-hint {
-  margin: 0;
-  color: color-mix(in srgb, var(--color-text) 70%, white);
-  font-size: 0.95rem;
-  line-height: 1.45;
-}
-
 .toggle-field {
   align-items: center;
   justify-content: space-between;
@@ -2259,6 +2246,20 @@ onUnmounted(() => {
 
 .winner-step {
   gap: var(--space-3);
+}
+
+.winner-selection-row {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.winner-selection-row .field-label {
+  white-space: nowrap;
+}
+
+.winner-selection-row select {
+  flex: 1;
+  min-width: 0;
 }
 
 .ballot-step-actions {

@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="card stack">
       <div class="row">
-        <img class="logo" src="@/assets/logo.svg" alt="UTab" />
+        <img class="logo" :src="brandLogoUrl" :alt="brandName" />
         <div>
           <h1>{{ $t('新規登録') }}</h1>
           <p class="muted">{{ $t('アカウントを作成') }}</p>
@@ -32,9 +32,12 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/utils/api'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
+import { BRAND_LOGO_URL, BRAND_NAME } from '@/config/branding'
 
 const router = useRouter()
 const { t } = useI18n({ useScope: 'global' })
+const brandName = BRAND_NAME
+const brandLogoUrl = BRAND_LOGO_URL
 
 const username = ref('')
 const password = ref('')

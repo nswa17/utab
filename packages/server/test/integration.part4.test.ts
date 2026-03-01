@@ -1347,6 +1347,103 @@ describe('Server integration', () => {
     expect(feedbackRows.body.data.length).toBe(12)
   })
 
+  it('supports filling ballots and feedback independently', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-split-feedback', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-split-feedback', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Split Feedback Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: true,
+        evaluator_in_team: 'team',
+        chairs_always_evaluated: false,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await organizer.post('/api/teams').send({ tournamentId, name: 'Split Team A' })
+    const teamBRes = await organizer.post('/api/teams').send({ tournamentId, name: 'Split Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const chairRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Split Chair', strength: 5 })
+    const panelRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Split Panel', strength: 5 })
+    expect(chairRes.status).toBe(201)
+    expect(panelRes.status).toBe(201)
+    const chairId = String(chairRes.body.data._id)
+    const panelId = String(panelRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: 'Room 1',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [chairId],
+          panels: [panelId],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const fillBallotRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1, mode: 'ballot' })
+    expect(fillBallotRes.status).toBe(200)
+    expect(fillBallotRes.body.data.mode).toBe('ballot')
+    expect(fillBallotRes.body.data.expected.ballot).toBe(2)
+    expect(fillBallotRes.body.data.expected.feedback).toBe(0)
+    expect(fillBallotRes.body.data.created.ballot).toBe(2)
+    expect(fillBallotRes.body.data.created.feedback).toBe(0)
+
+    const fillFeedbackRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1, mode: 'feedback' })
+    expect(fillFeedbackRes.status).toBe(200)
+    expect(fillFeedbackRes.body.data.mode).toBe('feedback')
+    expect(fillFeedbackRes.body.data.expected.ballot).toBe(0)
+    expect(fillFeedbackRes.body.data.expected.feedback).toBe(6)
+    expect(fillFeedbackRes.body.data.created.ballot).toBe(0)
+    expect(fillFeedbackRes.body.data.created.feedback).toBe(6)
+
+    const ballotRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+    )
+    const feedbackRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=feedback&round=1`
+    )
+    expect(ballotRows.status).toBe(200)
+    expect(feedbackRows.status).toBe(200)
+    expect(ballotRows.body.data.length).toBe(2)
+    expect(feedbackRows.body.data.length).toBe(6)
+  })
+
   it('falls back to existing team speaker links when round-specific detail is missing', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer

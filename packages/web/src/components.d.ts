@@ -43,6 +43,7 @@ declare module 'vue' {
     NumberBox: typeof import('./components/common/NumberBox.vue')['default']
     PoiSlides: typeof import('./components/slides/PoiSlides.vue')['default']
     PriorityDragSelector: typeof import('./components/common/PriorityDragSelector.vue')['default']
+    RankingPriorityEditor: typeof import('./components/common/RankingPriorityEditor.vue')['default']
     ReloadButton: typeof import('./components/common/ReloadButton.vue')['default']
     ResultsEditor: typeof import('./components/results/ResultsEditor.vue')['default']
     RoundMotionEditor: typeof import('./components/common/RoundMotionEditor.vue')['default']

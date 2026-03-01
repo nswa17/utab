@@ -99,15 +99,6 @@
             :step="range.unit"
           />
         </Field>
-        <p class="muted small">
-          {{
-            $t('入力範囲: {from}〜{to} (刻み {unit})', {
-              from: range.from,
-              to: range.to,
-              unit: range.unit,
-            })
-          }}
-        </p>
         <Field :label="$t('コメント')" v-slot="{ id, describedBy }">
           <textarea v-model="comment" :id="id" :aria-describedby="describedBy" rows="4" />
         </Field>

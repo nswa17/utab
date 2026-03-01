@@ -283,7 +283,14 @@ function toggleSingle(value: string, event: Event) {
   if (checked) {
     nextActive.add(value)
   } else {
-    if (nextActive.size <= props.minActive) return
+    if (nextActive.size <= props.minActive) {
+      const target = event.target as HTMLInputElement | null
+      if (target) {
+        // Keep checkbox UI consistent when deactivation is rejected by min-active guard.
+        target.checked = true
+      }
+      return
+    }
     nextActive.delete(value)
   }
   updateActiveValues(singleOrder.value.filter((item) => nextActive.has(item)))

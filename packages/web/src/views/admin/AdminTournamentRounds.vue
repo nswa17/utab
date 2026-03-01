@@ -238,19 +238,13 @@
                   v-model:tie-points="roundDraft(round).compile.options.tie_points"
                   v-model:poi="roundDraft(round).userDefined.poi"
                   v-model:best="roundDraft(round).userDefined.best"
-                  :lock-allow-low-tie-win="roundDraft(round).break.enabled"
+                  :lock-allow-low-tie-win="roundDraft(round).breakEnabled"
                   :disabled="isLoading"
                 >
                   <template #after-team-settings>
                     <section class="stack round-ranking-settings">
                       <CompileOptionsEditor
                         v-model:source-rounds="roundDraft(round).compile.source_rounds"
-                        v-model:ranking-preset="
-                          roundDraft(round).compile.options.ranking_priority.preset
-                        "
-                        v-model:ranking-order="
-                          roundDraft(round).compile.options.ranking_priority.order
-                        "
                         v-model:winner-policy="roundDraft(round).compile.options.winner_policy"
                         v-model:tie-points="roundDraft(round).compile.options.tie_points"
                         v-model:merge-policy="
@@ -271,169 +265,21 @@
                         :source-round-options="compileSourceRoundSelectOptions(round.round)"
                         :disabled="isLoading"
                       />
+                      <RankingPriorityEditor
+                        v-model="roundDraft(round).compile.options.adjudicator_ranking_priority.order"
+                        :title="$t('ジャッジ順位優先度設定')"
+                        :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+                        :options="adjudicatorRankingPriorityOptions"
+                        :disabled="isLoading"
+                        :min-active="1"
+                        :active-title="$t('使用する基準')"
+                        :inactive-title="$t('不使用')"
+                        :inactive-empty-text="$t('不使用の指標はありません。')"
+                        :active-action-label="$t('除外')"
+                      />
                     </section>
                   </template>
                 </RoundOptionEditor>
-              </section>
-
-              <section class="stack settings-group">
-                <h5 class="settings-group-title">{{ $t('ブレイク設定') }}</h5>
-                <div class="stack">
-                  <label class="row small setting-option">
-                    <input
-                      v-model="roundDraft(round).break.enabled"
-                      type="checkbox"
-                      @change="onBreakEnabledChange(round, $event)"
-                    />
-                    <span>{{ $t('ブレイクラウンドとして扱う') }}</span>
-                    <span
-                      class="help-badge"
-                      :title="
-                        $t(
-                          '有効化すると、参加チーム確定時に Team.details[r].available を同期します。'
-                        )
-                      "
-                      aria-hidden="true"
-                      >?</span
-                    >
-                  </label>
-                  <p v-if="roundDraft(round).break.enabled" class="muted small">
-                    {{
-                      $t(
-                        '第2ブレイク以降は前ラウンドの勝者（+BYE）を自動で次ステージ参加者にします。'
-                      )
-                    }}
-                  </p>
-                  <p v-if="roundDraft(round).break.enabled" class="muted small">
-                    {{ $t('参加チーム数が奇数のときは上位シードにBYEを割り当てます。') }}
-                  </p>
-                  <p v-if="roundDraft(round).break.enabled" class="muted small">
-                    {{ breakPolicySummary(round.round) }}
-                  </p>
-                </div>
-
-                <div class="row break-actions">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    :disabled="
-                      isLoading ||
-                      !roundDraft(round).break.enabled ||
-                      roundDraft(round).break.loading
-                    "
-                    @click="refreshBreakCandidates(round)"
-                  >
-                    {{
-                      roundDraft(round).break.loading
-                        ? $t('候補更新中...')
-                        : $t('ブレイク候補を更新')
-                    }}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    :disabled="
-                      isLoading ||
-                      !roundDraft(round).break.enabled ||
-                      roundDraft(round).break.participants.length === 0
-                    "
-                    @click="resetBreakParticipantSeeds(roundDraft(round).break)"
-                  >
-                    {{ $t('候補順位でシード再設定') }}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    :disabled="isLoading || !roundDraft(round).break.enabled"
-                    @click="saveRoundBreak(round)"
-                  >
-                    {{ $t('ブレイク参加を保存') }}
-                  </Button>
-                </div>
-
-                <p v-if="roundDraft(round).break.error" class="error small">
-                  {{ roundDraft(round).break.error }}
-                </p>
-
-                <p class="muted small">
-                  {{
-                    $t('選択中 {selected}/{total}', {
-                      selected: roundDraft(round).break.participants.length,
-                      total: roundDraft(round).break.candidates.length,
-                    })
-                  }}
-                </p>
-
-                <div
-                  v-if="roundDraft(round).break.candidates.length > 0"
-                  class="break-candidates-table-wrapper"
-                >
-                  <table class="break-candidates-table">
-                    <thead>
-                      <tr>
-                        <th>{{ $t('参加') }}</th>
-                        <th>{{ $t('シード') }}</th>
-                        <th>{{ $t('順位') }}</th>
-                        <th>{{ $t('チーム') }}</th>
-                        <th>{{ $t('勝敗点') }}</th>
-                        <th>{{ $t('スコア') }}</th>
-                        <th>{{ $t('マージン') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="candidate in roundDraft(round).break.candidates"
-                        :key="candidate.teamId"
-                        :class="{ 'cutoff-tie-row': candidate.isCutoffTie }"
-                      >
-                        <td>
-                          <input
-                            type="checkbox"
-                            :checked="
-                              isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)
-                            "
-                            @change="
-                              onBreakParticipantToggle(
-                                roundDraft(round).break,
-                                candidate.teamId,
-                                $event
-                              )
-                            "
-                          />
-                        </td>
-                        <td>
-                          <template
-                            v-if="
-                              isBreakParticipantSelected(roundDraft(round).break, candidate.teamId)
-                            "
-                          >
-                            <input
-                              class="break-seed-input"
-                              type="number"
-                              min="1"
-                              :value="
-                                breakParticipantSeed(roundDraft(round).break, candidate.teamId)
-                              "
-                              @change="
-                                onBreakParticipantSeedChange(
-                                  roundDraft(round).break,
-                                  candidate.teamId,
-                                  $event
-                                )
-                              "
-                            />
-                          </template>
-                          <span v-else class="muted">-</span>
-                        </td>
-                        <td>{{ candidate.ranking ?? '-' }}</td>
-                        <td>{{ candidate.teamName }}</td>
-                        <td>{{ candidate.win }}</td>
-                        <td>{{ candidate.sum }}</td>
-                        <td>{{ candidate.margin }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
               </section>
 
               <div class="row modal-actions">
@@ -548,6 +394,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import CollapseHeader from '@/components/common/CollapseHeader.vue'
 import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
+import RankingPriorityEditor from '@/components/common/RankingPriorityEditor.vue'
 import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import Field from '@/components/common/Field.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -561,11 +408,14 @@ import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { defaultRoundDefaults } from '@/utils/round-defaults'
 import {
   isRoundBreakEnabled as readRoundBreakEnabled,
-  normalizeTournamentBreakConfig,
   withRoundBreakEnabled,
 } from '@/utils/tournament-break'
-import { normalizeCompileOptions, type CompileOptions } from '@/types/compiled'
-import type { BreakSeeding, RoundBreakConfig } from '@/types/round'
+import {
+  compileAdjudicatorRankingMetrics,
+  normalizeCompileOptions,
+  type CompileAdjudicatorRankingMetric,
+  type CompileOptions,
+} from '@/types/compiled'
 
 const route = useRoute()
 const router = useRouter()
@@ -594,12 +444,6 @@ function normalizeRoundValue(value: unknown): number | null {
 }
 
 const tournamentId = computed(() => route.params.tournamentId as string)
-const tournament = computed(
-  () => tournamentStore.tournaments.find((item) => item._id === tournamentId.value) ?? null
-)
-const tournamentBreakConfig = computed(() =>
-  normalizeTournamentBreakConfig(tournament.value?.user_defined_data?.break)
-)
 const isEmbeddedRoute = computed(
   () =>
     props.embedded ||
@@ -650,48 +494,6 @@ function defaultRoundCompile() {
   }
 }
 
-type BreakCandidate = {
-  teamId: string
-  teamName: string
-  ranking: number | null
-  win: number
-  sum: number
-  margin: number
-  available: boolean
-  tieGroup: number
-  isCutoffTie: boolean
-}
-
-type BreakDraft = {
-  enabled: boolean
-  source: 'submissions' | 'raw'
-  sourceRounds: number[]
-  size: number
-  cutoffTiePolicy: 'manual' | 'include_all' | 'strict'
-  seeding: BreakSeeding
-  participants: Array<{ teamId: string; seed: number }>
-  candidates: BreakCandidate[]
-  loading: boolean
-  error: string
-}
-
-function normalizeBreakParticipants(
-  participants: unknown
-): Array<{ teamId: string; seed: number }> {
-  if (!Array.isArray(participants)) return []
-  const seen = new Set<string>()
-  const normalized: Array<{ teamId: string; seed: number }> = []
-  for (const raw of participants) {
-    const teamId = String((raw as any)?.teamId ?? '').trim()
-    const seed = Number((raw as any)?.seed)
-    if (teamId.length === 0 || !Number.isInteger(seed) || seed < 1) continue
-    if (seen.has(teamId)) continue
-    seen.add(teamId)
-    normalized.push({ teamId, seed })
-  }
-  return normalized.sort((left, right) => left.seed - right.seed)
-}
-
 function normalizeSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
   if (!Array.isArray(sourceRounds)) return []
   return Array.from(
@@ -703,51 +505,17 @@ function normalizeSourceRounds(roundNumber: number, sourceRounds: unknown): numb
   ).sort((left, right) => left - right)
 }
 
-function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
-  if (value === 'high_low') return 'reseed_each_round'
-  if (value === 'reseed_each_round') return 'reseed_each_round'
-  if (value === 'fixed_bracket') return 'fixed_bracket'
-  if (value === 'random_within_tie_group') return 'random_within_tie_group'
-  if (value === 'random_full') return 'random_full'
-  return fallback
-}
-
-function defaultBreakDraft(
-  roundNumber: number,
-  rawBreak: unknown,
-  enabled: boolean
-): BreakDraft {
-  const source = (rawBreak ?? {}) as Record<string, any>
-  const tournamentBreak = tournamentBreakConfig.value
-  return {
-    enabled,
-    source: tournamentBreak.source,
-    sourceRounds: normalizeSourceRounds(roundNumber, tournamentBreak.source_rounds),
-    size: tournamentBreak.size,
-    cutoffTiePolicy:
-      tournamentBreak.cutoff_tie_policy === 'manual' ||
-      tournamentBreak.cutoff_tie_policy === 'strict'
-        ? tournamentBreak.cutoff_tie_policy
-        : 'include_all',
-    seeding: normalizeBreakSeeding(tournamentBreak.seeding, 'fixed_bracket'),
-    participants: normalizeBreakParticipants(source.participants),
-    candidates: [],
-    loading: false,
-    error: '',
-  }
-}
-
 type RoundSettingsDraft = {
   motion: string
   weights: { chair: number; panel: number; trainee: number }
   userDefined: ReturnType<typeof defaultRoundUserDefined>
   compile: ReturnType<typeof defaultRoundCompile>
-  break: BreakDraft
+  breakEnabled: boolean
 }
 const roundDrafts = reactive<Record<string, RoundSettingsDraft>>({})
 
 function applyBreakRoundConstraints(draft: RoundSettingsDraft) {
-  if (draft.break.enabled) {
+  if (draft.breakEnabled) {
     draft.userDefined.allow_low_tie_win = false
   }
 }
@@ -760,7 +528,6 @@ function createRoundDraft(round: any): RoundSettingsDraft {
     compileSource.options && typeof compileSource.options === 'object'
       ? (compileSource.options as CompileOptions)
       : (compileSource as CompileOptions)
-  const userDefinedBreak = userDefined.break ?? {}
   const roundBreakEnabled = readRoundBreakEnabled(userDefined)
   const { break: _ignoredBreak, ...plainUserDefined } = userDefined
   void _ignoredBreak
@@ -783,7 +550,7 @@ function createRoundDraft(round: any): RoundSettingsDraft {
       source_rounds: normalizeSourceRounds(roundNumber, compileSource.source_rounds),
       options: normalizeCompileOptions(compileOptionsSource),
     },
-    break: defaultBreakDraft(Number(round.round), userDefinedBreak, roundBreakEnabled),
+    breakEnabled: roundBreakEnabled,
   }
   applyBreakRoundConstraints(draft)
   return draft
@@ -794,6 +561,38 @@ function roundDraft(round: any): RoundSettingsDraft {
     roundDrafts[round._id] = createRoundDraft(round)
   }
   return roundDrafts[round._id]
+}
+
+const allAdjudicatorRankingMetrics: CompileAdjudicatorRankingMetric[] = [
+  ...compileAdjudicatorRankingMetrics,
+]
+
+const adjudicatorRankingPriorityOptions = computed(() =>
+  allAdjudicatorRankingMetrics.map((metric) => ({
+    value: metric,
+    label: adjudicatorRankingMetricLabel(metric),
+    description: adjudicatorRankingMetricDescription(metric),
+  }))
+)
+
+function adjudicatorRankingMetricLabel(metric: CompileAdjudicatorRankingMetric) {
+  const labels: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('平均点'),
+    sd: t('標準偏差'),
+    num_experienced: t('ジャッジ担当回数'),
+    num_experienced_chair: t('チェア担当回数'),
+  }
+  return labels[metric]
+}
+
+function adjudicatorRankingMetricDescription(metric: CompileAdjudicatorRankingMetric) {
+  const descriptions: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('評価スコアの平均（高いほど上位）'),
+    sd: t('評価スコアのばらつき（小さいほど上位）'),
+    num_experienced: t('割り当てられた担当回数（多いほど上位）'),
+    num_experienced_chair: t('チェア担当回数（多いほど上位）'),
+  }
+  return descriptions[metric]
 }
 
 function syncRoundDrafts(rounds: any[]) {
@@ -1041,7 +840,9 @@ function toggleAdvancedSettings(roundId: string) {
   }
 }
 
-function breakSourceRoundOptions(targetRound: number): number[] {
+function compileSourceRoundSelectOptions(
+  targetRound: number
+): Array<{ value: number; label: string }> {
   return sortedRounds.value
     .map((round) => Number(round.round))
     .filter(
@@ -1049,310 +850,10 @@ function breakSourceRoundOptions(targetRound: number): number[] {
         Number.isInteger(roundNumber) && roundNumber >= 1 && roundNumber < targetRound
     )
     .sort((left, right) => left - right)
-}
-
-function compileSourceRoundSelectOptions(
-  targetRound: number
-): Array<{ value: number; label: string }> {
-  return breakSourceRoundOptions(targetRound).map((roundNumber) => ({
-    value: roundNumber,
-    label: roundLabel(roundNumber),
-  }))
-}
-
-function selectedBreakTeamIds(draft: BreakDraft): Set<string> {
-  return new Set(draft.participants.map((participant) => participant.teamId))
-}
-
-function pickBreakTeamIdsFromCandidates(
-  candidates: BreakCandidate[],
-  size: number,
-  policy: 'manual' | 'include_all' | 'strict'
-): string[] {
-  if (candidates.length === 0 || size <= 0) return []
-  if (policy === 'strict' || policy === 'manual') {
-    return candidates.slice(0, size).map((candidate) => candidate.teamId)
-  }
-  const cutoff = candidates[Math.min(size - 1, candidates.length - 1)]
-  if (!cutoff || cutoff.ranking === null) {
-    return candidates.slice(0, size).map((candidate) => candidate.teamId)
-  }
-  const cutoffRanking = cutoff.ranking
-  return candidates
-    .filter((candidate) => candidate.ranking !== null && candidate.ranking <= cutoffRanking)
-    .map((candidate) => candidate.teamId)
-}
-
-function normalizeBreakSizeValue(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1
-}
-
-function syncBreakParticipantsFromCandidates(draft: BreakDraft) {
-  if (draft.candidates.length === 0) return
-  const normalizedSize = normalizeBreakSizeValue(draft.size)
-  if (draft.size !== normalizedSize) {
-    draft.size = normalizedSize
-  }
-  if (draft.cutoffTiePolicy === 'manual' && draft.participants.length > 0) {
-    return
-  }
-  const selectedIds = pickBreakTeamIdsFromCandidates(
-    draft.candidates,
-    normalizedSize,
-    draft.cutoffTiePolicy
-  )
-  setBreakParticipantsFromTeamIds(draft, selectedIds)
-}
-
-function resetBreakParticipantSeeds(draft: BreakDraft) {
-  const order = new Map<string, number>(
-    draft.candidates.map((candidate, index) => [candidate.teamId, index])
-  )
-  const sorted = draft.participants
-    .filter((participant) => order.has(participant.teamId))
-    .sort((left, right) => {
-      const leftOrder = order.get(left.teamId) ?? Number.MAX_SAFE_INTEGER
-      const rightOrder = order.get(right.teamId) ?? Number.MAX_SAFE_INTEGER
-      if (leftOrder !== rightOrder) return leftOrder - rightOrder
-      return left.teamId.localeCompare(right.teamId)
-    })
-    .map((participant, index) => ({ teamId: participant.teamId, seed: index + 1 }))
-  draft.participants = sorted
-}
-
-function setBreakParticipantsFromTeamIds(draft: BreakDraft, teamIds: string[]) {
-  const unique = Array.from(new Set(teamIds))
-  draft.participants = unique.map((teamId, index) => ({ teamId, seed: index + 1 }))
-}
-
-function isBreakParticipantSelected(draft: BreakDraft, teamId: string): boolean {
-  return selectedBreakTeamIds(draft).has(teamId)
-}
-
-function breakParticipantSeed(draft: BreakDraft, teamId: string): number | '' {
-  const seed = draft.participants.find((participant) => participant.teamId === teamId)?.seed
-  if (!Number.isInteger(seed) || Number(seed) < 1) return ''
-  return Number(seed)
-}
-
-function nextBreakSeed(draft: BreakDraft): number {
-  const usedSeeds = new Set<number>(
-    draft.participants
-      .map((participant) => Number(participant.seed))
-      .filter((seed): seed is number => Number.isInteger(seed) && seed >= 1)
-  )
-  let nextSeed = 1
-  while (usedSeeds.has(nextSeed)) {
-    nextSeed += 1
-  }
-  return nextSeed
-}
-
-function onBreakParticipantSeedChange(draft: BreakDraft, teamId: string, event: Event) {
-  const target = event.target as HTMLInputElement | null
-  const nextSeedRaw = Number(target?.value)
-  const nextSeed = Number.isInteger(nextSeedRaw) ? nextSeedRaw : 0
-  draft.participants = draft.participants.map((participant) =>
-    participant.teamId === teamId ? { ...participant, seed: nextSeed } : participant
-  )
-}
-
-function onBreakParticipantToggle(draft: BreakDraft, teamId: string, event: Event) {
-  const target = event.target as HTMLInputElement | null
-  const checked = Boolean(target?.checked)
-  if (checked) {
-    if (!draft.participants.some((participant) => participant.teamId === teamId)) {
-      draft.participants = [...draft.participants, { teamId, seed: nextBreakSeed(draft) }]
-    }
-  } else {
-    draft.participants = draft.participants.filter((participant) => participant.teamId !== teamId)
-  }
-}
-
-async function onBreakEnabledChange(round: any, event: Event) {
-  const target = event.target as HTMLInputElement | null
-  const nextEnabled = Boolean(target?.checked)
-  const targetRound = Number(round?.round)
-  if (!Number.isInteger(targetRound) || targetRound < 1) return
-
-  const targets = sortedRounds.value.filter((item) => {
-    const roundNumber = Number(item.round)
-    if (!Number.isInteger(roundNumber) || roundNumber < 1) return false
-    return nextEnabled ? roundNumber >= targetRound : roundNumber <= targetRound
-  })
-  if (targets.length === 0) return
-
-  const payload = targets.map((item) => {
-    const draft = roundDraft(item)
-    draft.break.enabled = nextEnabled
-    applyBreakRoundConstraints(draft)
-    const nextUserDefined = withRoundBreakEnabled(item.userDefinedData ?? {}, nextEnabled) as Record<
-      string,
-      any
-    >
-    if (nextEnabled) {
-      nextUserDefined.allow_low_tie_win = false
-    }
-    return {
-      id: String(item._id),
-      tournamentId: tournamentId.value,
-      userDefinedData: nextUserDefined,
-    }
-  })
-
-  const updated = await roundsStore.bulkUpdateRounds(payload)
-  if (updated.length > 0) return
-
-  await roundsStore.fetchRounds(tournamentId.value)
-}
-
-function effectiveBreakSourceRounds(roundNumber: number): number[] {
-  const selected = normalizeSourceRounds(roundNumber, tournamentBreakConfig.value.source_rounds)
-  if (selected.length > 0) return selected
-  return breakSourceRoundOptions(roundNumber)
-}
-
-function breakSeedingLabel(seeding: BreakSeeding): string {
-  if (seeding === 'fixed_bracket') return t('固定ブラケット')
-  if (seeding === 'random_within_tie_group') return t('同順位内ランダム')
-  if (seeding === 'random_full') return t('完全ランダム')
-  return t('毎ラウンド再シード (1 vs N)')
-}
-
-function breakCutoffTiePolicyLabel(policy: BreakDraft['cutoffTiePolicy']): string {
-  if (policy === 'strict') return t('人数を厳密適用')
-  if (policy === 'manual') return t('手動選抜')
-  return t('同点は全員含める')
-}
-
-function breakSourceRoundLabel(roundNumber: number): string {
-  const sourceRounds = effectiveBreakSourceRounds(roundNumber)
-  if (sourceRounds.length === 0) return t('未選択')
-  return sourceRounds.map((r) => roundLabel(r)).join(', ')
-}
-
-function breakPolicySummary(roundNumber: number): string {
-  const config = tournamentBreakConfig.value
-  const policy = config.cutoff_tie_policy === 'strict' || config.cutoff_tie_policy === 'manual'
-    ? config.cutoff_tie_policy
-    : 'include_all'
-  return `${t('ブレイクチーム数')}: ${config.size} / ${t('境界同点の扱い')}: ${breakCutoffTiePolicyLabel(policy)} / ${t('シード方式')}: ${breakSeedingLabel(config.seeding)} / ${t('参照ラウンド')}: ${breakSourceRoundLabel(roundNumber)}`
-}
-
-async function refreshBreakCandidates(round: any) {
-  const draft = roundDraft(round).break
-  draft.source = tournamentBreakConfig.value.source
-  draft.sourceRounds = normalizeSourceRounds(Number(round.round), tournamentBreakConfig.value.source_rounds)
-  draft.size = normalizeBreakSizeValue(tournamentBreakConfig.value.size)
-  draft.cutoffTiePolicy =
-    tournamentBreakConfig.value.cutoff_tie_policy === 'manual' ||
-    tournamentBreakConfig.value.cutoff_tie_policy === 'strict'
-      ? tournamentBreakConfig.value.cutoff_tie_policy
-      : 'include_all'
-  draft.seeding = normalizeBreakSeeding(tournamentBreakConfig.value.seeding, 'fixed_bracket')
-  draft.loading = true
-  draft.error = ''
-  try {
-    const roundNumber = Number(round.round)
-    const response = await roundsStore.fetchBreakCandidates({
-      tournamentId: tournamentId.value,
-      roundId: round._id,
-      source: draft.source,
-      sourceRounds: effectiveBreakSourceRounds(roundNumber),
-      size: Number(draft.size),
-    })
-    if (!response) {
-      draft.error = roundsStore.error ?? t('ブレイク候補の取得に失敗しました。')
-      return
-    }
-    draft.candidates = Array.isArray(response.candidates) ? response.candidates : []
-    draft.sourceRounds = Array.isArray(response.sourceRounds)
-      ? response.sourceRounds
-          .map((value) => Number(value))
-          .filter((value) => Number.isInteger(value) && value >= 1)
-      : draft.sourceRounds
-
-    const candidateTeamIds = new Set(draft.candidates.map((candidate) => candidate.teamId))
-    draft.participants = draft.participants.filter((participant) =>
-      candidateTeamIds.has(participant.teamId)
-    )
-
-    syncBreakParticipantsFromCandidates(draft)
-  } finally {
-    draft.loading = false
-  }
-}
-
-function validateBreakSeeds(draft: BreakDraft): string | null {
-  const seenSeeds = new Set<number>()
-  for (const participant of draft.participants) {
-    const seed = Number(participant.seed)
-    if (!Number.isInteger(seed) || seed < 1) {
-      return t('シードは1以上の整数で入力してください。')
-    }
-    if (seenSeeds.has(seed)) {
-      return t('シード番号が重複しています。')
-    }
-    seenSeeds.add(seed)
-  }
-  return null
-}
-
-function serializeBreakConfig(round: any, draft: BreakDraft): RoundBreakConfig {
-  const roundNumber = Number(round.round)
-  const source_rounds = effectiveBreakSourceRounds(roundNumber)
-  const cutoffTiePolicy =
-    tournamentBreakConfig.value.cutoff_tie_policy === 'manual' ||
-    tournamentBreakConfig.value.cutoff_tie_policy === 'strict'
-      ? tournamentBreakConfig.value.cutoff_tie_policy
-      : 'include_all'
-  return {
-    source_rounds,
-    size: normalizeBreakSizeValue(tournamentBreakConfig.value.size),
-    cutoff_tie_policy: cutoffTiePolicy,
-    seeding: normalizeBreakSeeding(tournamentBreakConfig.value.seeding, 'fixed_bracket'),
-    participants: [...draft.participants]
-      .sort((left, right) => left.seed - right.seed)
-      .map((participant) => ({
-        teamId: participant.teamId,
-        seed: participant.seed,
-      })),
-  }
-}
-
-async function saveRoundBreak(round: any) {
-  const draftState = roundDraft(round)
-  applyBreakRoundConstraints(draftState)
-  const draft = draftState.break
-  draft.error = ''
-  draft.size = normalizeBreakSizeValue(tournamentBreakConfig.value.size)
-  draft.cutoffTiePolicy =
-    tournamentBreakConfig.value.cutoff_tie_policy === 'manual' ||
-    tournamentBreakConfig.value.cutoff_tie_policy === 'strict'
-      ? tournamentBreakConfig.value.cutoff_tie_policy
-      : 'include_all'
-  if (draft.cutoffTiePolicy !== 'manual' && draft.candidates.length === 0) {
-    await refreshBreakCandidates(round)
-    if (draft.error) return
-  }
-  syncBreakParticipantsFromCandidates(draft)
-  const seedError = validateBreakSeeds(draft)
-  if (seedError) {
-    draft.error = seedError
-    return
-  }
-  const result = await roundsStore.saveBreakRound({
-    tournamentId: tournamentId.value,
-    roundId: round._id,
-    breakConfig: serializeBreakConfig(round, draft),
-    syncTeamAvailability: true,
-  })
-  if (!result) {
-    draft.error = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
-    return
-  }
-  await teamsStore.fetchTeams(tournamentId.value)
+    .map((roundNumber) => ({
+      value: roundNumber,
+      label: roundLabel(roundNumber),
+    }))
 }
 
 async function refresh() {
@@ -1393,6 +894,9 @@ async function saveRoundSettings(round: any) {
     draft.compile.source_rounds
   )
   const compileOptions = normalizeCompileOptions(draft.compile.options)
+  const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
+    compileOptions as Record<string, any>
+  void _ignoredRankingPriority
   const nextUserDefined = withRoundBreakEnabled(
     {
       ...draft.userDefined,
@@ -1402,12 +906,12 @@ async function saveRoundSettings(round: any) {
       compile: {
         source: draft.compile.source === 'raw' ? 'raw' : 'submissions',
         source_rounds: compileSourceRounds,
-        options: compileOptions,
+        options: compileOptionsWithoutRanking,
       },
     },
-    draft.break.enabled
+    draft.breakEnabled
   ) as Record<string, any>
-  if (draft.break.enabled) {
+  if (draft.breakEnabled) {
     nextUserDefined.allow_low_tie_win = false
   }
   await roundsStore.updateRound({
@@ -1530,19 +1034,6 @@ watch(
     }
   },
   { immediate: true }
-)
-
-watch(
-  () => [
-    tournamentBreakConfig.value.source,
-    tournamentBreakConfig.value.size,
-    tournamentBreakConfig.value.cutoff_tie_policy,
-    tournamentBreakConfig.value.seeding,
-    tournamentBreakConfig.value.source_rounds.join(','),
-  ],
-  () => {
-    syncRoundDrafts(sortedRounds.value)
-  }
 )
 
 watch(
@@ -1700,6 +1191,7 @@ watch(
 
 .round-ranking-settings {
   margin-top: var(--space-1);
+  gap: var(--space-2);
 }
 
 .settings-group + .settings-group {
@@ -1809,79 +1301,6 @@ watch(
 
 .tight {
   gap: 2px;
-}
-
-.setting-option {
-  align-items: center;
-  gap: 8px;
-}
-
-.break-source-options {
-  margin-top: var(--space-2);
-  max-height: 140px;
-  overflow: auto;
-  padding: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-}
-
-.break-source-option {
-  gap: 8px;
-}
-
-.break-actions {
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.break-candidates-table-wrapper {
-  overflow: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-}
-
-.break-candidates-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.break-candidates-table th,
-.break-candidates-table td {
-  border-bottom: 1px solid var(--color-border);
-  padding: 8px;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.break-candidates-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.break-seed-input {
-  width: 72px;
-  min-width: 72px;
-}
-
-.cutoff-tie-row {
-  background: #fff7ed;
-}
-
-.help-badge {
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-muted);
-  flex-shrink: 0;
-  user-select: none;
 }
 
 .error {

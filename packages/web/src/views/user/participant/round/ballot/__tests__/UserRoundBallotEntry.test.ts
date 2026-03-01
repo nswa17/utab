@@ -51,6 +51,17 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain('function goToPreviousAction() {')
   })
 
+  it('places submitter step before speaker input', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    const submitterStep = "{ id: 'submitter', label: t('提出者入力'), title: t('提出者入力') }"
+    const speakerStep = "{ id: 'speaker', label: t('Speaker入力'), title: t('Speaker入力') }"
+    expect(source).toContain(submitterStep)
+    expect(source).toContain(speakerStep)
+    expect(source.indexOf(submitterStep)).toBeLessThan(source.indexOf(speakerStep))
+    expect(source).toContain('if (isSubmitterStep.value) return submitterStepError.value')
+    expect(source).toContain("if (!identityReady.value) return t('提出者ジャッジを選択してください。')")
+  })
+
   it('supports role-by-role controls with steppers and switches', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain('const roleSequenceProgressText = computed(() => {')

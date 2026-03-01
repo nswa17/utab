@@ -2,9 +2,9 @@
   <div class="login-page">
     <div class="card stack">
       <div class="row">
-        <img class="logo" src="@/assets/logo.svg" alt="UTab" />
+        <img class="logo" :src="brandLogoUrl" :alt="brandName" />
         <div>
-          <h1>UTab</h1>
+          <h1>{{ brandName }}</h1>
           <p class="muted">{{ $t('大会管理へログイン') }}</p>
         </div>
       </div>
@@ -31,10 +31,13 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
+import { BRAND_LOGO_URL, BRAND_NAME } from '@/config/branding'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const brandName = BRAND_NAME
+const brandLogoUrl = BRAND_LOGO_URL
 
 const username = ref('')
 const password = ref('')

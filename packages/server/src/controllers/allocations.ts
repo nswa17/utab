@@ -43,6 +43,7 @@ import {
   hasTournamentBreakPolicy,
   normalizeTournamentBreakConfig,
 } from './shared/tournament-break.js'
+import { withTournamentTeamRankingPriority } from './shared/tournament-team-ranking.js'
 import {
   buildBreakCandidatesFromCompiledPayload,
   pickBreakTeamIdsFromCandidates,
@@ -657,10 +658,16 @@ async function buildBreakCandidates(params: {
   sourceRounds: number[]
   teamNameById: Map<string, string>
 }) {
+  const tournament = await TournamentModel.findById(params.tournamentId).lean().exec()
+  const compileOptions = withTournamentTeamRankingPriority(
+    DEFAULT_COMPILE_OPTIONS,
+    asRecord((tournament as any)?.user_defined_data)
+  )
   const { payload } = await buildCompiledPayload(
     params.tournamentId,
     params.source,
-    effectiveBreakSourceRounds(params.round, params.sourceRounds)
+    effectiveBreakSourceRounds(params.round, params.sourceRounds),
+    compileOptions
   )
   return buildBreakCandidatesFromCompiledPayload(payload, params.teamNameById)
 }
@@ -1043,11 +1050,11 @@ async function buildAllocationContext(
     compiledSnapshot,
   ] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
-    getTeamModel(connection).find({ tournamentId }).lean().exec(),
-    getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
-    getVenueModel(connection).find({ tournamentId }).lean().exec(),
-    getInstitutionModel(connection).find({ tournamentId }).lean().exec(),
-    getSpeakerModel(connection).find({ tournamentId }).lean().exec(),
+    getTeamModel(connection).find({ tournamentId }).sort({ _id: 1 }).lean().exec(),
+    getAdjudicatorModel(connection).find({ tournamentId }).sort({ _id: 1 }).lean().exec(),
+    getVenueModel(connection).find({ tournamentId }).sort({ _id: 1 }).lean().exec(),
+    getInstitutionModel(connection).find({ tournamentId }).sort({ _id: 1 }).lean().exec(),
+    getSpeakerModel(connection).find({ tournamentId }).sort({ _id: 1 }).lean().exec(),
     includeRawResults
       ? getRawTeamResultModel(connection).find({ tournamentId }).lean().exec()
       : Promise.resolve([]),
@@ -1687,52 +1694,69 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
 
 export const createAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, options, rounds, snapshotId } = req.body as {
+    const { tournamentId, round, options, rounds, snapshotId, snapshotIdTeams, snapshotIdAdjudicators } =
+      req.body as {
       tournamentId: string
       round: number
       options?: Record<string, any>
       rounds?: number[]
       snapshotId?: string
+      snapshotIdTeams?: string
+      snapshotIdAdjudicators?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
 
-    const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
+    const normalizeSnapshotId = (value: unknown): string =>
+      typeof value === 'string' ? value.trim() : ''
+    const sharedSnapshotId = normalizeSnapshotId(snapshotId)
+    const teamSnapshotId = normalizeSnapshotId(snapshotIdTeams) || sharedSnapshotId
+    const adjudicatorSnapshotId = normalizeSnapshotId(snapshotIdAdjudicators) || sharedSnapshotId
+    const teamContext = await buildAllocationContext(
+      tournamentId,
+      round,
+      rounds,
+      teamSnapshotId || undefined
+    )
+    const adjudicatorContext =
+      adjudicatorSnapshotId === teamSnapshotId
+        ? teamContext
+        : await buildAllocationContext(tournamentId, round, rounds, adjudicatorSnapshotId || undefined)
     const validatedOptions = validateAllocationOptions(options)
 
     const teamAlgorithm = validatedOptions.team_allocation_algorithm
     const teamAlgorithmOptions = validatedOptions.team_allocation_algorithm_options
-    if (teamAlgorithm === 'break' && context.config.style.team_num !== 2) {
+    if (teamAlgorithm === 'break' && teamContext.config.style.team_num !== 2) {
       badRequest(res, 'Break allocation only supports team_num=2')
       return
     }
     let draw =
       teamAlgorithm === 'break'
-        ? (await buildBreakTeamDraw(tournamentId, round, context)).draw
+        ? (await buildBreakTeamDraw(tournamentId, round, teamContext)).draw
         : teamAlgorithm === 'strict'
         ? allocations.teams.strict.get(
             round,
-            context.teamInstances,
-            context.compiledTeamResults,
-            context.config,
+            teamContext.teamInstances,
+            teamContext.compiledTeamResults,
+            teamContext.config,
             teamAlgorithmOptions
           )
         : teamAlgorithm === 'powerpair'
           ? allocations.teams.powerpair.get(
               round,
-              context.teamInstances,
-              context.compiledTeamResults,
+              teamContext.teamInstances,
+              teamContext.compiledTeamResults,
               teamAlgorithmOptions,
-              context.config
+              teamContext.config
             )
           : allocations.teams.standard.get(
               round,
-              context.teamInstances,
-              context.compiledTeamResults,
+              teamContext.teamInstances,
+              teamContext.compiledTeamResults,
               teamAlgorithmOptions,
-              context.config
+              teamContext.config
             )
     if (teamAlgorithm !== 'break' && (await isBreakRoundEnabled(tournamentId, round))) {
-      draw = rebalanceBreakRoundTeamSides(draw, context.compiledTeamResults, round)
+      draw = rebalanceBreakRoundTeamSides(draw, teamContext.compiledTeamResults, round)
     }
 
     const numbersOfAdjudicators = validatedOptions.numbers_of_adjudicators
@@ -1741,9 +1765,9 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
 
     let adjudicatorDraw = draw
     const allocationSquares = draw.allocation?.length ?? 0
-    const availableAdjudicators = filterAvailable(context.adjudicatorInstances, round)
+    const availableAdjudicators = filterAvailable(adjudicatorContext.adjudicatorInstances, round)
     if (
-      context.adjudicatorInstances.length > 0 &&
+      adjudicatorContext.adjudicatorInstances.length > 0 &&
       hasSufficientAdjudicators(availableAdjudicators.length, allocationSquares, numbersOfAdjudicators)
     ) {
       adjudicatorDraw =
@@ -1751,45 +1775,45 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
           ? allocations.adjudicators.traditional.get(
               round,
               draw,
-              context.adjudicatorInstances,
-              context.teamInstances,
-              context.compiledTeamResults,
-              context.compiledAdjudicatorResults,
+              adjudicatorContext.adjudicatorInstances,
+              adjudicatorContext.teamInstances,
+              adjudicatorContext.compiledTeamResults,
+              adjudicatorContext.compiledAdjudicatorResults,
               numbersOfAdjudicators,
-              context.config,
+              adjudicatorContext.config,
               adjudicatorOptions
             )
           : allocations.adjudicators.standard.get(
               round,
               draw,
-              context.adjudicatorInstances,
-              context.teamInstances,
-              context.compiledTeamResults,
-              context.compiledAdjudicatorResults,
+              adjudicatorContext.adjudicatorInstances,
+              adjudicatorContext.teamInstances,
+              adjudicatorContext.compiledTeamResults,
+              adjudicatorContext.compiledAdjudicatorResults,
               numbersOfAdjudicators,
-              context.config,
+              adjudicatorContext.config,
               adjudicatorOptions
             )
     }
 
     const venueOptions = validatedOptions.venue_allocation_algorithm_options
     let venueDraw = adjudicatorDraw
-    if (context.venueInstances.length > 0) {
+    if (teamContext.venueInstances.length > 0) {
       venueDraw = allocations.venues.standard.get(
         round,
         adjudicatorDraw,
-        context.venueInstances,
-        context.compiledTeamResults,
-        context.config,
+        teamContext.venueInstances,
+        teamContext.compiledTeamResults,
+        teamContext.config,
         venueOptions.shuffle
       )
     }
 
     const mappedAllocation = mapAllocationOut(
       venueDraw.allocation || [],
-      context.teamMaps,
-      context.adjudicatorMaps,
-      context.venueMaps
+      teamContext.teamMaps,
+      adjudicatorContext.adjudicatorMaps,
+      teamContext.venueMaps
     )
     const userDefinedData = extractDrawUserDefinedData(draw)
     res.json({

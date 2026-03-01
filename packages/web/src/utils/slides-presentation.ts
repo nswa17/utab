@@ -55,6 +55,14 @@ const SLIDE_TYPES: SlideType[] = ['listed', 'single']
 const SLIDE_STYLES: SlideStyle[] = ['pretty', 'simple']
 const SLIDE_LANGUAGES: SlideLanguage[] = ['en', 'ja']
 const SLIDE_RANKING_ORDERS: SlideRankingOrder[] = ['asc', 'desc']
+const DEFAULT_BRAND_NAME = resolveBrandName()
+
+function resolveBrandName(): string {
+  const raw = import.meta.env.VITE_BRAND_NAME
+  if (typeof raw !== 'string') return 'UTab'
+  const normalized = raw.trim()
+  return normalized.length > 0 ? normalized : 'UTab'
+}
 
 export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {
   maxRankingRewarded: 3,
@@ -62,7 +70,7 @@ export const DEFAULT_SLIDE_SETTINGS: SlideSettings = {
   type: 'listed',
   style: 'pretty',
   language: 'en',
-  leftCredit: 'UTab',
+  leftCredit: DEFAULT_BRAND_NAME,
   rightCredit: '',
 }
 

@@ -11,20 +11,6 @@
       {{ priorRoundsHideLabel }}
     </Button>
 
-    <label
-      v-if="showBreakRoundSwitch"
-      class="row publish-switch-inline publish-switch-inline-compact"
-    >
-      <span class="publish-switch-label">{{ breakRoundLabel }}</span>
-      <ToggleSwitch
-        class="publish-switch-toggle"
-        :model-value="breakRoundEnabled"
-        :disabled="effectiveBusy || breakRoundDisabled"
-        :aria-label="breakRoundLabel"
-        @update:model-value="(checked) => $emit('update:break-round-enabled', checked)"
-      />
-    </label>
-
     <label class="row publish-switch-inline publish-switch-inline-compact">
       <span class="publish-switch-label">{{ motionLabel }}</span>
       <ToggleSwitch
@@ -55,6 +41,20 @@
         :disabled="effectiveBusy || adjudicatorAllocationDisabled"
         :aria-label="adjudicatorAllocationLabel"
         @update:model-value="(checked) => $emit('update:adjudicator-allocation-opened', checked)"
+      />
+    </label>
+
+    <label
+      v-if="showBreakRoundSwitch"
+      class="row publish-switch-inline publish-switch-inline-compact"
+    >
+      <span class="publish-switch-label">{{ breakRoundLabel }}</span>
+      <ToggleSwitch
+        class="publish-switch-toggle"
+        :model-value="breakRoundEnabled"
+        :disabled="effectiveBusy || breakRoundDisabled"
+        :aria-label="breakRoundLabel"
+        @update:model-value="(checked) => $emit('update:break-round-enabled', checked)"
       />
     </label>
   </div>
@@ -138,7 +138,7 @@ const effectiveBusy = computed(() => Boolean(props.busy))
 
 .publish-switch-status-row {
   width: 100%;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--space-2);
   flex-wrap: wrap;
 }

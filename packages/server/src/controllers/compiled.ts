@@ -408,6 +408,32 @@ function compareTeamsByRankingPriority(
   return leftId < rightId ? -1 : 1
 }
 
+function compareAdjudicatorsByRankingMetrics(
+  left: any,
+  right: any,
+  order: CompileOptions['adjudicator_ranking_priority']['order']
+): number {
+  for (const metric of order) {
+    const mode = metric === 'sd' ? 'asc' : 'desc'
+    const compared = compareByNumericValue(left?.[metric], right?.[metric], mode)
+    if (compared !== 0) return compared
+  }
+  return 0
+}
+
+function compareAdjudicatorsByRankingPriority(
+  left: any,
+  right: any,
+  order: CompileOptions['adjudicator_ranking_priority']['order']
+): number {
+  const metricsCompared = compareAdjudicatorsByRankingMetrics(left, right, order)
+  if (metricsCompared !== 0) return metricsCompared
+  const leftId = String(left?.id ?? '')
+  const rightId = String(right?.id ?? '')
+  if (leftId === rightId) return 0
+  return leftId < rightId ? -1 : 1
+}
+
 function applyTeamRankingPriority(
   teamResults: any[],
   compileOptions: CompileOptions
@@ -425,6 +451,25 @@ function applyTeamRankingPriority(
         sorted[index - 1],
         compileOptions.ranking_priority.order
       )
+      if (compared !== 0) currentRank = index + 1
+    }
+    sorted[index] = { ...sorted[index], ranking: currentRank }
+  }
+  return sorted
+}
+
+function applyAdjudicatorRankingPriority(
+  adjudicatorResults: any[],
+  compileOptions: CompileOptions
+): any[] {
+  const order = compileOptions.adjudicator_ranking_priority.order
+  if (!Array.isArray(order) || order.length === 0) return adjudicatorResults
+  const sorted = [...adjudicatorResults]
+  sorted.sort((left, right) => compareAdjudicatorsByRankingPriority(left, right, order))
+  let currentRank = 1
+  for (let index = 0; index < sorted.length; index += 1) {
+    if (index > 0) {
+      const compared = compareAdjudicatorsByRankingMetrics(sorted[index], sorted[index - 1], order)
       if (compared !== 0) currentRank = index + 1
     }
     sorted[index] = { ...sorted[index], ranking: currentRank }
@@ -1172,12 +1217,15 @@ async function buildCompiledPayloadFromRaw(
       ...result,
       teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
     })),
-    compiled_adjudicator_results: compiledAdjudicatorResults.map((result: any) => ({
-      ...result,
-      institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
-      num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
-      num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
-    })),
+    compiled_adjudicator_results: applyAdjudicatorRankingPriority(
+      compiledAdjudicatorResults.map((result: any) => ({
+        ...result,
+        institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
+        num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
+        num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
+      })),
+      compileOptions
+    ),
   }
   applyIncludeLabels(compileOptions, compiled)
 
@@ -1827,12 +1875,15 @@ async function buildCompiledPayloadFromSubmissions(
       ...result,
       teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
     })),
-    compiled_adjudicator_results: compiledAdjudicatorResults.map((result: any) => ({
-      ...result,
-      institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
-      num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
-      num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
-    })),
+    compiled_adjudicator_results: applyAdjudicatorRankingPriority(
+      compiledAdjudicatorResults.map((result: any) => ({
+        ...result,
+        institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
+        num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
+        num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
+      })),
+      compileOptions
+    ),
   }
   applyIncludeLabels(compileOptions, compiled)
 

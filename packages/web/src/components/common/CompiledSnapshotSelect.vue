@@ -44,4 +44,8 @@ function onChange(event: Event) {
 .compiled-snapshot-select {
   min-width: 220px;
 }
+
+.compiled-snapshot-select > span:empty {
+  display: none;
+}
 </style>

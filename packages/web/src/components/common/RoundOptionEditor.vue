@@ -47,21 +47,6 @@
           <HelpTip :text="$t('スピーカースコア入力を無効にします。')" />
         </label>
         <label class="row small option-item">
-          <input
-            v-model="allowLowTieWin"
-            type="checkbox"
-            :disabled="disabled || lockAllowLowTieWin"
-          />
-          <span>{{ $t('引き分け許可') }}</span>
-          <HelpTip
-            :text="
-              lockAllowLowTieWin
-                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。')
-                : $t('引き分け入力と低勝ち・同点勝ちを許可します。')
-            "
-          />
-        </label>
-        <label class="row small option-item">
           <input v-model="scoreByMatterManner" type="checkbox" :disabled="disabled" />
           <span>{{ $t('Matter/Manner採点') }}</span>
           <HelpTip :text="$t('Matter/Manner の個別入力を有効にします。')" />
@@ -75,6 +60,21 @@
           <input v-model="best" type="checkbox" :disabled="disabled" />
           <span>{{ $t('Best Speaker賞') }}</span>
           <HelpTip :text="$t('ベストスピーカー賞の入力を有効にします。')" />
+        </label>
+        <label class="row small option-item">
+          <input
+            v-model="allowLowTieWin"
+            type="checkbox"
+            :disabled="disabled || lockAllowLowTieWin"
+          />
+          <span>{{ $t('引き分け許可') }}</span>
+          <HelpTip
+            :text="
+              lockAllowLowTieWin
+                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。')
+                : $t('引き分け入力と低勝ち・同点勝ちを許可します。')
+            "
+          />
         </label>
         <Field :label="$t('引き分け時ポイント')">
           <template #default="{ id, describedBy }">

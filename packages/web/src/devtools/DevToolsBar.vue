@@ -46,9 +46,17 @@
             type="button"
             class="devtools-button primary"
             :disabled="roundBusy || !tournamentId || !resolvedRound"
-            @click="onFillRoundSubmissions"
+            @click="onFillRoundSubmissions('ballot')"
           >
-            {{ roundBusy ? '補完中...' : 'ラウンド提出補完' }}
+            {{ roundBusyMode === 'ballot' ? '補完中...' : 'チーム評価補完' }}
+          </button>
+          <button
+            type="button"
+            class="devtools-button primary"
+            :disabled="roundBusy || !tournamentId || !resolvedRound"
+            @click="onFillRoundSubmissions('feedback')"
+          >
+            {{ roundBusyMode === 'feedback' ? '補完中...' : 'ジャッジ評価補完' }}
           </button>
           <button
             type="button"
@@ -91,7 +99,8 @@
         {{ fillSetupSummary.created.institutions }}
       </p>
       <p v-if="fillRoundSummary" class="small devtools-summary">
-        round {{ fillRoundSummary.round }}: expected {{ fillRoundSummary.expected.total }} /
+        round {{ fillRoundSummary.round }} ({{ fillModeLabel(fillRoundSummary.mode) }}): expected
+        {{ fillRoundSummary.expected.total }} /
         created {{ fillRoundSummary.created.total }}
         (ballot {{ fillRoundSummary.created.ballot }}, feedback
         {{ fillRoundSummary.created.feedback }})
@@ -109,6 +118,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  type FillRoundSubmissionsMode,
   requestClearRoundSubmissions,
   requestCopyTournament,
   requestFillRoundSubmissions,
@@ -130,7 +140,7 @@ const speakersPerTeam = ref(2)
 const roundInput = ref(1)
 
 const setupBusy = ref(false)
-const roundBusy = ref(false)
+const roundBusyMode = ref<FillRoundSubmissionsMode | null>(null)
 const clearRoundBusy = ref(false)
 const copyBusy = ref(false)
 const errorMessage = ref('')
@@ -138,6 +148,7 @@ const copySummary = ref<CopyTournamentResponse | null>(null)
 const fillSetupSummary = ref<FillSetupResponse | null>(null)
 const fillRoundSummary = ref<FillRoundSubmissionsResponse | null>(null)
 const clearRoundSummary = ref<ClearRoundSubmissionsResponse | null>(null)
+const roundBusy = computed(() => roundBusyMode.value !== null)
 
 const tournamentId = computed(() => String(route.params.tournamentId ?? '').trim())
 
@@ -199,7 +210,15 @@ async function onFillSetup() {
   }
 }
 
-async function onFillRoundSubmissions() {
+function fillModeLabel(mode: FillRoundSubmissionsMode): string {
+  if (mode === 'ballot') return 'チーム評価'
+  if (mode === 'feedback') return 'ジャッジ評価'
+  if (mode === 'team_feedback') return 'チーム評価'
+  if (mode === 'adjudicator_feedback') return 'ジャッジ評価'
+  return '全部'
+}
+
+async function onFillRoundSubmissions(mode: FillRoundSubmissionsMode) {
   if (
     !tournamentId.value ||
     setupBusy.value ||
@@ -210,7 +229,7 @@ async function onFillRoundSubmissions() {
   )
     return
 
-  roundBusy.value = true
+  roundBusyMode.value = mode
   errorMessage.value = ''
   copySummary.value = null
   fillSetupSummary.value = null
@@ -218,6 +237,7 @@ async function onFillRoundSubmissions() {
   try {
     const data = await requestFillRoundSubmissions(tournamentId.value, {
       round: resolvedRound.value,
+      mode,
     })
     fillRoundSummary.value = data
     window.setTimeout(() => {
@@ -227,7 +247,7 @@ async function onFillRoundSubmissions() {
     errorMessage.value =
       err?.response?.data?.errors?.[0]?.message ?? 'ラウンド提出補完に失敗しました。'
   } finally {
-    roundBusy.value = false
+    roundBusyMode.value = null
   }
 }
 

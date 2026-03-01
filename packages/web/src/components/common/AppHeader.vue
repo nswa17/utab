@@ -1,8 +1,8 @@
 <template>
   <header class="header">
-    <RouterLink to="/" class="brand" aria-label="UTab home">
-      <img src="@/assets/logo.svg" alt="UTab" />
-      <span>UTab</span>
+    <RouterLink to="/" class="brand" :aria-label="brandHomeAriaLabel">
+      <img :src="brandLogoUrl" :alt="brandName" />
+      <span>{{ brandName }}</span>
     </RouterLink>
     <nav v-if="showPrimaryNav" class="primary-nav" aria-label="Primary">
       <RouterLink to="/user" :class="{ active: isPrimaryActive('user') }">
@@ -28,10 +28,14 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import Button from '@/components/common/Button.vue'
+import { BRAND_HOME_ARIA_LABEL, BRAND_LOGO_URL, BRAND_NAME } from '@/config/branding'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const brandName = BRAND_NAME
+const brandLogoUrl = BRAND_LOGO_URL
+const brandHomeAriaLabel = BRAND_HOME_ARIA_LABEL
 
 const showPrimaryNav = computed(
   () => auth.isAuthenticated && (auth.role === 'superuser' || auth.role === 'organizer')

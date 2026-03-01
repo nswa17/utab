@@ -54,37 +54,152 @@
       <LoadingState v-if="sectionLoading" />
       <template v-else>
         <section
-          v-if="isEmbeddedRoute && detailSnapshotSelectOptions.length > 0"
-          class="card soft stack embedded-reference-card"
+          v-if="priorRounds.length > 0"
+          class="stack board-block reference-round-confirm-block"
         >
-          <h5>{{ $t('参照集計結果') }}</h5>
-          <p class="muted small">
-            {{ $t('配置表の順位・平均表示に使います。') }}
+          <div class="row board-head reference-round-confirm-head">
+            <div class="stack tight">
+              <h4>{{ $t('参照ラウンド選択') }}</h4>
+            </div>
+          </div>
+          <p class="muted small reference-round-intro">
+            {{
+              $t('集計に使う参照ラウンドを選択し、「確定」で参照集計を保存します。')
+            }}
           </p>
-          <CompiledSnapshotSelect
-            v-model="selectedDetailSnapshotId"
-            class="embedded-detail-snapshot-select"
-            :label="$t('参照集計結果')"
-            :options="detailSnapshotSelectOptions"
-            :placeholder="$t('未選択')"
-          />
+          <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+            <label
+              v-for="item in priorRounds"
+              :key="`common-reference-${item.round}`"
+              class="reference-round-checkbox"
+            >
+              <input
+                v-model="commonReferenceRoundSelections"
+                type="checkbox"
+                :value="String(item.round)"
+                :disabled="
+                  referenceSelectionConfirmed ||
+                  (shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections)
+                "
+              />
+              <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+            </label>
+          </div>
+          <label
+            v-if="shouldTrackAdjudicatorReference"
+            class="row reference-round-scope-toggle"
+          >
+            <input
+              v-model="useScopedReferenceRoundSelections"
+              type="checkbox"
+              :disabled="referenceSelectionConfirmed"
+            />
+            <span>{{ $t('チーム・ジャッジで参照ラウンドを個別に設定する') }}</span>
+          </label>
+          <div
+            v-if="shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections"
+            class="grid reference-round-select-grid"
+          >
+            <label class="stack reference-round-select-field">
+              <span class="option-title">{{ $t('チーム結果参照ラウンド') }}</span>
+              <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+                <label
+                  v-for="item in priorRounds"
+                  :key="`team-reference-${item.round}`"
+                  class="reference-round-checkbox"
+                >
+                  <input
+                    v-model="teamReferenceRoundSelections"
+                    type="checkbox"
+                    :value="String(item.round)"
+                    :disabled="referenceSelectionConfirmed"
+                  />
+                  <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+                </label>
+              </div>
+            </label>
+            <label class="stack reference-round-select-field">
+              <span class="option-title">{{ $t('ジャッジ結果参照ラウンド') }}</span>
+              <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+                <label
+                  v-for="item in priorRounds"
+                  :key="`adjudicator-reference-${item.round}`"
+                  class="reference-round-checkbox"
+                >
+                  <input
+                    v-model="adjudicatorReferenceRoundSelections"
+                    type="checkbox"
+                    :value="String(item.round)"
+                    :disabled="referenceSelectionConfirmed"
+                  />
+                  <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+                </label>
+              </div>
+            </label>
+          </div>
+          <section v-if="referenceSelectionConfirmed" class="stack reference-snapshot-select-block">
+            <p class="muted small reference-round-intro">
+              {{ $t('対戦表作成で選択中の参照集計結果を利用します。') }}
+            </p>
+            <div v-if="compiledSnapshotSelectOptions.length > 0" class="grid reference-snapshot-select-grid">
+              <CompiledSnapshotSelect
+                v-if="!shouldTrackAdjudicatorReference || !useScopedReferenceRoundSelections"
+                :model-value="selectedDetailSnapshotId"
+                :label="$t('参照集計結果')"
+                :options="compiledSnapshotSelectOptions"
+                :disabled="isLoading"
+                @update:model-value="handleSharedReferenceSnapshotSelection"
+              />
+              <template v-else>
+                <CompiledSnapshotSelect
+                  :model-value="selectedTeamSnapshotId"
+                  :label="`${$t('チーム')} ${$t('参照集計結果')}`"
+                  :options="compiledSnapshotSelectOptions"
+                  :disabled="isLoading"
+                  @update:model-value="handleTeamReferenceSnapshotSelection"
+                />
+                <CompiledSnapshotSelect
+                  :model-value="selectedAdjudicatorSnapshotId"
+                  :label="`${$t('ジャッジ')} ${$t('参照集計結果')}`"
+                  :options="compiledSnapshotSelectOptions"
+                  :disabled="isLoading"
+                  @update:model-value="handleAdjudicatorReferenceSnapshotSelection"
+                />
+              </template>
+            </div>
+            <p v-else class="muted small">{{ $t('参照可能な集計結果がありません。') }}</p>
+          </section>
+          <p v-if="referenceConfirmError" class="error">{{ referenceConfirmError }}</p>
+          <div class="row reference-round-confirm-actions">
+            <Button
+              v-if="!referenceSelectionConfirmed"
+              size="sm"
+              :loading="referenceConfirming"
+              :disabled="isLoading || referenceConfirming"
+              @click="confirmReferenceRounds"
+            >
+              {{ $t('確定') }}
+            </Button>
+            <Button
+              v-else
+              variant="secondary"
+              size="sm"
+              :disabled="isLoading || referenceConfirming"
+              @click="reopenReferenceSelection"
+            >
+              {{ $t('参照ラウンドを変更') }}
+            </Button>
+          </div>
         </section>
 
-        <section class="stack board-block">
-          <div class="row board-head">
-            <div class="row board-title-row">
-              <h4>{{ isEmbeddedRoute ? $t('配置') : $t('対戦表作成') }}</h4>
-              <span v-if="isBreakRound" class="break-round-badge">{{ $t('ブレイク') }}</span>
+        <template v-if="referenceSelectionConfirmed">
+          <section class="stack board-block">
+            <div class="row board-head">
+              <div class="row board-title-row">
+                <h4>{{ isEmbeddedRoute ? $t('配置') : $t('対戦表作成') }}</h4>
+                <span v-if="isBreakRound" class="break-round-badge">{{ $t('ブレイク') }}</span>
+              </div>
             </div>
-            <CompiledSnapshotSelect
-              v-if="detailSnapshotSelectOptions.length > 0 && !isEmbeddedRoute"
-              v-model="selectedDetailSnapshotId"
-              class="detail-snapshot-select"
-              :label="$t('参照集計結果')"
-              :options="detailSnapshotSelectOptions"
-              :placeholder="$t('未選択')"
-            />
-          </div>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <AllocationTableShell v-else>
             <table class="allocation-table allocation-table--main">
@@ -429,245 +544,245 @@
         </section>
 
         <section class="stack waiting-area board-block">
+          <template v-if="useReferenceMatchupWaitingTeams">
+            <h4>{{ $t('前回対戦表') }}</h4>
+            <AllocationTableShell class="waiting-matchup-allocation-wrap">
+              <table class="allocation-table waiting-matchup-allocation-table">
+                <thead>
+                  <tr>
+                    <th class="venue-col">
+                      <SortHeaderButton
+                        :label="$t('会場')"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('venue')"
+                        @click="setReferenceWaitingSort('venue')"
+                      />
+                    </th>
+                    <th class="team-col">
+                      <SortHeaderButton
+                        :label="govLabel"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('gov')"
+                        @click="setReferenceWaitingSort('gov')"
+                      />
+                    </th>
+                    <th class="team-col">
+                      <SortHeaderButton
+                        :label="oppLabel"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('opp')"
+                        @click="setReferenceWaitingSort('opp')"
+                      />
+                    </th>
+                    <th class="waiting-win-col">
+                      <SortHeaderButton
+                        :label="$t('Win')"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('win')"
+                        @click="setReferenceWaitingSort('win')"
+                      />
+                    </th>
+                    <th class="adjudicator-col">
+                      <SortHeaderButton
+                        :label="$t('チェア')"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('chairs')"
+                        @click="setReferenceWaitingSort('chairs')"
+                      />
+                    </th>
+                    <th class="adjudicator-col">
+                      <SortHeaderButton
+                        :label="$t('パネル')"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('panels')"
+                        @click="setReferenceWaitingSort('panels')"
+                      />
+                    </th>
+                    <th class="adjudicator-col">
+                      <SortHeaderButton
+                        :label="$t('トレーニー')"
+                        compact
+                        :indicator="referenceWaitingSortIndicator('trainees')"
+                        @click="setReferenceWaitingSort('trainees')"
+                      />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in sortedReferenceUnassignedTeamRows" :key="row.key">
+                    <td class="venue-col">
+                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                        <span
+                          v-if="row.venueId"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('venue', row.venueId),
+                          ]"
+                          :title="venueName(row.venueId)"
+                          :draggable="canDragEntity('venue', row.venueId)"
+                          @dragstart="onDragStart('venue', row.venueId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('venue', row.venueId)"
+                        >
+                          {{ venueName(row.venueId) }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="team-col">
+                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                        <span
+                          v-for="teamId in row.govTeamIds"
+                          :key="`${row.key}-gov-${teamId}`"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'team-pill',
+                            ...entityPillClasses('team', teamId),
+                          ]"
+                          :title="teamPillTitle(teamId)"
+                          :draggable="canDragEntity('team', teamId)"
+                          @dragstart="onDragStart('team', teamId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('team', teamId)"
+                        >
+                          <span class="team-pill-name">{{ teamName(teamId) }}</span>
+                          <span
+                            v-if="teamWinBadge(teamId)"
+                            :class="['team-win-badge', teamWinBadgeClass(teamId)]"
+                          >
+                            {{ teamWinBadge(teamId) }}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="team-col">
+                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                        <span
+                          v-for="teamId in row.oppTeamIds"
+                          :key="`${row.key}-opp-${teamId}`"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'team-pill',
+                            ...entityPillClasses('team', teamId),
+                          ]"
+                          :title="teamPillTitle(teamId)"
+                          :draggable="canDragEntity('team', teamId)"
+                          @dragstart="onDragStart('team', teamId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('team', teamId)"
+                        >
+                          <span class="team-pill-name">{{ teamName(teamId) }}</span>
+                          <span
+                            v-if="teamWinBadge(teamId)"
+                            :class="['team-win-badge', teamWinBadgeClass(teamId)]"
+                          >
+                            {{ teamWinBadge(teamId) }}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="waiting-win-col">
+                      <span class="waiting-win-label">{{ referenceWaitingWinLabel(row) }}</span>
+                    </td>
+                    <td class="adjudicator-col">
+                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                        <span
+                          v-for="adjId in row.chairIds"
+                          :key="`${row.key}-chair-${adjId}`"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'adjudicator-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
+                          :title="adjudicatorPillTitle(adjId)"
+                          :draggable="canDragEntity('adjudicator', adjId)"
+                          @dragstart="onDragStart('adjudicator', adjId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('adjudicator', adjId)"
+                        >
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="adjudicator-col">
+                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                        <span
+                          v-for="adjId in row.panelIds"
+                          :key="`${row.key}-panel-${adjId}`"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'adjudicator-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
+                          :title="adjudicatorPillTitle(adjId)"
+                          :draggable="canDragEntity('adjudicator', adjId)"
+                          @dragstart="onDragStart('adjudicator', adjId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('adjudicator', adjId)"
+                        >
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="adjudicator-col">
+                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                        <span
+                          v-for="adjId in row.traineeIds"
+                          :key="`${row.key}-trainee-${adjId}`"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'adjudicator-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
+                          :title="adjudicatorPillTitle(adjId)"
+                          :draggable="canDragEntity('adjudicator', adjId)"
+                          @dragstart="onDragStart('adjudicator', adjId)"
+                          @dragend="onDragEnd"
+                          @click.stop="selectDetail('adjudicator', adjId)"
+                        >
+                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                          <span
+                            v-if="adjudicatorAverageBadge(adjId)"
+                            :class="[
+                              'adjudicator-average-badge',
+                              adjudicatorAverageBadgeClass(adjId),
+                            ]"
+                          >
+                            {{ adjudicatorAverageBadge(adjId) }}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </AllocationTableShell>
+          </template>
           <h4>{{ $t('未配置リスト') }}</h4>
-          <AllocationTableShell
-            v-if="useReferenceMatchupWaitingTeams"
-            class="waiting-matchup-allocation-wrap"
-          >
-            <table class="allocation-table waiting-matchup-allocation-table">
-              <thead>
-                <tr>
-                  <th class="venue-col">
-                    <SortHeaderButton
-                      :label="$t('会場')"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('venue')"
-                      @click="setReferenceWaitingSort('venue')"
-                    />
-                  </th>
-                  <th class="team-col">
-                    <SortHeaderButton
-                      :label="govLabel"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('gov')"
-                      @click="setReferenceWaitingSort('gov')"
-                    />
-                  </th>
-                  <th class="team-col">
-                    <SortHeaderButton
-                      :label="oppLabel"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('opp')"
-                      @click="setReferenceWaitingSort('opp')"
-                    />
-                  </th>
-                  <th class="waiting-win-col">
-                    <SortHeaderButton
-                      :label="$t('Win')"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('win')"
-                      @click="setReferenceWaitingSort('win')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('チェア')"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('chairs')"
-                      @click="setReferenceWaitingSort('chairs')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('パネル')"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('panels')"
-                      @click="setReferenceWaitingSort('panels')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('トレーニー')"
-                      compact
-                      :indicator="referenceWaitingSortIndicator('trainees')"
-                      @click="setReferenceWaitingSort('trainees')"
-                    />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in sortedReferenceUnassignedTeamRows" :key="row.key">
-                  <td class="venue-col">
-                    <div class="drop-zone compact single-line waiting-placeholder-zone">
-                      <span
-                        v-if="row.venueId"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'truncate-pill',
-                          ...entityPillClasses('venue', row.venueId),
-                        ]"
-                        :title="venueName(row.venueId)"
-                        :draggable="canDragEntity('venue', row.venueId)"
-                        @dragstart="onDragStart('venue', row.venueId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('venue', row.venueId)"
-                      >
-                        {{ venueName(row.venueId) }}
-                      </span>
-                    </div>
-                  </td>
-                  <td class="team-col">
-                    <div class="drop-zone compact single-line waiting-placeholder-zone">
-                      <span
-                        v-for="teamId in row.govTeamIds"
-                        :key="`${row.key}-gov-${teamId}`"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'team-pill',
-                          ...entityPillClasses('team', teamId),
-                        ]"
-                        :title="teamPillTitle(teamId)"
-                        :draggable="canDragEntity('team', teamId)"
-                        @dragstart="onDragStart('team', teamId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('team', teamId)"
-                      >
-                        <span class="team-pill-name">{{ teamName(teamId) }}</span>
-                        <span
-                          v-if="teamWinBadge(teamId)"
-                          :class="['team-win-badge', teamWinBadgeClass(teamId)]"
-                        >
-                          {{ teamWinBadge(teamId) }}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                  <td class="team-col">
-                    <div class="drop-zone compact single-line waiting-placeholder-zone">
-                      <span
-                        v-for="teamId in row.oppTeamIds"
-                        :key="`${row.key}-opp-${teamId}`"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'team-pill',
-                          ...entityPillClasses('team', teamId),
-                        ]"
-                        :title="teamPillTitle(teamId)"
-                        :draggable="canDragEntity('team', teamId)"
-                        @dragstart="onDragStart('team', teamId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('team', teamId)"
-                      >
-                        <span class="team-pill-name">{{ teamName(teamId) }}</span>
-                        <span
-                          v-if="teamWinBadge(teamId)"
-                          :class="['team-win-badge', teamWinBadgeClass(teamId)]"
-                        >
-                          {{ teamWinBadge(teamId) }}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                  <td class="waiting-win-col">
-                    <span class="waiting-win-label">{{ referenceWaitingWinLabel(row) }}</span>
-                  </td>
-                  <td class="adjudicator-col">
-                    <div class="drop-zone list compact multi-line waiting-placeholder-zone">
-                      <span
-                        v-for="adjId in row.chairIds"
-                        :key="`${row.key}-chair-${adjId}`"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'adjudicator-pill',
-                          ...entityPillClasses('adjudicator', adjId),
-                        ]"
-                        :title="adjudicatorPillTitle(adjId)"
-                        :draggable="canDragEntity('adjudicator', adjId)"
-                        @dragstart="onDragStart('adjudicator', adjId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('adjudicator', adjId)"
-                      >
-                        <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                        <span
-                          v-if="adjudicatorAverageBadge(adjId)"
-                          :class="[
-                            'adjudicator-average-badge',
-                            adjudicatorAverageBadgeClass(adjId),
-                          ]"
-                        >
-                          {{ adjudicatorAverageBadge(adjId) }}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                  <td class="adjudicator-col">
-                    <div class="drop-zone list compact multi-line waiting-placeholder-zone">
-                      <span
-                        v-for="adjId in row.panelIds"
-                        :key="`${row.key}-panel-${adjId}`"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'adjudicator-pill',
-                          ...entityPillClasses('adjudicator', adjId),
-                        ]"
-                        :title="adjudicatorPillTitle(adjId)"
-                        :draggable="canDragEntity('adjudicator', adjId)"
-                        @dragstart="onDragStart('adjudicator', adjId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('adjudicator', adjId)"
-                      >
-                        <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                        <span
-                          v-if="adjudicatorAverageBadge(adjId)"
-                          :class="[
-                            'adjudicator-average-badge',
-                            adjudicatorAverageBadgeClass(adjId),
-                          ]"
-                        >
-                          {{ adjudicatorAverageBadge(adjId) }}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                  <td class="adjudicator-col">
-                    <div class="drop-zone list compact multi-line waiting-placeholder-zone">
-                      <span
-                        v-for="adjId in row.traineeIds"
-                        :key="`${row.key}-trainee-${adjId}`"
-                        :class="[
-                          'pill',
-                          'draggable',
-                          'adjudicator-pill',
-                          ...entityPillClasses('adjudicator', adjId),
-                        ]"
-                        :title="adjudicatorPillTitle(adjId)"
-                        :draggable="canDragEntity('adjudicator', adjId)"
-                        @dragstart="onDragStart('adjudicator', adjId)"
-                        @dragend="onDragEnd"
-                        @click.stop="selectDetail('adjudicator', adjId)"
-                      >
-                        <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                        <span
-                          v-if="adjudicatorAverageBadge(adjId)"
-                          :class="[
-                            'adjudicator-average-badge',
-                            adjudicatorAverageBadgeClass(adjId),
-                          ]"
-                        >
-                          {{ adjudicatorAverageBadge(adjId) }}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </AllocationTableShell>
           <div class="grid waiting-grid">
             <div class="stack">
               <span class="muted">{{ $t('会場') }} ({{ waitingLooseVenues.length }})</span>
@@ -858,6 +973,7 @@
             </div>
           </div>
         </section>
+        </template>
       </template>
     </section>
 
@@ -965,16 +1081,6 @@
                     )
                   }}
                 </p>
-              </div>
-              <div class="stack auto-reference-block">
-                <div class="row auto-reference-header">
-                  <span class="option-title">{{ $t('参照集計結果') }}</span>
-                </div>
-                <div class="auto-reference-meta">
-                  <span class="auto-reference-caption">{{ $t('選択中') }}</span>
-                  <p class="auto-reference-value">{{ selectedDetailSnapshotLabel }}</p>
-                </div>
-                <p class="muted tiny option-help-text">{{ selectedDetailSnapshotDescription }}</p>
               </div>
             </div>
           </section>
@@ -1508,17 +1614,21 @@ import ImportTextModal from '@/components/common/ImportTextModal.vue'
 import NoticeDialog from '@/components/common/NoticeDialog.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 import PriorityDragSelector from '@/components/common/PriorityDragSelector.vue'
-import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
+import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { DrawPreviewRow } from '@/types/draw-preview'
 import type { BreakCutoffTiePolicy, BreakSeeding, RoundBreakConfig } from '@/types/round'
+import { formatCompiledSnapshotOptionLabel } from '@/utils/compiled-snapshot'
 import {
-  formatCompiledSnapshotOptionLabel,
-  resolveLatestCompiledIdContainingRound,
-} from '@/utils/compiled-snapshot'
+  DEFAULT_COMPILE_OPTIONS,
+  compileIncludeLabels,
+  normalizeCompileOptions,
+  type CompileIncludeLabel,
+  type CompileOptions,
+} from '@/types/compiled'
 import {
   applyDrawAllocationImportEntries,
   parseDrawAllocationImportText,
@@ -1554,7 +1664,7 @@ const submissionsStore = useSubmissionsStore()
 const speakersStore = useSpeakersStore()
 const tournamentStore = useTournamentStore()
 const stylesStore = useStylesStore()
-const { t } = useI18n({ useScope: 'global' })
+const { t, locale } = useI18n({ useScope: 'global' })
 const props = withDefaults(
   defineProps<{
     embedded?: boolean
@@ -1575,6 +1685,10 @@ type AllocationSortKey = 'match' | 'venue' | 'gov' | 'opp' | 'chairs' | 'panels'
 type AllocationSortDirection = 'asc' | 'desc'
 const DRAW_REFERENCE_COMPILED_ID_KEY = 'reference_compiled_id'
 const DRAW_REFERENCE_COMPILED_ROUNDS_KEY = 'reference_compiled_rounds'
+const DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY = 'reference_compiled_id_teams'
+const DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY = 'reference_compiled_rounds_teams'
+const DRAW_REFERENCE_COMPILED_ID_ADJUDICATORS_KEY = 'reference_compiled_id_adjudicators'
+const DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY = 'reference_compiled_rounds_adjudicators'
 
 function normalizeRoundValue(value: unknown): number | null {
   const parsed = Number(value)
@@ -1602,31 +1716,108 @@ function normalizeDrawUserDefinedData(value: unknown): Record<string, any> {
 }
 
 function readDrawReferenceCompiledId(value: unknown): string {
-  const raw = normalizeDrawUserDefinedData(value)[DRAW_REFERENCE_COMPILED_ID_KEY]
+  const payload = normalizeDrawUserDefinedData(value)
+  const teamRaw = payload[DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY]
+  if (typeof teamRaw === 'string' && teamRaw.trim().length > 0) return teamRaw.trim()
+  const raw = payload[DRAW_REFERENCE_COMPILED_ID_KEY]
   return typeof raw === 'string' ? raw.trim() : ''
 }
 
-function withDrawReferenceCompiledId(
+function readDrawReferenceCompiledIdByScope(
+  value: unknown,
+  scope: 'teams' | 'adjudicators'
+): string {
+  const payload = normalizeDrawUserDefinedData(value)
+  const key =
+    scope === 'teams'
+      ? DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY
+      : DRAW_REFERENCE_COMPILED_ID_ADJUDICATORS_KEY
+  const scoped = payload[key]
+  return typeof scoped === 'string' ? scoped.trim() : ''
+}
+
+function readDrawReferenceCompiledRounds(value: unknown): number[] {
+  const payload = normalizeDrawUserDefinedData(value)
+  return normalizeCompiledRoundNumbers(payload[DRAW_REFERENCE_COMPILED_ROUNDS_KEY])
+}
+
+function readDrawReferenceCompiledRoundsByScope(
+  value: unknown,
+  scope: 'teams' | 'adjudicators'
+): number[] {
+  const payload = normalizeDrawUserDefinedData(value)
+  const key =
+    scope === 'teams'
+      ? DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY
+      : DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY
+  const scoped = normalizeCompiledRoundNumbers(payload[key])
+  if (scoped.length > 0) return scoped
+  return readDrawReferenceCompiledRounds(value)
+}
+
+function withDrawReferenceCompiledRefs(
   userDefinedData: unknown,
-  compiledId: string,
-  rounds: number[]
+  refs: {
+    sharedCompiledId: string
+    sharedRounds: number[]
+    teamCompiledId: string
+    teamRounds: number[]
+    adjudicatorCompiledId: string
+    adjudicatorRounds: number[]
+  }
 ): Record<string, any> | undefined {
   const merged = normalizeDrawUserDefinedData(userDefinedData)
-  const normalizedCompiledId = compiledId.trim()
-  const normalizedRounds = Array.from(
-    new Set(rounds.filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1))
-  ).sort((left, right) => left - right)
-  if (normalizedCompiledId) {
-    merged[DRAW_REFERENCE_COMPILED_ID_KEY] = normalizedCompiledId
-    if (normalizedRounds.length > 0) {
-      merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY] = normalizedRounds
-    } else {
-      delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY]
-    }
+  const normalizeId = (value: string) => value.trim()
+  const normalizeRounds = (rounds: number[]) =>
+    Array.from(
+      new Set(rounds.filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1))
+    ).sort((left, right) => left - right)
+  const sharedCompiledId = normalizeId(refs.sharedCompiledId)
+  const teamCompiledId = normalizeId(refs.teamCompiledId)
+  const adjudicatorCompiledId = normalizeId(refs.adjudicatorCompiledId)
+  const sharedRounds = normalizeRounds(refs.sharedRounds)
+  const teamRounds = normalizeRounds(refs.teamRounds)
+  const adjudicatorRounds = normalizeRounds(refs.adjudicatorRounds)
+
+  if (sharedCompiledId) {
+    merged[DRAW_REFERENCE_COMPILED_ID_KEY] = sharedCompiledId
+    if (sharedRounds.length > 0) merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY] = sharedRounds
+    else delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY]
   } else {
     delete merged[DRAW_REFERENCE_COMPILED_ID_KEY]
     delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY]
   }
+
+  if (teamCompiledId) {
+    merged[DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY] = teamCompiledId
+    if (teamRounds.length > 0) merged[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY] = teamRounds
+    else delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY]
+  } else {
+    delete merged[DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY]
+    delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY]
+  }
+
+  if (adjudicatorCompiledId) {
+    merged[DRAW_REFERENCE_COMPILED_ID_ADJUDICATORS_KEY] = adjudicatorCompiledId
+    if (adjudicatorRounds.length > 0)
+      merged[DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY] = adjudicatorRounds
+    else delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY]
+  } else {
+    delete merged[DRAW_REFERENCE_COMPILED_ID_ADJUDICATORS_KEY]
+    delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY]
+  }
+
+  const hasAnyReference = [
+    DRAW_REFERENCE_COMPILED_ID_KEY,
+    DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY,
+    DRAW_REFERENCE_COMPILED_ID_ADJUDICATORS_KEY,
+  ].some((key) => typeof merged[key] === 'string' && String(merged[key]).trim().length > 0)
+  if (!hasAnyReference) {
+    delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_KEY]
+    delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY]
+    delete merged[DRAW_REFERENCE_COMPILED_ROUNDS_ADJUDICATORS_KEY]
+  }
+
   return Object.keys(merged).length > 0 ? merged : undefined
 }
 
@@ -1661,6 +1852,15 @@ const showAllocationImportModal = ref(false)
 const showDeleteDrawModal = ref(false)
 const compiledHistory = ref<any[]>([])
 const selectedDetailSnapshotId = ref('')
+const selectedTeamSnapshotId = ref('')
+const selectedAdjudicatorSnapshotId = ref('')
+const referenceSelectionConfirmed = ref(false)
+const referenceConfirming = ref(false)
+const referenceConfirmError = ref<string | null>(null)
+const commonReferenceRoundSelections = ref<string[]>([])
+const teamReferenceRoundSelections = ref<string[]>([])
+const adjudicatorReferenceRoundSelections = ref<string[]>([])
+const useScopedReferenceRoundSelections = ref(false)
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
 const allocationImportInfo = ref<string | null>(null)
@@ -2090,6 +2290,35 @@ const priorRounds = computed(() =>
     .slice()
     .sort((a, b) => a.round - b.round)
 )
+const shouldTrackAdjudicatorReference = computed(() => adjudicators.adjudicators.length > 0)
+const priorRoundNumberSet = computed(() => new Set(priorRounds.value.map((item) => item.round)))
+
+function normalizeReferenceRoundSelections(values: string[]): number[] {
+  const allowed = priorRoundNumberSet.value
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((roundNumber) => Number.isInteger(roundNumber) && allowed.has(roundNumber))
+    )
+  ).sort((left, right) => left - right)
+}
+
+const selectedCommonReferenceRounds = computed(() =>
+  normalizeReferenceRoundSelections(commonReferenceRoundSelections.value)
+)
+const selectedTeamReferenceRounds = computed(() => {
+  if (!shouldTrackAdjudicatorReference.value || !useScopedReferenceRoundSelections.value) {
+    return selectedCommonReferenceRounds.value
+  }
+  return normalizeReferenceRoundSelections(teamReferenceRoundSelections.value)
+})
+const selectedAdjudicatorReferenceRounds = computed(() => {
+  if (!shouldTrackAdjudicatorReference.value) return selectedTeamReferenceRounds.value
+  if (!useScopedReferenceRoundSelections.value) return selectedCommonReferenceRounds.value
+  return normalizeReferenceRoundSelections(adjudicatorReferenceRoundSelections.value)
+})
+
 const breakRoundNumbers = computed(() =>
   roundsStore.rounds
     .filter((item) => isRoundConfiguredAsBreak(item))
@@ -2122,6 +2351,10 @@ type CompiledSnapshotOption = {
   snapshotName?: string
   payload: Record<string, any>
 }
+type CompiledSnapshotSelectOption = {
+  value: string
+  label: string
+}
 const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
   compiledHistory.value
     .map((item) => {
@@ -2145,43 +2378,108 @@ const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
     })
     .filter((item) => item.compiledId.length > 0)
 )
-const detailSnapshotSelectOptions = computed(() =>
+const compiledSnapshotLocaleTag = computed(() => (locale.value === 'ja' ? 'ja-JP' : 'en-US'))
+const compiledSnapshotSelectOptions = computed<CompiledSnapshotSelectOption[]>(() =>
   compiledSnapshotOptions.value.map((option) => ({
     value: option.compiledId,
-    label: formatCompiledSnapshotOptionLabel(option, 'ja-JP'),
+    label: formatCompiledSnapshotOptionLabel(
+      {
+        rounds: option.rounds,
+        createdAt: option.createdAt,
+        snapshotName: option.snapshotName,
+      },
+      compiledSnapshotLocaleTag.value
+    ),
   }))
 )
+function resolveSnapshotById(compiledId: string): CompiledSnapshotOption | null {
+  const normalizedId = String(compiledId ?? '').trim()
+  if (!normalizedId) return null
+  return (
+    compiledSnapshotOptions.value.find((option) => option.compiledId === normalizedId) ?? null
+  )
+}
+
+function snapshotRecencyValue(option: CompiledSnapshotOption): number {
+  const parsed = Date.parse(String(option.createdAt ?? ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function resolveLatestSnapshotByReferenceRounds(rounds: number[]): CompiledSnapshotOption | null {
+  const normalizedTarget = normalizeCompiledRoundNumbers(rounds)
+  if (normalizedTarget.length === 0) return null
+  const targetMaxRound = normalizedTarget[normalizedTarget.length - 1]
+  let strictLatest: CompiledSnapshotOption | null = null
+  let looseLatest: CompiledSnapshotOption | null = null
+
+  for (const option of compiledSnapshotOptions.value) {
+    const optionRounds = normalizeCompiledRoundNumbers(option.rounds)
+    if (optionRounds.length === 0) continue
+    const optionMaxRound = optionRounds[optionRounds.length - 1]
+    if (optionMaxRound !== targetMaxRound) continue
+    const optionSet = new Set(optionRounds)
+    const isStrict = normalizedTarget.every((roundNumber) => optionSet.has(roundNumber))
+    if (isStrict) {
+      if (!strictLatest || snapshotRecencyValue(option) > snapshotRecencyValue(strictLatest)) {
+        strictLatest = option
+      }
+      continue
+    }
+    if (!looseLatest || snapshotRecencyValue(option) > snapshotRecencyValue(looseLatest)) {
+      looseLatest = option
+    }
+  }
+
+  return strictLatest ?? looseLatest
+}
+
+function resolveLatestSnapshotByPreviousRoundMaxRound(): CompiledSnapshotOption | null {
+  const previousRound = round.value - 1
+  if (!Number.isInteger(previousRound) || previousRound < 1) return null
+  let latest: CompiledSnapshotOption | null = null
+  for (const option of compiledSnapshotOptions.value) {
+    const optionRounds = normalizeCompiledRoundNumbers(option.rounds)
+    if (optionRounds.length === 0) continue
+    const optionMaxRound = optionRounds[optionRounds.length - 1]
+    if (optionMaxRound !== previousRound) continue
+    if (!optionRounds.includes(previousRound)) continue
+    if (!latest || snapshotRecencyValue(option) > snapshotRecencyValue(latest)) {
+      latest = option
+    }
+  }
+  return latest
+}
 const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
   if (compiledSnapshotOptions.value.length === 0) return null
-  const selectedId = String(selectedDetailSnapshotId.value ?? '').trim()
-  if (selectedId.length === 0) return null
-  const selected = compiledSnapshotOptions.value.find((option) => option.compiledId === selectedId)
-  return selected ?? null
+  return resolveSnapshotById(selectedDetailSnapshotId.value)
 })
-const defaultDetailSnapshotId = computed(() => {
-  const previousRound = round.value - 1
-  if (!Number.isInteger(previousRound) || previousRound < 1) return ''
-  const candidates = compiledSnapshotOptions.value.filter((option) =>
-    normalizeCompiledRoundNumbers(option.rounds).includes(previousRound)
-  )
-  if (candidates.length === 0) return ''
-  return resolveLatestCompiledIdContainingRound(candidates, previousRound)
+const selectedTeamSnapshot = computed<CompiledSnapshotOption | null>(() => {
+  const scopedId = String(selectedTeamSnapshotId.value ?? '').trim()
+  if (!scopedId) return selectedDetailSnapshot.value
+  return resolveSnapshotById(scopedId)
 })
+const selectedAdjudicatorSnapshot = computed<CompiledSnapshotOption | null>(() => {
+  const scopedId = String(selectedAdjudicatorSnapshotId.value ?? '').trim()
+  if (!scopedId) return selectedDetailSnapshot.value
+  return resolveSnapshotById(scopedId)
+})
+const selectedTeamPayload = computed<Record<string, any>>(
+  () => selectedTeamSnapshot.value?.payload ?? selectedDetailSnapshot.value?.payload ?? {}
+)
+const selectedAdjudicatorPayload = computed<Record<string, any>>(
+  () => selectedAdjudicatorSnapshot.value?.payload ?? selectedDetailSnapshot.value?.payload ?? {}
+)
 const selectedDetailPayload = computed<Record<string, any>>(
   () => selectedDetailSnapshot.value?.payload ?? {}
 )
 const selectedDetailSnapshotRoundNumbers = computed(() =>
   normalizeCompiledRoundNumbers(selectedDetailSnapshot.value?.rounds ?? [])
 )
-const selectedDetailSnapshotLabel = computed(() =>
-  selectedDetailSnapshot.value
-    ? formatCompiledSnapshotOptionLabel(selectedDetailSnapshot.value, 'ja-JP')
-    : t('未選択')
+const selectedTeamSnapshotRoundNumbers = computed(() =>
+  normalizeCompiledRoundNumbers(selectedTeamSnapshot.value?.rounds ?? [])
 )
-const selectedDetailSnapshotDescription = computed(() =>
-  selectedDetailSnapshot.value
-    ? t('対戦表作成で選択中の参照集計結果を利用します。')
-    : t('参照集計結果が未選択のため、過去ラウンドの結果を参照せず対戦表を作成します。')
+const selectedAdjudicatorSnapshotRoundNumbers = computed(() =>
+  normalizeCompiledRoundNumbers(selectedAdjudicatorSnapshot.value?.rounds ?? [])
 )
 const previousBreakRoundInReference = computed<number | null>(() => {
   if (!isBreakRound.value) return null
@@ -2246,6 +2544,37 @@ function emitReferenceCompiledSelection() {
   emit('update:referenceCompiledId', String(selectedDetailSnapshotId.value ?? '').trim())
   emit('update:referenceCompiledRounds', selectedDetailSnapshotRoundNumbers.value)
 }
+
+function handleSharedReferenceSnapshotSelection(snapshotId: string) {
+  const selectedId = firstExistingSnapshotId(snapshotId)
+  if (!selectedId) return
+  selectedDetailSnapshotId.value = selectedId
+  selectedTeamSnapshotId.value = selectedId
+  selectedAdjudicatorSnapshotId.value = selectedId
+}
+
+function handleTeamReferenceSnapshotSelection(snapshotId: string) {
+  const selectedId = firstExistingSnapshotId(snapshotId)
+  if (!selectedId) return
+  selectedTeamSnapshotId.value = selectedId
+  selectedDetailSnapshotId.value = firstExistingSnapshotId(
+    selectedTeamSnapshotId.value,
+    selectedAdjudicatorSnapshotId.value,
+    selectedDetailSnapshotId.value
+  )
+}
+
+function handleAdjudicatorReferenceSnapshotSelection(snapshotId: string) {
+  const selectedId = firstExistingSnapshotId(snapshotId)
+  if (!selectedId) return
+  selectedAdjudicatorSnapshotId.value = selectedId
+  selectedDetailSnapshotId.value = firstExistingSnapshotId(
+    selectedTeamSnapshotId.value,
+    selectedAdjudicatorSnapshotId.value,
+    selectedDetailSnapshotId.value
+  )
+}
+
 const autoScopeRequiresExistingDraw = computed(() => allocation.value.length === 0)
 const requestScopeTabOptions = computed<
   Array<{ value: RequestScope; label: string; disabled: boolean }>
@@ -2295,6 +2624,16 @@ const requestScopeDescriptions = computed<Record<string, string>>(() => ({
 const requestScopeDescription = computed(
   () => requestScopeDescriptions.value[requestScope.value] ?? ''
 )
+function resolveSnapshotIdForScope(scope: RequestScope, useOverrides = true): string {
+  const sharedId = String(selectedDetailSnapshotId.value ?? '').trim()
+  if (!useOverrides) return sharedId
+  const teamId = String(selectedTeamSnapshotId.value ?? '').trim()
+  const adjudicatorId = String(selectedAdjudicatorSnapshotId.value ?? '').trim()
+  if (scope === 'teams') return teamId || sharedId
+  if (scope === 'adjudicators') return adjudicatorId || sharedId
+  if (scope === 'venues') return teamId || sharedId
+  return teamId || adjudicatorId || sharedId
+}
 
 const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
   standard: t('各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'),
@@ -2404,11 +2743,130 @@ function allocationSnapshot() {
   })
 }
 
+function defaultReferenceRoundSelections(): string[] {
+  return priorRounds.value.map((item) => String(item.round))
+}
+
+function sanitizeReferenceRoundSelectionStrings(values: string[]): string[] {
+  return normalizeReferenceRoundSelections(values).map((roundNumber) => String(roundNumber))
+}
+
+function areReferenceRoundSelectionsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
+function applyReferenceRoundSelectionState(
+  teamSelectionsInput: string[],
+  adjudicatorSelectionsInput: string[],
+  defaultSelectionsInput: string[]
+) {
+  const defaultSelections = sanitizeReferenceRoundSelectionStrings(defaultSelectionsInput)
+  const teamSelections = sanitizeReferenceRoundSelectionStrings(teamSelectionsInput)
+  const adjudicatorSelections = sanitizeReferenceRoundSelectionStrings(adjudicatorSelectionsInput)
+
+  if (!shouldTrackAdjudicatorReference.value) {
+    const common =
+      teamSelections.length > 0
+        ? teamSelections
+        : adjudicatorSelections.length > 0
+          ? adjudicatorSelections
+          : defaultSelections
+    commonReferenceRoundSelections.value = [...common]
+    teamReferenceRoundSelections.value = [...common]
+    adjudicatorReferenceRoundSelections.value = [...common]
+    useScopedReferenceRoundSelections.value = false
+    return
+  }
+
+  const useScoped =
+    teamSelections.length > 0 &&
+    adjudicatorSelections.length > 0 &&
+    !areReferenceRoundSelectionsEqual(teamSelections, adjudicatorSelections)
+  useScopedReferenceRoundSelections.value = useScoped
+
+  if (useScoped) {
+    const common = teamSelections.length > 0 ? teamSelections : defaultSelections
+    commonReferenceRoundSelections.value = [...common]
+    teamReferenceRoundSelections.value = [...teamSelections]
+    adjudicatorReferenceRoundSelections.value = [...adjudicatorSelections]
+    return
+  }
+
+  const common =
+    teamSelections.length > 0
+      ? teamSelections
+      : adjudicatorSelections.length > 0
+        ? adjudicatorSelections
+        : defaultSelections
+  commonReferenceRoundSelections.value = [...common]
+  teamReferenceRoundSelections.value = [...common]
+  adjudicatorReferenceRoundSelections.value = [...common]
+}
+
+function resolveSavedReferenceRoundSelections(
+  value: unknown,
+  scope: 'teams' | 'adjudicators'
+): string[] {
+  const explicitRounds = readDrawReferenceCompiledRoundsByScope(value, scope)
+  const explicitSelections = sanitizeReferenceRoundSelectionStrings(
+    explicitRounds.map((roundNumber) => String(roundNumber))
+  )
+  if (explicitSelections.length > 0) return explicitSelections
+  const scopedId = readDrawReferenceCompiledIdByScope(value, scope)
+  const sharedId = readDrawReferenceCompiledId(value)
+  const snapshot = resolveSnapshotById(scopedId || sharedId)
+  const inferredRounds = normalizeCompiledRoundNumbers(snapshot?.rounds ?? [])
+  if (inferredRounds.length === 0) return []
+  return sanitizeReferenceRoundSelectionStrings(
+    inferredRounds.map((roundNumber) => String(roundNumber))
+  )
+}
+
+function firstExistingSnapshotId(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim()
+    if (!normalized) continue
+    if (resolveSnapshotById(normalized)) return normalized
+  }
+  return ''
+}
+
+function resolvePreferredSnapshotIdByReferenceRounds(
+  rounds: number[],
+  ...preferredIds: Array<string | null | undefined>
+): string {
+  const preferred = firstExistingSnapshotId(...preferredIds)
+  if (preferred) return preferred
+  const latestByReference = resolveLatestSnapshotByReferenceRounds(rounds)
+  if (latestByReference) return latestByReference.compiledId
+  const fallback = resolveLatestSnapshotByPreviousRoundMaxRound()
+  return fallback?.compiledId ?? ''
+}
+
+function areRoundSetsEqual(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
+function hasConfirmedReferenceSelection(draw: any | null | undefined): boolean {
+  if (priorRounds.value.length === 0) return true
+  if (draw && Array.isArray(draw.allocation) && draw.allocation.length > 0) return true
+  const sharedId = readDrawReferenceCompiledId(draw?.userDefinedData)
+  const teamId = readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'teams') || sharedId
+  const adjudicatorId =
+    readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'adjudicators') || sharedId
+  if (!teamId) return false
+  if (shouldTrackAdjudicatorReference.value && !adjudicatorId) return false
+  return true
+}
+
 function syncFromDraw(
   draw?: DrawAllocationRow[] | any | null,
   options: { preserveReferenceSelection?: boolean } = {}
 ) {
   const preserveReferenceSelection = options.preserveReferenceSelection === true
+  const defaultSelections = defaultReferenceRoundSelections()
   if (draw) {
     const cloned = cloneAllocation(draw.allocation ?? [])
     allocation.value = cloned.length > 0 ? cloned : [createEmptyAllocationRow()]
@@ -2422,6 +2880,66 @@ function syncFromDraw(
         : null
     if (!preserveReferenceSelection) {
       selectedDetailSnapshotId.value = readDrawReferenceCompiledId(draw.userDefinedData)
+      const savedTeamSnapshotId = readDrawReferenceCompiledIdByScope(draw.userDefinedData, 'teams')
+      const savedAdjudicatorSnapshotId = readDrawReferenceCompiledIdByScope(
+        draw.userDefinedData,
+        'adjudicators'
+      )
+      selectedTeamSnapshotId.value = savedTeamSnapshotId
+      selectedAdjudicatorSnapshotId.value = savedAdjudicatorSnapshotId
+      const savedTeamRounds = resolveSavedReferenceRoundSelections(draw.userDefinedData, 'teams')
+      const savedAdjudicatorRounds = resolveSavedReferenceRoundSelections(
+        draw.userDefinedData,
+        'adjudicators'
+      )
+      const fallbackSnapshot = resolveLatestSnapshotByPreviousRoundMaxRound()
+      const fallbackRounds = sanitizeReferenceRoundSelectionStrings(
+        normalizeCompiledRoundNumbers(fallbackSnapshot?.rounds ?? []).map((roundNumber) =>
+          String(roundNumber)
+        )
+      )
+      applyReferenceRoundSelectionState(
+        savedTeamRounds.length > 0
+          ? savedTeamRounds
+          : fallbackRounds.length > 0
+            ? fallbackRounds
+            : defaultSelections,
+        savedAdjudicatorRounds.length > 0
+          ? savedAdjudicatorRounds
+          : savedTeamRounds.length > 0
+            ? savedTeamRounds
+            : fallbackRounds.length > 0
+              ? fallbackRounds
+            : defaultSelections,
+        defaultSelections
+      )
+      const confirmedReferenceSelection = hasConfirmedReferenceSelection(draw)
+      referenceSelectionConfirmed.value = confirmedReferenceSelection
+      if (confirmedReferenceSelection) {
+        selectedTeamSnapshotId.value = resolvePreferredSnapshotIdByReferenceRounds(
+          selectedTeamReferenceRounds.value,
+          savedTeamSnapshotId,
+          selectedDetailSnapshotId.value,
+          selectedTeamSnapshotId.value
+        )
+        if (shouldTrackAdjudicatorReference.value) {
+          selectedAdjudicatorSnapshotId.value = resolvePreferredSnapshotIdByReferenceRounds(
+            selectedAdjudicatorReferenceRounds.value,
+            savedAdjudicatorSnapshotId,
+            selectedDetailSnapshotId.value,
+            selectedAdjudicatorSnapshotId.value,
+            selectedTeamSnapshotId.value
+          )
+        } else {
+          selectedAdjudicatorSnapshotId.value = selectedTeamSnapshotId.value
+        }
+        selectedDetailSnapshotId.value = firstExistingSnapshotId(
+          selectedTeamSnapshotId.value,
+          selectedAdjudicatorSnapshotId.value,
+          selectedDetailSnapshotId.value
+        )
+      }
+      referenceConfirmError.value = null
     }
   } else {
     allocation.value = [createEmptyAllocationRow()]
@@ -2432,6 +2950,11 @@ function syncFromDraw(
     generatedUserDefinedData.value = null
     if (!preserveReferenceSelection) {
       selectedDetailSnapshotId.value = ''
+      selectedTeamSnapshotId.value = ''
+      selectedAdjudicatorSnapshotId.value = ''
+      applyReferenceRoundSelectionState(defaultSelections, defaultSelections, defaultSelections)
+      referenceSelectionConfirmed.value = priorRounds.value.length === 0
+      referenceConfirmError.value = null
     }
   }
   savedSnapshot.value = allocationSnapshot()
@@ -2473,6 +2996,96 @@ async function refreshCompiledHistory() {
   }
 }
 
+function readRoundCompileOptions(): CompileOptions {
+  const userDefined = (roundConfig.value?.userDefinedData ?? {}) as Record<string, any>
+  const rawCompile = (userDefined.compile ?? {}) as Record<string, any>
+  const source =
+    rawCompile.options && typeof rawCompile.options === 'object' ? rawCompile.options : rawCompile
+  return normalizeCompileOptions(source as Partial<CompileOptions>, DEFAULT_COMPILE_OPTIONS)
+}
+
+function buildReferenceCompileOptions(scope: 'teams' | 'adjudicators'): CompileOptions {
+  const base = readRoundCompileOptions()
+  const includeLabels = new Set<CompileIncludeLabel>(['teams'])
+  if (scope === 'adjudicators' && shouldTrackAdjudicatorReference.value) {
+    includeLabels.add('adjudicators')
+  }
+  return {
+    ...base,
+    include_labels: compileIncludeLabels.filter((label) => includeLabels.has(label)),
+  }
+}
+
+function reopenReferenceSelection() {
+  referenceSelectionConfirmed.value = false
+  referenceConfirmError.value = null
+}
+
+async function confirmReferenceRounds() {
+  if (!tournamentId.value || referenceConfirming.value) return
+  referenceConfirmError.value = null
+  const teamRounds = selectedTeamReferenceRounds.value
+  const adjudicatorRounds = shouldTrackAdjudicatorReference.value
+    ? selectedAdjudicatorReferenceRounds.value
+    : []
+
+  if (priorRounds.value.length > 0 && teamRounds.length === 0) {
+    referenceConfirmError.value = t('チーム結果参照ラウンドを1つ以上選択してください。')
+    return
+  }
+  if (priorRounds.value.length > 0 && shouldTrackAdjudicatorReference.value && adjudicatorRounds.length === 0) {
+    referenceConfirmError.value = t('ジャッジ結果参照ラウンドを1つ以上選択してください。')
+    return
+  }
+  if (priorRounds.value.length === 0) {
+    referenceSelectionConfirmed.value = true
+    return
+  }
+
+  referenceConfirming.value = true
+  try {
+    const requiresAdjudicatorReference = shouldTrackAdjudicatorReference.value
+    const shouldCompileAdjudicatorSeparately =
+      requiresAdjudicatorReference && !areRoundSetsEqual(teamRounds, adjudicatorRounds)
+    const teamCompileScope =
+      requiresAdjudicatorReference && !shouldCompileAdjudicatorSeparately
+        ? 'adjudicators'
+        : 'teams'
+    const teamCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+      source: 'submissions',
+      rounds: teamRounds,
+      options: buildReferenceCompileOptions(teamCompileScope),
+    })
+    const teamCompiledId = String(teamCompiled?._id ?? '').trim()
+    if (!teamCompiledId) {
+      referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
+      return
+    }
+
+    let adjudicatorCompiledId = teamCompiledId
+    if (shouldCompileAdjudicatorSeparately) {
+      const adjudicatorCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+        source: 'submissions',
+        rounds: adjudicatorRounds,
+        options: buildReferenceCompileOptions('adjudicators'),
+      })
+      adjudicatorCompiledId = String(adjudicatorCompiled?._id ?? '').trim()
+      if (!adjudicatorCompiledId) {
+        referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
+        return
+      }
+    }
+
+    selectedDetailSnapshotId.value = teamCompiledId
+    selectedTeamSnapshotId.value = teamCompiledId
+    selectedAdjudicatorSnapshotId.value = adjudicatorCompiledId
+    referenceSelectionConfirmed.value = true
+    await refreshCompiledHistory()
+  } finally {
+    referenceConfirming.value = false
+  }
+}
+
 function addRow() {
   allocation.value.push(createEmptyAllocationRow())
 }
@@ -2485,6 +3098,10 @@ function removeRow(index: number) {
 }
 
 async function save() {
+  if (!referenceSelectionConfirmed.value) {
+    openNotice(t('先に参照ラウンドを確定してください。'))
+    return
+  }
   const validRows = allocation.value.filter((row) => row.teams.gov && row.teams.opp)
   if (validRows.length === 0) {
     openNotice(t('有効なマッチがありません。'))
@@ -2494,11 +3111,17 @@ async function save() {
     openNotice(t('同じチームが両サイドに設定されています。'))
     return
   }
-  const nextUserDefinedData = withDrawReferenceCompiledId(
-    generatedUserDefinedData.value,
-    String(selectedDetailSnapshotId.value ?? ''),
-    selectedDetailSnapshot.value?.rounds ?? []
-  )
+  const sharedCompiledId = String(selectedDetailSnapshotId.value ?? '').trim()
+  const teamCompiledId = String(selectedTeamSnapshotId.value ?? '').trim()
+  const adjudicatorCompiledId = String(selectedAdjudicatorSnapshotId.value ?? '').trim()
+  const nextUserDefinedData = withDrawReferenceCompiledRefs(generatedUserDefinedData.value, {
+    sharedCompiledId,
+    sharedRounds: selectedDetailSnapshotRoundNumbers.value,
+    teamCompiledId,
+    teamRounds: selectedTeamSnapshotRoundNumbers.value,
+    adjudicatorCompiledId,
+    adjudicatorRounds: selectedAdjudicatorSnapshotRoundNumbers.value,
+  })
   const saved = await draws.upsertDraw({
     tournamentId: tournamentId.value,
     round: round.value,
@@ -2889,7 +3512,10 @@ async function requestAllocation() {
       panels: normalizeNonNegativeInteger(autoOptions.value.panels, 0),
       trainees: normalizeNonNegativeInteger(autoOptions.value.trainees, 0),
     }
-    const snapshotId = String(selectedDetailSnapshotId.value ?? '').trim()
+    const useScopedOverrides = true
+    const teamSnapshotId = resolveSnapshotIdForScope('teams', useScopedOverrides)
+    const adjudicatorSnapshotId = resolveSnapshotIdForScope('adjudicators', useScopedOverrides)
+    const snapshotId = resolveSnapshotIdForScope(requestScope.value, useScopedOverrides)
     const roundList = snapshotId ? [] : priorRounds.value.map((item) => item.round)
     if (
       (requestScope.value === 'adjudicators' || requestScope.value === 'venues') &&
@@ -2913,12 +3539,26 @@ async function requestAllocation() {
       venue_allocation_algorithm_options: { shuffle: venueShuffleEnabled.value },
     }
 
+    const snapshotPayload =
+      requestScope.value === 'all'
+        ? useScopedOverrides
+          ? {
+              ...(teamSnapshotId ? { snapshotIdTeams: teamSnapshotId } : {}),
+              ...(adjudicatorSnapshotId ? { snapshotIdAdjudicators: adjudicatorSnapshotId } : {}),
+            }
+          : {
+              ...(snapshotId ? { snapshotId } : {}),
+            }
+        : {
+            ...(snapshotId ? { snapshotId } : {}),
+          }
+
     const basePayload: Record<string, any> = {
       tournamentId: tournamentId.value,
       round: round.value,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
-      ...(snapshotId ? { snapshotId } : {}),
+      ...snapshotPayload,
     }
 
     let endpoint = '/allocations'
@@ -3051,8 +3691,8 @@ function adjudicatorConflicts(adj: any) {
 }
 
 const compiledTeamMap = computed(() => {
-  const results = Array.isArray(selectedDetailPayload.value?.compiled_team_results)
-    ? selectedDetailPayload.value.compiled_team_results
+  const results = Array.isArray(selectedTeamPayload.value?.compiled_team_results)
+    ? selectedTeamPayload.value.compiled_team_results
     : []
   const map = new Map<string, any>()
   results.forEach((result: any) => {
@@ -3062,8 +3702,8 @@ const compiledTeamMap = computed(() => {
 })
 
 const compiledAdjMap = computed(() => {
-  const results = Array.isArray(selectedDetailPayload.value?.compiled_adjudicator_results)
-    ? selectedDetailPayload.value.compiled_adjudicator_results
+  const results = Array.isArray(selectedAdjudicatorPayload.value?.compiled_adjudicator_results)
+    ? selectedAdjudicatorPayload.value.compiled_adjudicator_results
     : []
   const map = new Map<string, any>()
   results.forEach((result: any) => {
@@ -4049,8 +4689,8 @@ function referenceRowsFromLatestDraw(
 }
 
 function referenceRowsFromCompiled(targetRound: number): ReferenceUnassignedTeamRow[] {
-  const compiledTeamResults = Array.isArray(selectedDetailPayload.value?.compiled_team_results)
-    ? selectedDetailPayload.value.compiled_team_results
+  const compiledTeamResults = Array.isArray(selectedTeamPayload.value?.compiled_team_results)
+    ? selectedTeamPayload.value.compiled_team_results
     : []
   if (compiledTeamResults.length === 0) return []
 
@@ -4625,38 +5265,196 @@ watch(
 )
 
 watch(
+  priorRounds,
+  (roundItems) => {
+    const defaults = roundItems.map((item) => String(item.round))
+    if (roundItems.length === 0) {
+      commonReferenceRoundSelections.value = []
+      teamReferenceRoundSelections.value = []
+      adjudicatorReferenceRoundSelections.value = []
+      useScopedReferenceRoundSelections.value = false
+      referenceSelectionConfirmed.value = true
+      referenceConfirmError.value = null
+      return
+    }
+
+    const commonSelections = sanitizeReferenceRoundSelectionStrings(
+      commonReferenceRoundSelections.value
+    )
+    const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
+    const adjudicatorSelections = sanitizeReferenceRoundSelectionStrings(
+      adjudicatorReferenceRoundSelections.value
+    )
+    const nextCommon = commonSelections.length > 0 ? commonSelections : defaults
+    commonReferenceRoundSelections.value = [...nextCommon]
+
+    if (!shouldTrackAdjudicatorReference.value || !useScopedReferenceRoundSelections.value) {
+      teamReferenceRoundSelections.value = [...nextCommon]
+      adjudicatorReferenceRoundSelections.value = [...nextCommon]
+      return
+    }
+
+    teamReferenceRoundSelections.value = teamSelections.length > 0 ? teamSelections : [...nextCommon]
+    adjudicatorReferenceRoundSelections.value =
+      adjudicatorSelections.length > 0 ? adjudicatorSelections : [...teamReferenceRoundSelections.value]
+  },
+  { immediate: true }
+)
+
+watch(
+  useScopedReferenceRoundSelections,
+  (enabled) => {
+    if (!shouldTrackAdjudicatorReference.value) {
+      if (enabled) useScopedReferenceRoundSelections.value = false
+      return
+    }
+
+    const defaults = defaultReferenceRoundSelections()
+    const commonSelections = sanitizeReferenceRoundSelectionStrings(commonReferenceRoundSelections.value)
+    if (!enabled) {
+      const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
+      const adjudicatorSelections = sanitizeReferenceRoundSelectionStrings(
+        adjudicatorReferenceRoundSelections.value
+      )
+      const nextCommon =
+        commonSelections.length > 0
+          ? commonSelections
+          : teamSelections.length > 0
+            ? teamSelections
+            : adjudicatorSelections.length > 0
+              ? adjudicatorSelections
+              : defaults
+      commonReferenceRoundSelections.value = [...nextCommon]
+      teamReferenceRoundSelections.value = [...nextCommon]
+      adjudicatorReferenceRoundSelections.value = [...nextCommon]
+      return
+    }
+
+    const baseSelections = commonSelections.length > 0 ? commonSelections : defaults
+    if (teamReferenceRoundSelections.value.length === 0) {
+      teamReferenceRoundSelections.value = [...baseSelections]
+    }
+    if (adjudicatorReferenceRoundSelections.value.length === 0) {
+      adjudicatorReferenceRoundSelections.value = [...baseSelections]
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  shouldTrackAdjudicatorReference,
+  (enabled) => {
+    if (enabled) {
+      if (adjudicatorReferenceRoundSelections.value.length === 0) {
+        adjudicatorReferenceRoundSelections.value =
+          teamReferenceRoundSelections.value.length > 0
+            ? [...teamReferenceRoundSelections.value]
+            : [...commonReferenceRoundSelections.value]
+      }
+      return
+    }
+    useScopedReferenceRoundSelections.value = false
+    const defaults = defaultReferenceRoundSelections()
+    const commonSelections = sanitizeReferenceRoundSelectionStrings(commonReferenceRoundSelections.value)
+    const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
+    const nextCommon = commonSelections.length > 0 ? commonSelections : teamSelections.length > 0 ? teamSelections : defaults
+    commonReferenceRoundSelections.value = [...nextCommon]
+    teamReferenceRoundSelections.value = [...nextCommon]
+    adjudicatorReferenceRoundSelections.value = [...nextCommon]
+  },
+  { immediate: true }
+)
+
+watch(
   [compiledSnapshotOptions, round, currentDraw],
   ([options, , draw]) => {
     const hasSavedDraw = Boolean(draw)
     const savedReferenceCompiledId = hasSavedDraw
       ? readDrawReferenceCompiledId(draw?.userDefinedData)
       : ''
+    const savedTeamReferenceCompiledId = hasSavedDraw
+      ? readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'teams')
+      : ''
+    const savedAdjudicatorReferenceCompiledId = hasSavedDraw
+      ? readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'adjudicators')
+      : ''
 
     if (options.length === 0) {
       selectedDetailSnapshotId.value = ''
+      selectedTeamSnapshotId.value = ''
+      selectedAdjudicatorSnapshotId.value = ''
       return
     }
 
-    let selected = String(selectedDetailSnapshotId.value ?? '').trim()
-    if (selected) {
-      const exists = options.some((option) => option.compiledId === selected)
-      if (exists) return
-      selectedDetailSnapshotId.value = ''
-      selected = ''
-    }
+    selectedDetailSnapshotId.value = firstExistingSnapshotId(
+      selectedDetailSnapshotId.value,
+      savedReferenceCompiledId
+    )
+    selectedTeamSnapshotId.value = firstExistingSnapshotId(
+      selectedTeamSnapshotId.value,
+      savedTeamReferenceCompiledId,
+      selectedDetailSnapshotId.value
+    )
+    selectedAdjudicatorSnapshotId.value = firstExistingSnapshotId(
+      selectedAdjudicatorSnapshotId.value,
+      savedAdjudicatorReferenceCompiledId,
+      selectedTeamSnapshotId.value,
+      selectedDetailSnapshotId.value
+    )
 
-    if (!selected && hasSavedDraw) {
-      const savedExists = options.some(
-        (option) => option.compiledId === savedReferenceCompiledId
+    if (hasSavedDraw && referenceSelectionConfirmed.value) {
+      const savedTeamSelections = resolveSavedReferenceRoundSelections(draw?.userDefinedData, 'teams')
+      const savedAdjudicatorSelections = resolveSavedReferenceRoundSelections(
+        draw?.userDefinedData,
+        'adjudicators'
       )
-      if (savedExists) {
-        selectedDetailSnapshotId.value = savedReferenceCompiledId
-        return
-      }
+      const fallbackSnapshot = resolveLatestSnapshotByPreviousRoundMaxRound()
+      const fallbackSelections = sanitizeReferenceRoundSelectionStrings(
+        normalizeCompiledRoundNumbers(fallbackSnapshot?.rounds ?? []).map((roundNumber) =>
+          String(roundNumber)
+        )
+      )
+      applyReferenceRoundSelectionState(
+        savedTeamSelections.length > 0
+          ? savedTeamSelections
+          : fallbackSelections.length > 0
+            ? fallbackSelections
+            : defaultReferenceRoundSelections(),
+        savedAdjudicatorSelections.length > 0
+          ? savedAdjudicatorSelections
+          : savedTeamSelections.length > 0
+            ? savedTeamSelections
+            : fallbackSelections.length > 0
+              ? fallbackSelections
+            : defaultReferenceRoundSelections(),
+        defaultReferenceRoundSelections()
+      )
     }
 
-    if (!selected && defaultDetailSnapshotId.value) {
-      selectedDetailSnapshotId.value = defaultDetailSnapshotId.value
+    if (referenceSelectionConfirmed.value) {
+      selectedTeamSnapshotId.value = resolvePreferredSnapshotIdByReferenceRounds(
+        selectedTeamReferenceRounds.value,
+        selectedTeamSnapshotId.value,
+        savedTeamReferenceCompiledId,
+        savedReferenceCompiledId,
+        selectedDetailSnapshotId.value
+      )
+      if (shouldTrackAdjudicatorReference.value) {
+        selectedAdjudicatorSnapshotId.value = resolvePreferredSnapshotIdByReferenceRounds(
+          selectedAdjudicatorReferenceRounds.value,
+          selectedAdjudicatorSnapshotId.value,
+          savedAdjudicatorReferenceCompiledId,
+          savedReferenceCompiledId,
+          selectedTeamSnapshotId.value
+        )
+      } else {
+        selectedAdjudicatorSnapshotId.value = selectedTeamSnapshotId.value
+      }
+      selectedDetailSnapshotId.value = firstExistingSnapshotId(
+        selectedTeamSnapshotId.value,
+        selectedAdjudicatorSnapshotId.value,
+        selectedDetailSnapshotId.value
+      )
     }
   },
   { immediate: true }
@@ -4707,6 +5505,74 @@ watch(
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.reference-round-confirm-block {
+  gap: var(--space-2);
+}
+
+.reference-round-confirm-head {
+  align-items: flex-start;
+}
+
+.reference-round-select-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.reference-round-select-field {
+  gap: 6px;
+}
+
+.reference-snapshot-select-block {
+  gap: 6px;
+}
+
+.reference-snapshot-select-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.reference-round-intro {
+  margin: 0;
+}
+
+.reference-round-checkbox-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-soft);
+  padding: 8px;
+}
+
+.reference-round-checkbox-list--inline {
+  min-height: 44px;
+}
+
+.reference-round-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  background: var(--color-surface);
+  font-size: 13px;
+}
+
+.reference-round-checkbox input[type='checkbox'] {
+  margin: 0;
+}
+
+.reference-round-confirm-actions {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .section-header {
@@ -4766,7 +5632,7 @@ watch(
 
 .auto-basic-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 1.45fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(320px, 1fr);
   gap: var(--space-3);
   align-items: start;
 }
@@ -4784,35 +5650,35 @@ watch(
   margin-top: 34px;
 }
 
+.reference-selection-block {
+  margin-top: 0;
+}
+
 .auto-reference-header {
-  align-items: center;
-  justify-content: space-between;
-}
-
-.auto-reference-meta {
-  display: grid;
   gap: 4px;
-  border: 1px solid #dbeafe;
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  padding: 10px 12px;
 }
 
-.auto-reference-caption {
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--color-muted);
-  letter-spacing: 0.03em;
-}
-
-.auto-reference-value {
+.auto-reference-description {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.35;
+}
+
+.auto-reference-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.auto-reference-customize-toggle {
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 13px;
   color: var(--color-text);
-  overflow-wrap: anywhere;
+}
+
+.auto-reference-customize-toggle input {
+  margin: 0;
 }
 
 .filter-priority-field {
@@ -4982,21 +5848,6 @@ watch(
   gap: var(--space-3);
 }
 
-.embedded-reference-card {
-  border: 1px solid var(--color-border);
-  background: #f8fbff;
-  box-shadow: none;
-  gap: var(--space-2);
-}
-
-.embedded-reference-card h5 {
-  margin: 0;
-}
-
-.embedded-detail-snapshot-select {
-  width: min(640px, 100%);
-}
-
 .board-block {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -5030,18 +5881,16 @@ watch(
   border: 1px solid #fdba74;
 }
 
-.allocation-board--break .allocation-table {
-  background: #fff9ec;
+.allocation-board:not(.allocation-board--break) .allocation-table--main td .drop-zone {
+  border-color: #93c5fd;
+  background: #eef4ff;
 }
-.allocation-board--break .allocation-table th {
-  background: #fef1cd;
-  color: #92400e;
-}
-.allocation-board--break .allocation-table td .drop-zone {
+
+.allocation-board--break .allocation-table--main td .drop-zone {
   border-color: #d4b88a;
   background: #fdf1d9;
 }
-.allocation-board--break .allocation-table td .drop-zone.active {
+.allocation-board--break .allocation-table--main td .drop-zone.active {
   border-color: #b45309;
   background:
     repeating-linear-gradient(
@@ -5051,11 +5900,6 @@ watch(
     ),
     #fce7bf;
   box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.32);
-}
-
-.detail-snapshot-select {
-  min-width: 300px;
-  max-width: 100%;
 }
 
 .preview-head {
@@ -5102,6 +5946,12 @@ watch(
   color: var(--color-muted);
   font-size: 12px;
   font-weight: 600;
+}
+
+.allocation-table--main th,
+.waiting-matchup-allocation-table th {
+  background: #e5e7eb;
+  color: #374151;
 }
 
 .allocation-table th.venue-col,
@@ -5505,12 +6355,14 @@ watch(
   background: #ffffff;
 }
 
-.list {
+ul.list,
+ol.list {
   margin: 0;
   padding-left: var(--space-4);
 }
 
-.list.compact {
+ul.list.compact,
+ol.list.compact {
   margin: 0;
   padding-left: var(--space-4);
 }
@@ -5642,34 +6494,27 @@ watch(
 }
 
 .waiting-placeholder-zone {
-  background: #f8fafc;
+  background: #f1f5f9;
   border-style: dashed;
 }
 
-.allocation-board--break .waiting-matchup-allocation-table {
-  background: var(--color-surface);
-}
-
-.allocation-board--break .waiting-matchup-allocation-table th {
-  background: transparent;
-  color: var(--color-muted);
-}
-
+.allocation-board:not(.allocation-board--break) .waiting-matchup-allocation-table td .drop-zone,
 .allocation-board--break .waiting-matchup-allocation-table td .drop-zone {
   border-color: #94a3b8;
-  background: #f8fafc;
+  background: #f1f5f9;
 }
 
+.allocation-board:not(.allocation-board--break) .waiting-matchup-allocation-table td .drop-zone.active,
 .allocation-board--break .waiting-matchup-allocation-table td .drop-zone.active {
-  border-color: #1d4ed8;
+  border-color: var(--color-primary);
   background:
     repeating-linear-gradient(
       -45deg,
-      rgba(59, 130, 246, 0.14) 0 8px,
-      rgba(59, 130, 246, 0.24) 8px 16px
+      rgba(37, 99, 235, 0.08) 0 8px,
+      rgba(37, 99, 235, 0.14) 8px 16px
     ),
-    #e0ecff;
-  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
+    var(--color-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 36%, transparent);
 }
 
 .add-row-wrap {
@@ -5798,6 +6643,12 @@ watch(
   overflow: auto;
 }
 
+.reference-compile-settings-modal {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+}
+
 .auto-modal {
   gap: var(--space-3);
   padding: clamp(14px, 2vw, 20px);
@@ -5849,6 +6700,10 @@ watch(
 
   .auto-reference-block {
     margin-top: 0;
+  }
+
+  .auto-reference-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .auto-detail-grid {

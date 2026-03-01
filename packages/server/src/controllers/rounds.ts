@@ -26,6 +26,8 @@ import {
   annotateBreakCandidatesForPreview,
   buildBreakCandidatesFromCompiledPayload,
 } from './shared/break-candidates.js'
+import { normalizeTournamentBreakConfig } from './shared/tournament-break.js'
+import { withTournamentTeamRankingPriority } from './shared/tournament-team-ranking.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type RoundDefaults = {
@@ -76,6 +78,23 @@ function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSee
   if (value === 'random_within_tie_group') return 'random_within_tie_group'
   if (value === 'random_full') return 'random_full'
   return fallback
+}
+
+function sanitizeRoundCompileConfig(value: unknown): Record<string, unknown> {
+  const source = asRecord(value)
+  const compileOptionsSource =
+    source.options && typeof source.options === 'object' ? source.options : source
+  const normalizedOptions = normalizeCompileOptions(
+    compileOptionsSource as CompileOptionsInput,
+    DEFAULT_COMPILE_OPTIONS
+  ) as Record<string, unknown>
+  const { ranking_priority: _ignoredRankingPriority, ...optionsWithoutRanking } = normalizedOptions
+  void _ignoredRankingPriority
+  return {
+    source: source.source === 'raw' ? 'raw' : 'submissions',
+    source_rounds: asRoundList(source.source_rounds),
+    options: optionsWithoutRanking,
+  }
 }
 
 function sanitizeRoundBreakConfig(value: unknown): Record<string, unknown> {
@@ -199,11 +218,13 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
     merged.break = sanitizeRoundBreakConfig(merged.break)
   }
   if (!Object.prototype.hasOwnProperty.call(current, 'compile')) {
-    merged.compile = {
+    merged.compile = sanitizeRoundCompileConfig({
       source: defaults.compile.source,
       source_rounds: [...defaults.compile.source_rounds],
       options: normalizeCompileOptions(defaults.compile.options, defaults.compile.options),
-    }
+    })
+  } else {
+    merged.compile = sanitizeRoundCompileConfig(merged.compile)
   }
   if (breakRoundEnabled) {
     merged.allow_low_tie_win = false
@@ -218,6 +239,9 @@ function applyBreakConstraintsToUserDefined(input: unknown): Record<string, unkn
     ...current,
     break_round: breakRoundEnabled,
     break: sanitizeRoundBreakConfig(current.break),
+  }
+  if (Object.prototype.hasOwnProperty.call(current, 'compile')) {
+    next.compile = sanitizeRoundCompileConfig(current.compile)
   }
   if (breakRoundEnabled) {
     next.allow_low_tie_win = false
@@ -589,17 +613,31 @@ export const createRound: RequestHandler = async (req, res, next) => {
       const tournamentId = requireSingleTournamentPayload(res, payload)
       if (!tournamentId) return
       const tournament = await TournamentModel.findById(tournamentId).lean().exec()
-      const roundDefaults = normalizeRoundDefaults(
-        asRecord((tournament as any)?.user_defined_data).round_defaults
-      )
+      const tournamentUserDefined = asRecord((tournament as any)?.user_defined_data)
+      const roundDefaults = normalizeRoundDefaults(tournamentUserDefined.round_defaults)
       const connection = await getTournamentConnection(tournamentId)
       const RoundModel = getRoundModel(connection)
-      const preparedPayload = payload.map((item) => ({
-        ...item,
-        userDefinedData: applyBreakConstraintsToUserDefined(
-          buildRoundUserDefinedFromDefaults(roundDefaults, item.userDefinedData)
-        ),
-      }))
+      const preparedPayload = payload.map((item) => {
+        const normalizedTournamentBreak = normalizeTournamentBreakConfig(
+          Number(item.round),
+          tournamentUserDefined.break
+        )
+        const defaultsWithTournamentBreak: RoundDefaults = {
+          ...roundDefaults,
+          break: {
+            source: normalizedTournamentBreak.source,
+            size: normalizedTournamentBreak.size,
+            cutoff_tie_policy: normalizedTournamentBreak.cutoff_tie_policy,
+            seeding: normalizedTournamentBreak.seeding,
+          },
+        }
+        return {
+          ...item,
+          userDefinedData: applyBreakConstraintsToUserDefined(
+            buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, item.userDefinedData)
+          ),
+        }
+      })
       const created = await RoundModel.insertMany(preparedPayload, { ordered: false })
       await syncEntityRoundDetailsForCreate(
         tournamentId,
@@ -634,7 +672,18 @@ export const createRound: RequestHandler = async (req, res, next) => {
     if (!ensureTournamentId(res, tournamentId)) return
 
     const tournament = await TournamentModel.findById(tournamentId).lean().exec()
-    const roundDefaults = normalizeRoundDefaults(asRecord((tournament as any)?.user_defined_data).round_defaults)
+    const tournamentUserDefined = asRecord((tournament as any)?.user_defined_data)
+    const roundDefaults = normalizeRoundDefaults(tournamentUserDefined.round_defaults)
+    const normalizedTournamentBreak = normalizeTournamentBreakConfig(round, tournamentUserDefined.break)
+    const defaultsWithTournamentBreak: RoundDefaults = {
+      ...roundDefaults,
+      break: {
+        source: normalizedTournamentBreak.source,
+        size: normalizedTournamentBreak.size,
+        cutoff_tie_policy: normalizedTournamentBreak.cutoff_tie_policy,
+        seeding: normalizedTournamentBreak.seeding,
+      },
+    }
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
@@ -648,7 +697,7 @@ export const createRound: RequestHandler = async (req, res, next) => {
       adjudicatorAllocationOpened,
       weightsOfAdjudicators,
       userDefinedData: applyBreakConstraintsToUserDefined(
-        buildRoundUserDefinedFromDefaults(roundDefaults, userDefinedData)
+        buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
       ),
     })
     await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
@@ -844,6 +893,12 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
     if (!ensureTournamentId(res, tournamentId)) return
     if (!ensureRoundId(res, id)) return
 
+    const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+    const compileOptions = withTournamentTeamRankingPriority(
+      DEFAULT_COMPILE_OPTIONS,
+      asRecord((tournament as any)?.user_defined_data)
+    )
+
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
@@ -869,7 +924,8 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
     const { payload } = await buildCompiledPayload(
       tournamentId,
       source,
-      effectiveSourceRounds
+      effectiveSourceRounds,
+      compileOptions
     )
     const TeamModel = getTeamModel(connection)
     const teams = await TeamModel.find({ tournamentId }).lean().exec()
