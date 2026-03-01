@@ -7,9 +7,14 @@ function normalizeEnvString(value: unknown): string {
   return value.trim()
 }
 
-const configuredBrandName = normalizeEnvString(import.meta.env.VITE_BRAND_NAME)
+function resolveBrandName(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_BRAND_NAME
+  return value.trim()
+}
+
+const configuredBrandName = resolveBrandName(import.meta.env.VITE_BRAND_NAME)
 const configuredBrandLogoUrl = normalizeEnvString(import.meta.env.VITE_BRAND_LOGO_URL)
 
-export const BRAND_NAME = configuredBrandName || DEFAULT_BRAND_NAME
+export const BRAND_NAME = configuredBrandName
 export const BRAND_LOGO_URL = configuredBrandLogoUrl || defaultLogoUrl
-export const BRAND_HOME_ARIA_LABEL = `${BRAND_NAME} home`
+export const BRAND_HOME_ARIA_LABEL = BRAND_NAME.length > 0 ? `${BRAND_NAME} home` : 'home'

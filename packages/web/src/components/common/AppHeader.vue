@@ -2,7 +2,7 @@
   <header class="header">
     <RouterLink to="/" class="brand" :aria-label="brandHomeAriaLabel">
       <img :src="brandLogoUrl" :alt="brandName" />
-      <span>{{ brandName }}</span>
+      <span v-if="brandName">{{ brandName }}</span>
     </RouterLink>
     <nav v-if="showPrimaryNav" class="primary-nav" aria-label="Primary">
       <RouterLink to="/user" :class="{ active: isPrimaryActive('user') }">

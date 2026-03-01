@@ -151,9 +151,6 @@
               </section>
 
               <section v-else-if="activeTask === 'submissions'" class="stack step-content">
-                <div class="row step-section-head">
-                  <h5>{{ $t('ラウンド結果確認') }}</h5>
-                </div>
                 <div class="grid submission-overview-grid">
                   <div class="card soft stack submission-overview-card">
                     <span class="muted small">{{ $t('スコアシート') }}</span>
