@@ -81,6 +81,28 @@
                 </div>
               </div>
             </th>
+            <th v-if="showJudgeScoreColumn && isJudgeScoreAfterWin">
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="judgeScoreColumnLabel"
+                  :indicator="sortIndicator('judgeScore')"
+                  @click="setSort('judgeScore')"
+                />
+                <div
+                  v-if="columnHeaderBadges('judgeScore').length > 0"
+                  class="draw-header-badge-list"
+                >
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('judgeScore')"
+                    :key="`judge-score-badge-after-win-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
+            </th>
             <th v-if="showScoreColumn">
               <div class="draw-header-cell">
                 <SortHeaderButton
@@ -201,6 +223,28 @@
                 </div>
               </div>
             </th>
+            <th v-if="showJudgeScoreColumn && !isJudgeScoreAfterWin">
+              <div class="draw-header-cell">
+                <SortHeaderButton
+                  :label="judgeScoreColumnLabel"
+                  :indicator="sortIndicator('judgeScore')"
+                  @click="setSort('judgeScore')"
+                />
+                <div
+                  v-if="columnHeaderBadges('judgeScore').length > 0"
+                  class="draw-header-badge-list"
+                >
+                  <span
+                    v-for="(badge, index) in columnHeaderBadges('judgeScore')"
+                    :key="`judge-score-badge-${index}-${badge.text}`"
+                    class="draw-header-badge"
+                    :class="`is-${badge.tone ?? 'neutral'}`"
+                  >
+                    {{ badge.text }}
+                  </span>
+                </div>
+              </div>
+            </th>
             <th v-if="showDetailColumn" class="draw-col-detail"></th>
           </tr>
         </thead>
@@ -217,7 +261,7 @@
                     <span
                       v-if="row.winStatusLabel"
                       class="draw-win-status"
-                      :class="`draw-win-status--${row.winStatus ?? 'insufficient'}`"
+                      :class="`draw-win-status--${winStatusTone(row.winStatus)}`"
                     >
                       {{ row.winStatusLabel }}
                     </span>
@@ -226,6 +270,9 @@
                     row.winMetaLabel
                   }}</span>
                 </div>
+              </td>
+              <td v-if="showJudgeScoreColumn && isJudgeScoreAfterWin">
+                {{ judgeScoreText(row.judgeScoreAverageLabel) }}
               </td>
               <td v-if="showScoreColumn">
                 {{ row.scoreLabel ?? '—' }}
@@ -264,6 +311,9 @@
                     submissionCountText(row.judgeSubmissionCount, row.judgeSubmissionExpectedCount)
                   }}
                 </span>
+              </td>
+              <td v-if="showJudgeScoreColumn && !isJudgeScoreAfterWin">
+                {{ judgeScoreText(row.judgeScoreAverageLabel) }}
               </td>
               <td v-if="showDetailColumn" class="draw-col-detail">
                 <button
@@ -383,6 +433,7 @@ type PreviewSortKey =
   | 'trainee'
   | 'teamSubmission'
   | 'judgeSubmission'
+  | 'judgeScore'
 type PreviewSortDirection = 'asc' | 'desc'
 type PreviewSortState = { key: PreviewSortKey; direction: PreviewSortDirection }
 type HeaderBadgeTone = 'open' | 'closed' | 'neutral'
@@ -398,8 +449,12 @@ const props = withDefaults(
     adjudicatorVisible?: boolean
     showSubmissionColumns?: boolean
     showJudgeSubmissionColumn?: boolean
+    showJudgeScoreColumn?: boolean
+    judgeScoreColumnPlacement?: 'afterWin' | 'afterJudgeSubmission'
     teamSubmissionLabel?: string
     judgeSubmissionLabel?: string
+    judgeScoreColumnLabel?: string
+    judgeScoreValueUnit?: string
     winColumnLabel?: string
     showScoreColumn?: boolean
     scoreColumnLabel?: string
@@ -412,8 +467,12 @@ const props = withDefaults(
     adjudicatorVisible: true,
     showSubmissionColumns: false,
     showJudgeSubmissionColumn: true,
+    showJudgeScoreColumn: false,
+    judgeScoreColumnPlacement: 'afterJudgeSubmission',
     teamSubmissionLabel: 'チーム評価',
     judgeSubmissionLabel: 'ジャッジ評価',
+    judgeScoreColumnLabel: 'ジャッジスコア',
+    judgeScoreValueUnit: '',
     winColumnLabel: 'Win',
     showScoreColumn: false,
     scoreColumnLabel: 'SCORE合計',
@@ -438,18 +497,29 @@ const showSubmissionColumns = computed(() => props.showSubmissionColumns)
 const showJudgeSubmissionColumn = computed(
   () => showSubmissionColumns.value && props.showJudgeSubmissionColumn
 )
+const showJudgeScoreColumn = computed(
+  () => showSubmissionColumns.value && showJudgeSubmissionColumn.value && props.showJudgeScoreColumn
+)
 const showDetailColumn = computed(
   () => showSubmissionColumns.value || showJudgeSubmissionColumn.value
 )
 const showScoreColumn = computed(() => props.showScoreColumn)
 const teamSubmissionLabel = computed(() => props.teamSubmissionLabel)
 const judgeSubmissionLabel = computed(() => props.judgeSubmissionLabel)
+const judgeScoreColumnLabel = computed(() => props.judgeScoreColumnLabel)
+const judgeScoreColumnPlacement = computed(() =>
+  props.judgeScoreColumnPlacement === 'afterWin' ? 'afterWin' : 'afterJudgeSubmission'
+)
+const isJudgeScoreAfterWin = computed(() => judgeScoreColumnPlacement.value === 'afterWin')
+const judgeScoreValueUnit = computed(() => String(props.judgeScoreValueUnit ?? '').trim())
 const winColumnLabel = computed(() => props.winColumnLabel)
 const scoreColumnLabel = computed(() => props.scoreColumnLabel)
 const columnCount = computed(() => {
   const scoreColumn = Number(showScoreColumn.value)
   const submissionColumns =
-    Number(showSubmissionColumns.value) + Number(showJudgeSubmissionColumn.value)
+    Number(showSubmissionColumns.value) +
+    Number(showJudgeSubmissionColumn.value) +
+    Number(showJudgeScoreColumn.value)
   const detailColumn = Number(showDetailColumn.value)
   return 7 + scoreColumn + submissionColumns + detailColumn
 })
@@ -458,10 +528,18 @@ function columnHeaderBadges(key: PreviewSortKey) {
   return props.columnHeaderBadges?.[key] ?? []
 }
 
+function judgeScoreText(scoreLabel?: string) {
+  const value = String(scoreLabel ?? '').trim()
+  if (!value) return '—'
+  if (!judgeScoreValueUnit.value) return value
+  return `${value} ${judgeScoreValueUnit.value}`
+}
+
 function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
   if (key === 'score' && !showScoreColumn.value) return -1
   if (key === 'teamSubmission' && !showSubmissionColumns.value) return 0
   if (key === 'judgeSubmission' && !showJudgeSubmissionColumn.value) return 0
+  if (key === 'judgeScore' && !showJudgeScoreColumn.value) return -1
   if (key === 'venue') return row.venueLabel
   if (key === 'gov') return row.govName
   if (key === 'opp') return row.oppName
@@ -471,6 +549,7 @@ function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
   if (key === 'panel') return row.panelsLabel
   if (key === 'teamSubmission') return row.teamSubmissionCount ?? 0
   if (key === 'judgeSubmission') return row.judgeSubmissionCount ?? 0
+  if (key === 'judgeScore') return row.judgeScoreAverage ?? -1
   return row.traineesLabel
 }
 
@@ -512,7 +591,7 @@ function setSort(key: PreviewSortKey) {
   }
   sortState.value = {
     key,
-    direction: key === 'win' || key === 'score' ? 'desc' : 'asc',
+    direction: key === 'win' || key === 'score' || key === 'judgeScore' ? 'desc' : 'asc',
   }
 }
 
@@ -556,19 +635,38 @@ function toggleRowDetail(key: string) {
 }
 
 function submissionCountText(actual?: number, expected?: number) {
-  const left = Number.isFinite(actual) ? Math.max(0, Number(actual)) : 0
-  if (!Number.isFinite(expected)) return String(left)
-  const right = Math.max(0, Number(expected))
+  const left = normalizeCountValue(actual) ?? 0
+  const right = normalizeCountValue(expected)
+  if (right === null) return String(left)
   return `${left}/${right}`
 }
 
 function submissionCountTone(actual?: number, expected?: number) {
-  const left = Number.isFinite(actual) ? Math.max(0, Number(actual)) : 0
-  if (!Number.isFinite(expected)) return 'neutral'
-  const right = Math.max(0, Number(expected))
+  const left = normalizeCountValue(actual) ?? 0
+  const right = normalizeCountValue(expected)
+  if (right === null) return 'neutral'
   if (right <= 0) return 'neutral'
   if (left < right) return 'missing'
   return 'complete'
+}
+
+function normalizeCountValue(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  return Math.max(0, parsed)
+}
+
+function winStatusTone(status?: DrawPreviewRow['winStatus'] | string): 'confirmed' | 'provisional' | 'insufficient' {
+  const normalized = String(status ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'confirmed' || normalized === 'closed' || normalized === '確定') {
+    return 'confirmed'
+  }
+  if (normalized === 'provisional' || normalized === 'open' || normalized === '暫定') {
+    return 'provisional'
+  }
+  return 'insufficient'
 }
 
 function onEditSubmission(submissionId?: string) {
@@ -646,6 +744,7 @@ defineExpose({
 }
 
 .draw-header-badge.is-neutral {
+  border-color: var(--color-border);
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -666,7 +765,6 @@ defineExpose({
 
 .draw-col-panel,
 .draw-col-trainee {
-  width: 1%;
   min-width: 72px;
 }
 
@@ -677,7 +775,7 @@ defineExpose({
 
 .draw-wrap-cell {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .draw-win-cell {
@@ -706,7 +804,8 @@ defineExpose({
   padding: 0 8px;
   font-size: 11px;
   font-weight: 700;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
+  line-height: 1.25;
 }
 
 .draw-win-status--confirmed {
@@ -723,7 +822,7 @@ defineExpose({
 
 .draw-win-status--insufficient {
   color: #475569;
-  background: #e2e8f0;
+  background: #f1f5f9;
   border-color: #cbd5e1;
 }
 
@@ -735,24 +834,29 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 2px 8px;
-  font-weight: 600;
+  padding: 2px 10px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  border: 1px solid var(--color-border);
+  line-height: 1.25;
 }
 
 .submission-count-chip--neutral {
-  color: var(--color-text);
-  background: transparent;
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.submission-count-chip--missing {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
 }
 
 .submission-count-chip--complete {
   color: #166534;
   background: #dcfce7;
-}
-
-.submission-count-chip--missing {
-  color: #9a3412;
-  background: #ffedd5;
+  border-color: #86efac;
 }
 
 .preview-detail-toggle,

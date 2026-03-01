@@ -21,7 +21,70 @@ pnpm --filter @utab/web test
 `staging` と `production` で分離して設定する。
 
 - Server: `NODE_ENV`, `MONGODB_URI`, `SESSION_SECRET`, `CORS_ORIGIN`
-- Web: `VITE_API_URL`
+- Web: `VITE_API_URL`, `VITE_BRAND_NAME`(任意), `VITE_BRAND_LOGO_URL`(任意)
+
+本番環境では必ず `https://` の URL を使う。
+
+- Server（production 例）
+  - `NODE_ENV=production`
+  - `CORS_ORIGIN=https://tab.example.com`
+- Web（production 例）
+  - `VITE_API_URL=https://api.tab.example.com/api`
+  - `VITE_BRAND_NAME=UTab` (任意)
+  - `VITE_BRAND_LOGO_URL=/logo.png` (任意)
+
+`VITE_BRAND_LOGO_URL=/logo.png` を使う場合は、`packages/web/public/logo.png` をリポジトリに置いてからデプロイする。
+
+## 1-1. HTTPS ドメイン設定（初回のみ）
+
+### Server（Heroku）
+
+```bash
+heroku domains:add api.tab.example.com -a utab-server
+heroku certs:auto:enable -a utab-server
+```
+
+### Web（Vercel）
+
+Vercel project の `Settings -> Domains` で `tab.example.com` を追加する。  
+Vercel 側は証明書を自動発行するため、通常は追加作業不要。
+
+### DNS
+
+- `tab.example.com` -> Vercel
+- `api.tab.example.com` -> Heroku
+
+DNS 反映後に、両方のドメインで HTTPS が有効化されていることを確認する。
+
+## 1-2. VPS（IPアドレス運用）向けの最短構成
+
+このリポジトリには VPS 用の雛形ファイルを追加済み。
+
+- `docker-compose.vps.yml`
+- `packages/web/.env.production`
+- `packages/web/public/logo.png`（仮画像）
+- `docker/nginx.vps-ip.conf.example`
+
+手順:
+
+1. `docker-compose.vps.yml` の以下を編集する
+   - `change-me-mongo-root-password`
+   - `change-me-session-secret-at-least-32-chars`
+   - `https://YOUR_VPS_IP`
+2. `packages/web/.env.production` の以下を編集する
+   - `VITE_BRAND_NAME`
+   - `VITE_BRAND_LOGO_URL`（`/logo.png` 以外にしたい場合）
+3. ロゴ画像を `packages/web/public/logo.png` に上書きする
+4. コンテナ起動
+
+```bash
+docker compose -f docker-compose.vps.yml up -d --build
+```
+
+5. VPS ホスト側 Nginx の設定
+   - `docker/nginx.vps-ip.conf.example` を `/etc/nginx/sites-available/utab.conf` にコピー
+   - `YOUR_VPS_IP` を実IPに置換
+   - `/etc/nginx/sites-enabled/` にリンクして `nginx -t && systemctl reload nginx`
 
 ## 2. Staging 反映
 

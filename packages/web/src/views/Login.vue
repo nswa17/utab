@@ -2,9 +2,9 @@
   <div class="login-page">
     <div class="card stack">
       <div class="row">
-        <img class="logo" src="@/assets/logo.svg" alt="UTab" />
+        <img class="logo" :src="brandLogoUrl" :alt="brandName" />
         <div>
-          <h1>UTab</h1>
+          <h1>{{ brandName }}</h1>
           <p class="muted">{{ $t('大会管理へログイン') }}</p>
         </div>
       </div>
@@ -31,19 +31,34 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
+import { BRAND_LOGO_URL, BRAND_NAME } from '@/config/branding'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const brandName = BRAND_NAME
+const brandLogoUrl = BRAND_LOGO_URL
 
 const username = ref('')
 const password = ref('')
 
+function resolveRedirectTarget(rawRedirect: unknown): string {
+  const redirect = Array.isArray(rawRedirect) ? rawRedirect[0] : rawRedirect
+  if (typeof redirect !== 'string' || !redirect.startsWith('/')) return '/admin'
+  if (redirect.startsWith('/login')) return '/admin'
+  return redirect
+}
+
 async function handleSubmit() {
-  const ok = await auth.login(username.value, password.value)
+  if (auth.loading) return
+  const ok = await auth.login(username.value.trim(), password.value)
   if (ok) {
-    const redirect = (route.query.redirect as string) || '/admin'
-    router.push(redirect)
+    const redirect = resolveRedirectTarget(route.query.redirect)
+    try {
+      await router.replace(redirect)
+    } catch {
+      await router.replace('/admin')
+    }
   }
 }
 </script>

@@ -11,6 +11,8 @@ describe('DevToolsBar', () => {
     const source = loadSource()
     expect(source).toContain(':disabled="setupBusy || !tournamentId"')
     expect(source).toContain(':disabled="roundBusy || !tournamentId || !resolvedRound"')
+    expect(source).toContain("onFillRoundSubmissions('ballot')")
+    expect(source).toContain("onFillRoundSubmissions('feedback')")
   })
 
   it('stores API success responses and renders summary lines', () => {
@@ -18,6 +20,8 @@ describe('DevToolsBar', () => {
     expect(source).toContain('copySummary.value = data')
     expect(source).toContain('fillSetupSummary.value = data')
     expect(source).toContain('fillRoundSummary.value = data')
+    expect(source).toContain('fillModeLabel(fillRoundSummary.mode)')
+    expect(source).toContain('roundBusyMode.value = mode')
     expect(source).toContain('clearRoundSummary.value = data')
     expect(source).toContain("requestCopyTournament(tournamentId.value)")
     expect(source).toContain("requestClearRoundSubmissions(tournamentId.value")

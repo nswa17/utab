@@ -4,7 +4,7 @@ import { UserModel } from '../models/user.js'
 import { copyTournamentWithData } from './copy-tournament.service.js'
 import { clearRoundSubmissions, fillRoundSubmissions } from './fill-round-submissions.service.js'
 import { fillTournamentSetupData } from './fill-setup.service.js'
-import { DevToolsServiceError } from './types.js'
+import { DevToolsServiceError, type FillRoundSubmissionsMode } from './types.js'
 
 function respondServiceError(
   res: Parameters<RequestHandler>[1],
@@ -60,8 +60,9 @@ export const fillRoundSubmissionsForRound: RequestHandler = async (req, res, nex
   try {
     const tournamentId = String(req.params.tournamentId ?? '').trim()
     const round = Number((req.body as any)?.round)
+    const mode = ((req.body as any)?.mode ?? 'all') as FillRoundSubmissionsMode
     const actorUserId = req.session?.userId ? String(req.session.userId) : undefined
-    const data = await fillRoundSubmissions(tournamentId, round, actorUserId)
+    const data = await fillRoundSubmissions(tournamentId, round, actorUserId, mode)
     res.json({ data, errors: [] })
   } catch (err) {
     if (err instanceof DevToolsServiceError) {

@@ -24,8 +24,7 @@ export const useTeamsStore = defineStore('teams', () => {
   async function createTeam(payload: {
     tournamentId: string
     name: string
-    institution?: string
-    speakers?: { name: string }[]
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -50,8 +49,7 @@ export const useTeamsStore = defineStore('teams', () => {
     tournamentId: string
     teamId: string
     name?: string
-    institution?: string
-    speakers?: { name: string }[]
+    template?: any
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
@@ -61,8 +59,7 @@ export const useTeamsStore = defineStore('teams', () => {
       const res = await api.patch(`/teams/${payload.teamId}`, {
         tournamentId: payload.tournamentId,
         name: payload.name,
-        institution: payload.institution,
-        speakers: payload.speakers,
+        template: payload.template,
         details: payload.details,
         userDefinedData: payload.userDefinedData,
       })

@@ -20,8 +20,16 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('buildRoundUserDefinedFromDefaults(')
     expect(source).toContain('roundDefaultsForm')
     expect(source).toContain('createRoundFromSetup')
-    expect(source).toContain('setupRoundForm.type')
-    expect(source).toContain('新規ラウンドは大会セットアップのラウンドデフォルトを継承します。')
+    expect(source).toContain('userDefinedData.break_round = false')
+    expect(source).not.toContain('setupRoundForm.type')
+  })
+
+  it('updates break rounds with cascading switch behavior', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('onSetupRoundBreakEnabledChange')
+    expect(source).toContain('withRoundBreakEnabled')
+    expect(source).toContain('roundNumber >= targetRound')
+    expect(source).toContain('roundNumber <= targetRound')
   })
 
   it('supports editing existing rounds in setup', () => {
@@ -59,9 +67,35 @@ describe('Admin tournament setup integration', () => {
   it('groups adjudicator conflict groups by institution category', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('groupedAdjudicatorInstitutionOptions')
-    expect(source).toContain('groupedEditAdjudicatorInstitutionOptions')
     expect(source).toContain('buildInstitutionOptionGroups')
     expect(source).toContain('relation-subgroup')
     expect(source).toContain("institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']")
+  })
+
+  it('supports per-round detail editing for team/adjudicator/venue', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain("isEntityInlineEditing('team', team._id)")
+    expect(source).toContain("isEntityInlineEditing('adjudicator', adj._id)")
+    expect(source).toContain("isEntityInlineEditing('venue', venue._id)")
+    expect(source).toContain('detailRows.length > 0')
+    expect(source).toContain('buildTeamEditDetailRows')
+    expect(source).toContain('buildAdjudicatorEditDetailRows')
+    expect(source).toContain('buildVenueEditDetailRows')
+    expect(source).toContain('roundDetailInstitutionOptions')
+    expect(source).toContain('roundDetailSpeakerOptions')
+    expect(source).toContain('roundDetailTeamOptions')
+  })
+
+  it('uses inline collapse editor with switches and stepper controls', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('toggleEntityInlineEdit')
+    expect(source).toContain('isEntityInlineEditing')
+    expect(source).toContain("isEntityInlineEditing('institution', inst._id)")
+    expect(source).toContain('round-collapse-toggle')
+    expect(source).toContain('toggleRoundDetailExpanded')
+    expect(source).toContain('ToggleSwitch')
+    expect(source).toContain('adjustDetailPriority')
+    expect(source).toContain('adjustEntityFormPriority')
+    expect(source).toContain('number-stepper')
   })
 })

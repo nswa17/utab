@@ -1329,8 +1329,8 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
-const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
-const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
+const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const contextRoundLabel = computed(() => {
   if (contextRound.value === null) return ''
   const name =
@@ -1720,7 +1720,10 @@ function teamSpeakerNames(teamId: string, round: number): string[] {
       return speakers.speakers.find((speaker) => speaker._id === id)?.name ?? id
     })
   }
-  return (team.speakers ?? []).map((speaker: any) => String(speaker?.name ?? '')).filter(Boolean)
+  const templateSpeakerIds = (team.template?.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
+  return templateSpeakerIds.map((id: string) => {
+    return speakers.speakers.find((speaker) => speaker._id === id)?.name ?? id
+  })
 }
 
 function speakerName(

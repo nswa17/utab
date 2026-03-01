@@ -130,54 +130,33 @@ export function parseDrawAllocationImportText(text: string): ParsedDrawAllocatio
   const firstCells = splitCells(lines[0].raw, delimiter)
   const normalizedFirstCells = firstCells.map(normalizeHeader)
   const hasHeader = normalizedFirstCells.some((value) => knownHeaderKeys.has(value))
-  const headers = hasHeader ? normalizedFirstCells : []
-  const body = hasHeader ? lines.slice(1) : lines
+  if (!hasHeader) {
+    return {
+      entries: [],
+      errors: ['1行目にCSVヘッダーが必要です。テンプレートをダウンロードして列名を揃えてください。'],
+    }
+  }
+  const headers = normalizedFirstCells
+  const body = lines.slice(1)
   const errors: string[] = []
   const entries: ParsedDrawAllocationImportEntry[] = []
-  const legacyNoHeaderFormat = !hasHeader && firstCells.length <= 4
 
   for (const row of body) {
     const cells = splitCells(row.raw, delimiter)
 
-    const matchCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, matchHeaderKeys))
-      : getCell(cells, 0)
+    const matchCell = getCell(cells, findHeaderIndex(headers, matchHeaderKeys))
     const matchIndex = parseMatchIndex(matchCell)
     if (matchCell && matchIndex === undefined) {
       errors.push(`行 ${row.lineNo}: match は 1 以上の整数で指定してください。`)
       continue
     }
 
-    const venueCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, venueHeaderKeys))
-      : legacyNoHeaderFormat
-        ? ''
-        : getCell(cells, 1)
-    const govCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, govHeaderKeys))
-      : legacyNoHeaderFormat
-        ? ''
-        : getCell(cells, 2)
-    const oppCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, oppHeaderKeys))
-      : legacyNoHeaderFormat
-        ? ''
-        : getCell(cells, 3)
-    const chairCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, chairHeaderKeys))
-      : legacyNoHeaderFormat
-        ? getCell(cells, 1)
-        : getCell(cells, 4)
-    const panelCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, panelHeaderKeys))
-      : legacyNoHeaderFormat
-        ? getCell(cells, 2)
-        : getCell(cells, 5)
-    const traineeCell = headers.length
-      ? getCell(cells, findHeaderIndex(headers, traineeHeaderKeys))
-      : legacyNoHeaderFormat
-        ? getCell(cells, 3)
-        : getCell(cells, 6)
+    const venueCell = getCell(cells, findHeaderIndex(headers, venueHeaderKeys))
+    const govCell = getCell(cells, findHeaderIndex(headers, govHeaderKeys))
+    const oppCell = getCell(cells, findHeaderIndex(headers, oppHeaderKeys))
+    const chairCell = getCell(cells, findHeaderIndex(headers, chairHeaderKeys))
+    const panelCell = getCell(cells, findHeaderIndex(headers, panelHeaderKeys))
+    const traineeCell = getCell(cells, findHeaderIndex(headers, traineeHeaderKeys))
 
     const entry: ParsedDrawAllocationImportEntry = {
       line: row.lineNo,

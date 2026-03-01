@@ -6,6 +6,7 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import {
   DevToolsServiceError,
   type ClearRoundSubmissionsResponse,
+  type FillRoundSubmissionsMode,
   type FillRoundSubmissionsResponse,
   type SubmissionCountSummary,
 } from './types.js'
@@ -226,13 +227,24 @@ export async function clearRoundSubmissions(
 function teamSpeakerIdsForRound(team: any, round: number): string[] {
   const details = Array.isArray(team?.details) ? team.details : []
   const roundDetail = details.find((detail: any) => Number(detail?.r) === round)
-  return normalizeIdList(roundDetail?.speakers)
+  const roundSpeakers = normalizeIdList(roundDetail?.speakers)
+  if (roundSpeakers.length > 0) return roundSpeakers
+
+  const templateSpeakers = normalizeIdList(team?.template?.speakers)
+  if (templateSpeakers.length > 0) return templateSpeakers
+
+  // Fall back to any known speaker ids on team details to keep ballot payload usable.
+  const fallbackSpeakers = normalizeIdList(
+    details.flatMap((detail: any) => (Array.isArray(detail?.speakers) ? detail.speakers : []))
+  )
+  return fallbackSpeakers
 }
 
 export async function fillRoundSubmissions(
   tournamentId: string,
   round: number,
-  actorUserId?: string
+  actorUserId?: string,
+  mode: FillRoundSubmissionsMode = 'all'
 ): Promise<FillRoundSubmissionsResponse> {
   if (!Number.isInteger(round) || round < 1) {
     throw new DevToolsServiceError(400, 'round must be an integer >= 1')
@@ -273,27 +285,34 @@ export async function fillRoundSubmissions(
   const expectedBallotByKey = new Map<string, Record<string, unknown>>()
   const expectedFeedbackByKey = new Map<string, Record<string, unknown>>()
 
+  const shouldFillBallot = mode === 'all' || mode === 'ballot'
+  const shouldFillTeamFeedback = mode === 'all' || mode === 'feedback' || mode === 'team_feedback'
+  const shouldFillAdjudicatorFeedback =
+    mode === 'all' || mode === 'feedback' || mode === 'adjudicator_feedback'
+
   rows.forEach((row) => {
-    row.ballotSubmitters.forEach((submittedEntityId) => {
-      const key = ballotKey(round, submittedEntityId, row.gov, row.opp)
-      if (expectedBallotByKey.has(key)) return
-      expectedBallotByKey.set(
-        key,
-        buildBallotPayload(
-          row,
-          submittedEntityId,
-          teamSpeakerIdsByTeam.get(row.gov) ?? [],
-          teamSpeakerIdsByTeam.get(row.opp) ?? [],
-          settings.noSpeakerScore
+    if (shouldFillBallot) {
+      row.ballotSubmitters.forEach((submittedEntityId) => {
+        const key = ballotKey(round, submittedEntityId, row.gov, row.opp)
+        if (expectedBallotByKey.has(key)) return
+        expectedBallotByKey.set(
+          key,
+          buildBallotPayload(
+            row,
+            submittedEntityId,
+            teamSpeakerIdsByTeam.get(row.gov) ?? [],
+            teamSpeakerIdsByTeam.get(row.opp) ?? [],
+            settings.noSpeakerScore
+          )
         )
-      )
-    })
+      })
+    }
 
     const targetsFromTeams = settings.chairsAlwaysEvaluated
       ? row.chairs
       : normalizeIdList([...row.chairs, ...row.panels])
 
-    if (settings.fromTeams && targetsFromTeams.length > 0) {
+    if (shouldFillTeamFeedback && settings.fromTeams && targetsFromTeams.length > 0) {
       const evaluators =
         settings.evaluatorInTeam === 'speaker'
           ? normalizeIdList([
@@ -311,7 +330,7 @@ export async function fillRoundSubmissions(
       })
     }
 
-    if (settings.fromAdjudicators) {
+    if (shouldFillAdjudicatorFeedback && settings.fromAdjudicators) {
       row.adjudicators.forEach((submittedEntityId) => {
         row.adjudicators.forEach((adjudicatorId) => {
           if (adjudicatorId === submittedEntityId) return
@@ -389,6 +408,7 @@ export async function fillRoundSubmissions(
   return {
     tournamentId,
     round,
+    mode,
     expected: toSummary(expectedBallotByKey.size, expectedFeedbackByKey.size),
     before: toSummary(beforeBallot, beforeFeedback),
     created: toSummary(createdBallot, createdFeedback),

@@ -1,11 +1,7 @@
 <template>
   <section class="stack break-policy-editor">
-    <div class="row break-policy-head">
-      <h6 class="break-policy-title">{{ $t('ブレイク基本方針') }}</h6>
-      <HelpTip :text="$t('ブレイクラウンドの集計ソース・人数・シード方式を決めます。')" />
-    </div>
     <div class="grid break-policy-grid">
-      <Field :label="$t('ソース')">
+      <Field v-if="showSource" :label="$t('ソース')">
         <template #default="{ id, describedBy }">
           <select v-model="source" :id="id" :aria-describedby="describedBy" :disabled="disabled">
             <option value="submissions">{{ $t('提出データ') }}</option>
@@ -16,7 +12,7 @@
           <HelpTip :text="$t('ブレイク判定の基準データを選びます。通常は提出データを使います。')" />
         </template>
       </Field>
-      <Field :label="$t('ブレイク人数')">
+      <Field :label="$t('ブレイクチーム数')">
         <template #default="{ id, describedBy }">
           <input
             v-model.number="size"
@@ -46,7 +42,10 @@
       <Field :label="$t('シード方式')">
         <template #default="{ id, describedBy }">
           <select v-model="seeding" :id="id" :aria-describedby="describedBy" :disabled="disabled">
-            <option value="high_low">{{ $t('High-Low (1 vs N)') }}</option>
+            <option value="reseed_each_round">{{ $t('毎ラウンド再シード (1 vs N)') }}</option>
+            <option value="fixed_bracket">{{ $t('固定ブラケット') }}</option>
+            <option value="random_within_tie_group">{{ $t('同順位内ランダム') }}</option>
+            <option value="random_full">{{ $t('完全ランダム') }}</option>
           </select>
         </template>
         <template #label-suffix>
@@ -65,9 +64,11 @@ import HelpTip from '@/components/common/HelpTip.vue'
 withDefaults(
   defineProps<{
     disabled?: boolean
+    showSource?: boolean
   }>(),
   {
     disabled: false,
+    showSource: true,
   }
 )
 
@@ -84,21 +85,6 @@ const seeding = defineModel<BreakSeeding>('seeding', { required: true })
   background: var(--color-surface);
   padding: var(--space-3);
   gap: var(--space-3);
-}
-
-.break-policy-head {
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--space-2);
-  padding-bottom: var(--space-1);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.break-policy-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text);
 }
 
 .break-policy-grid {

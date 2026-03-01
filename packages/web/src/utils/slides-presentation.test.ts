@@ -29,13 +29,16 @@ describe('slides-presentation utils', () => {
     const { parsed: parsedJa } = parsePresentationQuery({
       compiledId: 'compiled-2',
       language: 'ja',
+      rankingOrder: 'desc',
     })
     const { parsed: parsedDefault } = parsePresentationQuery({
       compiledId: 'compiled-3',
     })
 
     expect(parsedJa.language).toBe('ja')
+    expect(parsedJa.rankingOrder).toBe('desc')
     expect(parsedDefault.language).toBe('en')
+    expect(parsedDefault.rankingOrder).toBe('asc')
   })
 
   it('keeps fallback max when value is empty', () => {
@@ -64,6 +67,20 @@ describe('slides-presentation utils', () => {
 
     const ties = buildTieGroups(rows)
     expect(ties.map((group) => group.ranking)).toEqual([1, 3])
+  })
+
+  it('supports descending ranking order for slide rows', () => {
+    const rows = buildSlideRows(
+      [
+        { id: 'a', name: 'A', ranking: 1 },
+        { id: 'b', name: 'B', ranking: 2 },
+        { id: 'c', name: 'C', ranking: 3 },
+      ],
+      3,
+      'desc'
+    )
+
+    expect(rows.map((row) => row.id)).toEqual(['c', 'b', 'a'])
   })
 
   it('chunks rows by listed/single page size', () => {

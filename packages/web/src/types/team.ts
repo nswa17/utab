@@ -1,11 +1,13 @@
-export interface Speaker {
-  name: string
-}
-
 export interface TeamDetail {
   r: number
   available?: boolean
-  institutions?: string[]
+  conflicts?: string[]
+  speakers?: string[]
+}
+
+export interface TeamTemplate {
+  available?: boolean
+  conflicts?: string[]
   speakers?: string[]
 }
 
@@ -13,8 +15,7 @@ export interface Team {
   _id: string
   tournamentId: string
   name: string
-  institution?: string
-  speakers: Speaker[]
+  template?: TeamTemplate
   details?: TeamDetail[]
   userDefinedData?: Record<string, any>
   createdAt?: string

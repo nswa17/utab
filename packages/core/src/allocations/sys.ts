@@ -13,10 +13,10 @@ export interface AllocationSquare {
 export interface CompiledResult {
   id: number
   win?: number
-  sum?: number
+  sum?: number | null
   past_sides?: string[]
-  details?: Array<{ score?: number }>
-  margin?: number
+  details?: unknown[]
+  margin?: number | null
 }
 
 export function oneSided(pastSides: string[]): number {

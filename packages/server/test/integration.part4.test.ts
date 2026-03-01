@@ -401,6 +401,10 @@ describe('Server integration', () => {
       auth: { access: { required: false, version: 1 } },
       createdBy: String(organizer._id),
     })
+    await TournamentModel.collection.updateOne(
+      { _id: creatorTournament._id },
+      { $set: { createdBy: organizer._id } }
+    )
 
     await UserModel.updateOne(
       { _id: organizer._id },
@@ -426,6 +430,7 @@ describe('Server integration', () => {
 
     const firstRun = await runStartupDataMaintenance()
     expect(firstRun.tournamentsUpdated).toBeGreaterThan(0)
+    expect(firstRun.membershipsCreatedFromCreatedBy).toBeGreaterThan(0)
 
     const migratedOpen = await TournamentModel.findById(legacyOpenTournament._id).lean().exec()
     const migratedProtected = await TournamentModel.findById(legacyProtectedTournament._id)
@@ -526,6 +531,15 @@ describe('Server integration', () => {
       .send({ name: 'Membership Open', style: 1, options: {} })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const organizerUserId = registerRes.body.data.userId as string
+
+    const initialMembership = await TournamentMemberModel.findOne({
+      tournamentId,
+      userId: organizerUserId,
+    })
+      .lean()
+      .exec()
+    expect(initialMembership?.role).toBe('organizer')
 
     const removeSelf = await organizer.delete(`/api/tournaments/${tournamentId}/users?username=organizer-c`)
     expect(removeSelf.status).toBe(200)
@@ -534,6 +548,57 @@ describe('Server integration', () => {
       .patch(`/api/tournaments/${tournamentId}`)
       .send({ name: 'Membership Open Updated' })
     expect(forbiddenPatch.status).toBe(403)
+  })
+
+  it('returns tournament manager names only to superusers in tournament list', async () => {
+    const organizer = request.agent(app)
+    const organizerRegisterRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'list-owner', password: 'password123', role: 'organizer' })
+    expect(organizerRegisterRes.status).toBe(201)
+
+    const organizerLoginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'list-owner', password: 'password123' })
+    expect(organizerLoginRes.status).toBe(200)
+
+    const organizerTournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Owner Name Open', style: 1, options: {} })
+    expect(organizerTournamentRes.status).toBe(201)
+    const tournamentId = organizerTournamentRes.body.data._id as string
+
+    const superuserPassword = 'super-password123'
+    await UserModel.create({
+      username: 'list-super',
+      role: 'superuser',
+      passwordHash: await hashPassword(superuserPassword),
+      tournaments: [],
+    })
+
+    const superuser = request.agent(app)
+    const superuserLoginRes = await superuser
+      .post('/api/auth/login')
+      .send({ username: 'list-super', password: superuserPassword })
+    expect(superuserLoginRes.status).toBe(200)
+
+    const superuserListRes = await superuser.get('/api/tournaments')
+    expect(superuserListRes.status).toBe(200)
+    const superuserTournament = superuserListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(superuserTournament).toBeTruthy()
+    expect(superuserTournament.createdByName).toBe('list-owner')
+
+    const organizerListRes = await organizer.get('/api/tournaments')
+    expect(organizerListRes.status).toBe(200)
+    const organizerTournament = organizerListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(organizerTournament).toBeTruthy()
+    expect('createdByName' in organizerTournament).toBe(false)
+
+    const publicListRes = await request(app).get('/api/tournaments')
+    expect(publicListRes.status).toBe(200)
+    const publicTournament = publicListRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(publicTournament).toBeTruthy()
+    expect('createdByName' in publicTournament).toBe(false)
   })
 
   it('returns validation errors for malformed payloads and unknown routes', async () => {
@@ -1280,6 +1345,207 @@ describe('Server integration', () => {
     expect(feedbackRows.status).toBe(200)
     expect(ballotRows.body.data.length).toBe(4)
     expect(feedbackRows.body.data.length).toBe(12)
+  })
+
+  it('supports filling ballots and feedback independently', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-split-feedback', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-split-feedback', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Split Feedback Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: true,
+        evaluator_in_team: 'team',
+        chairs_always_evaluated: false,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await organizer.post('/api/teams').send({ tournamentId, name: 'Split Team A' })
+    const teamBRes = await organizer.post('/api/teams').send({ tournamentId, name: 'Split Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const chairRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Split Chair', strength: 5 })
+    const panelRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Split Panel', strength: 5 })
+    expect(chairRes.status).toBe(201)
+    expect(panelRes.status).toBe(201)
+    const chairId = String(chairRes.body.data._id)
+    const panelId = String(panelRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: 'Room 1',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [chairId],
+          panels: [panelId],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const fillBallotRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1, mode: 'ballot' })
+    expect(fillBallotRes.status).toBe(200)
+    expect(fillBallotRes.body.data.mode).toBe('ballot')
+    expect(fillBallotRes.body.data.expected.ballot).toBe(2)
+    expect(fillBallotRes.body.data.expected.feedback).toBe(0)
+    expect(fillBallotRes.body.data.created.ballot).toBe(2)
+    expect(fillBallotRes.body.data.created.feedback).toBe(0)
+
+    const fillFeedbackRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 1, mode: 'feedback' })
+    expect(fillFeedbackRes.status).toBe(200)
+    expect(fillFeedbackRes.body.data.mode).toBe('feedback')
+    expect(fillFeedbackRes.body.data.expected.ballot).toBe(0)
+    expect(fillFeedbackRes.body.data.expected.feedback).toBe(6)
+    expect(fillFeedbackRes.body.data.created.ballot).toBe(0)
+    expect(fillFeedbackRes.body.data.created.feedback).toBe(6)
+
+    const ballotRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+    )
+    const feedbackRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=feedback&round=1`
+    )
+    expect(ballotRows.status).toBe(200)
+    expect(feedbackRows.status).toBe(200)
+    expect(ballotRows.body.data.length).toBe(2)
+    expect(feedbackRows.body.data.length).toBe(6)
+  })
+
+  it('falls back to existing team speaker links when round-specific detail is missing', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'devtools-break-speaker-fallback', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'devtools-break-speaker-fallback', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'DevTools Speaker Fallback Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const round1Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: { no_speaker_score: false },
+    })
+    const round2Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Break Round 1',
+      userDefinedData: { no_speaker_score: false },
+    })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+
+    const speakerARes = await organizer.post('/api/speakers').send({
+      tournamentId,
+      name: 'Fallback Speaker A',
+    })
+    const speakerBRes = await organizer.post('/api/speakers').send({
+      tournamentId,
+      name: 'Fallback Speaker B',
+    })
+    expect(speakerARes.status).toBe(201)
+    expect(speakerBRes.status).toBe(201)
+    const speakerAId = String(speakerARes.body.data._id)
+    const speakerBId = String(speakerBRes.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Fallback Team A',
+      speakers: [{ name: 'Fallback Speaker A' }],
+      details: [{ r: 1, available: true, speakers: [speakerAId], institutions: [] }],
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Fallback Team B',
+      speakers: [{ name: 'Fallback Speaker B' }],
+      details: [{ r: 1, available: true, speakers: [speakerBId], institutions: [] }],
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const adjudicatorRes = await organizer.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Fallback Judge',
+      strength: 5,
+    })
+    expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = String(adjudicatorRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: [
+        {
+          venue: 'Break Room',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [adjudicatorId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const fillRes = await organizer
+      .post(`/api/dev-tools/tournaments/${tournamentId}/fill-round-submissions`)
+      .send({ round: 2 })
+    expect(fillRes.status).toBe(200)
+    expect(fillRes.body.data.created.ballot).toBe(1)
+
+    const ballotRows = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=2`
+    )
+    expect(ballotRows.status).toBe(200)
+    expect(ballotRows.body.data.length).toBe(1)
+    expect(Array.isArray(ballotRows.body.data[0].payload.speakerIdsA)).toBe(true)
+    expect(Array.isArray(ballotRows.body.data[0].payload.speakerIdsB)).toBe(true)
+    expect(ballotRows.body.data[0].payload.speakerIdsA).toContain(speakerAId)
+    expect(ballotRows.body.data[0].payload.speakerIdsB).toContain(speakerBId)
   })
 
   it('copies tournament data and submissions into a new tournament', async () => {

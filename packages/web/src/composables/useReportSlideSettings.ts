@@ -4,6 +4,7 @@ import {
   normalizeSlideLabel,
   normalizeSlideLanguage,
   normalizeSlideMax,
+  normalizeSlideRankingOrder,
   normalizeSlideStyle,
   normalizeSlideType,
   type SlideLabel,
@@ -21,6 +22,7 @@ const ALL_LABELS: SlideLabel[] = ['teams', 'speakers', 'adjudicators', 'poi', 'b
 function cloneDefaultSettings(): SlideSettings {
   return {
     maxRankingRewarded: DEFAULT_SLIDE_SETTINGS.maxRankingRewarded,
+    rankingOrder: DEFAULT_SLIDE_SETTINGS.rankingOrder,
     type: DEFAULT_SLIDE_SETTINGS.type,
     style: DEFAULT_SLIDE_SETTINGS.style,
     language: DEFAULT_SLIDE_SETTINGS.language,
@@ -48,6 +50,7 @@ function normalizeSettings(value: unknown): SlideSettings {
   const rightCredit = String(source.rightCredit ?? '').trim()
   return {
     maxRankingRewarded: normalizeSlideMax(source.maxRankingRewarded),
+    rankingOrder: normalizeSlideRankingOrder(source.rankingOrder),
     type: normalizeSlideType(source.type),
     style: normalizeSlideStyle(source.style, legacyStyle ?? DEFAULT_SLIDE_SETTINGS.style),
     language: normalizeSlideLanguage(source.language),
@@ -138,6 +141,7 @@ export function useReportSlideSettings(tournamentId: Ref<string>) {
           patch.maxRankingRewarded,
           current.maxRankingRewarded
         ),
+        rankingOrder: normalizeSlideRankingOrder(patch.rankingOrder, current.rankingOrder),
         type: normalizeSlideType(patch.type, current.type),
         style: normalizeSlideStyle(patch.style, current.style),
         language: normalizeSlideLanguage(patch.language, current.language),

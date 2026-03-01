@@ -29,13 +29,22 @@ export type SubmissionCountSummary = {
   total: number
 }
 
+export type FillRoundSubmissionsMode =
+  | 'all'
+  | 'ballot'
+  | 'feedback'
+  | 'team_feedback'
+  | 'adjudicator_feedback'
+
 export type FillRoundSubmissionsRequest = {
   round: number
+  mode?: FillRoundSubmissionsMode
 }
 
 export type FillRoundSubmissionsResponse = {
   tournamentId: string
   round: number
+  mode: FillRoundSubmissionsMode
   expected: SubmissionCountSummary
   before: SubmissionCountSummary
   created: SubmissionCountSummary

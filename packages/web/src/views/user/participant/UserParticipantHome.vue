@@ -388,8 +388,8 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
-const govLabel = computed(() => getSideShortLabel(style.value, 'gov', t('政府')))
-const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', t('反対')))
+const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
+const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 
 const visibleRounds = computed(() => roundsStore.rounds.slice().sort((a, b) => a.round - b.round))
 const drawsByRound = computed(() => {
@@ -414,10 +414,10 @@ function speakersForTeam(teamId: string) {
     return speakersStore.speakers.filter((speaker) => detailSpeakerIds.has(speaker._id))
   }
 
-  const speakerNames = new Set<string>(
-    (team.speakers ?? []).map((speaker: any) => String(speaker?.name ?? '')).filter(Boolean)
+  const templateSpeakerIds = new Set<string>(
+    (team.template?.speakers ?? []).map((id: any) => String(id ?? '')).filter(Boolean)
   )
-  return speakersStore.speakers.filter((speaker) => speakerNames.has(speaker.name))
+  return speakersStore.speakers.filter((speaker) => templateSpeakerIds.has(speaker._id))
 }
 
 const judgeFeedbackSelectableSpeakers = computed(() => {
@@ -1438,7 +1438,7 @@ select {
 }
 
 .focused-round-feedback {
-  background: color-mix(in srgb, #fffbeb 72%, var(--color-surface));
+  background: var(--color-surface-muted);
 }
 
 .round-visibility-note {
@@ -1473,16 +1473,11 @@ select {
   font-weight: 700;
 }
 
-.round-visibility-chip.is-open {
-  color: #166534;
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
+.round-visibility-chip.is-open,
 .round-visibility-chip.is-closed {
-  color: #9a3412;
-  border-color: #fed7aa;
-  background: #fff7ed;
+  color: var(--color-text);
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .round-toggle {
@@ -1669,11 +1664,11 @@ select {
 }
 
 .gov-card {
-  background: #eff6ff;
+  background: var(--color-surface-muted);
 }
 
 .opp-card {
-  background: #fffbeb;
+  background: var(--color-surface-muted);
 }
 
 .side-chip {

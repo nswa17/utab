@@ -5,12 +5,14 @@ import slowDown from 'express-slow-down'
 import { env, rateLimitSettings } from '../config/environment.js'
 
 type KeyGenerator = (req: Request) => string
+type SkipPredicate = (req: Request) => boolean
 
 type RateLimitConfig = {
   windowMs: number
   max: number
   message: string
   keyGenerator?: KeyGenerator
+  skip?: SkipPredicate
 }
 
 type SlowDownConfig = {
@@ -19,15 +21,29 @@ type SlowDownConfig = {
   delayStepMs: number
   maxDelayMs: number
   keyGenerator?: KeyGenerator
+  skip?: SkipPredicate
 }
 
 const isTest = env.NODE_ENV === 'test'
 const cpuCount = Math.max(1, os.cpus().length)
 
-function skipLimiter(req: Request): boolean {
+function defaultSkipLimiter(req: Request): boolean {
   if (isTest) return true
   if (req.method.toUpperCase() === 'OPTIONS') return true
   return false
+}
+
+function withSkipPredicate(skip?: SkipPredicate): SkipPredicate {
+  return (req) => {
+    if (defaultSkipLimiter(req)) return true
+    if (skip?.(req)) return true
+    return false
+  }
+}
+
+function isRateLimitBypassRole(req: Request): boolean {
+  const role = req.session?.usertype
+  return role === 'superuser' || role === 'organizer'
 }
 
 function createRateLimiter(config: RateLimitConfig) {
@@ -38,7 +54,7 @@ function createRateLimiter(config: RateLimitConfig) {
     keyGenerator: keyGenerator ? (req) => keyGenerator(req) : undefined,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipLimiter,
+    skip: withSkipPredicate(config.skip),
     message: {
       data: null,
       errors: [{ name: 'TooManyRequests', message: config.message }],
@@ -68,7 +84,7 @@ function createSlowDown(config: SlowDownConfig) {
       return Math.min(delayedHits * config.delayStepMs, config.maxDelayMs)
     },
     maxDelayMs: config.maxDelayMs,
-    skip: skipLimiter,
+    skip: withSkipPredicate(config.skip),
   })
 }
 
@@ -165,6 +181,7 @@ export const submissionRateLimiter = createRateLimiter({
   max: rateLimitSettings.submissions.max,
   message: 'Too many submission requests',
   keyGenerator: userOrClientOrIpKey,
+  skip: isRateLimitBypassRole,
 })
 
 export const submissionSlowDown = createSlowDown({
@@ -173,6 +190,7 @@ export const submissionSlowDown = createSlowDown({
   delayStepMs: rateLimitSettings.submissions.delayStepMs,
   maxDelayMs: rateLimitSettings.submissions.maxDelayMs,
   keyGenerator: userOrClientOrIpKey,
+  skip: isRateLimitBypassRole,
 })
 
 export const rawResultRateLimiter = createRateLimiter({
@@ -180,6 +198,7 @@ export const rawResultRateLimiter = createRateLimiter({
   max: rateLimitSettings.rawResults.max,
   message: 'Too many raw result requests',
   keyGenerator: userOrClientOrIpKey,
+  skip: isRateLimitBypassRole,
 })
 
 export const rawResultSlowDown = createSlowDown({
@@ -188,4 +207,5 @@ export const rawResultSlowDown = createSlowDown({
   delayStepMs: rateLimitSettings.rawResults.delayStepMs,
   maxDelayMs: rateLimitSettings.rawResults.maxDelayMs,
   keyGenerator: userOrClientOrIpKey,
+  skip: isRateLimitBypassRole,
 })

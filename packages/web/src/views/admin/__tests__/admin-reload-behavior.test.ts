@@ -27,11 +27,10 @@ describe('admin reload behavior', () => {
     }
   })
 
-  it('keeps one ReloadButton with target label on report page', () => {
+  it('removes ReloadButton from report page', () => {
     const source = loadSource(compileReloadPage)
     const reloadCount = (source.match(/<ReloadButton/g) ?? []).length
-    expect(reloadCount).toBe(1)
-    expect(source).toMatch(/:target=/)
+    expect(reloadCount).toBe(0)
   })
 
   it('shows last updated only on tournament shell header', () => {

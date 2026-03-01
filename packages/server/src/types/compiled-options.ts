@@ -1,4 +1,10 @@
 export const compileRankingMetrics = ['win', 'sum', 'margin', 'vote', 'average', 'sd'] as const
+export const compileAdjudicatorRankingMetrics = [
+  'average',
+  'sd',
+  'num_experienced',
+  'num_experienced_chair',
+] as const
 export const compileRankingPresets = ['current', 'custom'] as const
 export const compileWinnerPolicies = [
   'winner_id_then_score',
@@ -18,6 +24,7 @@ export const compileIncludeLabels = [
 export const compileDiffBaselineModes = ['latest', 'compiled'] as const
 
 export type CompileRankingMetric = (typeof compileRankingMetrics)[number]
+export type CompileAdjudicatorRankingMetric = (typeof compileAdjudicatorRankingMetrics)[number]
 export type CompileRankingPreset = (typeof compileRankingPresets)[number]
 export type CompileWinnerPolicy = (typeof compileWinnerPolicies)[number]
 export type CompileDuplicateMergePolicy = (typeof compileDuplicateMergePolicies)[number]
@@ -29,6 +36,9 @@ export type CompileOptions = {
   ranking_priority: {
     preset: CompileRankingPreset
     order: CompileRankingMetric[]
+  }
+  adjudicator_ranking_priority: {
+    order: CompileAdjudicatorRankingMetric[]
   }
   winner_policy: CompileWinnerPolicy
   tie_points: number
@@ -47,6 +57,9 @@ export type CompileOptionsInput = {
     preset?: CompileRankingPreset
     order?: CompileRankingMetric[]
   }
+  adjudicator_ranking_priority?: {
+    order?: CompileAdjudicatorRankingMetric[]
+  }
   winner_policy?: CompileWinnerPolicy
   tie_points?: number
   duplicate_normalization?: {
@@ -63,6 +76,9 @@ export const DEFAULT_COMPILE_OPTIONS: CompileOptions = {
   ranking_priority: {
     preset: 'current',
     order: ['win', 'sum', 'margin'],
+  },
+  adjudicator_ranking_priority: {
+    order: ['average'],
   },
   winner_policy: 'winner_id_then_score',
   tie_points: 0.5,
@@ -88,6 +104,12 @@ export function normalizeCompileOptions(
   const rankingOrder = dedupe(input?.ranking_priority?.order ?? fallback.ranking_priority.order).filter(
     (metric): metric is CompileRankingMetric => compileRankingMetrics.includes(metric as CompileRankingMetric)
   )
+  const adjudicatorRankingOrder = dedupe(
+    input?.adjudicator_ranking_priority?.order ?? fallback.adjudicator_ranking_priority.order
+  ).filter(
+    (metric): metric is CompileAdjudicatorRankingMetric =>
+      compileAdjudicatorRankingMetrics.includes(metric as CompileAdjudicatorRankingMetric)
+  )
   const resolvedRankingOrder =
     rankingPreset === 'current'
       ? [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order]
@@ -99,6 +121,9 @@ export function normalizeCompileOptions(
     ranking_priority: {
       preset: rankingPreset,
       order: resolvedRankingOrder,
+    },
+    adjudicator_ranking_priority: {
+      order: adjudicatorRankingOrder.length > 0 ? adjudicatorRankingOrder : ['average'],
     },
     winner_policy: input?.winner_policy ?? fallback.winner_policy,
     tie_points:

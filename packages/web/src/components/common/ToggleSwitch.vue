@@ -57,6 +57,7 @@ function onChange(event: Event) {
   border-radius: 999px;
   background: #cbd5e1;
   transition: background 0.2s ease;
+  pointer-events: none;
 }
 
 .toggle-slider::before {

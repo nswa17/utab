@@ -306,9 +306,6 @@ async function loadSpeakerIdsByTeamForRound(
     .lean()
     .exec()
 
-  const fallbackNamesByTeam = new Map<string, string[]>()
-  const fallbackSpeakerNames = new Set<string>()
-
   teams.forEach((team: any) => {
     const teamId = String(team?._id ?? '').trim()
     if (!teamId) return
@@ -330,43 +327,12 @@ async function loadSpeakerIdsByTeamForRound(
         })
       })
     }
-    if (collected.size === 0 && Array.isArray(team?.speakers)) {
-      const names: string[] = team.speakers
-        .map((speaker: any) => String(speaker?.name ?? '').trim())
-        .filter((name: string) => name.length > 0)
-      if (names.length > 0) {
-        fallbackNamesByTeam.set(teamId, names)
-        names.forEach((name: string) => fallbackSpeakerNames.add(name))
-      }
+    if (collected.size === 0 && Array.isArray(team?.template?.speakers)) {
+      team.template.speakers.forEach((speakerId: any) => {
+        const normalized = String(speakerId ?? '').trim()
+        if (normalized) collected.add(normalized)
+      })
     }
-    speakerIdsByTeam.set(teamId, collected)
-  })
-
-  if (fallbackSpeakerNames.size === 0) return speakerIdsByTeam
-
-  const SpeakerModel = getSpeakerModel(connection)
-  const speakers = await SpeakerModel.find({
-    tournamentId,
-    name: { $in: Array.from(fallbackSpeakerNames) },
-  })
-    .lean()
-    .exec()
-  const speakerIdsByName = new Map<string, string[]>()
-  speakers.forEach((speaker: any) => {
-    const name = String(speaker?.name ?? '').trim()
-    const id = String(speaker?._id ?? '').trim()
-    if (!name || !id) return
-    const current = speakerIdsByName.get(name) ?? []
-    current.push(id)
-    speakerIdsByName.set(name, current)
-  })
-
-  fallbackNamesByTeam.forEach((names, teamId) => {
-    const collected = speakerIdsByTeam.get(teamId) ?? new Set<string>()
-    names.forEach((name) => {
-      const ids = speakerIdsByName.get(name) ?? []
-      ids.forEach((id) => collected.add(id))
-    })
     speakerIdsByTeam.set(teamId, collected)
   })
 
@@ -803,6 +769,7 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
         round: 1,
         type: 1,
         payload: 1,
+        submittedBy: 1,
         createdAt: 1,
         updatedAt: 1,
       })

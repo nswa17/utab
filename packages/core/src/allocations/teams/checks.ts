@@ -1,8 +1,13 @@
 import { filterAvailable, checkDetail } from '../../general/tools.js'
 import { sillyLogger } from '../../general/loggers.js'
 import { NeedMore } from '../../general/errors.js'
+import type { TeamEntity } from '../../types/domain.js'
 
-export function checkNumsOfTeams(teams: any[], style: { team_num: number }, r: number): void {
+export function checkNumsOfTeams(
+  teams: TeamEntity[],
+  style: { team_num: number },
+  r: number
+): void {
   sillyLogger(checkNumsOfTeams, arguments, 'draws')
   const teamNum = style.team_num
   const numTeams = filterAvailable(teams, r).length
@@ -12,8 +17,8 @@ export function checkNumsOfTeams(teams: any[], style: { team_num: number }, r: n
 }
 
 export function teamAllocationPrecheck(
-  teams: any[],
-  _institutions: any[],
+  teams: TeamEntity[],
+  _institutions: unknown[],
   style: { team_num: number },
   r: number
 ): void {

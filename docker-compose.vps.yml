@@ -1,0 +1,38 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: change-me-mongo-root-password
+    volumes:
+      - mongo_data:/data/db
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      MONGODB_URI: mongodb://admin:change-me-mongo-root-password@mongodb:27017/utab?authSource=admin
+      SESSION_SECRET: change-me-session-secret-at-least-32-chars
+      CORS_ORIGIN: https://YOUR_VPS_IP
+    depends_on:
+      - mongodb
+    expose:
+      - '3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '127.0.0.1:8080:80'
+
+volumes:
+  mongo_data:

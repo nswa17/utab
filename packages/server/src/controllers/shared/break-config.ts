@@ -1,8 +1,12 @@
 export type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-export type BreakSeeding = 'high_low'
+export type BreakSeeding =
+  | 'high_low'
+  | 'reseed_each_round'
+  | 'fixed_bracket'
+  | 'random_within_tie_group'
+  | 'random_full'
 export type BreakParticipant = { teamId: string; seed: number }
 export type BreakConfig = {
-  enabled: boolean
   source_rounds: number[]
   size: number
   cutoff_tie_policy: BreakCutoffTiePolicy
@@ -14,6 +18,14 @@ type NormalizeBreakOptions = {
   dedupeParticipants?: boolean
   defaultSize?: number
 }
+
+const BREAK_SEEDING_VALUES = new Set<BreakSeeding>([
+  'high_low',
+  'reseed_each_round',
+  'fixed_bracket',
+  'random_within_tie_group',
+  'random_full',
+])
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -60,20 +72,27 @@ export function normalizeBreakConfig(
   options: NormalizeBreakOptions = {}
 ): BreakConfig {
   const source = asRecord(input)
-  const enabled = source.enabled === true
   const sizeRaw = Number(source.size)
   const sizeDefault = Number.isInteger(options.defaultSize) ? Number(options.defaultSize) : 8
   const size = Number.isInteger(sizeRaw) && sizeRaw >= 1 ? sizeRaw : sizeDefault
   const cutoff_tie_policy: BreakCutoffTiePolicy =
-    source.cutoff_tie_policy === 'include_all' || source.cutoff_tie_policy === 'strict'
+    source.cutoff_tie_policy === 'manual' ||
+    source.cutoff_tie_policy === 'include_all' ||
+    source.cutoff_tie_policy === 'strict'
       ? (source.cutoff_tie_policy as BreakCutoffTiePolicy)
-      : 'manual'
+      : 'include_all'
+  const seeding = (() => {
+    if (source.seeding === 'high_low') return 'reseed_each_round' as BreakSeeding
+    if (BREAK_SEEDING_VALUES.has(source.seeding as BreakSeeding)) {
+      return source.seeding as BreakSeeding
+    }
+    return 'fixed_bracket' as BreakSeeding
+  })()
   return {
-    enabled,
     source_rounds: normalizeBreakSourceRounds(roundNumber, source.source_rounds),
     size,
     cutoff_tie_policy,
-    seeding: 'high_low',
+    seeding,
     participants: normalizeBreakParticipants(source.participants, options),
   }
 }

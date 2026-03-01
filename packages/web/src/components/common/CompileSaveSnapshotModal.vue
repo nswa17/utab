@@ -8,12 +8,8 @@
         </Button>
       </div>
       <p class="muted small">
-        {{ $t('保存時のみ履歴を作成します。必要に応じて名前とメモを編集してください。') }}
+        {{ $t('保存時のみ履歴を作成します。必要な場合のみメモを記録してください。') }}
       </p>
-      <label class="stack">
-        <span class="muted">{{ $t('集計結果名') }}</span>
-        <input v-model="snapshotName" type="text" :placeholder="$t('自動生成名')" :disabled="loading" />
-      </label>
       <label class="stack">
         <span class="muted">{{ $t('メモ (任意)') }}</span>
         <textarea
@@ -50,7 +46,6 @@ const emit = defineEmits<{
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const snapshotName = defineModel<string>('snapshotName', { default: '' })
 const snapshotMemo = defineModel<string>('snapshotMemo', { default: '' })
 
 function close() {

@@ -1,30 +1,40 @@
 import { shuffle, countCommon } from '../../general/math.js'
-import { sortTeams } from '../../general/sortings.js'
+import { sortTeams, type CompiledTeamResult } from '../../general/sortings.js'
 import { accessDetail, filterAvailable } from '../../general/tools.js'
-import { decidePositions, findOne as findOneResult } from '../sys.js'
+import { decidePositions } from '../sys.js'
 import { sillyLogger } from '../../general/loggers.js'
 import {
+  buildInstitutionPriorityHistogram,
+  compareInstitutionPriorityHistograms,
+  mergeInstitutionPriorityHistograms,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from '../common/institution-priority.js'
+import type { AllocationConfig, Draw } from '../../types/allocations.js'
+import type { TeamEntity } from '../../types/domain.js'
+import type { TeamDrawAlgorithmOptions } from '../../types/options.js'
 
 type OddBracketMethod = 'pullup_top' | 'pullup_bottom' | 'pullup_random'
 type PairingMethod = 'slide' | 'fold' | 'random'
 type AvoidConflictsMode = 'off' | 'one_up_one_down'
 
 type ConflictWeights = {
-  institution: number
+  conflict_group: number
   past_opponent: number
 }
 
 type TeamBracket = {
   points: number
-  teams: any[]
+  teams: TeamEntity[]
 }
 
-function makeBadRequest(message: string): Error {
-  const err = new Error(message)
-  ;(err as any).status = 400
+type PairConflictProfile = {
+  institution: Record<number, number>
+  pastOpponent: number
+}
+
+function makeBadRequest(message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number }
+  err.status = 400
   return err
 }
 
@@ -60,11 +70,11 @@ function normalizeWeight(value: unknown, fallback: number): number {
 
 function normalizeConflictWeights(value: unknown): ConflictWeights {
   if (!value || typeof value !== 'object') {
-    return { institution: 1, past_opponent: 1 }
+    return { conflict_group: 1, past_opponent: 1 }
   }
   const raw = value as Record<string, unknown>
   return {
-    institution: normalizeWeight(raw.institution, 1),
+    conflict_group: normalizeWeight(raw.conflict_group, 1),
     past_opponent: normalizeWeight(raw.past_opponent, 1),
   }
 }
@@ -75,11 +85,14 @@ function normalizeMaxIterations(value: unknown, fallback = 24): number {
   return Math.max(0, Math.floor(parsed))
 }
 
-function groupTeamsByPoints(sortedTeams: any[], compiledTeamResults: any[]): TeamBracket[] {
-  const resultById = new Map<number, any>(
-    (compiledTeamResults as any[]).map((result) => [Number(result.id), result])
+function groupTeamsByPoints(
+  sortedTeams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[]
+): TeamBracket[] {
+  const resultById = new Map<number, CompiledTeamResult>(
+    compiledTeamResults.map((result) => [Number(result.id), result])
   )
-  const grouped = new Map<number, any[]>()
+  const grouped = new Map<number, TeamEntity[]>()
   for (const team of sortedTeams) {
     const points = Number(resultById.get(team.id)?.win ?? 0)
     const current = grouped.get(points) ?? []
@@ -90,11 +103,7 @@ function groupTeamsByPoints(sortedTeams: any[], compiledTeamResults: any[]): Tea
   return pointsList.map((points) => ({ points, teams: grouped.get(points) ?? [] }))
 }
 
-function selectDonorIndex(
-  teams: any[],
-  method: OddBracketMethod,
-  randomSeed: string
-): number {
+function selectDonorIndex(teams: TeamEntity[], method: OddBracketMethod, randomSeed: string): number {
   if (teams.length === 0) return 0
   if (method === 'pullup_top') return 0
   if (method === 'pullup_bottom') return teams.length - 1
@@ -103,11 +112,7 @@ function selectDonorIndex(
   return shuffled[0] ?? 0
 }
 
-function resolveOddBrackets(
-  brackets: TeamBracket[],
-  method: OddBracketMethod,
-  randomSeed: string
-) {
+function resolveOddBrackets(brackets: TeamBracket[], method: OddBracketMethod, randomSeed: string) {
   const pullups: Array<{
     team_id: number
     from_points: number
@@ -123,11 +128,7 @@ function resolveOddBrackets(
     if (!donorSource || donorSource.teams.length === 0) {
       throw makeBadRequest('powerpair requires enough teams to resolve odd brackets')
     }
-    const donorIndex = selectDonorIndex(
-      donorSource.teams,
-      method,
-      `${randomSeed}:pullup:${index}`
-    )
+    const donorIndex = selectDonorIndex(donorSource.teams, method, `${randomSeed}:pullup:${index}`)
     const donor = donorSource.teams.splice(donorIndex, 1)[0]
     current.teams.push(donor)
     pullups.push({
@@ -146,11 +147,7 @@ function resolveOddBrackets(
   return pullups
 }
 
-function pairTeamsInBracket(
-  teams: any[],
-  method: PairingMethod,
-  randomSeed: string
-): number[][] {
+function pairTeamsInBracket(teams: TeamEntity[], method: PairingMethod, randomSeed: string): number[][] {
   if (teams.length % 2 !== 0) {
     throw makeBadRequest('powerpair bracket has an odd number of teams')
   }
@@ -184,20 +181,24 @@ function pairTeamsInBracket(
 function pairConflictScore(
   teamAId: number,
   teamBId: number,
-  teamById: Map<number, any>,
-  resultById: Map<number, any>,
+  teamById: Map<number, TeamEntity>,
+  resultById: Map<number, CompiledTeamResult>,
   round: number,
-  institutionPriorityMap: Record<number, number>,
-  conflictWeights: ConflictWeights
-): number {
+  institutionPriorityMap: Record<number, number>
+): PairConflictProfile {
   const teamA = teamById.get(teamAId)
   const teamB = teamById.get(teamBId)
-  const institutionsA = (accessDetail(teamA, round)?.institutions ?? []) as number[]
-  const institutionsB = (accessDetail(teamB, round)?.institutions ?? []) as number[]
-  const institutionConflict =
+  const institutionsA = (accessDetail(teamA as TeamEntity, round).conflicts ?? []) as number[]
+  const institutionsB = (accessDetail(teamB as TeamEntity, round).conflicts ?? []) as number[]
+  const institution =
     Object.keys(institutionPriorityMap).length > 0
-      ? weightedCommonScore(institutionsA, institutionsB, institutionPriorityMap)
-      : countCommon(institutionsA, institutionsB)
+      ? buildInstitutionPriorityHistogram(institutionsA, institutionsB, institutionPriorityMap)
+      : (() => {
+          const overlap = countCommon(institutionsA, institutionsB)
+          const histogram: Record<number, number> = {}
+          if (overlap > 0) histogram[1] = overlap
+          return histogram
+        })()
 
   const pastOpponentsA = Array.isArray(resultById.get(teamAId)?.past_opponents)
     ? (resultById.get(teamAId)?.past_opponents as number[])
@@ -205,20 +206,54 @@ function pairConflictScore(
   const pastOpponentsB = Array.isArray(resultById.get(teamBId)?.past_opponents)
     ? (resultById.get(teamBId)?.past_opponents as number[])
     : []
-  const pastConflict =
+  const pastOpponent =
     pastOpponentsA.filter((id) => id === teamBId).length +
     pastOpponentsB.filter((id) => id === teamAId).length
 
-  return (
-    conflictWeights.institution * institutionConflict +
-    conflictWeights.past_opponent * pastConflict
-  )
+  return { institution, pastOpponent }
+}
+
+function mergePairConflictProfile(
+  left: PairConflictProfile,
+  right: PairConflictProfile
+): PairConflictProfile {
+  return {
+    institution: mergeInstitutionPriorityHistograms(left.institution, right.institution),
+    pastOpponent: left.pastOpponent + right.pastOpponent,
+  }
+}
+
+function comparePairConflictProfile(
+  left: PairConflictProfile,
+  right: PairConflictProfile,
+  conflictWeights: ConflictWeights
+) {
+  const compareInstitution = () =>
+    compareInstitutionPriorityHistograms(left.institution, right.institution)
+  const comparePast = () => {
+    if (left.pastOpponent < right.pastOpponent) return -1
+    if (left.pastOpponent > right.pastOpponent) return 1
+    return 0
+  }
+
+  if (conflictWeights.conflict_group <= 0 && conflictWeights.past_opponent <= 0) return 0
+  if (conflictWeights.conflict_group <= 0) return comparePast()
+  if (conflictWeights.past_opponent <= 0) return compareInstitution()
+
+  if (conflictWeights.conflict_group >= conflictWeights.past_opponent) {
+    const institutionComparison = compareInstitution()
+    if (institutionComparison !== 0) return institutionComparison
+    return comparePast()
+  }
+  const pastComparison = comparePast()
+  if (pastComparison !== 0) return pastComparison
+  return compareInstitution()
 }
 
 function applyOneUpOneDown(
   matches: number[][],
-  teamById: Map<number, any>,
-  resultById: Map<number, any>,
+  teamById: Map<number, TeamEntity>,
+  resultById: Map<number, CompiledTeamResult>,
   round: number,
   institutionPriorityMap: Record<number, number>,
   conflictWeights: ConflictWeights,
@@ -233,29 +268,14 @@ function applyOneUpOneDown(
       const upper = next[index]
       const lower = next[index + 1]
       if (upper.length !== 2 || lower.length !== 2) continue
-      const before =
-        pairConflictScore(
-          upper[0],
-          upper[1],
-          teamById,
-          resultById,
-          round,
-          institutionPriorityMap,
-          conflictWeights
-        ) +
-        pairConflictScore(
-          lower[0],
-          lower[1],
-          teamById,
-          resultById,
-          round,
-          institutionPriorityMap,
-          conflictWeights
-        )
+      const before = mergePairConflictProfile(
+        pairConflictScore(upper[0], upper[1], teamById, resultById, round, institutionPriorityMap),
+        pairConflictScore(lower[0], lower[1], teamById, resultById, round, institutionPriorityMap)
+      )
 
       let best:
         | {
-            improvement: number
+            after: PairConflictProfile
             upperPos: number
             lowerPos: number
           }
@@ -268,40 +288,38 @@ function applyOneUpOneDown(
             swappedLower[lowerPos],
             swappedUpper[upperPos],
           ]
-          const after =
+          const after = mergePairConflictProfile(
             pairConflictScore(
               swappedUpper[0],
               swappedUpper[1],
               teamById,
               resultById,
               round,
-              institutionPriorityMap,
-              conflictWeights
-            ) +
+              institutionPriorityMap
+            ),
             pairConflictScore(
               swappedLower[0],
               swappedLower[1],
               teamById,
               resultById,
               round,
-              institutionPriorityMap,
-              conflictWeights
+              institutionPriorityMap
             )
-          const improvement = before - after
-          if (improvement <= 0) continue
+          )
+          if (comparePairConflictProfile(after, before, conflictWeights) >= 0) continue
           if (
             !best ||
-            improvement > best.improvement ||
-            (improvement === best.improvement &&
+            comparePairConflictProfile(after, best.after, conflictWeights) < 0 ||
+            (comparePairConflictProfile(after, best.after, conflictWeights) === 0 &&
               (upperPos < best.upperPos ||
                 (upperPos === best.upperPos && lowerPos < best.lowerPos)))
           ) {
-            best = { improvement, upperPos, lowerPos }
+            best = { after, upperPos, lowerPos }
           }
         }
       }
 
-      if (best && best.improvement > 0) {
+      if (best) {
         ;[next[index][best.upperPos], next[index + 1][best.lowerPos]] = [
           next[index + 1][best.lowerPos],
           next[index][best.upperPos],
@@ -316,23 +334,17 @@ function applyOneUpOneDown(
 
 export function getTeamDrawPowerpair(
   r: number,
-  teams: any[],
-  compiledTeamResults: any[],
+  teams: TeamEntity[],
+  compiledTeamResults: CompiledTeamResult[],
   {
     odd_bracket = 'pullup_top',
     pairing_method = 'fold',
     avoid_conflicts = 'one_up_one_down',
     conflict_weights = {},
     max_swap_iterations = 24,
-  }: {
-    odd_bracket?: string
-    pairing_method?: string
-    avoid_conflicts?: string | boolean
-    conflict_weights?: { institution?: number; past_opponent?: number }
-    max_swap_iterations?: number
-  } = {},
-  config: any
-) {
+  }: TeamDrawAlgorithmOptions = {},
+  config: AllocationConfig
+): Draw {
   sillyLogger(getTeamDrawPowerpair, arguments, 'draws')
 
   if (config?.style?.team_num !== 2) {
@@ -358,9 +370,9 @@ export function getTeamDrawPowerpair(
   const brackets = groupTeamsByPoints(sortedTeams, compiledTeamResults)
   const pullups = resolveOddBrackets(brackets, oddBracketMethod, randomSeed)
 
-  const teamById = new Map<number, any>(teams.map((team) => [Number(team.id), team]))
-  const resultById = new Map<number, any>(
-    (compiledTeamResults as any[]).map((result) => [Number(result.id), result])
+  const teamById = new Map<number, TeamEntity>(teams.map((team) => [Number(team.id), team]))
+  const resultById = new Map<number, CompiledTeamResult>(
+    compiledTeamResults.map((result) => [Number(result.id), result])
   )
   const institutionPriorityMap = normalizeInstitutionPriorityMap(config?.institution_priority_map)
 
@@ -371,7 +383,7 @@ export function getTeamDrawPowerpair(
     pairings_before_conflict: number[][]
     pairings_after_conflict: number[][]
   }> = []
-  const allocationRows: any[] = []
+  const allocationRows: Draw['allocation'] = []
   let nextSquareId = 0
 
   brackets.forEach((bracket, bracketIndex) => {

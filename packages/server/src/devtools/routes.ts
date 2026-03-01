@@ -30,6 +30,9 @@ const fillRoundSubmissionsSchema = {
   params: paramsSchema,
   body: z.object({
     round: z.number().int().min(1),
+    mode: z
+      .enum(['all', 'ballot', 'feedback', 'team_feedback', 'adjudicator_feedback'])
+      .optional(),
   }),
 }
 

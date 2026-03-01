@@ -1,7 +1,12 @@
 import type { CompileOptions } from '@/types/compiled'
 
 export type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-export type BreakSeeding = 'high_low'
+export type BreakSeeding =
+  | 'high_low'
+  | 'reseed_each_round'
+  | 'fixed_bracket'
+  | 'random_within_tie_group'
+  | 'random_full'
 
 export interface BreakParticipant {
   teamId: string
@@ -9,7 +14,6 @@ export interface BreakParticipant {
 }
 
 export interface RoundBreakConfig {
-  enabled: boolean
   source_rounds: number[]
   size: number
   cutoff_tie_policy: BreakCutoffTiePolicy
@@ -38,6 +42,7 @@ export interface Round {
     trainee: number
   }
   userDefinedData?: Record<string, any> & {
+    break_round?: boolean
     break?: RoundBreakConfig
     compile?: RoundCompileConfig
   }

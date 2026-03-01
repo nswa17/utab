@@ -1,8 +1,14 @@
 export interface AdjudicatorDetail {
   r: number
   available?: boolean
-  institutions?: string[]
   conflicts?: string[]
+  conflict_teams?: string[]
+}
+
+export interface AdjudicatorTemplate {
+  available?: boolean
+  conflicts?: string[]
+  conflict_teams?: string[]
 }
 
 export interface Adjudicator {
@@ -10,8 +16,8 @@ export interface Adjudicator {
   tournamentId: string
   name: string
   strength: number
-  active: boolean
   preev?: number
+  template?: AdjudicatorTemplate
   details?: AdjudicatorDetail[]
   userDefinedData?: Record<string, any>
   createdAt?: string

@@ -1,19 +1,60 @@
 import { DBHandler, DBOptions } from './handlers.js'
 
-function bind<T extends (...args: any[]) => any>(fn: T, ctx: any): T {
-  return fn.bind(ctx) as T
+function bind<TArgs extends unknown[], TResult>(
+  fn: (...args: TArgs) => TResult,
+  ctx: unknown
+): (...args: TArgs) => TResult {
+  return fn.bind(ctx) as (...args: TArgs) => TResult
 }
+
+type DrawsApi = Pick<DBHandler['draws'], 'read' | 'create' | 'delete' | 'find' | 'update'>
+type RoundsApi = Pick<DBHandler['rounds'], 'read' | 'create' | 'delete' | 'find' | 'update' | 'findOne'>
+type ConfigApi = Pick<DBHandler['config'], 'read' | 'update'>
+
+type TeamResultsApi = Pick<
+  DBHandler['raw_team_results'],
+  'read' | 'create' | 'update' | 'delete' | 'deleteAll' | 'find' | 'findOne'
+>
+type SpeakerResultsApi = Pick<
+  DBHandler['raw_speaker_results'],
+  'read' | 'create' | 'update' | 'delete' | 'deleteAll' | 'find' | 'findOne'
+>
+type AdjudicatorResultsApi = Pick<
+  DBHandler['raw_adjudicator_results'],
+  'read' | 'create' | 'update' | 'delete' | 'deleteAll' | 'find' | 'findOne'
+>
+
+type BaseEntityApi = {
+  read: (...args: never[]) => Promise<unknown[]>
+  create: (...args: never[]) => Promise<unknown>
+  delete: (...args: never[]) => Promise<unknown>
+  deleteAll: (...args: never[]) => Promise<unknown>
+  find: (...args: never[]) => Promise<unknown[]>
+  findOne: (...args: never[]) => Promise<unknown>
+  update: (...args: never[]) => Promise<unknown>
+}
+
+type EntityApi<T extends BaseEntityApi> = Pick<
+  T,
+  'read' | 'create' | 'delete' | 'deleteAll' | 'find' | 'findOne' | 'update'
+>
+
+type TeamsApi = EntityApi<DBHandler['teams']> & { results: TeamResultsApi }
+type AdjudicatorsApi = EntityApi<DBHandler['adjudicators']> & { results: AdjudicatorResultsApi }
+type SpeakersApi = EntityApi<DBHandler['speakers']> & { results: SpeakerResultsApi }
+type VenuesApi = EntityApi<DBHandler['venues']>
+type InstitutionsApi = EntityApi<DBHandler['institutions']>
 
 export class CON {
   dbh: DBHandler
-  draws: any
-  rounds: any
-  config: any
-  teams: any
-  adjudicators: any
-  venues: any
-  speakers: any
-  institutions: any
+  draws: DrawsApi
+  rounds: RoundsApi
+  config: ConfigApi
+  teams: TeamsApi
+  adjudicators: AdjudicatorsApi
+  venues: VenuesApi
+  speakers: SpeakersApi
+  institutions: InstitutionsApi
   close: () => void
 
   constructor(dbUrl: string, options: DBOptions) {

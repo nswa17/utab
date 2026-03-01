@@ -8,7 +8,12 @@ import {
 type EvaluatorInTeam = 'team' | 'speaker'
 type BreakSource = 'submissions' | 'raw'
 type BreakCutoffTiePolicy = 'manual' | 'include_all' | 'strict'
-type BreakSeeding = 'high_low'
+type BreakSeeding =
+  | 'high_low'
+  | 'reseed_each_round'
+  | 'fixed_bracket'
+  | 'random_within_tie_group'
+  | 'random_full'
 type CompileSource = 'submissions' | 'raw'
 
 export type RoundDefaults = {
@@ -63,6 +68,15 @@ function asRoundList(value: unknown): number[] {
   ).sort((left, right) => left - right)
 }
 
+function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSeeding {
+  if (value === 'high_low') return 'reseed_each_round'
+  if (value === 'reseed_each_round') return 'reseed_each_round'
+  if (value === 'fixed_bracket') return 'fixed_bracket'
+  if (value === 'random_within_tie_group') return 'random_within_tie_group'
+  if (value === 'random_full') return 'random_full'
+  return fallback
+}
+
 export function defaultRoundDefaults(): RoundDefaults {
   return {
     userDefinedData: {
@@ -79,8 +93,8 @@ export function defaultRoundDefaults(): RoundDefaults {
     break: {
       source: 'submissions',
       size: 8,
-      cutoff_tie_policy: 'manual',
-      seeding: 'high_low',
+      cutoff_tie_policy: 'include_all',
+      seeding: 'fixed_bracket',
     },
     compile: {
       source: 'submissions',
@@ -140,7 +154,7 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
         breakSource.cutoff_tie_policy === 'include_all' || breakSource.cutoff_tie_policy === 'strict'
           ? breakSource.cutoff_tie_policy
           : fallback.break.cutoff_tie_policy,
-      seeding: breakSource.seeding === 'high_low' ? 'high_low' : fallback.break.seeding,
+      seeding: normalizeBreakSeeding(breakSource.seeding, fallback.break.seeding),
     },
     compile: {
       source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
@@ -160,7 +174,6 @@ export function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults) {
     ...normalized.userDefinedData,
     hidden: false,
     break: {
-      enabled: false,
       source: normalized.break.source,
       source_rounds: [],
       size: normalized.break.size,

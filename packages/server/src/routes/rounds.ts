@@ -133,7 +133,13 @@ const breakConfigSchema = z
     source_rounds: z.array(z.number().int().min(1)),
     size: z.number().int().min(1),
     cutoff_tie_policy: z.enum(['manual', 'include_all', 'strict']),
-    seeding: z.enum(['high_low']),
+    seeding: z.enum([
+      'high_low',
+      'reseed_each_round',
+      'fixed_bracket',
+      'random_within_tie_group',
+      'random_full',
+    ]),
     participants: z.array(
       z.object({
         teamId: z.string().min(1),

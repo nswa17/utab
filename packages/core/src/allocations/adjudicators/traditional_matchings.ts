@@ -1,49 +1,81 @@
 import { sillyLogger } from '../../general/loggers.js'
 import {
+  allocationClosenessComparer,
   allocationSlightnessComparer,
   sortAllocation,
   sortAdjudicators,
+  type CompiledAdjudicatorResult,
+  type CompiledTeamResult,
+  type AllocationSquare,
 } from '../../general/sortings.js'
 import { allocationDeepcopy } from '../sys.js'
-import { setMinus } from '../../general/math.js'
 import { accessDetail } from '../../general/tools.js'
+import type { AdjudicatorEntity, TeamEntity } from '../../types/domain.js'
+import type { NumbersOfAdjudicators } from '../../types/allocations.js'
 
-function isConflict(r: number, square: any, adjudicator: any, teams: any[]): boolean {
-  const adjInst = accessDetail(adjudicator, r).institutions as number[]
-  const adjConfl = accessDetail(adjudicator, r).conflicts as number[]
-  const teamInst = ([] as number[]).concat(
-    ...square.teams.map((id: number) => teams.find((t: any) => t.id === id)?.institutions || [])
+interface AllocationWithAdjudicators extends AllocationSquare {
+  chairs?: number[]
+  panels?: number[]
+  trainees?: number[]
+}
+
+type AllocationSortAlgorithm = (
+  allocation: AllocationWithAdjudicators[],
+  compiledTeamResults: CompiledTeamResult[]
+) => AllocationWithAdjudicators[]
+
+type AdjudicatorSortAlgorithm = (
+  adjudicators: AdjudicatorEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[]
+) => AdjudicatorEntity[]
+
+function isConflict(
+  r: number,
+  square: AllocationWithAdjudicators,
+  adjudicator: AdjudicatorEntity,
+  teams: TeamEntity[]
+): boolean {
+  const adjInstitutions = accessDetail(adjudicator, r).conflicts as number[]
+  const adjConflicts = accessDetail(adjudicator, r).conflict_teams as number[]
+  const teamInstitutions = ([] as number[]).concat(
+    ...square.teams.map(
+      (teamId) =>
+        (accessDetail(
+          teams.find((team) => team.id === teamId) as TeamEntity,
+          r
+        ).conflicts as number[]) || []
+    )
   )
-  if (teamInst.some((i) => adjInst?.includes(i))) return true
-  if (square.teams.some((tid: number) => adjConfl?.includes(tid))) return true
+  if (teamInstitutions.some((institutionId) => adjInstitutions?.includes(institutionId))) return true
+  if (square.teams.some((teamId) => adjConflicts?.includes(teamId))) return true
   return false
 }
 
 function distributeAdjudicators(
   r: number,
-  sortedAllocation: any[],
-  sortedAdjudicators: any[],
-  teams: any[],
-  { chairs, panels, trainees }: { chairs: number; panels: number; trainees: number },
+  sortedAllocation: AllocationWithAdjudicators[],
+  sortedAdjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  { chairs, panels, trainees }: NumbersOfAdjudicators,
   middle: boolean,
   options: { scatter?: boolean }
-): any[] {
+): AllocationWithAdjudicators[] {
   sillyLogger(distributeAdjudicators, arguments, 'draws')
   const newAllocation = allocationDeepcopy(sortedAllocation)
   let remaining = [...sortedAdjudicators]
   const allocatePanelFirst = panels > 0 && middle
 
-  for (let j = 0; j < newAllocation.length; j++) {
+  for (let j = 0; j < newAllocation.length; j += 1) {
     const square = newAllocation[j]
     square.chairs = square.chairs ?? []
     square.panels = square.panels ?? []
     square.trainees = square.trainees ?? []
     const exitCondition = !options.scatter
       ? () => false
-      : (i: number, rem: any[]) =>
+      : (i: number) =>
           (newAllocation.length + 1) * (i - 1) + (j + 1) >= sortedAdjudicators.length
 
-    for (let i = 0; i < remaining.length; i++) {
+    for (let i = 0; i < remaining.length; i += 1) {
       const adjudicator = remaining[i]
       if (allocatePanelFirst) {
         if (!isConflict(r, square, adjudicator, teams)) {
@@ -51,21 +83,19 @@ function distributeAdjudicators(
           remaining = remaining.filter((adj) => adj.id !== adjudicator.id)
           break
         }
-      } else {
-        if (!isConflict(r, square, adjudicator, teams)) {
-          if (square.chairs.length < chairs) {
-            square.chairs.push(adjudicator.id)
-          } else if (square.panels.length < panels) {
-            square.panels.push(adjudicator.id)
-          } else if (square.trainees.length < trainees) {
-            square.trainees.push(adjudicator.id)
-          } else {
-            break
-          }
-          remaining = remaining.filter((adj) => adj.id !== adjudicator.id)
+      } else if (!isConflict(r, square, adjudicator, teams)) {
+        if ((square.chairs?.length ?? 0) < chairs) {
+          square.chairs?.push(adjudicator.id)
+        } else if ((square.panels?.length ?? 0) < panels) {
+          square.panels?.push(adjudicator.id)
+        } else if ((square.trainees?.length ?? 0) < trainees) {
+          square.trainees?.push(adjudicator.id)
+        } else {
+          break
         }
+        remaining = remaining.filter((adj) => adj.id !== adjudicator.id)
       }
-      if (exitCondition(i, remaining)) break
+      if (exitCondition(i)) break
     }
   }
   return allocatePanelFirst
@@ -83,17 +113,17 @@ function distributeAdjudicators(
 
 function allocateAdjudicators(
   r: number,
-  allocation: any[],
-  adjudicators: any[],
-  teams: any[],
-  compiledAdjudicatorResults: any[],
-  compiledTeamResults: any[],
-  allocationSortAlgorithm: any,
-  adjudicatorsSortAlgorithm: any,
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  allocationSortAlgorithm: AllocationSortAlgorithm,
+  adjudicatorsSortAlgorithm: AdjudicatorSortAlgorithm,
+  numbersOfAdjudicators: NumbersOfAdjudicators,
   middle: boolean,
   options: { scatter?: boolean }
-): any[] {
+): AllocationWithAdjudicators[] {
   sillyLogger(allocateAdjudicators, arguments, 'draws')
   const sortedAllocation = allocationSortAlgorithm(allocation, compiledTeamResults)
   const sortedAdjudicators = adjudicatorsSortAlgorithm(adjudicators, compiledAdjudicatorResults)
@@ -110,12 +140,12 @@ function allocateAdjudicators(
 
 export function allocateHighToHigh(
   r: number,
-  allocation: any[],
-  adjudicators: any[],
-  teams: any[],
-  compiledAdjudicatorResults: any[],
-  compiledTeamResults: any[],
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
   options: { scatter?: boolean }
 ) {
   return allocateAdjudicators(
@@ -135,15 +165,16 @@ export function allocateHighToHigh(
 
 export function allocateHighToSlight(
   r: number,
-  allocation: any[],
-  adjudicators: any[],
-  teams: any[],
-  compiledAdjudicatorResults: any[],
-  compiledTeamResults: any[],
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
   options: { scatter?: boolean }
 ) {
-  const f = (a: any, c: any) => sortAllocation(a, c, allocationSlightnessComparer)
+  const allocationSort: AllocationSortAlgorithm = (rows, compiledResults) =>
+    sortAllocation(rows, compiledResults, allocationSlightnessComparer)
   return allocateAdjudicators(
     r,
     allocation,
@@ -151,7 +182,7 @@ export function allocateHighToSlight(
     teams,
     compiledAdjudicatorResults,
     compiledTeamResults,
-    f,
+    allocationSort,
     sortAdjudicators,
     numbersOfAdjudicators,
     false,
@@ -161,12 +192,12 @@ export function allocateHighToSlight(
 
 export function allocateMiddleToHigh(
   r: number,
-  allocation: any[],
-  adjudicators: any[],
-  teams: any[],
-  compiledAdjudicatorResults: any[],
-  compiledTeamResults: any[],
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
   options: { scatter?: boolean }
 ) {
   return allocateAdjudicators(
@@ -186,15 +217,16 @@ export function allocateMiddleToHigh(
 
 export function allocateMiddleToSlight(
   r: number,
-  allocation: any[],
-  adjudicators: any[],
-  teams: any[],
-  compiledAdjudicatorResults: any[],
-  compiledTeamResults: any[],
-  numbersOfAdjudicators: { chairs: number; panels: number; trainees: number },
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
   options: { scatter?: boolean }
 ) {
-  const f = (a: any, c: any) => sortAllocation(a, c, allocationSlightnessComparer)
+  const allocationSort: AllocationSortAlgorithm = (rows, compiledResults) =>
+    sortAllocation(rows, compiledResults, allocationSlightnessComparer)
   return allocateAdjudicators(
     r,
     allocation,
@@ -202,7 +234,61 @@ export function allocateMiddleToSlight(
     teams,
     compiledAdjudicatorResults,
     compiledTeamResults,
-    f,
+    allocationSort,
+    sortAdjudicators,
+    numbersOfAdjudicators,
+    true,
+    options
+  )
+}
+
+export function allocateHighToClose(
+  r: number,
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
+  options: { scatter?: boolean }
+) {
+  const allocationSort: AllocationSortAlgorithm = (rows, compiledResults) =>
+    sortAllocation(rows, compiledResults, allocationClosenessComparer)
+  return allocateAdjudicators(
+    r,
+    allocation,
+    adjudicators,
+    teams,
+    compiledAdjudicatorResults,
+    compiledTeamResults,
+    allocationSort,
+    sortAdjudicators,
+    numbersOfAdjudicators,
+    false,
+    options
+  )
+}
+
+export function allocateMiddleToClose(
+  r: number,
+  allocation: AllocationWithAdjudicators[],
+  adjudicators: AdjudicatorEntity[],
+  teams: TeamEntity[],
+  compiledAdjudicatorResults: CompiledAdjudicatorResult[],
+  compiledTeamResults: CompiledTeamResult[],
+  numbersOfAdjudicators: NumbersOfAdjudicators,
+  options: { scatter?: boolean }
+) {
+  const allocationSort: AllocationSortAlgorithm = (rows, compiledResults) =>
+    sortAllocation(rows, compiledResults, allocationClosenessComparer)
+  return allocateAdjudicators(
+    r,
+    allocation,
+    adjudicators,
+    teams,
+    compiledAdjudicatorResults,
+    compiledTeamResults,
+    allocationSort,
     sortAdjudicators,
     numbersOfAdjudicators,
     true,
@@ -215,4 +301,6 @@ export default {
   allocateHighToSlight,
   allocateMiddleToHigh,
   allocateMiddleToSlight,
+  allocateHighToClose,
+  allocateMiddleToClose,
 }

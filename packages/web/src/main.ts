@@ -8,6 +8,7 @@ import App from './App.vue'
 import { createAppRouter, setupRouterGuards } from './router/index.js'
 import { i18n } from './i18n'
 import { setupApiInterceptors } from './utils/api'
+import { BRAND_NAME } from './config/branding'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -21,5 +22,6 @@ app.use(HighchartsVue as unknown as Plugin)
 
 setupRouterGuards(router, pinia)
 setupApiInterceptors(router)
+document.title = BRAND_NAME
 
 app.mount('#app')

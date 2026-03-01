@@ -1,8 +1,22 @@
 import { sillyLogger } from '../general/loggers.js'
 import { ResultNotSent, WinPointsDifferent } from '../general/errors.js'
 import { checkDetail } from '../general/tools.js'
+import type {
+  AdjudicatorEntity,
+  SpeakerEntity,
+  TeamEntity,
+} from '../types/domain.js'
+import type {
+  RawAdjudicatorResult,
+  RawSpeakerResult,
+  RawTeamResult,
+} from '../types/results.js'
 
-export function speakerResultsPrecheck(rawSpeakerResults: any[], speakers: any[], r: number): void {
+export function speakerResultsPrecheck(
+  rawSpeakerResults: RawSpeakerResult[],
+  speakers: SpeakerEntity[],
+  r: number
+): void {
   sillyLogger(speakerResultsPrecheck, arguments, 'checks')
   for (const speaker of speakers) {
     const results = rawSpeakerResults.filter((rdr) => rdr.id === speaker.id && rdr.r === r)
@@ -11,8 +25,8 @@ export function speakerResultsPrecheck(rawSpeakerResults: any[], speakers: any[]
 }
 
 export function adjudicatorResultsPrecheck(
-  rawAdjResults: any[],
-  adjudicators: any[],
+  rawAdjResults: RawAdjudicatorResult[],
+  adjudicators: AdjudicatorEntity[],
   r: number
 ): void {
   sillyLogger(adjudicatorResultsPrecheck, arguments, 'checks')
@@ -23,8 +37,8 @@ export function adjudicatorResultsPrecheck(
 }
 
 export function teamResultsPrecheck(
-  rawTeamResults: any[],
-  teams: any[],
+  rawTeamResults: RawTeamResult[],
+  teams: TeamEntity[],
   r: number,
   teamNum: number
 ): void {
@@ -48,7 +62,7 @@ export function teamResultsPrecheck(
   }
 }
 
-export function resultsPrecheck(teams: any[], _speakers: any[], r: number): void {
+export function resultsPrecheck(teams: TeamEntity[], _speakers: SpeakerEntity[], r: number): void {
   sillyLogger(resultsPrecheck, arguments, 'checks')
   checkDetail(teams, r)
 }

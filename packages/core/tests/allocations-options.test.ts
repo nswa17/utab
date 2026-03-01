@@ -6,10 +6,10 @@ import {
 } from '../src/allocations/adjudicators.js'
 
 const teams = [
-  { id: 1, details: [{ r: 1, available: true, institutions: [1], speakers: [] }] },
-  { id: 2, details: [{ r: 1, available: true, institutions: [2], speakers: [] }] },
-  { id: 3, details: [{ r: 1, available: true, institutions: [3], speakers: [] }] },
-  { id: 4, details: [{ r: 1, available: true, institutions: [4], speakers: [] }] },
+  { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+  { id: 2, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+  { id: 3, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
+  { id: 4, details: [{ r: 1, available: true, conflicts: [4], speakers: [] }] },
 ]
 
 const compiledTeamResults = [
@@ -20,10 +20,10 @@ const compiledTeamResults = [
 ]
 
 const adjudicators = [
-  { id: 10, preev: 90, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 11, preev: 80, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 12, preev: 70, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
-  { id: 13, preev: 60, details: [{ r: 1, available: true, institutions: [], conflicts: [] }] },
+  { id: 10, preev: 90, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 11, preev: 80, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 12, preev: 70, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+  { id: 13, preev: 60, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
 ]
 
 const compiledAdjudicatorResults = [
@@ -120,21 +120,29 @@ describe('allocations option handling', () => {
     expect(chairIds).toHaveLength(2)
     expect(new Set(chairIds).size).toBe(2)
 
-    const traditionalAllocated = adjudicatorTraditional.get(
-      1,
-      baseDraw,
-      adjudicators,
-      teams,
-      compiledTeamResults,
-      compiledAdjudicatorResults,
-      { chairs: 1, panels: 1, trainees: 0 },
-      config,
-      { assign: 'middle_to_slight', scatter: true }
-    )
-    expect(traditionalAllocated.allocation).toHaveLength(2)
-    traditionalAllocated.allocation.forEach((square: any) => {
-      expect(Array.isArray(square.chairs)).toBe(true)
-      expect(Array.isArray(square.panels)).toBe(true)
-    })
+    const traditionalAssignModes = [
+      'high_to_slight',
+      'high_to_close',
+      'middle_to_slight',
+      'middle_to_close',
+    ] as const
+    for (const assignMode of traditionalAssignModes) {
+      const traditionalAllocated = adjudicatorTraditional.get(
+        1,
+        baseDraw,
+        adjudicators,
+        teams,
+        compiledTeamResults,
+        compiledAdjudicatorResults,
+        { chairs: 1, panels: 1, trainees: 0 },
+        config,
+        { assign: assignMode, scatter: true }
+      )
+      expect(traditionalAllocated.allocation).toHaveLength(2)
+      traditionalAllocated.allocation.forEach((square: any) => {
+        expect(Array.isArray(square.chairs)).toBe(true)
+        expect(Array.isArray(square.panels)).toBe(true)
+      })
+    }
   })
 })

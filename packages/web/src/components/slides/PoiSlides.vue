@@ -1,9 +1,11 @@
 <template>
   <SlidesWrapper
+    label="poi"
     :title="title"
     :language="language"
     :organized-results="organizedResults"
     :max-ranking-rewarded="maxRankingRewarded"
+    :ranking-order="rankingOrder"
     :type="type"
     :slide-style="slideStyle"
     :left-credit="leftCredit"
@@ -15,7 +17,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SlideLanguage } from '@/utils/slides-presentation'
+import type { SlideLanguage, SlideRankingOrder } from '@/utils/slides-presentation'
 import { resolveSubNames } from '@/utils/slides-presentation'
 import SlidesWrapper from './SlidesWrapper.vue'
 
@@ -23,6 +25,7 @@ const props = withDefaults(
   defineProps<{
     language?: SlideLanguage
     maxRankingRewarded?: number
+    rankingOrder?: SlideRankingOrder
     type?: 'listed' | 'single'
     slideStyle?: 'pretty' | 'simple'
     leftCredit?: string
@@ -34,6 +37,7 @@ const props = withDefaults(
   {
     language: 'en',
     maxRankingRewarded: 3,
+    rankingOrder: 'asc',
     type: 'listed',
     slideStyle: 'pretty',
     leftCredit: '',

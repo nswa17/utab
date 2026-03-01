@@ -132,13 +132,17 @@ async function main() {
     const teamDocs = seededTeams.map((seed) => ({
       tournamentId,
       name: seed.name,
-      speakers: seed.speakerNames.map((name) => ({ name })),
+      template: {
+        available: true,
+        conflicts: [],
+        speakers: seed.speakerIds,
+      },
       details: [
         {
           r: ROUND_NUMBER,
           available: true,
           speakers: seed.speakerIds,
-          institutions: [],
+          conflicts: [],
         },
       ],
     }))
@@ -151,13 +155,15 @@ async function main() {
           tournamentId,
           name: 'Judge 1',
           strength: 5,
-          details: [{ r: ROUND_NUMBER, available: true }],
+          template: { available: true, conflicts: [], conflict_teams: [] },
+          details: [{ r: ROUND_NUMBER, available: true, conflicts: [], conflict_teams: [] }],
         },
         {
           tournamentId,
           name: 'Judge 2',
           strength: 4,
-          details: [{ r: ROUND_NUMBER, available: true }],
+          template: { available: true, conflicts: [], conflict_teams: [] },
+          details: [{ r: ROUND_NUMBER, available: true, conflicts: [], conflict_teams: [] }],
         },
       ],
       { ordered: true }

@@ -32,7 +32,7 @@ describe('controllers/handlers integration', () => {
     const created = await db.teams.create({
       id: 1,
       name: 'Team 1',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
     expect(created.name).toBe('Team 1')
 
@@ -42,7 +42,7 @@ describe('controllers/handlers integration', () => {
     const updated = await db.teams.update({
       id: 1,
       name: 'Team 1 Updated',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
     expect(updated.name).toBe('Team 1 Updated')
 
@@ -95,20 +95,20 @@ describe('controllers/handlers integration', () => {
     await db.teams.create({
       id: 1,
       name: 'Team 1',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
     await expect(
       db.teams.create({
         id: 1,
         name: 'Team 1 Duplicate',
-        details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+        details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
       })
     ).rejects.toMatchObject({ name: 'AlreadyExists' })
 
     await db.teams.create({
       id: 2,
       name: 'Team 2',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
 
     const deleted = await db.teams.deleteAll()
@@ -183,7 +183,7 @@ describe('controllers/connection integration', () => {
     await con.teams.create({
       id: 5,
       name: 'Team 5',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
 
     const team = await con.teams.findOne({ id: 5 })
@@ -206,11 +206,49 @@ describe('index/TournamentHandler integration', () => {
     await handler.teams.create({
       id: 7,
       name: 'Team 7',
-      details: [{ r: 1, available: true, institutions: [], speakers: [] }],
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
     })
 
     const teams = await handler.teams.read()
     expect(teams).toHaveLength(1)
+
+    await handler.con.dbh.conn.dropDatabase()
+    handler.close()
+  })
+
+  it('returns legacy team-object draw shape from draws.teams.get', async () => {
+    const handler = new TournamentHandler(uri, {
+      id: 7,
+      name: 'Draw Conversion Tournament',
+      style: { team_num: 2, score_weights: [1] },
+      user_defined_data: {},
+    })
+
+    await handler.teams.create({
+      id: 1,
+      name: 'Team 1',
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
+    })
+    await handler.teams.create({
+      id: 2,
+      name: 'Team 2',
+      details: [{ r: 1, available: true, conflicts: [], speakers: [] }],
+    })
+
+    const draw = await handler.draws.teams.get(1, {
+      force: true,
+      simple: true,
+      algorithm: 'standard',
+      algorithm_options: { filters: ['by_random'], method: 'straight' },
+    })
+
+    expect(draw.r).toBe(1)
+    expect(draw.allocation).toHaveLength(1)
+    expect(Array.isArray((draw.allocation[0] as any).teams)).toBe(false)
+    expect((draw.allocation[0] as any).teams).toMatchObject({
+      og: expect.any(Number),
+      oo: expect.any(Number),
+    })
 
     await handler.con.dbh.conn.dropDatabase()
     handler.close()

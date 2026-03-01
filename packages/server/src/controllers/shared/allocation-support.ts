@@ -85,16 +85,16 @@ export function buildDetailsForRounds(
   details: Array<{ r?: number; [key: string]: unknown }> | undefined,
   rounds: number[],
   defaults: Record<string, unknown>,
-  mapInstitutions?: (id: string) => number | undefined,
+  mapConflicts?: (id: string) => number | undefined,
   mapSpeakers?: (id: string) => number | undefined,
-  mapConflicts?: (id: string) => number | undefined
+  mapConflictTeams?: (id: string) => number | undefined
 ): RoundDetail[] {
   return rounds.map((r): RoundDetail => {
     const existing = details?.find((d) => d.r === r) ?? {}
     const merged: RoundDetail = { r, ...defaults, ...existing }
-    if (mapInstitutions && Array.isArray(merged.institutions)) {
-      merged.institutions = merged.institutions
-        .map((id: string) => mapInstitutions(id))
+    if (mapConflicts && Array.isArray(merged.conflicts)) {
+      merged.conflicts = merged.conflicts
+        .map((id: string) => mapConflicts(id))
         .filter((v: number | undefined): v is number => v !== undefined)
     }
     if (mapSpeakers && Array.isArray(merged.speakers)) {
@@ -102,9 +102,9 @@ export function buildDetailsForRounds(
         .map((id: string) => mapSpeakers(id))
         .filter((v: number | undefined): v is number => v !== undefined)
     }
-    if (mapConflicts && Array.isArray(merged.conflicts)) {
-      merged.conflicts = merged.conflicts
-        .map((id: string) => mapConflicts(id))
+    if (mapConflictTeams && Array.isArray(merged.conflict_teams)) {
+      merged.conflict_teams = merged.conflict_teams
+        .map((id: string) => mapConflictTeams(id))
         .filter((v: number | undefined): v is number => v !== undefined)
     }
     return merged

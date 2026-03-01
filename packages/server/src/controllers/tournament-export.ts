@@ -82,6 +82,15 @@ function normalizeFilePart(value: string): string {
   return normalized.length > 0 ? normalized : 'tournament'
 }
 
+function normalizeAsciiFilePart(value: string): string {
+  const normalized = value
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '_')
+    .trim()
+    .replace(/[\\/:*?"<>|;]/g, '_')
+  return normalized.length > 0 ? normalized : 'tournament'
+}
+
 function parseJsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -206,11 +215,18 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
       }))
     )
 
-    const safeName = normalizeFilePart(String(tournament.name ?? 'tournament')).slice(0, 80)
+    const rawName = String(tournament.name ?? 'tournament')
+    const safeName = normalizeFilePart(rawName).slice(0, 80)
+    const asciiSafeName = normalizeAsciiFilePart(rawName).slice(0, 80)
     const stamp = generatedAt.toISOString().replace(/[:.]/g, '-')
     const filename = `${safeName}-${tournamentId}-${stamp}.zip`
+    const asciiFilename = `${asciiSafeName}-${tournamentId}-${stamp}.zip`
+    const encodedFilename = encodeURIComponent(filename)
     res.setHeader('Content-Type', 'application/zip')
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+    )
     res.status(200).send(zip)
   } catch (err) {
     next(err)

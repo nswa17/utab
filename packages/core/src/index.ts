@@ -3,60 +3,182 @@ import { sillyLogger } from './general/loggers.js'
 import * as allocations from './allocations/index.js'
 import * as results from './results/index.js'
 import { CON } from './controllers/index.js'
+import type { TeamEntity, AdjudicatorEntity, VenueEntity, SpeakerEntity, InstitutionEntity, StyleConfig, UserDefinedData } from './types/domain.js'
+import type {
+  RawAdjudicatorResult,
+  RawSpeakerResult,
+  RawTeamResult,
+  CompiledAdjudicatorResult,
+  CompiledSpeakerResult,
+  CompiledTeamResult,
+} from './types/results.js'
+import type {
+  Draw,
+  LegacyDraw,
+  LegacySquareTeams,
+  NumbersOfAdjudicators,
+  AllocationConfig,
+} from './types/allocations.js'
+import type {
+  DrawGetOptions,
+  TeamDrawAlgorithmOptions,
+  AdjudicatorDrawAlgorithmOptions,
+  VenueDrawAlgorithmOptions,
+} from './types/options.js'
 
-function values<T>(obj: Record<string, T>): T[] {
-  return Object.keys(obj).map((key) => obj[key])
-}
-
-function convertDraw(draw: any) {
-  const newDraw = { r: draw.r, allocation: [] as any[] }
+function convertDraw(draw: Draw): LegacyDraw {
+  const newDraw: LegacyDraw = { r: draw.r, allocation: [] }
   for (const square of draw.allocation) {
-    const newSquare: any = { ...square }
-    const teams = square.teams as number[]
-    delete newSquare.teams
-    if (teams.length === 2) {
-      newSquare.teams = { og: teams[0], oo: teams[1] }
-    } else {
-      newSquare.teams = { og: teams[0], oo: teams[1], cg: teams[2], co: teams[3] }
-    }
-    newDraw.allocation.push(newSquare)
+    const teams = square.teams
+    const teamsObj: LegacySquareTeams =
+      teams.length === 2
+        ? { og: teams[0], oo: teams[1] }
+        : { og: teams[0], oo: teams[1], cg: teams[2], co: teams[3] }
+    newDraw.allocation.push({
+      ...square,
+      teams: teamsObj,
+    })
+  }
+  if (draw.user_defined_data !== undefined) {
+    newDraw.user_defined_data = draw.user_defined_data
   }
   return newDraw
 }
 
-function reconvertDraw(draw: any) {
-  const newDraw = { r: draw.r, allocation: [] as any[] }
+function teamsFromLegacy(teams: LegacySquareTeams): number[] {
+  const ordered: number[] = [teams.og, teams.oo]
+  if (typeof teams.cg === 'number') ordered.push(teams.cg)
+  if (typeof teams.co === 'number') ordered.push(teams.co)
+  return ordered
+}
+
+function reconvertDraw(draw: LegacyDraw): Draw {
+  const newDraw: Draw = { r: draw.r, allocation: [] }
   for (const square of draw.allocation) {
-    const newSquare: any = { ...square }
-    newSquare.teams = values(square.teams)
-    newDraw.allocation.push(newSquare)
+    newDraw.allocation.push({
+      ...square,
+      teams: teamsFromLegacy(square.teams),
+    })
+  }
+  if (draw.user_defined_data !== undefined) {
+    newDraw.user_defined_data = draw.user_defined_data
   }
   return newDraw
 }
 
 function range(start: number, end: number): number[] {
   const res: number[] = []
-  for (let i = start; i < end; i++) res.push(i)
+  for (let i = start; i < end; i += 1) res.push(i)
   return res
 }
+
+function normalizeInstitutionPriority(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1
+}
+
+type TeamDrawGetOptions =
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm?: 'standard'
+      algorithm_options?: TeamDrawAlgorithmOptions
+    }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'strict'
+      algorithm_options?: TeamDrawAlgorithmOptions
+    }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'powerpair'
+      algorithm_options?: TeamDrawAlgorithmOptions
+    }
+
+type AdjudicatorDrawGetOptions =
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm?: 'standard'
+      algorithm_options?: AdjudicatorDrawAlgorithmOptions
+      numbers_of_adjudicators?: NumbersOfAdjudicators
+    }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'traditional'
+      algorithm_options?: AdjudicatorDrawAlgorithmOptions
+      numbers_of_adjudicators?: NumbersOfAdjudicators
+    }
+
+type VenueDrawGetOptions = {
+  by?: number[]
+  simple?: boolean
+  force?: boolean
+  shuffle?: boolean
+}
+
+type DrawPipelineOptions =
+  | ({ team_allocation_algorithm?: 'standard' } & DrawGetOptions)
+  | ({ team_allocation_algorithm: 'strict' } & DrawGetOptions)
+  | ({ team_allocation_algorithm: 'powerpair' } & DrawGetOptions)
 
 export interface TournamentOptions {
   id?: number
   name?: string
-  style?: any
-  user_defined_data?: any
+  style?: StyleConfig
+  user_defined_data?: UserDefinedData
+}
+
+type TeamResultsApi = CON['teams']['results'] & {
+  organize: (
+    rs: number[],
+    options?: { simple?: boolean; force?: boolean }
+  ) => Promise<CompiledTeamResult[]>
+}
+
+type AdjudicatorResultsApi = CON['adjudicators']['results'] & {
+  organize: (rs: number[], options?: { force?: boolean }) => Promise<CompiledAdjudicatorResult[]>
+}
+
+type SpeakerResultsApi = CON['speakers']['results'] & {
+  organize: (rs: number[], options?: { force?: boolean }) => Promise<CompiledSpeakerResult[]>
+}
+
+type TeamsApi = Omit<CON['teams'], 'results'> & { results: TeamResultsApi }
+type AdjudicatorsApi = Omit<CON['adjudicators'], 'results'> & { results: AdjudicatorResultsApi }
+type SpeakersApi = Omit<CON['speakers'], 'results'> & { results: SpeakerResultsApi }
+
+type DrawsApi = CON['draws'] & {
+  get: (_for: number, options?: { options?: DrawPipelineOptions }) => Promise<LegacyDraw>
+  teams: {
+    get: (_for: number, options?: TeamDrawGetOptions) => Promise<LegacyDraw>
+  }
+  adjudicators: {
+    get: (_for: number, draw: LegacyDraw, options?: AdjudicatorDrawGetOptions) => Promise<LegacyDraw>
+  }
+  venues: {
+    get: (_for: number, draw: LegacyDraw, options?: VenueDrawGetOptions) => Promise<LegacyDraw>
+  }
 }
 
 export class TournamentHandler {
   con: CON
-  teams: any
-  adjudicators: any
-  venues: any
-  speakers: any
-  institutions: any
-  rounds: any
-  draws: any
-  config: any
+  teams: TeamsApi
+  adjudicators: AdjudicatorsApi
+  venues: CON['venues']
+  speakers: SpeakersApi
+  institutions: CON['institutions']
+  rounds: CON['rounds']
+  draws: DrawsApi
+  config: CON['config']
   close: () => void
 
   constructor(
@@ -65,14 +187,14 @@ export class TournamentHandler {
   ) {
     this.con = new CON(dbUrl, { id, name, style, user_defined_data })
 
-    this.teams = this.con.teams
-    this.adjudicators = this.con.adjudicators
+    this.teams = this.con.teams as unknown as TeamsApi
+    this.adjudicators = this.con.adjudicators as unknown as AdjudicatorsApi
     this.venues = this.con.venues
-    this.speakers = this.con.speakers
+    this.speakers = this.con.speakers as unknown as SpeakersApi
     this.institutions = this.con.institutions
     this.rounds = this.con.rounds
     this.config = this.con.config
-    this.draws = { ...this.con.draws }
+    this.draws = { ...this.con.draws } as DrawsApi
     this.close = this.con.close
 
     this.teams.results.organize = async (rs: number[], { simple = false, force = false } = {}) => {
@@ -131,38 +253,25 @@ export class TournamentHandler {
       return results.speakers.compile(speakers, rawSpeakerResults, config.style, rs)
     }
 
-    this.draws.get = async (_for: number, { options = {} }: { options?: any } = {}) => {
+    this.draws.get = async (_for: number, { options = {} }: { options?: DrawPipelineOptions } = {}) => {
       sillyLogger(this.draws.get, arguments, 'draws')
-      const optionsForTeamAllocation = cloneDeep(options)
-      const optionsForAdjudicatorAllocation = cloneDeep(options)
-      const optionsForVenueAllocation = cloneDeep(options)
-
-      if (Object.prototype.hasOwnProperty.call(options, 'team_allocation_algorithm')) {
-        optionsForTeamAllocation.algorithm = options.team_allocation_algorithm
+      const normalized = cloneDeep(options)
+      const teamOptions: TeamDrawGetOptions = {
+        algorithm: normalized.team_allocation_algorithm ?? 'standard',
+        algorithm_options: normalized.team_allocation_algorithm_options,
       }
-      if (Object.prototype.hasOwnProperty.call(options, 'team_allocation_algorithm_options')) {
-        optionsForTeamAllocation.algorithm_options = options.team_allocation_algorithm_options
+      const adjudicatorOptions: AdjudicatorDrawGetOptions = {
+        algorithm: normalized.adjudicator_allocation_algorithm ?? 'standard',
+        algorithm_options: normalized.adjudicator_allocation_algorithm_options,
+        numbers_of_adjudicators: normalized.numbers_of_adjudicators,
       }
-      if (Object.prototype.hasOwnProperty.call(options, 'adjudicator_allocation_algorithm')) {
-        optionsForAdjudicatorAllocation.algorithm = options.adjudicator_allocation_algorithm
-      }
-      if (
-        Object.prototype.hasOwnProperty.call(options, 'adjudicator_allocation_algorithm_options')
-      ) {
-        optionsForAdjudicatorAllocation.algorithm_options =
-          options.adjudicator_allocation_algorithm_options
-      }
-      if (Object.prototype.hasOwnProperty.call(options, 'venue_allocation_algorithm_options')) {
-        optionsForVenueAllocation.algorithm_options = options.venue_allocation_algorithm_options
+      const venueOptions: VenueDrawGetOptions = {
+        shuffle: normalized.venue_allocation_algorithm_options?.shuffle,
       }
 
-      const teamDraw = await this.draws.teams.get(_for, optionsForTeamAllocation)
-      const adjudicatorDraw = await this.draws.adjudicators.get(
-        _for,
-        reconvertDraw(teamDraw),
-        optionsForAdjudicatorAllocation
-      )
-      return this.draws.venues.get(_for, reconvertDraw(adjudicatorDraw), optionsForVenueAllocation)
+      const teamDraw = await this.draws.teams.get(_for, teamOptions)
+      const adjudicatorDraw = await this.draws.adjudicators.get(_for, teamDraw, adjudicatorOptions)
+      return this.draws.venues.get(_for, adjudicatorDraw, venueOptions)
     }
 
     this.draws.teams = {
@@ -174,14 +283,8 @@ export class TournamentHandler {
           force = false,
           algorithm = 'standard',
           algorithm_options = {},
-        }: {
-          by?: number[]
-          simple?: boolean
-          force?: boolean
-          algorithm?: string
-          algorithm_options?: any
-        } = {}
-      ) => {
+        }: TeamDrawGetOptions = {}
+      ): Promise<LegacyDraw> => {
         sillyLogger(this.draws.teams.get, arguments, 'draws')
         const rs = by ?? range(1, _for)
         const [config, teams, compiledTeamResults, institutions] = await Promise.all([
@@ -191,14 +294,20 @@ export class TournamentHandler {
           this.institutions.read(),
         ])
         const institutionPriorityMap = Object.fromEntries(
-          (institutions as Array<{ id: number; priority?: unknown }>).map((institution) => {
-            const parsed = Number(institution.priority)
-            return [institution.id, Number.isFinite(parsed) && parsed >= 0 ? parsed : 1]
-          })
+          institutions.map((institution) => [institution.id, normalizeInstitutionPriority(institution.priority)])
         )
-        const configWithInstitutionPriority = {
+        const institutionCategoryMap = Object.fromEntries(
+          institutions.map((institution) => [
+            institution.id,
+            String(institution.category ?? 'institution')
+              .trim()
+              .toLowerCase() || 'institution',
+          ])
+        )
+        const configWithInstitutionPriority: AllocationConfig = {
           ...config,
           institution_priority_map: institutionPriorityMap,
+          institution_category_map: institutionCategoryMap,
         }
 
         if (!force) {
@@ -235,7 +344,7 @@ export class TournamentHandler {
     this.draws.adjudicators = {
       get: async (
         _for: number,
-        draw: any,
+        draw: LegacyDraw,
         {
           by,
           simple = false,
@@ -243,32 +352,19 @@ export class TournamentHandler {
           algorithm = 'standard',
           algorithm_options = {},
           numbers_of_adjudicators = { chairs: 1, panels: 2, trainees: 0 },
-        }: {
-          by?: number[]
-          simple?: boolean
-          force?: boolean
-          algorithm?: string
-          algorithm_options?: any
-          numbers_of_adjudicators?: { chairs: number; panels: number; trainees: number }
-        } = {}
-      ) => {
+        }: AdjudicatorDrawGetOptions = {}
+      ): Promise<LegacyDraw> => {
         sillyLogger(this.draws.adjudicators.get, arguments, 'draws')
         const rs = by ?? range(1, _for)
-        const [
-          config,
-          teams,
-          adjudicators,
-          institutions,
-          compiledTeamResults,
-          compiledAdjudicatorResults,
-        ] = await Promise.all([
-          this.config.read(),
-          this.teams.read(),
-          this.adjudicators.read(),
-          this.institutions.read(),
-          this.teams.results.organize(rs, { force, simple }),
-          this.adjudicators.results.organize(rs, { force }),
-        ])
+        const [config, teams, adjudicators, institutions, compiledTeamResults, compiledAdjudicatorResults] =
+          await Promise.all([
+            this.config.read(),
+            this.teams.read(),
+            this.adjudicators.read(),
+            this.institutions.read(),
+            this.teams.results.organize(rs, { force, simple }),
+            this.adjudicators.results.organize(rs, { force }),
+          ])
 
         if (!force) {
           allocations.adjudicators.precheck(
@@ -280,11 +376,12 @@ export class TournamentHandler {
             numbers_of_adjudicators
           )
         }
+        const normalizedDraw = reconvertDraw(draw)
         const newDraw =
           algorithm === 'traditional'
             ? allocations.adjudicators.traditional.get(
                 _for,
-                draw,
+                normalizedDraw,
                 adjudicators,
                 teams,
                 compiledTeamResults,
@@ -295,7 +392,7 @@ export class TournamentHandler {
               )
             : allocations.adjudicators.standard.get(
                 _for,
-                draw,
+                normalizedDraw,
                 adjudicators,
                 teams,
                 compiledTeamResults,
@@ -311,14 +408,14 @@ export class TournamentHandler {
     this.draws.venues = {
       get: async (
         _for: number,
-        draw: any,
+        draw: LegacyDraw,
         {
           by,
           simple = false,
           force = false,
           shuffle = false,
-        }: { by?: number[]; simple?: boolean; force?: boolean; shuffle?: boolean } = {}
-      ) => {
+        }: VenueDrawGetOptions = {}
+      ): Promise<LegacyDraw> => {
         sillyLogger(this.draws.venues.get, arguments, 'draws')
         const rs = by ?? range(1, _for)
         const [config, teams, venues, compiledTeamResults] = await Promise.all([
@@ -331,9 +428,10 @@ export class TournamentHandler {
         if (!force) {
           allocations.venues.precheck(teams, venues, config.style, _for)
         }
+        const normalizedDraw = reconvertDraw(draw)
         const newDraw = allocations.venues.standard.get(
           _for,
-          draw,
+          normalizedDraw,
           venues,
           compiledTeamResults,
           config,

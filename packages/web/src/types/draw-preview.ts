@@ -34,5 +34,7 @@ export type DrawPreviewRow = {
   teamSubmissionExpectedCount?: number
   judgeSubmissionCount?: number
   judgeSubmissionExpectedCount?: number
+  judgeScoreAverage?: number
+  judgeScoreAverageLabel?: string
   submissionDetail?: DrawPreviewSubmissionDetail
 }

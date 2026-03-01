@@ -43,6 +43,20 @@
         @update:model-value="(checked) => $emit('update:adjudicator-allocation-opened', checked)"
       />
     </label>
+
+    <label
+      v-if="showBreakRoundSwitch"
+      class="row publish-switch-inline publish-switch-inline-compact"
+    >
+      <span class="publish-switch-label">{{ breakRoundLabel }}</span>
+      <ToggleSwitch
+        class="publish-switch-toggle"
+        :model-value="breakRoundEnabled"
+        :disabled="effectiveBusy || breakRoundDisabled"
+        :aria-label="breakRoundLabel"
+        @update:model-value="(checked) => $emit('update:break-round-enabled', checked)"
+      />
+    </label>
   </div>
 </template>
 
@@ -57,6 +71,10 @@ const props = withDefaults(
     showPriorRoundsHideButton?: boolean
     priorRoundsHideDisabled?: boolean
     priorRoundsHideLabel?: string
+    showBreakRoundSwitch?: boolean
+    breakRoundEnabled?: boolean
+    breakRoundDisabled?: boolean
+    breakRoundLabel?: string
     motionOpened: boolean
     motionDisabled?: boolean
     motionLabel: string
@@ -72,6 +90,10 @@ const props = withDefaults(
     showPriorRoundsHideButton: false,
     priorRoundsHideDisabled: false,
     priorRoundsHideLabel: '',
+    showBreakRoundSwitch: false,
+    breakRoundEnabled: false,
+    breakRoundDisabled: false,
+    breakRoundLabel: '',
     motionDisabled: false,
     teamAllocationDisabled: false,
     adjudicatorAllocationDisabled: false,
@@ -79,6 +101,7 @@ const props = withDefaults(
 )
 
 defineEmits<{
+  (event: 'update:break-round-enabled', value: boolean): void
   (event: 'update:motion-opened', value: boolean): void
   (event: 'update:team-allocation-opened', value: boolean): void
   (event: 'update:adjudicator-allocation-opened', value: boolean): void
@@ -115,7 +138,7 @@ const effectiveBusy = computed(() => Boolean(props.busy))
 
 .publish-switch-status-row {
   width: 100%;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--space-2);
   flex-wrap: wrap;
 }

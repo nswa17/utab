@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { TournamentModel } from '../models/tournament.js'
+import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
 import { verifyPassword } from '../services/hash.service.js'
@@ -30,6 +31,39 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function normalizeId(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (value === null || value === undefined) return ''
+  return String(value).trim()
+}
+
+async function resolveTournamentCreatorNameMap(
+  tournaments: Array<Record<string, unknown>>
+): Promise<Map<string, string>> {
+  const creatorIds = Array.from(
+    new Set(
+      tournaments
+        .map((tournament) => normalizeId(tournament.createdBy))
+        .filter((creatorId) => creatorId.length > 0)
+    )
+  )
+  if (creatorIds.length === 0) return new Map()
+
+  const users = await UserModel.find({ _id: { $in: creatorIds } })
+    .select({ _id: 1, username: 1 })
+    .lean<Array<{ _id: unknown; username?: unknown }>>()
+    .exec()
+
+  const creatorNameMap = new Map<string, string>()
+  for (const user of users) {
+    const userId = normalizeId(user._id)
+    const username = typeof user.username === 'string' ? user.username.trim() : ''
+    if (!userId || !username) continue
+    creatorNameMap.set(userId, username)
+  }
+  return creatorNameMap
+}
+
 function hasTournamentOrganizerAccess(req: any, tournament: any): boolean {
   const role = req.session?.usertype
   if (role === 'superuser') return true
@@ -51,9 +85,22 @@ export const listTournaments: RequestHandler = async (req, res, next) => {
   try {
     const tournaments = await TournamentModel.find().lean().exec()
     const visibleTournaments = tournaments.filter((tournament) => canViewTournament(req, tournament))
-    const data = visibleTournaments.map((tournament) =>
-      hasTournamentOrganizerAccess(req, tournament) ? tournament : sanitizeTournamentForPublic(tournament)
-    )
+    const isSuperuser = req.session?.usertype === 'superuser'
+    const creatorNameMap = isSuperuser
+      ? await resolveTournamentCreatorNameMap(visibleTournaments as Array<Record<string, unknown>>)
+      : null
+
+    const data = visibleTournaments.map((tournament) => {
+      const payload = hasTournamentOrganizerAccess(req, tournament)
+        ? tournament
+        : sanitizeTournamentForPublic(tournament)
+      if (!isSuperuser || !creatorNameMap) return payload
+      const creatorId = normalizeId((tournament as any)?.createdBy)
+      return {
+        ...payload,
+        createdByName: creatorId ? (creatorNameMap.get(creatorId) ?? null) : null,
+      }
+    })
     res.json({ data, errors: [] })
   } catch (err) {
     next(err)
@@ -118,7 +165,14 @@ export const createTournament: RequestHandler = async (req, res, next) => {
     })
     if (req.session?.userId) {
       const tournamentId = created._id.toString()
-      await UserModel.updateOne({ _id: req.session.userId }, { $addToSet: { tournaments: tournamentId } }).exec()
+      await Promise.all([
+        UserModel.updateOne({ _id: req.session.userId }, { $addToSet: { tournaments: tournamentId } }).exec(),
+        TournamentMemberModel.updateOne(
+          { tournamentId, userId: req.session.userId },
+          { $setOnInsert: { role: 'organizer' } },
+          { upsert: true }
+        ).exec(),
+      ])
       const current = req.session.tournaments ?? []
       if (!current.includes(tournamentId)) {
         req.session.tournaments = [...current, tournamentId]
@@ -173,7 +227,10 @@ export const deleteTournament: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedId = String(deleted._id)
-    await UserModel.updateMany({}, { $pull: { tournaments: deletedId } }).exec()
+    await Promise.all([
+      UserModel.updateMany({}, { $pull: { tournaments: deletedId } }).exec(),
+      TournamentMemberModel.deleteMany({ tournamentId: deletedId }).exec(),
+    ])
     if (req.session?.tournaments) {
       req.session.tournaments = req.session.tournaments.filter((t) => String(t) !== deletedId)
     }

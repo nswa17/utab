@@ -204,22 +204,21 @@ export async function fillTournamentSetupData(
     const payload = Array.from({ length: teamDeficit }).map(() => {
       const teamSpeakers = nextSpeakerBatch()
       const speakerIds = Array.from(new Set(teamSpeakers.map((item) => item.id).filter(Boolean)))
-      const speakerNames = speakerIds
-        .map((speakerId) => teamSpeakers.find((item) => item.id === speakerId)?.name ?? '')
-        .filter((name) => name.trim().length > 0)
       const assignedInstitution = randomPickOne(institutionPool)
       const assignedInstitutionId = assignedInstitution?.id ?? ''
-      const assignedInstitutionName = assignedInstitution?.name ?? ''
 
       return {
         tournamentId,
         name: allocateName(teamNameSet, 'Dev Team'),
-        institution: assignedInstitutionName || undefined,
-        speakers: speakerNames.map((name) => ({ name })),
+        template: {
+          available: true,
+          conflicts: assignedInstitutionId ? [assignedInstitutionId] : [],
+          speakers: speakerIds,
+        },
         details: roundNumbers.map((roundNumber) => ({
           r: roundNumber,
           available: true,
-          institutions: assignedInstitutionId ? [assignedInstitutionId] : [],
+          conflicts: assignedInstitutionId ? [assignedInstitutionId] : [],
           speakers: speakerIds,
         })),
         userDefinedData: { __devtools: { source: 'fill-setup' } },
@@ -244,13 +243,17 @@ export async function fillTournamentSetupData(
         tournamentId,
         name: allocateName(adjudicatorNameSet, 'Dev Judge'),
         strength: 5,
-        active: true,
         preev: 0,
+        template: {
+          available: true,
+          conflicts: assignedInstitutionId ? [assignedInstitutionId] : [],
+          conflict_teams: [],
+        },
         details: roundNumbers.map((roundNumber) => ({
           r: roundNumber,
           available: true,
-          institutions: assignedInstitutionId ? [assignedInstitutionId] : [],
-          conflicts: [],
+          conflicts: assignedInstitutionId ? [assignedInstitutionId] : [],
+          conflict_teams: [],
         })),
         userDefinedData: { __devtools: { source: 'fill-setup' } },
       }
@@ -268,6 +271,10 @@ export async function fillTournamentSetupData(
     const payload = Array.from({ length: venueDeficit }).map(() => ({
       tournamentId,
       name: allocateName(venueNameSet, 'Dev Venue'),
+      template: {
+        available: true,
+        priority: 1,
+      },
       details: roundNumbers.map((roundNumber) => ({
         r: roundNumber,
         available: true,

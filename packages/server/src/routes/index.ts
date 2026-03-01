@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import { env } from '../config/environment.js'
 import { healthRouter } from './health.js'
 import { authRouter } from './auth.js'
 import { tournamentRouter } from './tournaments.js'
@@ -38,8 +37,6 @@ export function createRoutes(): Router {
   router.use('/styles', styleRouter)
   router.use('/raw-results', rawResultRouter)
   router.use('/audit-logs', auditLogRouter)
-  if (env.NODE_ENV !== 'production') {
-    router.use('/dev-tools', devToolsRouter)
-  }
+  router.use('/dev-tools', devToolsRouter)
   return router
 }

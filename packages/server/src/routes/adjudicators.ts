@@ -18,8 +18,8 @@ const createBodySchema = z.object({
   tournamentId: z.string(),
   name: z.string().min(1),
   strength: z.number().nonnegative(),
-  active: z.boolean().optional(),
   preev: z.number().optional(),
+  template: z.any().optional(),
   details: z.any().optional(),
   userDefinedData: z.any().optional(),
 })
@@ -41,8 +41,8 @@ const updateSchema = {
       tournamentId: z.string().min(1),
       name: z.string().min(1).optional(),
       strength: z.number().nonnegative().optional(),
-      active: z.boolean().optional(),
       preev: z.number().optional(),
+      template: z.any().optional(),
       details: z.any().optional(),
       userDefinedData: z.any().optional(),
     })
@@ -50,8 +50,8 @@ const updateSchema = {
       (data) =>
         data.name !== undefined ||
         data.strength !== undefined ||
-        data.active !== undefined ||
         data.preev !== undefined ||
+        data.template !== undefined ||
         data.details !== undefined ||
         data.userDefinedData !== undefined,
       { message: 'update payload is required' }
@@ -66,8 +66,8 @@ const bulkUpdateSchema = {
         tournamentId: z.string().min(1),
         name: z.string().min(1).optional(),
         strength: z.number().nonnegative().optional(),
-        active: z.boolean().optional(),
         preev: z.number().optional(),
+        template: z.any().optional(),
         details: z.any().optional(),
         userDefinedData: z.any().optional(),
       })
@@ -75,8 +75,8 @@ const bulkUpdateSchema = {
         (data) =>
           data.name !== undefined ||
           data.strength !== undefined ||
-          data.active !== undefined ||
           data.preev !== undefined ||
+          data.template !== undefined ||
           data.details !== undefined ||
           data.userDefinedData !== undefined,
         { message: 'update payload is required' }
