@@ -72,6 +72,10 @@ async function handleSubmit() {
 .logo {
   width: 48px;
   height: 48px;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  flex: 0 0 auto;
 }
 
 .error {

@@ -24,6 +24,6 @@ const registerSchema = {
 router.post('/login', validateRequest(loginSchema), login)
 router.post('/register', validateRequest(registerSchema), register)
 router.get('/me', requireAuth, me)
-router.post('/logout', requireAuth, logout)
+router.post('/logout', logout)
 
 export { router as authRouter }

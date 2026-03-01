@@ -75,6 +75,10 @@ function isPrimaryActive(section: 'admin' | 'user') {
 .brand img {
   width: 28px;
   height: 28px;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  flex: 0 0 auto;
 }
 
 .primary-nav {

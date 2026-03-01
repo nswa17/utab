@@ -15,6 +15,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => Boolean(userId.value))
 
+  function clearAuthState() {
+    userId.value = null
+    username.value = null
+    role.value = null
+    tournaments.value = []
+  }
+
   async function login(name: string, password: string) {
     loading.value = true
     error.value = null
@@ -36,11 +43,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    await api.post('/auth/logout')
-    userId.value = null
-    username.value = null
-    role.value = null
-    tournaments.value = []
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // Keep logout idempotent on the client even if the server session is already gone.
+    }
+    clearAuthState()
+    error.value = null
     initialized.value = true
   }
 
@@ -52,10 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
       role.value = res.data?.data?.role ?? null
       tournaments.value = res.data?.data?.tournaments ?? []
     } catch {
-      userId.value = null
-      username.value = null
-      role.value = null
-      tournaments.value = []
+      clearAuthState()
     } finally {
       initialized.value = true
     }

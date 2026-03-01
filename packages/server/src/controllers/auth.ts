@@ -199,11 +199,21 @@ export const me: RequestHandler = async (req, res, next) => {
 }
 
 export const logout: RequestHandler = (req, res, next) => {
+  const respondSuccess = () => {
+    res.clearCookie('connect.sid')
+    res.json({ data: { success: true }, errors: [] })
+  }
+
+  if (!req.session) {
+    respondSuccess()
+    return
+  }
+
   req.session.destroy((err) => {
     if (err) {
       next(err)
       return
     }
-    res.json({ data: { success: true }, errors: [] })
+    respondSuccess()
   })
 }
