@@ -73,8 +73,9 @@ function isPrimaryActive(section: 'admin' | 'user') {
 }
 
 .brand img {
-  width: 28px;
-  height: 28px;
+  width: auto;
+  height: 44px;
+  max-width: 120px;
   display: block;
   object-fit: contain;
   object-position: center;
@@ -154,6 +155,10 @@ function isPrimaryActive(section: 'admin' | 'user') {
 
   .brand span {
     display: none;
+  }
+
+  .brand img {
+    height: 38px;
   }
 
   .actions {

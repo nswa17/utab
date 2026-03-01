@@ -12,7 +12,7 @@
         <Field :label="$t('スタイル')" v-slot="{ id, describedBy }">
           <select v-model.number="form.style" :id="id" :aria-describedby="describedBy">
             <option v-for="style in styles.styles" :key="style.id" :value="style.id">
-              {{ style.id }}: {{ style.name }}
+              {{ style.name }}
             </option>
           </select>
         </Field>

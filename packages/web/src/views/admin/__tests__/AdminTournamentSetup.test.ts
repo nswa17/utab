@@ -9,7 +9,7 @@ function load(path: string) {
 describe('Admin tournament setup integration', () => {
   it('includes round defaults section in setup screen', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
-    expect(source).toContain('ラウンドデフォルト設定')
+    expect(source).toContain('デフォルト設定')
     expect(source).toContain('roundDefaultsForm')
     expect(source).toContain('saveRoundDefaults')
     expect(source).toContain('ラウンドデフォルトを保存')
@@ -46,7 +46,7 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('confirmRemoveRoundFromSetup')
     expect(source).toContain('setupRoundDeleteTarget')
     expect(source).toContain('ラウンド削除')
-    expect(source).toContain('ラウンド {round} を削除しますか？')
+    expect(source).toContain('{round} を削除しますか？')
   })
 
   it('shows per-round detail settings inside setup list', () => {

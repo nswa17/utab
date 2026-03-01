@@ -62,90 +62,81 @@
               <h4>{{ $t('参照ラウンド選択') }}</h4>
             </div>
           </div>
-          <p class="muted small reference-round-intro">
-            {{
-              $t('集計に使う参照ラウンドを選択し、「確定」で参照集計を保存します。')
-            }}
-          </p>
-          <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+          <template v-if="!referenceSelectionConfirmed">
+            <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+              <label
+                v-for="item in priorRounds"
+                :key="`common-reference-${item.round}`"
+                class="reference-round-checkbox"
+              >
+                <input
+                  v-model="commonReferenceRoundSelections"
+                  type="checkbox"
+                  :value="String(item.round)"
+                  :disabled="shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections"
+                />
+                <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+              </label>
+            </div>
             <label
-              v-for="item in priorRounds"
-              :key="`common-reference-${item.round}`"
-              class="reference-round-checkbox"
+              v-if="shouldTrackAdjudicatorReference"
+              class="row reference-round-scope-toggle"
             >
               <input
-                v-model="commonReferenceRoundSelections"
+                v-model="useScopedReferenceRoundSelections"
                 type="checkbox"
-                :value="String(item.round)"
-                :disabled="
-                  referenceSelectionConfirmed ||
-                  (shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections)
-                "
+                :disabled="referenceSelectionConfirmed"
               />
-              <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+              <span>{{ $t('チーム・ジャッジで参照ラウンドを個別に設定する') }}</span>
             </label>
-          </div>
-          <label
-            v-if="shouldTrackAdjudicatorReference"
-            class="row reference-round-scope-toggle"
-          >
-            <input
-              v-model="useScopedReferenceRoundSelections"
-              type="checkbox"
-              :disabled="referenceSelectionConfirmed"
-            />
-            <span>{{ $t('チーム・ジャッジで参照ラウンドを個別に設定する') }}</span>
-          </label>
-          <div
-            v-if="shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections"
-            class="grid reference-round-select-grid"
-          >
-            <label class="stack reference-round-select-field">
-              <span class="option-title">{{ $t('チーム結果参照ラウンド') }}</span>
-              <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
-                <label
-                  v-for="item in priorRounds"
-                  :key="`team-reference-${item.round}`"
-                  class="reference-round-checkbox"
-                >
-                  <input
-                    v-model="teamReferenceRoundSelections"
-                    type="checkbox"
-                    :value="String(item.round)"
-                    :disabled="referenceSelectionConfirmed"
-                  />
-                  <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
-                </label>
-              </div>
-            </label>
-            <label class="stack reference-round-select-field">
-              <span class="option-title">{{ $t('ジャッジ結果参照ラウンド') }}</span>
-              <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
-                <label
-                  v-for="item in priorRounds"
-                  :key="`adjudicator-reference-${item.round}`"
-                  class="reference-round-checkbox"
-                >
-                  <input
-                    v-model="adjudicatorReferenceRoundSelections"
-                    type="checkbox"
-                    :value="String(item.round)"
-                    :disabled="referenceSelectionConfirmed"
-                  />
-                  <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
-                </label>
-              </div>
-            </label>
-          </div>
+            <div
+              v-if="shouldTrackAdjudicatorReference && useScopedReferenceRoundSelections"
+              class="grid reference-round-select-grid"
+            >
+              <label class="stack reference-round-select-field">
+                <span class="option-title">{{ $t('チーム結果参照ラウンド') }}</span>
+                <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+                  <label
+                    v-for="item in priorRounds"
+                    :key="`team-reference-${item.round}`"
+                    class="reference-round-checkbox"
+                  >
+                    <input
+                      v-model="teamReferenceRoundSelections"
+                      type="checkbox"
+                      :value="String(item.round)"
+                      :disabled="referenceSelectionConfirmed"
+                    />
+                    <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+                  </label>
+                </div>
+              </label>
+              <label class="stack reference-round-select-field">
+                <span class="option-title">{{ $t('ジャッジ結果参照ラウンド') }}</span>
+                <div class="reference-round-checkbox-list reference-round-checkbox-list--inline">
+                  <label
+                    v-for="item in priorRounds"
+                    :key="`adjudicator-reference-${item.round}`"
+                    class="reference-round-checkbox"
+                  >
+                    <input
+                      v-model="adjudicatorReferenceRoundSelections"
+                      type="checkbox"
+                      :value="String(item.round)"
+                      :disabled="referenceSelectionConfirmed"
+                    />
+                    <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
+                  </label>
+                </div>
+              </label>
+            </div>
+          </template>
           <section v-if="referenceSelectionConfirmed" class="stack reference-snapshot-select-block">
-            <p class="muted small reference-round-intro">
-              {{ $t('対戦表作成で選択中の参照集計結果を利用します。') }}
-            </p>
             <div v-if="compiledSnapshotSelectOptions.length > 0" class="grid reference-snapshot-select-grid">
               <CompiledSnapshotSelect
                 v-if="!shouldTrackAdjudicatorReference || !useScopedReferenceRoundSelections"
                 :model-value="selectedDetailSnapshotId"
-                :label="$t('参照集計結果')"
+                :label="''"
                 :options="compiledSnapshotSelectOptions"
                 :disabled="isLoading"
                 @update:model-value="handleSharedReferenceSnapshotSelection"
@@ -153,14 +144,14 @@
               <template v-else>
                 <CompiledSnapshotSelect
                   :model-value="selectedTeamSnapshotId"
-                  :label="`${$t('チーム')} ${$t('参照集計結果')}`"
+                  :label="$t('チーム')"
                   :options="compiledSnapshotSelectOptions"
                   :disabled="isLoading"
                   @update:model-value="handleTeamReferenceSnapshotSelection"
                 />
                 <CompiledSnapshotSelect
                   :model-value="selectedAdjudicatorSnapshotId"
-                  :label="`${$t('ジャッジ')} ${$t('参照集計結果')}`"
+                  :label="$t('ジャッジ')"
                   :options="compiledSnapshotSelectOptions"
                   :disabled="isLoading"
                   @update:model-value="handleAdjudicatorReferenceSnapshotSelection"
@@ -2849,15 +2840,31 @@ function areRoundSetsEqual(left: number[], right: number[]): boolean {
   return left.every((value, index) => value === right[index])
 }
 
+function hasRequiredPreviousRoundReference(rounds: number[]): boolean {
+  const previousRound = round.value - 1
+  if (!Number.isInteger(previousRound) || previousRound < 1) return true
+  if (rounds.length === 0) return false
+  return rounds.includes(previousRound) && rounds[rounds.length - 1] === previousRound
+}
+
 function hasConfirmedReferenceSelection(draw: any | null | undefined): boolean {
   if (priorRounds.value.length === 0) return true
-  if (draw && Array.isArray(draw.allocation) && draw.allocation.length > 0) return true
-  const sharedId = readDrawReferenceCompiledId(draw?.userDefinedData)
-  const teamId = readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'teams') || sharedId
-  const adjudicatorId =
-    readDrawReferenceCompiledIdByScope(draw?.userDefinedData, 'adjudicators') || sharedId
+  const userDefinedData = draw?.userDefinedData
+  const sharedId = readDrawReferenceCompiledId(userDefinedData)
+  const teamId = readDrawReferenceCompiledIdByScope(userDefinedData, 'teams') || sharedId
+  const adjudicatorId = readDrawReferenceCompiledIdByScope(userDefinedData, 'adjudicators') || sharedId
   if (!teamId) return false
   if (shouldTrackAdjudicatorReference.value && !adjudicatorId) return false
+  const teamRounds = normalizeReferenceRoundSelections(
+    resolveSavedReferenceRoundSelections(userDefinedData, 'teams')
+  )
+  if (!hasRequiredPreviousRoundReference(teamRounds)) return false
+  if (shouldTrackAdjudicatorReference.value) {
+    const adjudicatorRounds = normalizeReferenceRoundSelections(
+      resolveSavedReferenceRoundSelections(userDefinedData, 'adjudicators')
+    )
+    if (!hasRequiredPreviousRoundReference(adjudicatorRounds)) return false
+  }
   return true
 }
 

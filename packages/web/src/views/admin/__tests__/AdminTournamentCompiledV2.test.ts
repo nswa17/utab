@@ -57,12 +57,30 @@ describe('AdminTournamentCompiled V2', () => {
     expect(flags).toContain('VITE_ADMIN_REPORTS_UX_V3')
   })
 
-  it('splits top-level setup into snapshot selector and generation with inline submission table', () => {
+  it('splits top-level setup into required compile flow and optional existing-report selection', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('新規レポート生成')
-    expect(source).toContain('表示するレポート')
-    expect(source).toContain('CompiledSnapshotSelect')
-    expect(source).toContain('reportSnapshotSelectOptions')
+    expect(source).toContain('新規仮集計')
+    expect(source).toContain('既存レポート')
+    expect(source).toContain("$t('提出状況')")
+    expect(source).toContain('report-setup-grid')
+    expect(source).toContain("$t('ラウンド選択')")
+    expect(source).toContain("$t('集計実行')")
+    expect(source).toContain("$t('集計結果を保存')")
+    expect(source).not.toContain('Step 1:')
+    expect(source).not.toContain('Step 2:')
+    expect(source).not.toContain('Step 3:')
+    expect(source).toContain('v-model="compileRounds"')
+    expect(source).toContain('type="checkbox"')
+    expect(source).toContain('showForceCompileAfterError')
+    expect(source).toContain('existing-report-list')
+    expect(source).toContain("$t('日時')")
+    expect(source).toContain("$t('考慮ラウンド')")
+    expect(source).toContain("$t('メモ')")
+    expect(source).toContain("$t('操作')")
+    expect(source).toContain("$t('表示')")
+    expect(source).toContain("$t('削除')")
+    expect(source).not.toContain('CompiledSnapshotSelect')
+    expect(source).not.toContain('表示するレポート')
     expect(source).toContain('roundSubmissionSummaries.length > 0')
     expect(source).toContain('submissionOperationsLinkForRound')
     expect(source).toContain('提出状況を確認')
@@ -72,9 +90,8 @@ describe('AdminTournamentCompiled V2', () => {
 
   it('routes submission remediation to round operations submissions tab', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('submissionsOperationsLink')
-    expect(source).toContain('submissionOperationsLinkLabel')
-    expect(source).toContain('提出状況タブへ')
+    expect(source).toContain('submissionOperationsLinkForRound')
+    expect(source).toContain('提出状況を確認')
     expect(source).not.toContain('`/admin/${tournamentId}/submissions`')
     expect(source).toContain('/operations')
     expect(source).toContain('?task=submissions')
@@ -283,18 +300,18 @@ describe('AdminTournamentCompiled V2', () => {
     expect(messages).toContain("'順位変動あり: {count}件'")
   })
 
-  it('provides an existing-report selector with unselected option and latest default', () => {
+  it('provides an existing-report list with per-row display and delete actions', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('reportSnapshotRows')
-    expect(source).toContain('CompiledSnapshotSelect')
-    expect(source).toContain("$t('表示するレポート')")
-    expect(source).toContain("$t('未選択')")
-    expect(source).toContain('reportSnapshotSelectOptions')
+    expect(source).toContain('existing-report-list')
+    expect(source).toContain('existing-report-row')
+    expect(source).toContain("$t('表示')")
+    expect(source).toContain("$t('削除')")
     expect(source).toContain('onSelectedCompiledChange')
     expect(source).toContain('selectedCompiledId')
     expect(source).toContain('selectedCompiledId.value = currentCompiledId')
     expect(source).toContain('baselineCompiledOptions.value[0].compiledId')
-    expect(source).toContain('openDeleteSelectedCompiledModal')
+    expect(source).toContain('openDeleteCompiledModal')
     expect(source).toContain('confirmDeleteCompiled')
     expect(source).toContain("$t('集計結果を削除')")
     expect(source).toContain("$t('この集計結果を削除しますか？')")
@@ -307,6 +324,8 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('recompute-modal')
     expect(source).not.toContain('v-model:ranking-preset')
     expect(source).not.toContain('v-model:ranking-order')
+    expect(source).toContain(':show-source-rounds="false"')
+    expect(source).not.toContain(':show-source-rounds="true"')
     expect(source).toContain('openRecomputeOptions')
     expect(source).toContain('cancelRecomputeOptions')
     expect(source).toContain('applyRecomputeOptions')
@@ -316,16 +335,16 @@ describe('AdminTournamentCompiled V2', () => {
 
   it('keeps compile preparation independent from the operations tab', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('新規レポート生成')
+    expect(source).toContain('新規仮集計')
     expect(source).not.toContain('新規レポートを生成します。')
     expect(source).not.toContain('v-if="!compiled || showOperationsSection"')
   })
 
-  it('shows a submission-first migration guide when raw source mode is active', () => {
+  it('removes submission-first migration guide note from the setup area', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
-    expect(source).toContain('提出データ一本化ガイド')
-    expect(source).toContain('migration-guide')
-    expect(source).toContain('/operations')
+    expect(source).not.toContain('提出データ一本化ガイド')
+    expect(source).not.toContain('migration-guide')
+    expect(source).not.toContain('submissionsOperationsLink')
   })
 
   it('marks exception mode by displayed snapshot source in header and diff legend', () => {

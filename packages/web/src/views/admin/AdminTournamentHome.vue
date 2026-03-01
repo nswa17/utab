@@ -44,7 +44,7 @@
                 :aria-describedby="describedBy"
               >
                 <option v-for="style in styles.styles" :key="style.id" :value="style.id">
-                  {{ style.id }}: {{ style.name }}
+                  {{ style.name }}
                 </option>
               </select>
             </Field>
@@ -112,108 +112,152 @@
           <p v-if="noticeSaveError" class="error small">{{ noticeSaveError }}</p>
         </article>
 
-        <article class="overview-setting-card stack">
-          <h4>{{ $t('ブレイク設定') }}</h4>
-          <BreakPolicyEditor
-            v-model:source="tournamentBreakForm.source"
-            v-model:size="tournamentBreakForm.size"
-            v-model:cutoff-tie-policy="tournamentBreakForm.cutoff_tie_policy"
-            v-model:seeding="tournamentBreakForm.seeding"
-            :show-source="false"
-            :disabled="isLoading || isSavingTournamentBreak"
-          />
-          <div class="row notice-actions">
-            <Button
-              size="sm"
-              :disabled="isLoading || isSavingTournamentBreak || !hasBreakRounds"
-              @click="saveTournamentBreakSettings"
+        <article class="overview-setting-card overview-setting-card--collapsible stack">
+          <div class="row overview-collapse-head">
+            <button
+              type="button"
+              class="overview-collapse-trigger"
+              :aria-expanded="showTournamentBreakSettings ? 'true' : 'false'"
+              @click="showTournamentBreakSettings = !showTournamentBreakSettings"
             >
-              {{ isSavingTournamentBreak ? $t('更新中...') : $t('ブレイク設定を保存') }}
-            </Button>
-            <span v-if="!hasBreakRounds" class="muted small">
-              {{ $t('ブレイクラウンドが未設定のため、保存できません。') }}
+              <span class="overview-collapse-icon" aria-hidden="true">{{
+                showTournamentBreakSettings ? '−' : '+'
+              }}</span>
+              <span class="overview-collapse-title">{{ $t('ブレイク設定') }}</span>
+            </button>
+            <span v-if="!hasBreakRounds" class="muted small overview-collapse-note">
+              {{ $t('ブレイクラウンド未設定のため無効') }}
             </span>
-            <span v-if="tournamentBreakSaved" class="muted small">{{ $t('更新しました。') }}</span>
           </div>
-          <p v-if="tournamentBreakSaveError" class="error small">
-            {{ tournamentBreakSaveError }}
-          </p>
+          <div v-if="showTournamentBreakSettings" class="stack">
+            <BreakPolicyEditor
+              v-model:source="tournamentBreakForm.source"
+              v-model:size="tournamentBreakForm.size"
+              v-model:cutoff-tie-policy="tournamentBreakForm.cutoff_tie_policy"
+              v-model:seeding="tournamentBreakForm.seeding"
+              :show-source="false"
+              :disabled="isLoading || isSavingTournamentBreak"
+            />
+            <div class="row notice-actions">
+              <Button
+                size="sm"
+                :disabled="isLoading || isSavingTournamentBreak || !hasBreakRounds"
+                @click="saveTournamentBreakSettings"
+              >
+                {{ isSavingTournamentBreak ? $t('更新中...') : $t('ブレイク設定を保存') }}
+              </Button>
+              <span v-if="tournamentBreakSaved" class="muted small">{{ $t('更新しました。') }}</span>
+            </div>
+            <p v-if="tournamentBreakSaveError" class="error small">
+              {{ tournamentBreakSaveError }}
+            </p>
+          </div>
         </article>
 
-        <article class="overview-setting-card ranking-priority-card stack">
-          <h4>{{ $t('チーム順位優先度設定') }}</h4>
-          <p class="muted small">
-            {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
-          </p>
-          <RankingPriorityEditor
-            v-model="tournamentTeamRankingForm.order"
-            :title="$t('チーム順位優先度設定')"
-            :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
-            :options="teamRankingPriorityOptions"
-            :disabled="isLoading || isSavingTournamentTeamRanking"
-            :min-active="1"
-            :active-title="$t('使用する基準')"
-            :inactive-title="$t('不使用')"
-            :inactive-empty-text="$t('不使用の指標はありません。')"
-            :active-action-label="$t('除外')"
-          />
-          <div class="row notice-actions">
-            <Button
-              size="sm"
+        <article
+          class="overview-setting-card overview-setting-card--collapsible ranking-priority-card stack"
+        >
+          <button
+            type="button"
+            class="overview-collapse-trigger"
+            :aria-expanded="showTournamentTeamRankingSettings ? 'true' : 'false'"
+            @click="showTournamentTeamRankingSettings = !showTournamentTeamRankingSettings"
+          >
+            <span class="overview-collapse-icon" aria-hidden="true">{{
+              showTournamentTeamRankingSettings ? '−' : '+'
+            }}</span>
+            <span class="overview-collapse-title">{{ $t('チーム順位優先度設定') }}</span>
+          </button>
+          <div v-if="showTournamentTeamRankingSettings" class="stack">
+            <p class="muted small">
+              {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
+            </p>
+            <RankingPriorityEditor
+              v-model="tournamentTeamRankingForm.order"
+              :title="$t('チーム順位優先度設定')"
+              :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+              :options="teamRankingPriorityOptions"
               :disabled="isLoading || isSavingTournamentTeamRanking"
-              @click="saveTournamentTeamRankingSettings"
-            >
-              {{
-                isSavingTournamentTeamRanking
-                  ? $t('更新中...')
-                  : $t('チーム順位優先度を保存')
-              }}
-            </Button>
-            <span v-if="tournamentTeamRankingSaved" class="muted small">{{
-              $t('更新しました。')
-            }}</span>
+              :min-active="1"
+              :active-title="$t('使用する基準')"
+              :inactive-title="$t('不使用')"
+              :inactive-empty-text="$t('不使用の指標はありません。')"
+              :active-action-label="$t('除外')"
+            />
+            <div class="row notice-actions">
+              <Button
+                size="sm"
+                :disabled="isLoading || isSavingTournamentTeamRanking"
+                @click="saveTournamentTeamRankingSettings"
+              >
+                {{
+                  isSavingTournamentTeamRanking
+                    ? $t('更新中...')
+                    : $t('チーム順位優先度を保存')
+                }}
+              </Button>
+              <span v-if="tournamentTeamRankingSaved" class="muted small">{{
+                $t('更新しました。')
+              }}</span>
+            </div>
+            <p v-if="tournamentTeamRankingSaveError" class="error small">
+              {{ tournamentTeamRankingSaveError }}
+            </p>
           </div>
-          <p v-if="tournamentTeamRankingSaveError" class="error small">
-            {{ tournamentTeamRankingSaveError }}
-          </p>
         </article>
 
-        <article class="overview-setting-card ranking-priority-card stack">
-          <h4>{{ $t('ジャッジ順位優先度設定') }}</h4>
-          <p class="muted small">
-            {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
-          </p>
-          <RankingPriorityEditor
-            v-model="tournamentAdjudicatorRankingForm.order"
-            :title="$t('ジャッジ順位優先度設定')"
-            :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
-            :options="adjudicatorRankingPriorityOptions"
-            :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
-            :min-active="1"
-            :active-title="$t('使用する基準')"
-            :inactive-title="$t('不使用')"
-            :inactive-empty-text="$t('不使用の指標はありません。')"
-            :active-action-label="$t('除外')"
-          />
-          <div class="row notice-actions">
-            <Button
-              size="sm"
-              :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
-              @click="saveTournamentAdjudicatorRankingSettings"
-            >
-              {{
-                isSavingTournamentAdjudicatorRanking
-                  ? $t('更新中...')
-                  : $t('ジャッジ順位優先度を保存')
-              }}
-            </Button>
-            <span v-if="tournamentAdjudicatorRankingSaved" class="muted small">{{
-              $t('更新しました。')
+        <article
+          class="overview-setting-card overview-setting-card--collapsible ranking-priority-card stack"
+        >
+          <button
+            type="button"
+            class="overview-collapse-trigger"
+            :aria-expanded="showTournamentAdjudicatorRankingSettings ? 'true' : 'false'"
+            @click="
+              showTournamentAdjudicatorRankingSettings = !showTournamentAdjudicatorRankingSettings
+            "
+          >
+            <span class="overview-collapse-icon" aria-hidden="true">{{
+              showTournamentAdjudicatorRankingSettings ? '−' : '+'
             }}</span>
+            <span class="overview-collapse-title">{{ $t('ジャッジ順位優先度設定') }}</span>
+          </button>
+          <div v-if="showTournamentAdjudicatorRankingSettings" class="stack">
+            <p class="muted small">
+              {{ $t('順位が同点のときにどの指標を先に比較するかを決めます。') }}
+            </p>
+            <RankingPriorityEditor
+              v-model="tournamentAdjudicatorRankingForm.order"
+              :title="$t('ジャッジ順位優先度設定')"
+              :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+              :options="adjudicatorRankingPriorityOptions"
+              :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
+              :min-active="1"
+              :active-title="$t('使用する基準')"
+              :inactive-title="$t('不使用')"
+              :inactive-empty-text="$t('不使用の指標はありません。')"
+              :active-action-label="$t('除外')"
+            />
+            <div class="row notice-actions">
+              <Button
+                size="sm"
+                :disabled="isLoading || isSavingTournamentAdjudicatorRanking"
+                @click="saveTournamentAdjudicatorRankingSettings"
+              >
+                {{
+                  isSavingTournamentAdjudicatorRanking
+                    ? $t('更新中...')
+                    : $t('ジャッジ順位優先度を保存')
+                }}
+              </Button>
+              <span v-if="tournamentAdjudicatorRankingSaved" class="muted small">{{
+                $t('更新しました。')
+              }}</span>
+            </div>
+            <p v-if="tournamentAdjudicatorRankingSaveError" class="error small">
+              {{ tournamentAdjudicatorRankingSaveError }}
+            </p>
           </div>
-          <p v-if="tournamentAdjudicatorRankingSaveError" class="error small">
-            {{ tournamentAdjudicatorRankingSaveError }}
-          </p>
         </article>
       </div>
 
@@ -222,7 +266,12 @@
           <h4>{{ $t('新規ラウンド作成') }}</h4>
         </div>
         <form class="grid setup-round-form" @submit.prevent="createRoundFromSetup">
-          <Field :label="$t('ラウンド番号')" required v-slot="{ id, describedBy }">
+          <Field
+            class="setup-round-number-field"
+            :label="$t('ラウンド番号')"
+            required
+            v-slot="{ id, describedBy }"
+          >
             <input
               v-model.number="setupRoundForm.round"
               :id="id"
@@ -231,7 +280,7 @@
               min="1"
             />
           </Field>
-          <Field :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+          <Field class="setup-round-name-field" :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
             <input
               v-model="setupRoundForm.name"
               :id="id"
@@ -247,7 +296,7 @@
               :disabled="isLoading"
               @click="showRoundDefaultsModal = true"
             >
-              {{ $t('ラウンドデフォルト設定') }}
+              {{ $t('デフォルト設定') }}
             </Button>
           </div>
         </form>
@@ -1467,7 +1516,7 @@
     >
       <div class="modal card stack entity-edit-modal" role="dialog" aria-modal="true">
         <div class="row">
-          <strong>{{ $t('ラウンドデフォルト設定') }}</strong>
+          <strong>{{ $t('デフォルト設定') }}</strong>
           <Button variant="ghost" size="sm" @click="showRoundDefaultsModal = false">{{
             $t('閉じる')
           }}</Button>
@@ -1535,7 +1584,7 @@
         <h4>{{ $t('ラウンド削除') }}</h4>
         <p class="muted">
           {{
-            $t('ラウンド {round} を削除しますか？', {
+            $t('{round} を削除しますか？', {
               round:
                 setupRoundDeleteTarget.name ||
                 $t('ラウンド {round}', { round: setupRoundDeleteTarget.round }),
@@ -1763,6 +1812,9 @@ const tournamentTeamRankingSaved = ref(false)
 const isSavingTournamentAdjudicatorRanking = ref(false)
 const tournamentAdjudicatorRankingSaveError = ref('')
 const tournamentAdjudicatorRankingSaved = ref(false)
+const showTournamentBreakSettings = ref(false)
+const showTournamentTeamRankingSettings = ref(false)
+const showTournamentAdjudicatorRankingSettings = ref(false)
 let tournamentAutosaveTimer: number | null = null
 let tournamentAutosaveStatusTimer: number | null = null
 let noticeSavedTimer: number | null = null
@@ -3960,6 +4012,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
   height: 100%;
 }
 
+.overview-setting-card--collapsible {
+  min-height: 0;
+  height: auto;
+}
+
 .toggle-setting-card {
   gap: var(--space-2);
 }
@@ -4021,6 +4078,44 @@ function onGlobalKeydown(event: KeyboardEvent) {
   font-weight: 700;
 }
 
+.overview-collapse-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+
+.overview-collapse-icon {
+  width: 1.1em;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.overview-collapse-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.overview-collapse-head {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.overview-collapse-note {
+  margin: 0;
+}
+
 .tournament-name-row {
   align-items: center;
   gap: var(--space-2);
@@ -4043,11 +4138,23 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 .setup-round-form {
   align-items: end;
+  grid-template-columns: minmax(132px, 180px) minmax(0, 1fr) auto;
+}
+
+.setup-round-number-field,
+.setup-round-name-field {
+  min-width: 0;
+}
+
+.setup-round-number-field input,
+.setup-round-name-field input {
+  width: 100%;
 }
 
 .create-actions {
   gap: var(--space-2);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
 }
 
 .setup-round-list {
@@ -4628,6 +4735,15 @@ textarea {
 }
 
 @media (max-width: 960px) {
+  .setup-round-form {
+    grid-template-columns: 1fr;
+  }
+
+  .create-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .setup-round-status-row {
     align-items: flex-start;
   }
