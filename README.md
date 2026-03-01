@@ -78,8 +78,8 @@ UTab は「集計・配席・公開」を中心に、運営に必要な最小機
 ### Phase 5 追加（T12: 内容/表現の分離入力・修正）
 
 - 参加者バロット入力で前回提出をプリフィル
-  - 同一提出者・同一ラウンド・同一対戦の既存 ballot がある場合、`winner/comment/speakerIds/scores/matter/manner/best/poi` を読み込み
-  - Matter/Manner 入力ラウンドでも再提出時の修正コストを削減
+  - 同一端末・同一提出者・同一ラウンド・同一対戦で直前送信した ballot の `winner/comment/speakerIds/scores/matter/manner/best/poi` をローカル保存し、再訪時に読み込み
+  - サーバーから参加者向けに既存提出内容を返さず、提出内容の漏えいを防止
 - 管理画面の提出編集を拡張
   - `AdminTournamentSubmissions` に ballot 用のフォーム編集（`フォーム` / `JSON` 切替）を追加
   - Matter/Manner 分離入力と合計スコア入力を切替可能
@@ -255,7 +255,7 @@ pnpm build
 pnpm -C packages/server start
 ```
 
-#### 4. Phase 8 セキュリティ移行の実行（必須）
+#### 4. Phase 8 セキュリティ移行
 
 既存データに対して、以下を一括で移行します。
 
@@ -263,9 +263,7 @@ pnpm -C packages/server start
 - 旧形式 `auth.access.password` を `passwordHash` に変換し、平文パスワードを削除
 - `User.tournaments` と `Tournament.createdBy` から `TournamentMember` をバックフィル
 
-```bash
-pnpm -C packages/server migrate-security-phase8
-```
+この移行はサーバー起動時に自動で実行されます。
 
 #### 5. スタイルの再seed（既存スタイルを更新したい場合）
 
@@ -330,15 +328,12 @@ pnpm -C packages/web typecheck:vue
 pnpm -C packages/web typecheck:ci
 ```
 
-### 管理者UI移行フラグ（Web）
+### 管理者UIフラグ（Web）
 
 `.env` で以下を切り替えられます。
 
-- `VITE_ADMIN_UI_V2=true|false`
-  - `true`: 新導線（`/setup` `/operations` `/reports`）を主導線化
-  - `false`: 旧導線（`/home` `/rounds` `/compiled`）を主導線化
-- `VITE_ADMIN_UI_LEGACY_READONLY=true|false`
-  - `true`: 旧主導線を読み取り専用表示にし、新導線への移行を促す
+- `VITE_ADMIN_REPORTS_UX_V3=true|false`
+  - `true`: レポート画面の新UIセクションを有効化
 
 ### デバッグログ
 

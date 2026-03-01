@@ -12,7 +12,6 @@
     "test": "node ../../scripts/ensure-node.cjs && vitest run",
     "lint": "eslint src --ext .ts",
     "reset-styles": "tsx src/scripts/reset-styles.ts",
-    "migrate-security-phase8": "tsx src/scripts/migrate-security-phase8.ts",
     "seed-mock-two-matches": "tsx src/scripts/seed-mock-two-matches.ts",
     "seed-organizer-demo": "tsx src/scripts/seed-organizer-demo.ts",
     "create-superuser": "tsx src/scripts/create-superuser.ts"

@@ -12,12 +12,12 @@ export interface BallotSubmissionPayload {
   teamAId: string
   teamBId: string
   winnerId?: string
+  draw?: boolean
   speakerIdsA?: string[]
   speakerIdsB?: string[]
   scoresA: number[]
   scoresB: number[]
   comment?: string
-  role?: string
   submittedEntityId?: string
   matterA?: number[]
   mannerA?: number[]
@@ -35,7 +35,6 @@ export interface FeedbackSubmissionPayload {
   adjudicatorId: string
   score: number
   comment?: string
-  role?: string
   submittedEntityId?: string
   matter?: number
   manner?: number
@@ -149,6 +148,10 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     error.value = null
   }
 
+  function clearError() {
+    error.value = null
+  }
+
   async function submitBallot(payload: BallotSubmissionPayload) {
     beginRequest()
     error.value = null
@@ -224,6 +227,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     fetchSubmissions,
     fetchParticipantSubmissions,
     clearSubmissions,
+    clearError,
     submitBallot,
     submitFeedback,
     updateSubmission,

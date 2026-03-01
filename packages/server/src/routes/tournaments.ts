@@ -9,6 +9,7 @@ import {
   listTournaments,
   updateTournament,
 } from '../controllers/tournaments.js'
+import { exportTournamentBundle } from '../controllers/tournament-export.js'
 import { addTournamentUser, removeTournamentUser } from '../controllers/tournament-users.js'
 import {
   requireOrganizer,
@@ -73,6 +74,12 @@ router.get(
   requireTournamentView('id'),
   validateRequest(idParamSchema),
   getTournament
+)
+router.get(
+  '/:id/export',
+  requireTournamentAdmin('id'),
+  validateRequest(idParamSchema),
+  exportTournamentBundle
 )
 router.post('/', requireOrganizer, validateRequest(createSchema), createTournament)
 router.patch('/:id', requireTournamentAdmin('id'), validateRequest(updateSchema), updateTournament)

@@ -2,6 +2,7 @@ export type CompiledSnapshotOption = {
   compiledId: string
   rounds: number[]
   createdAt?: string
+  snapshotName?: string
 }
 
 function isValidDate(date: Date): boolean {
@@ -30,23 +31,8 @@ function normalizeRounds(rounds: number[]): number[] {
   ).sort((left, right) => left - right)
 }
 
-export function formatCompiledSnapshotOptionLabel(
-  option: Pick<CompiledSnapshotOption, 'rounds' | 'createdAt'>,
-  locale = 'ja-JP'
-): string {
-  const rounds = normalizeRounds(option.rounds)
-  const roundsText =
-    rounds.length > 0 ? rounds.map((roundNumber) => `Round ${roundNumber}`).join(', ') : 'All Rounds'
-  const timestamp = formatCompiledSnapshotTimestamp(option.createdAt, locale)
-  return `${roundsText} (${timestamp})`
-}
-
-export function resolvePreviousCompiledId(
-  options: CompiledSnapshotOption[],
-  currentCompiledId?: string
-): string {
-  if (options.length === 0) return ''
-  const sorted = options
+function sortByRecency(options: CompiledSnapshotOption[]): CompiledSnapshotOption[] {
+  return options
     .map((option, index) => ({
       ...option,
       index,
@@ -61,6 +47,45 @@ export function resolvePreviousCompiledId(
       if (leftValid !== rightValid) return leftValid ? -1 : 1
       return left.index - right.index
     })
+    .map(({ timestamp: _timestamp, index: _index, ...option }) => option)
+}
+
+export function formatCompiledSnapshotOptionLabel(
+  option: Pick<CompiledSnapshotOption, 'rounds' | 'createdAt' | 'snapshotName'>,
+  locale = 'ja-JP'
+): string {
+  const snapshotName = String(option.snapshotName ?? '').trim()
+  if (snapshotName.length > 0) {
+    const timestamp = formatCompiledSnapshotTimestamp(option.createdAt, locale)
+    return `${snapshotName} (${timestamp})`
+  }
+  const rounds = normalizeRounds(option.rounds)
+  const roundsText =
+    rounds.length > 0 ? rounds.map((roundNumber) => `Round ${roundNumber}`).join(', ') : 'All Rounds'
+  const timestamp = formatCompiledSnapshotTimestamp(option.createdAt, locale)
+  return `${roundsText} (${timestamp})`
+}
+
+export function resolveLatestCompiledIdContainingRound(
+  options: CompiledSnapshotOption[],
+  targetRound?: number | null
+): string {
+  if (options.length === 0) return ''
+  const sorted = sortByRecency(options)
+  const normalizedTarget = Number(targetRound)
+  if (Number.isInteger(normalizedTarget) && normalizedTarget >= 1) {
+    const matched = sorted.find((option) => normalizeRounds(option.rounds).includes(normalizedTarget))
+    if (matched) return matched.compiledId
+  }
+  return sorted[0]?.compiledId ?? ''
+}
+
+export function resolvePreviousCompiledId(
+  options: CompiledSnapshotOption[],
+  currentCompiledId?: string
+): string {
+  if (options.length === 0) return ''
+  const sorted = sortByRecency(options)
   const currentId = String(currentCompiledId ?? '').trim()
   if (!currentId) return sorted[1]?.compiledId ?? ''
   const currentIndex = sorted.findIndex((option) => option.compiledId === currentId)

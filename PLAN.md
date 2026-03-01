@@ -904,11 +904,14 @@
 ### セキュリティロードマップ進捗（2026-02-08）
 
 - Phase 8（移行と回帰テスト）を実装済み
-- `packages/server/src/scripts/migrate-security-phase8.ts` を追加
+- 起動時データメンテナンスを実装（サービス化）
+  - `packages/server/src/services/startup-data-maintenance.service.ts`
+  - `packages/server/src/services/tournament-access-maintenance.service.ts`
+  - `packages/server/src/services/tournament-membership-maintenance.service.ts`
   - パスワード未設定大会の `auth.access.required` 補正（`false`）
   - 旧平文 `auth.access.password` の `passwordHash` 化
   - `User.tournaments` / `Tournament.createdBy` から `TournamentMember` をバックフィル
-- 実行コマンド: `pnpm -C packages/server migrate-security-phase8`
+- サーバー起動時に自動実行
 - 統合テストに Phase 8 回帰ケースを追加
 
 ### 移行ドキュメント

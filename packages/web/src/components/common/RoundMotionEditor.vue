@@ -107,7 +107,7 @@ async function saveMotion() {
 }
 
 .round-motion-foot {
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -118,6 +118,8 @@ async function saveMotion() {
 }
 
 .round-motion-status {
+  width: 100%;
+  justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
 }

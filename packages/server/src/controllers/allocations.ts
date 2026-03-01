@@ -21,6 +21,7 @@ import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { buildCompiledPayload } from './compiled.js'
+import { DEFAULT_COMPILE_OPTIONS, type CompileOptions } from '../types/compiled-options.js'
 import {
   buildDetailsForRounds,
   buildIdMaps,
@@ -48,6 +49,22 @@ type BreakMatchMeta = {
   id: number
   gov: BreakParticipant
   opp: BreakParticipant
+}
+
+const BREAK_WINNER_COMPILE_OPTIONS: CompileOptions = {
+  ...DEFAULT_COMPILE_OPTIONS,
+  ranking_priority: {
+    ...DEFAULT_COMPILE_OPTIONS.ranking_priority,
+    order: [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+  },
+  duplicate_normalization: {
+    ...DEFAULT_COMPILE_OPTIONS.duplicate_normalization,
+    // Break winner resolution should be resilient when duplicate submissions exist.
+    merge_policy: 'latest',
+  },
+  missing_data_policy: 'exclude',
+  include_labels: ['teams'],
+  diff_baseline: { mode: 'latest' },
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -260,10 +277,20 @@ async function buildRoundTeamStats(
   tournamentId: string,
   round: number
 ): Promise<Map<string, { win: number; sum: number }>> {
-  const submissionsPayload = await buildCompiledPayload(tournamentId, 'submissions', [round])
+  const submissionsPayload = await buildCompiledPayload(
+    tournamentId,
+    'submissions',
+    [round],
+    BREAK_WINNER_COMPILE_OPTIONS
+  )
   let stats = buildRoundTeamStatsMap(submissionsPayload.payload, round)
   if (stats.size > 0) return stats
-  const rawPayload = await buildCompiledPayload(tournamentId, 'raw', [round])
+  const rawPayload = await buildCompiledPayload(
+    tournamentId,
+    'raw',
+    [round],
+    BREAK_WINNER_COMPILE_OPTIONS
+  )
   stats = buildRoundTeamStatsMap(rawPayload.payload, round)
   return stats
 }

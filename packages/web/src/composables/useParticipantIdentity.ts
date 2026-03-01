@@ -2,14 +2,14 @@ import { computed, onMounted, ref, watch, type Ref } from 'vue'
 
 export function useParticipantIdentity(
   tournamentId: Ref<string>,
-  role: Ref<string>,
+  mode: Ref<string>,
   suffix?: string
 ) {
   const identityId = ref('')
 
   const storageKey = computed(() => {
-    if (!tournamentId.value || !role.value) return ''
-    const base = `utab:participant:${tournamentId.value}:${role.value}`
+    if (!tournamentId.value || !mode.value) return ''
+    const base = `utab:participant:${tournamentId.value}:${mode.value}`
     if (!suffix) return base
     return `${base}:${suffix}`
   })

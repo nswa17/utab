@@ -27,7 +27,7 @@ function collectSides() {
   const ids = new Set<string>()
   props.results.forEach((result) => {
     result.details?.forEach((detail: any) => {
-      if (Number(detail.r) !== props.round) return
+      if (detail.r !== props.round) return
       ids.add(String(detail.id))
       if (detail.side === 'gov' && detail.win === 1) {
         counts.gov += 1
@@ -71,6 +71,7 @@ function render() {
   }
   hasData.value = true
   const roundLabel = props.roundName ?? t('ラウンド {round}', { round: props.round })
+  const titleStyle = { fontSize: '1.2rem', fontWeight: '700' as const }
   const styles = getComputedStyle(document.documentElement)
   const primary = styles.getPropertyValue('--color-primary').trim() || '#2563eb'
   const warn = styles.getPropertyValue('--color-warn').trim() || '#b45309'
@@ -81,7 +82,11 @@ function render() {
 
   Highcharts.chart(container.value, {
     chart: { type: 'pie', backgroundColor: 'transparent' },
-    title: { text: t('勝者（{round}）', { round: roundLabel }) },
+    title: {
+      text: t('勝者（{round}）', { round: roundLabel }),
+      align: 'center',
+      style: titleStyle,
+    },
     plotOptions: {
       pie: {
         allowPointSelect: true,

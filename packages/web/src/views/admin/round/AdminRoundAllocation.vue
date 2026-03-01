@@ -9,11 +9,6 @@
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="allocationImportInfo" class="muted import-info">{{ allocationImportInfo }}</p>
 
-    <div class="card stack" v-if="formError || draws.error">
-      <p v-if="formError" class="error">{{ formError }}</p>
-      <p v-if="draws.error" class="error">{{ draws.error }}</p>
-    </div>
-
     <div class="card stack" v-if="unsubmittedEnabled && !isEmbeddedRoute">
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
@@ -52,21 +47,57 @@
     <section :class="['stack', 'allocation-board', { card: !isEmbeddedRoute }]">
       <LoadingState v-if="sectionLoading" />
       <template v-else>
+        <section v-if="isEmbeddedRoute" class="card soft stack embedded-reference-card">
+          <h5>{{ $t('参照集計結果') }}</h5>
+          <p class="muted small">
+            {{
+              $t(
+                '参照集計結果を選ぶと、チーム/ジャッジの順位や平均を配置表に表示できます。近い実力同士の対戦確認や割り当て調整に使ってください。'
+              )
+            }}
+          </p>
+          <CompiledSnapshotSelect
+            v-if="detailSnapshotSelectOptions.length > 0"
+            v-model="selectedDetailSnapshotId"
+            class="embedded-detail-snapshot-select"
+            :label="$t('参照集計結果')"
+            :options="detailSnapshotSelectOptions"
+            :placeholder="$t('未選択')"
+          />
+          <p v-else class="muted small">
+            {{ $t('参照できる集計結果がありません。未選択のまま配置を確認できます。') }}
+          </p>
+        </section>
+
         <section class="stack board-block">
           <div class="row board-head">
-            <h4>{{ $t('対戦表') }}</h4>
+            <div class="row board-title-row">
+              <h4>{{ isEmbeddedRoute ? $t('配置') : $t('対戦表作成') }}</h4>
+              <div class="warning-legend" role="status" aria-live="polite">
+                <span class="warning-legend-title">{{ $t('警告凡例') }}</span>
+                <span class="warning-legend-item warning-legend-item--critical">
+                  {{ warningSeverityIcon('critical') }}
+                  {{ $t('重大') }}
+                </span>
+                <span class="warning-legend-item warning-legend-item--warn">
+                  {{ warningSeverityIcon('warn') }}
+                  {{ $t('注意') }}
+                </span>
+                <span class="warning-legend-item warning-legend-item--info">
+                  {{ warningSeverityIcon('info') }}
+                  {{ $t('情報') }}
+                </span>
+              </div>
+            </div>
             <CompiledSnapshotSelect
-              v-if="detailSnapshotSelectOptions.length > 0"
+              v-if="detailSnapshotSelectOptions.length > 0 && !isEmbeddedRoute"
               v-model="selectedDetailSnapshotId"
               class="detail-snapshot-select"
               :label="$t('参照集計結果')"
               :options="detailSnapshotSelectOptions"
+              :placeholder="$t('未選択')"
             />
-            <span v-else class="muted small">{{ $t('参照可能な集計結果がありません。') }}</span>
           </div>
-          <p v-if="detailSnapshotLabel" class="muted tiny">
-            {{ $t('警告と詳細は次の集計を参照: {label}', { label: detailSnapshotLabel }) }}
-          </p>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <div v-else class="allocation-table-wrap">
             <table class="allocation-table">
@@ -86,7 +117,22 @@
               <tbody>
                 <template v-for="(row, index) in allocation" :key="`row-${index}`">
                   <tr>
-                    <td class="match-col">{{ index + 1 }}</td>
+                    <td
+                      class="match-col match-col-draggable"
+                      :class="{
+                        'row-drag-source': rowDragSourceIndex === index,
+                        'row-drag-target': rowDragTargetIndex === index,
+                      }"
+                      :title="$t('行番号をドラッグして並び替え')"
+                      :draggable="!locked"
+                      @dragstart="onRowDragStart(index, $event)"
+                      @dragover.prevent="onRowDragOver(index, $event)"
+                      @dragleave="onRowDragLeave(index)"
+                      @drop.prevent="onRowDrop(index, $event)"
+                      @dragend="onRowDragEnd"
+                    >
+                      {{ index + 1 }}
+                    </td>
                     <td class="venue-col">
                       <div
                         class="drop-zone compact single-line"
@@ -96,9 +142,14 @@
                       >
                         <span
                           v-if="row.venue"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('venue', row.venue),
+                          ]"
                           :title="venueName(row.venue)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('venue', row.venue)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('venue', row.venue)"
@@ -117,9 +168,14 @@
                       >
                         <span
                           v-if="row.teams.gov"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('team', row.teams.gov),
+                          ]"
                           :title="teamName(row.teams.gov)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.gov)"
@@ -138,9 +194,14 @@
                       >
                         <span
                           v-if="row.teams.opp"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('team', row.teams.opp),
+                          ]"
                           :title="teamName(row.teams.opp)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('team', row.teams.opp)"
@@ -152,7 +213,7 @@
                     </td>
                     <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact multi-line"
+                        class="drop-zone list compact multi-line allocation-drop-zone"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'chairs')"
@@ -160,9 +221,14 @@
                         <span
                           v-for="adjId in row.chairs"
                           :key="`chair-${index}-${adjId}`"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -176,7 +242,7 @@
                     </td>
                     <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact multi-line"
+                        class="drop-zone list compact multi-line allocation-drop-zone"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'panels')"
@@ -184,9 +250,14 @@
                         <span
                           v-for="adjId in row.panels"
                           :key="`panel-${index}-${adjId}`"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -200,7 +271,7 @@
                     </td>
                     <td class="adjudicator-col">
                       <div
-                        class="drop-zone list compact multi-line"
+                        class="drop-zone list compact multi-line allocation-drop-zone"
                         :class="{ active: dragKind === 'adjudicator' }"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'trainees')"
@@ -208,9 +279,14 @@
                         <span
                           v-for="adjId in row.trainees"
                           :key="`trainee-${index}-${adjId}`"
-                          class="pill draggable truncate-pill"
+                          :class="[
+                            'pill',
+                            'draggable',
+                            'truncate-pill',
+                            ...entityPillClasses('adjudicator', adjId),
+                          ]"
                           :title="adjudicatorName(adjId)"
-                          draggable="true"
+                          :draggable="!locked"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
                           @click.stop="selectDetail('adjudicator', adjId)"
@@ -223,24 +299,21 @@
                       </div>
                     </td>
                     <td class="note-col">
-                      <div v-if="rowWarnings(row).length > 0" class="warning-inline">
+                      <div
+                        v-if="rowWarningState(index).warnings.length > 0"
+                        class="warning-inline"
+                        @mouseenter="openWarningPopover(index, $event)"
+                        @mouseleave="scheduleCloseWarningPopover"
+                        @focusin="openWarningPopover(index, $event)"
+                        @focusout="scheduleCloseWarningPopover"
+                      >
                         <span
                           class="warning-summary"
-                          :class="warningSummaryClass(rowWarnings(row))"
+                          :class="warningSummaryClass(rowWarningState(index).counts)"
+                          tabindex="0"
                         >
-                          {{ warningSummary(rowWarnings(row)) }}
+                          {{ warningSummary(rowWarningState(index).counts) }}
                         </span>
-                        <div class="warning-popover">
-                          <div
-                            v-for="(warning, warningIndex) in rowWarnings(row)"
-                            :key="`${warning.category}-${warningIndex}`"
-                            class="warning-item"
-                            :class="`warning-item--${warning.category}`"
-                          >
-                            <span class="warning-kind">{{ warningLabel(warning.category) }}</span>
-                            <span>{{ warning.message }}</span>
-                          </div>
-                        </div>
                       </div>
                       <span v-else class="muted small">{{ $t('なし') }}</span>
                     </td>
@@ -263,12 +336,7 @@
           </div>
 
           <div class="row add-row-wrap">
-            <button
-              type="button"
-              class="add-row-button"
-              :disabled="locked"
-              @click="addRow"
-            >
+            <button type="button" class="add-row-button" :disabled="locked" @click="addRow">
               <span class="plus" aria-hidden="true">+</span>
               <span>{{ $t('行追加') }}</span>
             </button>
@@ -279,9 +347,39 @@
           <h4>{{ $t('未配置リスト') }}</h4>
           <div class="grid waiting-grid">
             <div class="stack">
+              <span class="muted">{{ $t('会場') }} ({{ unassignedVenues.length }})</span>
+              <div
+                class="drop-zone list compact waiting-drop-zone"
+                :class="{ active: dragKind === 'venue' }"
+                @dragover.prevent
+                @drop="dropToWaiting('venue')"
+              >
+                <span v-if="unassignedVenues.length === 0" class="muted small">
+                  {{ $t('なし') }}
+                </span>
+                <span
+                  v-for="venue in unassignedVenues"
+                  :key="venue._id"
+                  :class="[
+                    'pill',
+                    'draggable',
+                    'truncate-pill',
+                    ...entityPillClasses('venue', venue._id),
+                  ]"
+                  :title="venue.name"
+                  :draggable="!locked"
+                  @dragstart="onDragStart('venue', venue._id)"
+                  @dragend="onDragEnd"
+                  @click.stop="selectDetail('venue', venue._id)"
+                >
+                  {{ venue.name }}
+                </span>
+              </div>
+            </div>
+            <div class="stack">
               <span class="muted">{{ $t('チーム') }} ({{ unassignedTeams.length }})</span>
               <div
-                class="drop-zone list compact multi-line"
+                class="drop-zone list compact waiting-drop-zone"
                 :class="{ active: dragKind === 'team' }"
                 @dragover.prevent
                 @drop="dropToWaiting('team')"
@@ -292,9 +390,14 @@
                 <span
                   v-for="team in unassignedTeams"
                   :key="team._id"
-                  class="pill draggable truncate-pill"
+                  :class="[
+                    'pill',
+                    'draggable',
+                    'truncate-pill',
+                    ...entityPillClasses('team', team._id),
+                  ]"
                   :title="team.name"
-                  draggable="true"
+                  :draggable="!locked"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('team', team._id)"
@@ -306,7 +409,7 @@
             <div class="stack">
               <span class="muted">{{ $t('ジャッジ') }} ({{ unassignedAdjudicators.length }})</span>
               <div
-                class="drop-zone list compact multi-line"
+                class="drop-zone list compact waiting-drop-zone"
                 :class="{ active: dragKind === 'adjudicator' }"
                 @dragover.prevent
                 @drop="dropToWaiting('adjudicator')"
@@ -317,9 +420,14 @@
                 <span
                   v-for="adj in unassignedAdjudicators"
                   :key="adj._id"
-                  class="pill draggable truncate-pill"
+                  :class="[
+                    'pill',
+                    'draggable',
+                    'truncate-pill',
+                    ...entityPillClasses('adjudicator', adj._id),
+                  ]"
                   :title="adj.name"
-                  draggable="true"
+                  :draggable="!locked"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
                   @click.stop="selectDetail('adjudicator', adj._id)"
@@ -328,39 +436,7 @@
                 </span>
               </div>
             </div>
-            <div class="stack">
-              <span class="muted">{{ $t('会場') }} ({{ unassignedVenues.length }})</span>
-              <div
-                class="drop-zone list compact multi-line"
-                :class="{ active: dragKind === 'venue' }"
-                @dragover.prevent
-                @drop="dropToWaiting('venue')"
-              >
-                <span v-if="unassignedVenues.length === 0" class="muted small">
-                  {{ $t('なし') }}
-                </span>
-                <span
-                  v-for="venue in unassignedVenues"
-                  :key="venue._id"
-                  class="pill draggable truncate-pill"
-                  :title="venue.name"
-                  draggable="true"
-                  @dragstart="onDragStart('venue', venue._id)"
-                  @dragend="onDragEnd"
-                  @click.stop="selectDetail('venue', venue._id)"
-                >
-                  {{ venue.name }}
-                </span>
-              </div>
-            </div>
           </div>
-        </section>
-
-        <section class="stack board-block">
-          <div class="row preview-head">
-            <h4>{{ $t('対戦表プレビュー') }}</h4>
-          </div>
-          <DrawPreviewTable :rows="previewRows" :gov-label="govLabel" :opp-label="oppLabel" />
         </section>
 
         <div class="row allocation-toolbar">
@@ -368,8 +444,8 @@
             <Button
               variant="secondary"
               size="sm"
-              @click="showAutoGenerateModal = true"
-              :disabled="isLoading || requestLoading"
+              @click="openAutoGenerateModal"
+              :disabled="isLoading || requestLoading || locked"
             >
               {{ $t('自動生成') }}
             </Button>
@@ -389,12 +465,14 @@
             >
               {{ $t('クリア') }}
             </Button>
-            <Button size="sm" @click="save" :disabled="isLoading || locked">{{ $t('保存') }}</Button>
+            <Button size="sm" @click="save" :disabled="isLoading || locked || !allocationChanged">{{
+              $t('保存')
+            }}</Button>
             <Button
               variant="secondary"
               size="sm"
               @click="revertAllocation"
-              :disabled="!allocationChanged"
+              :disabled="locked || !allocationChanged"
             >
               {{ $t('元に戻す') }}
             </Button>
@@ -406,13 +484,74 @@
               </span>
             </label>
             <span class="action-spacer"></span>
-            <Button variant="danger" size="sm" @click="openDeleteDrawModal" :disabled="!currentDraw">
+            <Button
+              variant="danger"
+              size="sm"
+              @click="openDeleteDrawModal"
+              :disabled="!currentDraw"
+            >
               {{ $t('削除') }}
             </Button>
           </div>
         </div>
+
+        <section class="stack board-block">
+          <div class="row preview-head">
+            <h4>{{ $t('対戦表プレビュー') }}</h4>
+          </div>
+          <DrawPreviewTable
+            ref="drawPreviewTableRef"
+            :rows="previewRows"
+            :gov-label="govLabel"
+            :opp-label="oppLabel"
+          />
+          <div class="stack preview-download-stack">
+            <div class="row section-download-row">
+              <Button
+                variant="secondary"
+                class="section-download-button"
+                :disabled="previewRows.length === 0"
+                @click="downloadDrawPreviewCsv"
+              >
+                {{ $t('CSVダウンロード') }}
+              </Button>
+            </div>
+          </div>
+        </section>
       </template>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="activeWarningState"
+        class="warning-popover warning-popover--floating"
+        :style="warningPopoverStyle"
+        tabindex="-1"
+        @mouseenter="clearWarningPopoverTimer"
+        @mouseleave="scheduleCloseWarningPopover"
+        @focusin="clearWarningPopoverTimer"
+        @focusout="scheduleCloseWarningPopover"
+      >
+        <div
+          v-for="(warning, warningIndex) in activeWarningState.warnings"
+          :key="`${warning.code}-${warningIndex}`"
+          tabindex="0"
+          class="warning-item"
+          :class="`warning-item--${warning.severity}`"
+          @mouseenter="setFocusedWarning(warning)"
+          @mouseleave="clearFocusedWarning"
+          @focusin="setFocusedWarning(warning)"
+          @focusout="clearFocusedWarning"
+        >
+          <span class="warning-severity" :class="`warning-severity--${warning.severity}`">
+            {{ warningSeverityIcon(warning.severity) }}
+            {{ warningSeverityLabel(warning.severity) }}
+          </span>
+          <span class="warning-kind">{{ warningLabel(warning.category) }}</span>
+          <span>{{ warningMessage(warning) }}</span>
+        </div>
+      </div>
+    </Teleport>
 
     <ImportTextModal
       :open="showAllocationImportModal"
@@ -422,7 +561,7 @@
       :placeholder="$t('例: match,venue,gov,opp,chairs,panels,trainees')"
       :description="
         $t(
-          '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ管理で取り込み）。'
+          '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ準備で取り込み）。'
         )
       "
       :example="'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,,,Team D,,Judge D,'"
@@ -437,7 +576,7 @@
       v-if="showAutoGenerateModal"
       class="modal-backdrop"
       role="presentation"
-      @click.self="showAutoGenerateModal = false"
+      @click.self="closeAutoGenerateModal"
     >
       <section class="modal card stack auto-modal" role="dialog" aria-modal="true">
         <div class="row auto-generate-header">
@@ -454,38 +593,59 @@
               </span>
             </span>
           </div>
-          <Button variant="ghost" size="sm" @click="showAutoGenerateModal = false">
+          <Button variant="ghost" size="sm" @click="closeAutoGenerateModal">
             {{ $t('閉じる') }}
           </Button>
         </div>
         <div class="stack auto-generate-layout">
-          <section class="card soft stack auto-group">
+          <section class="card soft stack auto-group auto-group--basic">
             <h5 class="auto-group-title">{{ $t('基本設定') }}</h5>
-            <div class="grid">
-              <label class="stack">
+            <div class="auto-basic-grid">
+              <div class="stack auto-target-block">
                 <span class="option-title">
                   {{ $t('対象') }}
-                  <span class="help-tip" :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('全体/チーム/ジャッジ/会場のどこを生成するか選択します。')"
                     >?</span
                   >
                 </span>
-                <select v-model="requestScope">
-                  <option value="all">{{ $t('全体') }}</option>
-                  <option value="teams">{{ $t('チーム') }}</option>
-                  <option value="adjudicators">{{ $t('ジャッジ') }}</option>
-                  <option value="venues">{{ $t('会場') }}</option>
-                </select>
+                <div class="auto-scope-tabs" role="tablist" :aria-label="$t('対象')">
+                  <button
+                    v-for="option in requestScopeTabOptions"
+                    :key="option.value"
+                    type="button"
+                    class="auto-scope-tab"
+                    :class="{ active: requestScope === option.value }"
+                    role="tab"
+                    :aria-selected="requestScope === option.value"
+                    :disabled="option.disabled"
+                    @click="selectRequestScope(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
                 <p class="muted tiny option-help-text">{{ requestScopeDescription }}</p>
-              </label>
-              <CompiledSnapshotSelect
-                v-if="autoSnapshotSelectOptions.length > 0"
-                v-model="selectedAutoSnapshotId"
-                :label="$t('参照集計結果')"
-                :options="autoSnapshotSelectOptions"
-              />
-              <p v-else class="muted small">
-                {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
-              </p>
+                <p v-if="autoScopeRequiresExistingDraw" class="muted tiny option-help-text">
+                  {{
+                    $t(
+                      '既存のドローがないため、adjudicators/venues 生成には先にチーム割り当てが必要です。'
+                    )
+                  }}
+                </p>
+              </div>
+              <div class="stack auto-reference-block">
+                <CompiledSnapshotSelect
+                  v-if="autoSnapshotSelectOptions.length > 0"
+                  v-model="selectedAutoSnapshotId"
+                  :label="$t('参照集計結果')"
+                  :options="autoSnapshotSelectOptions"
+                  :placeholder="$t('未選択')"
+                />
+                <p v-else class="muted small">
+                  {{ $t('参照できる集計結果がありません。未選択のまま自動生成できます。') }}
+                </p>
+              </div>
             </div>
           </section>
 
@@ -495,7 +655,9 @@
               <label class="stack" v-if="scopeIncludesTeams">
                 <span class="option-title">
                   {{ $t('チームアルゴリズム') }}
-                  <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')">?</span>
+                  <span class="help-tip" :title="$t('標準は簡易、厳密は制約を強めて生成します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamAlgorithm">
                   <option value="standard">{{ $t('標準') }}</option>
@@ -508,7 +670,9 @@
               <label class="stack" v-if="scopeIncludesAdjudicators">
                 <span class="option-title">
                   {{ $t('ジャッジアルゴリズム') }}
-                  <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')">?</span>
+                  <span class="help-tip" :title="$t('標準または伝統的な割当方法を選択します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.adjudicatorAlgorithm">
                   <option value="standard">{{ $t('標準') }}</option>
@@ -520,7 +684,9 @@
                 <input v-model="autoOptions.shuffleVenue" type="checkbox" />
                 <span class="option-title">
                   {{ $t('会場シャッフル') }}
-                  <span class="help-tip" :title="$t('会場をランダムに割り当てる場合に有効にします。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('会場をランダムに割り当てる場合に有効にします。')"
                     >?</span
                   >
                 </span>
@@ -537,10 +703,16 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('チーム方式') }}
-                  <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')">?</span>
+                  <span class="help-tip" :title="$t('標準アルゴリズムで使用する並び替え方式です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamMethod">
-                  <option v-for="option in teamMethodOptions" :key="option.value" :value="option.value">
+                  <option
+                    v-for="option in teamMethodOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
                     {{ option.label }}
                   </option>
                 </select>
@@ -552,9 +724,17 @@
                   <span class="help-tip" :title="$t('適用する制約を複数選択できます。')">?</span>
                 </span>
                 <div class="checklist">
-                  <div v-for="option in teamFilterOptions" :key="option.value" class="stack checklist-option">
+                  <div
+                    v-for="option in teamFilterOptions"
+                    :key="option.value"
+                    class="stack checklist-option"
+                  >
                     <label class="row">
-                      <input v-model="autoOptions.teamFilters" type="checkbox" :value="option.value" />
+                      <input
+                        v-model="autoOptions.teamFilters"
+                        type="checkbox"
+                        :value="option.value"
+                      />
                       <span>{{ option.label }}</span>
                     </label>
                     <span class="muted tiny option-inline-help">{{ option.description }}</span>
@@ -566,7 +746,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('奇数ブラケット処理') }}
-                  <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')">?</span>
+                  <span class="help-tip" :title="$t('パワーペアの奇数ブラケット処理です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamPowerpairOddBracket">
                   <option
@@ -613,10 +795,15 @@
                 </select>
                 <p class="muted tiny option-help-text">{{ teamPowerpairConflictDescription }}</p>
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('機関衝突重み') }}
-                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')"
+                    >?</span
+                  >
                 </span>
                 <input
                   v-model.number="autoOptions.teamPowerpairConflictInstitutionWeight"
@@ -625,7 +812,10 @@
                   step="0.1"
                 />
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('過去対戦重み') }}
                   <span class="help-tip" :title="$t('過去対戦の再マッチ回避強度です。')">?</span>
@@ -637,7 +827,10 @@
                   step="0.1"
                 />
               </label>
-              <label class="stack" v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'">
+              <label
+                class="stack"
+                v-if="autoOptions.teamPowerpairAvoidConflicts === 'one_up_one_down'"
+              >
                 <span class="option-title">
                   {{ $t('最大スワップ試行') }}
                   <span class="help-tip" :title="$t('衝突回避のスワップ試行上限です。')">?</span>
@@ -650,7 +843,14 @@
                 />
               </label>
             </div>
-            <div class="grid" v-else-if="autoOptions.teamAlgorithm === 'break'">
+            <div class="stack auto-break-policy" v-else-if="autoOptions.teamAlgorithm === 'break'">
+              <BreakPolicyEditor
+                v-model:source="autoBreakSource"
+                v-model:size="autoBreakSize"
+                v-model:cutoff-tie-policy="autoBreakCutoffTiePolicy"
+                v-model:seeding="autoBreakSeeding"
+                :disabled="requestLoading || isLoading"
+              />
               <p class="muted">
                 {{
                   $t(
@@ -663,7 +863,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('ペアリング方式') }}
-                  <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')">?</span>
+                  <span class="help-tip" :title="$t('厳密アルゴリズムのチーム組み合わせ方式です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamStrictPairingMethod">
                   <option
@@ -679,7 +881,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('プルアップ方式') }}
-                  <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')">?</span>
+                  <span class="help-tip" :title="$t('ブラケット間の繰り上げ方法を指定します。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.teamStrictPullupMethod">
                   <option
@@ -712,13 +916,17 @@
                 <input v-model="autoOptions.teamStrictAvoidConflict" type="checkbox" />
                 <span class="option-title">
                   {{ $t('衝突回避') }}
-                  <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')">?</span>
+                  <span class="help-tip" :title="$t('同一機関や衝突指定の対戦を避けます。')"
+                    >?</span
+                  >
                 </span>
               </label>
               <label class="stack" v-if="autoOptions.teamStrictAvoidConflict">
                 <span class="option-title">
                   {{ $t('機関衝突重み') }}
-                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')">?</span>
+                  <span class="help-tip" :title="$t('同一属性（機関）衝突の回避強度です。')"
+                    >?</span
+                  >
                 </span>
                 <input
                   v-model.number="autoOptions.teamStrictConflictInstitutionWeight"
@@ -748,7 +956,11 @@
               <div class="stack">
                 <span class="option-title">
                   {{ $t('ジャッジフィルタ') }}
-                  <span class="help-tip" :title="$t('ジャッジ割り当て時に適用する制約を選択します。')">?</span>
+                  <span
+                    class="help-tip"
+                    :title="$t('ジャッジ割り当て時に適用する制約を選択します。')"
+                    >?</span
+                  >
                 </span>
                 <div class="checklist">
                   <div
@@ -773,7 +985,9 @@
               <label class="stack">
                 <span class="option-title">
                   {{ $t('割当方式') }}
-                  <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')">?</span>
+                  <span class="help-tip" :title="$t('伝統的アルゴリズムの割り当て戦略です。')"
+                    >?</span
+                  >
                 </span>
                 <select v-model="autoOptions.adjudicatorAssign">
                   <option
@@ -790,7 +1004,9 @@
                 <input v-model="autoOptions.adjudicatorScatter" type="checkbox" />
                 <span class="option-title">
                   {{ $t('パネル分散') }}
-                  <span class="help-tip" :title="$t('同系統のジャッジが偏らないように分散させます。')"
+                  <span
+                    class="help-tip"
+                    :title="$t('同系統のジャッジが偏らないように分散させます。')"
                     >?</span
                   >
                 </span>
@@ -798,7 +1014,9 @@
               <p class="muted tiny option-help-text">
                 {{
                   autoOptions.adjudicatorScatter
-                    ? $t('有効時は同じ層のジャッジが一部屋に固まりすぎないよう、順に散らして配置します。')
+                    ? $t(
+                        '有効時は同じ層のジャッジが一部屋に固まりすぎないよう、順に散らして配置します。'
+                      )
                     : $t('無効時は上位から順に該当部屋へ詰めて配置します。')
                 }}
               </p>
@@ -832,13 +1050,16 @@
             </div>
           </section>
         </div>
-        <p v-if="requestError" class="error">{{ requestError }}</p>
-        <div class="row modal-actions">
+        <p v-if="requestError" class="error auto-request-error">{{ requestError }}</p>
+        <div class="row modal-actions auto-modal-actions">
+          <Button variant="ghost" size="sm" @click="closeAutoGenerateModal">
+            {{ $t('閉じる') }}
+          </Button>
           <Button
             size="sm"
             :loading="requestLoading"
             @click="requestAllocation"
-            :disabled="isLoading || requestLoading"
+            :disabled="isLoading || requestLoading || locked"
           >
             {{ $t('生成') }}
           </Button>
@@ -856,8 +1077,15 @@
         <h4>{{ $t('ドロー削除') }}</h4>
         <p class="muted">{{ $t('このドローを削除しますか？') }}</p>
         <div class="row modal-actions">
-          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{ $t('キャンセル') }}</Button>
-          <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteCurrentDraw">
+          <Button variant="ghost" size="sm" @click="closeDeleteDrawModal">{{
+            $t('キャンセル')
+          }}</Button>
+          <Button
+            variant="danger"
+            size="sm"
+            :disabled="isLoading"
+            @click="confirmDeleteCurrentDraw"
+          >
             {{ $t('削除') }}
           </Button>
         </div>
@@ -865,13 +1093,12 @@
     </div>
 
     <aside v-if="displayDetail" class="floating-detail card stack">
-      <div class="row">
-        <strong>{{ detailPanelLabel }}</strong>
+      <div class="row detail-head">
+        <strong>{{ detailTitle }}</strong>
         <Button v-if="!isDragDetail" variant="ghost" size="sm" @click="clearDetail">{{
           $t('閉じる')
         }}</Button>
       </div>
-      <strong>{{ detailTitle }}</strong>
       <div v-if="detailRows.length === 0" class="muted">{{ $t('詳細情報がありません。') }}</div>
       <div v-else class="detail-grid">
         <div v-for="row in detailRows" :key="row.label" class="detail-row">
@@ -880,11 +1107,13 @@
         </div>
       </div>
     </aside>
+
+    <NoticeDialog v-model:open="showNoticeDialog" :message="noticeMessage" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTeamsStore } from '@/stores/teams'
@@ -902,15 +1131,35 @@ import type { DrawAllocationRow } from '@/types/draw'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ImportTextModal from '@/components/common/ImportTextModal.vue'
+import NoticeDialog from '@/components/common/NoticeDialog.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
+import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import type { DrawPreviewRow } from '@/types/draw-preview'
+import type { BreakCutoffTiePolicy, BreakSeeding, RoundBreakConfig } from '@/types/round'
+import {
+  formatCompiledSnapshotOptionLabel,
+  resolveLatestCompiledIdContainingRound,
+} from '@/utils/compiled-snapshot'
 import {
   applyDrawAllocationImportEntries,
   parseDrawAllocationImportText,
 } from '@/utils/draw-allocation-import'
+import {
+  buildEntityWarningIndex,
+  buildFocusedEntitySet,
+  buildRowWarningStates,
+  warningEntityKey,
+  type AllocationWarning,
+  type ConflictGroupCategory,
+  type RowWarningState,
+  type WarningCategory,
+  type WarningCode,
+  type WarningSeverity,
+  type WarningSeverityCounts,
+} from '@/utils/allocation-warnings'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -936,6 +1185,8 @@ const props = withDefaults(
   }
 )
 
+type RequestScope = 'all' | 'teams' | 'adjudicators' | 'venues'
+
 function normalizeRoundValue(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null
@@ -950,7 +1201,10 @@ const round = computed(() => {
   return normalizeRoundValue(route.query.round) ?? 1
 })
 const isEmbeddedRoute = computed(
-  () => props.embedded || route.path.startsWith('/admin-embed/') || String(route.query.embed ?? '') === '1'
+  () =>
+    props.embedded ||
+    route.path.startsWith('/admin-embed/') ||
+    String(route.query.embed ?? '') === '1'
 )
 
 const allocation = ref<DrawAllocationRow[]>([])
@@ -958,10 +1212,9 @@ const drawOpened = ref(false)
 const allocationOpened = ref(false)
 const locked = ref(false)
 const sectionLoading = ref(true)
-const formError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
 const requestLoading = ref(false)
-const requestScope = ref<'all' | 'teams' | 'adjudicators' | 'venues'>('all')
+const requestScope = ref<RequestScope>('all')
 const savedSnapshot = ref('')
 const savedDrawId = ref<string | null>(null)
 const generatedUserDefinedData = ref<Record<string, any> | null>(null)
@@ -974,6 +1227,138 @@ const selectedDetailSnapshotId = ref('')
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
 const allocationImportInfo = ref<string | null>(null)
+const autoBreakSource = ref<'submissions' | 'raw'>('submissions')
+const autoBreakSize = ref(8)
+const autoBreakCutoffTiePolicy = ref<BreakCutoffTiePolicy>('manual')
+const autoBreakSeeding = ref<BreakSeeding>('high_low')
+const drawPreviewTableRef = ref<{ getDisplayRows: () => DrawPreviewRow[] } | null>(null)
+const showNoticeDialog = ref(false)
+const noticeMessage = ref('')
+
+function openNotice(message: string) {
+  noticeMessage.value = message
+  showNoticeDialog.value = true
+}
+
+type RoundBreakConfigLike = Partial<RoundBreakConfig> & {
+  source?: 'submissions' | 'raw'
+}
+
+function readRoundBreakConfig(): RoundBreakConfigLike {
+  const userDefined = roundConfig.value?.userDefinedData
+  if (!userDefined || typeof userDefined !== 'object' || Array.isArray(userDefined)) return {}
+  const breakConfig = (userDefined as Record<string, unknown>).break
+  if (!breakConfig || typeof breakConfig !== 'object' || Array.isArray(breakConfig)) return {}
+  return breakConfig as RoundBreakConfigLike
+}
+
+function normalizeBreakSourceRounds(roundNumber: number, sourceRounds: unknown): number[] {
+  if (!Array.isArray(sourceRounds)) return []
+  return Array.from(
+    new Set(
+      sourceRounds
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 1 && value < roundNumber)
+    )
+  ).sort((left, right) => left - right)
+}
+
+function normalizeBreakParticipants(participants: unknown): RoundBreakConfig['participants'] {
+  if (!Array.isArray(participants)) return []
+  const seenTeamIds = new Set<string>()
+  const seenSeeds = new Set<number>()
+  const normalized: RoundBreakConfig['participants'] = []
+  for (const raw of participants) {
+    const teamId = String((raw as any)?.teamId ?? '').trim()
+    const seed = Number((raw as any)?.seed)
+    if (teamId.length === 0 || !Number.isInteger(seed) || seed < 1) continue
+    if (seenTeamIds.has(teamId) || seenSeeds.has(seed)) continue
+    seenTeamIds.add(teamId)
+    seenSeeds.add(seed)
+    normalized.push({ teamId, seed })
+  }
+  return normalized.sort((left, right) => left.seed - right.seed)
+}
+
+function normalizeBreakSize(value: unknown): number {
+  const size = Number(value)
+  return Number.isInteger(size) && size >= 1 ? size : 8
+}
+
+function hydrateAutoBreakPolicyFromRound() {
+  const breakConfig = readRoundBreakConfig()
+  autoBreakSource.value = breakConfig.source === 'raw' ? 'raw' : 'submissions'
+  autoBreakSize.value = normalizeBreakSize(breakConfig.size)
+  autoBreakCutoffTiePolicy.value =
+    breakConfig.cutoff_tie_policy === 'include_all' || breakConfig.cutoff_tie_policy === 'strict'
+      ? breakConfig.cutoff_tie_policy
+      : 'manual'
+  autoBreakSeeding.value = breakConfig.seeding === 'high_low' ? breakConfig.seeding : 'high_low'
+}
+
+async function syncAutoBreakPolicyToRound() {
+  if (autoOptions.value.teamAlgorithm !== 'break' || requestScope.value !== 'teams') {
+    return true
+  }
+  const currentRound = roundConfig.value
+  if (!currentRound?._id) {
+    requestError.value = t('読み込みに失敗しました。')
+    return false
+  }
+  const currentBreak = readRoundBreakConfig()
+  const normalizedSize = normalizeBreakSize(autoBreakSize.value)
+  autoBreakSize.value = normalizedSize
+  const breakConfig: RoundBreakConfig = {
+    enabled: currentBreak.enabled === true,
+    source_rounds: normalizeBreakSourceRounds(round.value, currentBreak.source_rounds),
+    size: normalizedSize,
+    cutoff_tie_policy: autoBreakCutoffTiePolicy.value,
+    seeding: autoBreakSeeding.value,
+    participants: normalizeBreakParticipants(currentBreak.participants),
+  }
+  const saved = await roundsStore.saveBreakRound({
+    tournamentId: tournamentId.value,
+    roundId: currentRound._id,
+    breakConfig,
+    syncTeamAvailability: false,
+  })
+  if (!saved) {
+    requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
+    return false
+  }
+  const latestRound =
+    roundsStore.rounds.find((item) => item._id === currentRound._id) ?? currentRound
+  const latestUserDefined =
+    latestRound.userDefinedData &&
+    typeof latestRound.userDefinedData === 'object' &&
+    !Array.isArray(latestRound.userDefinedData)
+      ? (latestRound.userDefinedData as Record<string, unknown>)
+      : {}
+  const latestBreak =
+    latestUserDefined.break &&
+    typeof latestUserDefined.break === 'object' &&
+    !Array.isArray(latestUserDefined.break)
+      ? (latestUserDefined.break as Record<string, unknown>)
+      : {}
+  if (latestBreak.source !== autoBreakSource.value) {
+    const updated = await roundsStore.updateRound({
+      tournamentId: tournamentId.value,
+      roundId: currentRound._id,
+      userDefinedData: {
+        ...latestUserDefined,
+        break: {
+          ...latestBreak,
+          source: autoBreakSource.value,
+        },
+      },
+    })
+    if (!updated) {
+      requestError.value = roundsStore.error ?? t('ブレイク設定の保存に失敗しました。')
+      return false
+    }
+  }
+  return true
+}
 
 const autoOptions = ref({
   teamAlgorithm: 'standard',
@@ -1249,11 +1634,13 @@ const priorRounds = computed(() =>
     .sort((a, b) => a.round - b.round)
 )
 const priorRoundNumbers = computed(() => priorRounds.value.map((item) => Number(item.round)))
+const defaultSnapshotTargetRound = computed(() => (round.value > 1 ? round.value - 1 : null))
 type CompiledSnapshotOption = {
   compiledId: string
   rounds: number[]
   roundNames: string[]
   createdAt?: string
+  snapshotName?: string
   payload: Record<string, any>
 }
 const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
@@ -1273,6 +1660,7 @@ const compiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() =>
           .map((entry: any) => String(entry?.name ?? '').trim())
           .filter((value: string) => value.length > 0),
         createdAt: item?.createdAt ? String(item.createdAt) : undefined,
+        snapshotName: String(normalizedPayload?.snapshot_name ?? '').trim() || undefined,
         payload: normalizedPayload,
       }
     })
@@ -1287,29 +1675,58 @@ const autoCompiledSnapshotOptions = computed<CompiledSnapshotOption[]>(() => {
 const detailSnapshotSelectOptions = computed(() =>
   compiledSnapshotOptions.value.map((option) => ({
     value: option.compiledId,
-    label: autoCompiledOptionLabel(option),
+    label: formatCompiledSnapshotOptionLabel(option, 'ja-JP'),
   }))
 )
 const selectedDetailSnapshot = computed<CompiledSnapshotOption | null>(() => {
   if (compiledSnapshotOptions.value.length === 0) return null
-  const selected = compiledSnapshotOptions.value.find(
-    (option) => option.compiledId === selectedDetailSnapshotId.value
-  )
-  return selected ?? compiledSnapshotOptions.value[0] ?? null
+  const selectedId = String(selectedDetailSnapshotId.value ?? '').trim()
+  if (selectedId.length === 0) return null
+  const selected = compiledSnapshotOptions.value.find((option) => option.compiledId === selectedId)
+  return selected ?? null
 })
-const selectedDetailPayload = computed<Record<string, any>>(() =>
-  selectedDetailSnapshot.value?.payload ?? {}
+const selectedDetailPayload = computed<Record<string, any>>(
+  () => selectedDetailSnapshot.value?.payload ?? {}
 )
-const detailSnapshotLabel = computed(() => {
-  if (!selectedDetailSnapshot.value) return ''
-  return autoCompiledOptionLabel(selectedDetailSnapshot.value)
-})
 const autoSnapshotSelectOptions = computed(() =>
   autoCompiledSnapshotOptions.value.map((option) => ({
     value: option.compiledId,
-    label: autoCompiledOptionLabel(option),
+    label: formatCompiledSnapshotOptionLabel(option, 'ja-JP'),
   }))
 )
+
+function defaultCompiledSnapshotId(
+  options: Array<Pick<CompiledSnapshotOption, 'compiledId' | 'rounds' | 'createdAt'>>
+) {
+  return resolveLatestCompiledIdContainingRound(options, defaultSnapshotTargetRound.value)
+}
+const autoScopeRequiresExistingDraw = computed(() => allocation.value.length === 0)
+const requestScopeTabOptions = computed<
+  Array<{ value: RequestScope; label: string; disabled: boolean }>
+>(() => [
+  { value: 'all', label: t('全体'), disabled: false },
+  { value: 'teams', label: t('チーム'), disabled: false },
+  {
+    value: 'adjudicators',
+    label: t('ジャッジ'),
+    disabled: autoScopeRequiresExistingDraw.value,
+  },
+  {
+    value: 'venues',
+    label: t('会場'),
+    disabled: autoScopeRequiresExistingDraw.value,
+  },
+])
+
+function scopeRequiresExistingDraw(scope: RequestScope) {
+  return autoScopeRequiresExistingDraw.value && (scope === 'adjudicators' || scope === 'venues')
+}
+
+function selectRequestScope(scope: RequestScope) {
+  if (scopeRequiresExistingDraw(scope)) return
+  requestScope.value = scope
+}
+
 const scopeIncludesTeams = computed(
   () => requestScope.value === 'all' || requestScope.value === 'teams'
 )
@@ -1331,9 +1748,7 @@ const requestScopeDescription = computed(
 )
 
 const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
-  standard: t(
-    '標準: 各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'
-  ),
+  standard: t('標準: 各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'),
   strict: t(
     '厳密: 勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。'
   ),
@@ -1375,13 +1790,22 @@ const teamMethodDescription = computed(() =>
   selectedDescription(teamMethodOptions.value, autoOptions.value.teamMethod)
 )
 const teamPowerpairOddBracketDescription = computed(() =>
-  selectedDescription(teamPowerpairOddBracketOptions.value, autoOptions.value.teamPowerpairOddBracket)
+  selectedDescription(
+    teamPowerpairOddBracketOptions.value,
+    autoOptions.value.teamPowerpairOddBracket
+  )
 )
 const teamPowerpairPairingDescription = computed(() =>
-  selectedDescription(teamPowerpairPairingOptions.value, autoOptions.value.teamPowerpairPairingMethod)
+  selectedDescription(
+    teamPowerpairPairingOptions.value,
+    autoOptions.value.teamPowerpairPairingMethod
+  )
 )
 const teamPowerpairConflictDescription = computed(() =>
-  selectedDescription(teamPowerpairConflictOptions.value, autoOptions.value.teamPowerpairAvoidConflicts)
+  selectedDescription(
+    teamPowerpairConflictOptions.value,
+    autoOptions.value.teamPowerpairAvoidConflicts
+  )
 )
 const teamStrictPairingDescription = computed(() =>
   selectedDescription(teamStrictPairingOptions.value, autoOptions.value.teamStrictPairingMethod)
@@ -1396,37 +1820,17 @@ const adjudicatorAssignDescription = computed(() =>
   selectedDescription(adjudicatorAssignOptions.value, autoOptions.value.adjudicatorAssign)
 )
 
-function formatCompiledTimestamp(value?: string) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function roundName(roundNumber: number) {
-  return (
-    roundsStore.rounds.find((item) => Number(item.round) === Number(roundNumber))?.name ??
-    t('ラウンド {round}', { round: roundNumber })
-  )
-}
-
-function autoCompiledOptionLabel(option: CompiledSnapshotOption) {
-  const roundLabel =
-    option.roundNames.length > 0
-      ? option.roundNames.join(', ')
-      : option.rounds.length > 0
-        ? option.rounds.map((roundNumber) => roundName(roundNumber)).join(', ')
-        : t('全ラウンド')
-  return `${t('日時')}: ${formatCompiledTimestamp(option.createdAt)} / ${t('考慮ラウンド')}: ${roundLabel}`
-}
-
 const allocationChanged = computed(() => allocationSnapshot() !== savedSnapshot.value)
+
+function createEmptyAllocationRow(): DrawAllocationRow {
+  return {
+    venue: '',
+    teams: { gov: '', opp: '' },
+    chairs: [],
+    panels: [],
+    trainees: [],
+  }
+}
 
 function cloneAllocation(rows: DrawAllocationRow[]) {
   return rows.map((row) => ({
@@ -1455,7 +1859,8 @@ function allocationSnapshot() {
 
 function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
   if (draw) {
-    allocation.value = cloneAllocation(draw.allocation ?? [])
+    const cloned = cloneAllocation(draw.allocation ?? [])
+    allocation.value = cloned.length > 0 ? cloned : [createEmptyAllocationRow()]
     drawOpened.value = Boolean(draw.drawOpened)
     allocationOpened.value = Boolean(draw.allocationOpened)
     locked.value = Boolean(draw.locked)
@@ -1465,7 +1870,7 @@ function syncFromDraw(draw?: DrawAllocationRow[] | any | null) {
         ? (draw.userDefinedData as Record<string, any>)
         : null
   } else {
-    allocation.value = []
+    allocation.value = [createEmptyAllocationRow()]
     drawOpened.value = false
     allocationOpened.value = false
     locked.value = false
@@ -1512,28 +1917,24 @@ async function refreshCompiledHistory() {
 }
 
 function addRow() {
-  allocation.value.push({
-    venue: '',
-    teams: { gov: '', opp: '' },
-    chairs: [],
-    panels: [],
-    trainees: [],
-  })
+  allocation.value.push(createEmptyAllocationRow())
 }
 
 function removeRow(index: number) {
   allocation.value.splice(index, 1)
+  if (allocation.value.length === 0) {
+    allocation.value.push(createEmptyAllocationRow())
+  }
 }
 
 async function save() {
-  formError.value = null
   const validRows = allocation.value.filter((row) => row.teams.gov && row.teams.opp)
   if (validRows.length === 0) {
-    formError.value = t('有効なマッチがありません。')
+    openNotice(t('有効なマッチがありません。'))
     return
   }
   if (validRows.some((row) => row.teams.gov === row.teams.opp)) {
-    formError.value = t('同じチームが両サイドに設定されています。')
+    openNotice(t('同じチームが両サイドに設定されています。'))
     return
   }
   const saved = await draws.upsertDraw({
@@ -1546,11 +1947,33 @@ async function save() {
     locked: locked.value,
   })
   if (!saved) {
-    formError.value = draws.error ?? t('保存に失敗しました')
+    if (!draws.error) {
+      openNotice(t('保存に失敗しました'))
+    }
     return
   }
   savedSnapshot.value = allocationSnapshot()
   savedDrawId.value = saved?._id ?? savedDrawId.value
+}
+
+function openAutoGenerateModal() {
+  requestError.value = null
+  if (locked.value) {
+    openNotice(t('ドローがロックされているため自動生成できません。'))
+    return
+  }
+  if (scopeRequiresExistingDraw(requestScope.value)) {
+    requestScope.value = 'all'
+  }
+  if (autoOptions.value.teamAlgorithm === 'break') {
+    hydrateAutoBreakPolicyFromRound()
+  }
+  showAutoGenerateModal.value = true
+}
+
+function closeAutoGenerateModal() {
+  showAutoGenerateModal.value = false
+  requestError.value = null
 }
 
 function openAllocationImportModal() {
@@ -1677,6 +2100,10 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
 
 async function requestAllocation() {
   requestError.value = null
+  if (locked.value) {
+    requestError.value = t('ドローがロックされているため自動生成できません。')
+    return
+  }
   requestLoading.value = true
   try {
     const teamOptions =
@@ -1702,12 +2129,12 @@ async function requestAllocation() {
               },
               max_swap_iterations: autoOptions.value.teamPowerpairMaxSwapIterations,
             }
-        : autoOptions.value.teamAlgorithm === 'break'
-          ? {}
-        : {
-            method: autoOptions.value.teamMethod,
-            filters: autoOptions.value.teamFilters,
-          }
+          : autoOptions.value.teamAlgorithm === 'break'
+            ? {}
+            : {
+                method: autoOptions.value.teamMethod,
+                filters: autoOptions.value.teamFilters,
+              }
     const adjudicatorOptions =
       autoOptions.value.adjudicatorAlgorithm === 'traditional'
         ? {
@@ -1733,6 +2160,10 @@ async function requestAllocation() {
     ) {
       requestError.value = t('ブレイク生成は対象をチームに設定してください。')
       return
+    }
+    if (autoOptions.value.teamAlgorithm === 'break' && requestScope.value === 'teams') {
+      const synced = await syncAutoBreakPolicyToRound()
+      if (!synced) return
     }
     const options = {
       team_allocation_algorithm: autoOptions.value.teamAlgorithm,
@@ -1773,9 +2204,7 @@ async function requestAllocation() {
     if (data?.allocation) {
       const generatedRows = cloneAllocation(data.allocation)
       allocation.value =
-        requestScope.value === 'teams'
-          ? mergeTeamScopeAllocation(generatedRows)
-          : generatedRows
+        requestScope.value === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
       if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
         generatedUserDefinedData.value =
           data.userDefinedData && typeof data.userDefinedData === 'object'
@@ -1784,7 +2213,7 @@ async function requestAllocation() {
       } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
         generatedUserDefinedData.value = null
       }
-      showAutoGenerateModal.value = false
+      closeAutoGenerateModal()
     }
   } catch (err: any) {
     requestError.value = err?.response?.data?.errors?.[0]?.message ?? t('自動生成に失敗しました')
@@ -1794,10 +2223,11 @@ async function requestAllocation() {
 }
 
 function clearAllocation() {
-  allocation.value = []
+  allocation.value = [createEmptyAllocationRow()]
 }
 
 function revertAllocation() {
+  if (locked.value) return
   syncFromDraw(currentDraw.value ?? null)
 }
 
@@ -1810,18 +2240,30 @@ function detailForRound(details: any[] | undefined, r: number) {
   return details?.find((d: any) => Number(d.r) === r) ?? {}
 }
 
+function normalizeInstitutionCategory(value: unknown): ConflictGroupCategory {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'region') return 'region'
+  if (normalized === 'league') return 'league'
+  return 'institution'
+}
+
 function normalizeInstitutions(values: string[] = []) {
   const mapped = new Set<string>()
   values.forEach((value) => {
     const token = String(value)
     if (!token) return
     mapped.add(token)
-    const match = institutions.institutions.find(
-      (inst) => inst._id === token || inst.name === token
-    )
-    if (match) mapped.add(match._id)
   })
   return Array.from(mapped)
+}
+
+function institutionCategoryById(value: string): ConflictGroupCategory {
+  const token = String(value ?? '').trim()
+  if (!token) return 'institution'
+  const match = institutions.institutions.find((inst) => inst._id === token)
+  return normalizeInstitutionCategory(match?.category)
 }
 
 function teamInstitutions(team: any) {
@@ -1901,6 +2343,57 @@ const previewRows = computed<DrawPreviewRow[]>(() => {
   })
 })
 
+function formatPreviewCsvValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(',')
+  if (value === null || value === undefined || value === '') return ''
+  return String(value)
+}
+
+function escapeCsvValue(value: string) {
+  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function downloadDrawPreviewCsv() {
+  const displayRows = drawPreviewTableRef.value?.getDisplayRows() ?? previewRows.value
+  if (displayRows.length === 0) return
+  const headers = [
+    '#',
+    t('会場'),
+    govLabel.value,
+    oppLabel.value,
+    t('チェア'),
+    t('パネル'),
+    t('トレーニー'),
+  ]
+  const rows = displayRows.map((row, index) =>
+    [
+      index + 1,
+      row.venueLabel,
+      row.govName,
+      row.oppName,
+      row.chairsLabel,
+      row.panelsLabel,
+      row.traineesLabel,
+    ].map((cell) => escapeCsvValue(formatPreviewCsvValue(cell)))
+  )
+  const csv = [
+    headers.map((header) => escapeCsvValue(String(header))).join(','),
+    ...rows.map((row) => row.join(',')),
+  ].join('\n')
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `round_${round.value}_draw_preview.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function teamNameById(id: string) {
   return teams.teams.find((team) => team._id === id)?.name ?? id
 }
@@ -1921,35 +2414,83 @@ function teamSpeakerNames(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
   const detailSpeakerIds = (detail.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) {
-    return detailSpeakerIds.map((id: string) => speakerNameById(id))
-  }
-  if (Array.isArray(team.speakers)) {
-    return team.speakers.map((speaker: any) => speaker?.name ?? '').filter(Boolean)
-  }
-  return []
+  return detailSpeakerIds.map((id: string) => speakerNameById(id))
 }
 
 function teamSpeakerIds(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
   const detailSpeakerIds = (detail.speakers ?? []).map((id: any) => String(id)).filter(Boolean)
-  if (detailSpeakerIds.length > 0) return detailSpeakerIds
-  if (Array.isArray(team.speakers)) {
-    return team.speakers
-      .map((speaker: any) => {
-        const name = speaker?.name
-        if (!name) return ''
-        return speakersStore.speakers.find((item) => item.name === name)?._id ?? ''
-      })
-      .filter(Boolean)
-  }
-  return []
+  return detailSpeakerIds
 }
 
 type DragKind = 'team' | 'adjudicator' | 'venue'
 const dragPayload = ref<{ kind: DragKind; id: string } | null>(null)
 const dragKind = computed(() => dragPayload.value?.kind ?? null)
+const rowDragSourceIndex = ref<number | null>(null)
+const rowDragTargetIndex = ref<number | null>(null)
+
+function clearRowDragState() {
+  rowDragSourceIndex.value = null
+  rowDragTargetIndex.value = null
+}
+
+function onRowDragStart(index: number, event: DragEvent) {
+  if (locked.value) {
+    event.preventDefault()
+    return
+  }
+  rowDragSourceIndex.value = index
+  rowDragTargetIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+
+function onRowDragOver(index: number, event: DragEvent) {
+  if (rowDragSourceIndex.value === null) return
+  if (index === rowDragSourceIndex.value) return
+  rowDragTargetIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function onRowDragLeave(index: number) {
+  if (rowDragTargetIndex.value !== index) return
+  rowDragTargetIndex.value = rowDragSourceIndex.value
+}
+
+function moveAllocationRow(fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return
+  if (fromIndex < 0 || toIndex < 0) return
+  if (fromIndex >= allocation.value.length || toIndex >= allocation.value.length) return
+  const [moved] = allocation.value.splice(fromIndex, 1)
+  if (!moved) return
+  allocation.value.splice(toIndex, 0, moved)
+}
+
+function onRowDrop(targetIndex: number, event: DragEvent) {
+  if (locked.value) {
+    clearRowDragState()
+    return
+  }
+  const fromState = rowDragSourceIndex.value
+  const fromPayload = Number(event.dataTransfer?.getData('text/plain'))
+  const fromIndex = Number.isInteger(fromState) ? Number(fromState) : fromPayload
+  if (!Number.isInteger(fromIndex)) {
+    clearRowDragState()
+    return
+  }
+  moveAllocationRow(fromIndex, targetIndex)
+  clearRowDragState()
+}
+
+function onRowDragEnd() {
+  clearRowDragState()
+}
 
 const selectedDetail = ref<{ type: 'team' | 'adjudicator' | 'venue'; id: string } | null>(null)
 
@@ -1966,9 +2507,11 @@ function clearDetail() {
   selectedDetail.value = null
 }
 
-const displayDetail = computed<
-  { type: 'team' | 'adjudicator' | 'venue'; id: string; fromDrag: boolean } | null
->(() => {
+const displayDetail = computed<{
+  type: 'team' | 'adjudicator' | 'venue'
+  id: string
+  fromDrag: boolean
+} | null>(() => {
   if (dragPayload.value) {
     const type =
       dragPayload.value.kind === 'team'
@@ -1987,17 +2530,6 @@ const displayDetail = computed<
 })
 
 const isDragDetail = computed(() => displayDetail.value?.fromDrag === true)
-
-const detailPanelLabel = computed(() => {
-  if (!displayDetail.value) return ''
-  if (displayDetail.value.fromDrag) {
-    if (displayDetail.value.type === 'team') return t('選択中のチーム詳細')
-    if (displayDetail.value.type === 'adjudicator') return t('選択中のジャッジ詳細')
-  }
-  if (displayDetail.value.type === 'team') return t('チーム詳細')
-  if (displayDetail.value.type === 'adjudicator') return t('ジャッジ詳細')
-  return t('会場詳細')
-})
 
 const detailTitle = computed(() => {
   if (!displayDetail.value) return ''
@@ -2083,21 +2615,73 @@ const detailRows = computed(() => {
   ]
 })
 
-function hasIntersection(a: string[], b: string[]) {
-  const setB = new Set(b)
-  return a.some((value) => setB.has(value))
+const rowWarningStates = computed<RowWarningState[]>(() =>
+  buildRowWarningStates({
+    allocation: allocation.value,
+    isTeamAvailable: (teamId) => {
+      const team = teams.teams.find((item) => item._id === teamId)
+      if (!team) return undefined
+      return detailAvailable(team.details, round.value)
+    },
+    isAdjudicatorAvailable: (adjudicatorId) => {
+      const adj = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+      if (!adj) return undefined
+      return detailAvailable(adj.details, round.value)
+    },
+    isVenueAvailable: (venueId) => {
+      const venue = venues.venues.find((item) => item._id === venueId)
+      if (!venue) return undefined
+      return detailAvailable(venue.details, round.value)
+    },
+    teamInstitutions: (teamId) => {
+      const team = teams.teams.find((item) => item._id === teamId)
+      return team ? teamInstitutions(team) : []
+    },
+    adjudicatorInstitutions: (adjudicatorId) => {
+      const adj = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+      return adj ? adjudicatorInstitutions(adj) : []
+    },
+    institutionCategory: (institutionId) => institutionCategoryById(institutionId),
+    adjudicatorConflicts: (adjudicatorId) => {
+      const adj = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+      return adj ? adjudicatorConflicts(adj) : []
+    },
+    teamWin: (teamId) => {
+      const result = compiledTeamMap.value.get(String(teamId))
+      const win = Number(result?.win)
+      return Number.isFinite(win) ? win : undefined
+    },
+    teamPastOpponents: (teamId) => {
+      const result = compiledTeamMap.value.get(String(teamId))
+      return Array.isArray(result?.past_opponents)
+        ? result.past_opponents.map((id: any) => String(id)).filter(Boolean)
+        : []
+    },
+    teamPastSides: (teamId) => {
+      const result = compiledTeamMap.value.get(String(teamId))
+      return Array.isArray(result?.past_sides)
+        ? result.past_sides.map((side: any) => String(side)).filter(Boolean)
+        : []
+    },
+    adjudicatorJudgedTeams: (adjudicatorId) => {
+      const result = compiledAdjMap.value.get(String(adjudicatorId))
+      return Array.isArray(result?.judged_teams)
+        ? result.judged_teams.map((id: any) => String(id)).filter(Boolean)
+        : []
+    },
+  })
+)
+
+const emptySeverityCounts: WarningSeverityCounts = { critical: 0, warn: 0, info: 0 }
+const emptyRowWarningState: RowWarningState = {
+  rowIndex: -1,
+  warnings: [],
+  counts: emptySeverityCounts,
 }
 
-function checkSided(result: any, side: 'gov' | 'opp') {
-  if (!result) return false
-  const sides = [...(result.past_sides ?? []), side]
-  const gov = sides.filter((s) => s === 'gov').length
-  const opp = sides.filter((s) => s === 'opp').length
-  return Math.abs(gov - opp) > 1
+function rowWarningState(index: number): RowWarningState {
+  return rowWarningStates.value[index] ?? emptyRowWarningState
 }
-
-type WarningCategory = 'team' | 'adjudicator' | 'venue'
-type Warning = { category: WarningCategory; message: string }
 
 function warningLabel(category: WarningCategory) {
   if (category === 'adjudicator') return t('ジャッジ')
@@ -2105,190 +2689,221 @@ function warningLabel(category: WarningCategory) {
   return t('チーム')
 }
 
-function rowWarnings(row: DrawAllocationRow): Warning[] {
-  const warnings: Warning[] = []
-  const govId = row.teams.gov
-  const oppId = row.teams.opp
-  const teamIds = [govId, oppId].filter(Boolean)
-  const adjudicatorIds = ([] as string[])
-    .concat(row.chairs ?? [], row.panels ?? [], row.trainees ?? [])
-    .filter(Boolean)
-
-  const teamA = teams.teams.find((team) => team._id === govId)
-  const teamB = teams.teams.find((team) => team._id === oppId)
-  const teamResultA = compiledTeamMap.value.get(String(govId))
-  const teamResultB = compiledTeamMap.value.get(String(oppId))
-
-  if (teamA && !detailAvailable(teamA.details, round.value)) {
-    warnings.push({
-      category: 'team',
-      message: t('{name} は利用不可', { name: teamNameById(govId) }),
-    })
-  }
-  if (teamB && !detailAvailable(teamB.details, round.value)) {
-    warnings.push({
-      category: 'team',
-      message: t('{name} は利用不可', { name: teamNameById(oppId) }),
-    })
-  }
-  if (row.venue) {
-    const venue = venues.venues.find((v) => v._id === row.venue)
-    if (venue && !detailAvailable(venue.details, round.value)) {
-      warnings.push({
-        category: 'venue',
-        message: t('会場 {name} は利用不可', { name: venue.name }),
-      })
-    }
-  }
-
-  if (teamResultA && checkSided(teamResultA, 'gov')) {
-    warnings.push({
-      category: 'team',
-      message: t('{name} が片側に偏っています', { name: teamNameById(govId) }),
-    })
-  }
-  if (teamResultB && checkSided(teamResultB, 'opp')) {
-    warnings.push({
-      category: 'team',
-      message: t('{name} が片側に偏っています', { name: teamNameById(oppId) }),
-    })
-  }
-
-  if (teamA && teamB) {
-    if (hasIntersection(teamInstitutions(teamA), teamInstitutions(teamB))) {
-      warnings.push({
-        category: 'team',
-        message: t('{a} と {b} が同一機関です', {
-          a: teamNameById(govId),
-          b: teamNameById(oppId),
-        }),
-      })
-    }
-    if (teamResultA && teamResultB && teamResultA.win !== teamResultB.win) {
-      warnings.push({
-        category: 'team',
-        message: t('{a} と {b} の勝利数が異なります', {
-          a: teamNameById(govId),
-          b: teamNameById(oppId),
-        }),
-      })
-    }
-    if (
-      teamResultA?.past_opponents?.includes(oppId) ||
-      teamResultB?.past_opponents?.includes(govId)
-    ) {
-      warnings.push({
-        category: 'team',
-        message: t('{a} と {b} は過去に対戦済みです', {
-          a: teamNameById(govId),
-          b: teamNameById(oppId),
-        }),
-      })
-    }
-  }
-
-  adjudicatorIds.forEach((adjId) => {
-    const adj = adjudicators.adjudicators.find((a) => a._id === adjId)
-    if (adj && !detailAvailable(adj.details, round.value)) {
-      warnings.push({
-        category: 'adjudicator',
-        message: t('{name} は利用不可', { name: adjudicatorNameById(adjId) }),
-      })
-    }
-  })
-
-  for (const teamId of teamIds) {
-    const team = teams.teams.find((t) => t._id === teamId)
-    const teamInst = team ? teamInstitutions(team) : []
-    for (const adjId of adjudicatorIds) {
-      const adj = adjudicators.adjudicators.find((a) => a._id === adjId)
-      if (!adj) continue
-      const adjInst = adjudicatorInstitutions(adj)
-      const adjResult = compiledAdjMap.value.get(String(adjId))
-      if (hasIntersection(teamInst, adjInst)) {
-        warnings.push({
-          category: 'adjudicator',
-          message: t('{adj} と {team} に機関衝突', {
-            adj: adjudicatorNameById(adjId),
-            team: teamNameById(teamId),
-          }),
-        })
-      }
-      if (adjudicatorConflicts(adj).includes(String(teamId))) {
-        warnings.push({
-          category: 'adjudicator',
-          message: t('{adj} と {team} に個別衝突', {
-            adj: adjudicatorNameById(adjId),
-            team: teamNameById(teamId),
-          }),
-        })
-      }
-      if (adjResult?.judged_teams?.includes(teamId)) {
-        warnings.push({
-          category: 'adjudicator',
-          message: t('{adj} は {team} を既に担当済み', {
-            adj: adjudicatorNameById(adjId),
-            team: teamNameById(teamId),
-          }),
-        })
-      }
-    }
-  }
-
-  for (let i = 0; i < adjudicatorIds.length; i += 1) {
-    for (let j = i + 1; j < adjudicatorIds.length; j += 1) {
-      const adjA = adjudicators.adjudicators.find((a) => a._id === adjudicatorIds[i])
-      const adjB = adjudicators.adjudicators.find((a) => a._id === adjudicatorIds[j])
-      if (!adjA || !adjB) continue
-      if (hasIntersection(adjudicatorInstitutions(adjA), adjudicatorInstitutions(adjB))) {
-        warnings.push({
-          category: 'adjudicator',
-          message: t('{a} と {b} が同一機関です', {
-            a: adjudicatorNameById(adjudicatorIds[i]),
-            b: adjudicatorNameById(adjudicatorIds[j]),
-          }),
-        })
-      }
-    }
-  }
-
-  if (adjudicatorIds.length === 0) {
-    warnings.push({ category: 'adjudicator', message: t('割り当てられたジャッジがいません') })
-  } else if (adjudicatorIds.length % 2 === 0) {
-    warnings.push({ category: 'adjudicator', message: t('ジャッジ人数が偶数です') })
-  }
-
-  return warnings
+function warningSeverityLabel(severity: WarningSeverity) {
+  if (severity === 'critical') return t('重大')
+  if (severity === 'warn') return t('注意')
+  return t('情報')
 }
 
-function warningSummary(warnings: Warning[]) {
-  if (warnings.length === 0) return ''
-  const hasAdjudicator = warnings.some((warning) => warning.category === 'adjudicator')
-  const hasTeam = warnings.some(
-    (warning) => warning.category === 'team' || warning.category === 'venue'
-  )
-  if (hasAdjudicator && hasTeam) {
-    return `${t('チーム')}/${t('ジャッジ')} ${warnings.length}`
-  }
-  if (hasAdjudicator) {
-    return `${t('ジャッジ')} ${warnings.length}`
-  }
-  if (warnings.every((warning) => warning.category === 'venue')) {
-    return `${t('会場')} ${warnings.length}`
-  }
-  return `${t('チーム')} ${warnings.length}`
+function warningSeverityIcon(severity: WarningSeverity) {
+  if (severity === 'critical') return '!'
+  if (severity === 'warn') return '△'
+  return 'i'
 }
 
-function warningSummaryClass(warnings: Warning[]) {
-  if (warnings.length === 0) return 'warning-summary--team'
-  const hasAdjudicator = warnings.some((warning) => warning.category === 'adjudicator')
-  const hasTeam = warnings.some(
-    (warning) => warning.category === 'team' || warning.category === 'venue'
+function warningConflictGroupLabel(value: unknown) {
+  const category = normalizeInstitutionCategory(value)
+  if (category === 'region') return t('地域')
+  if (category === 'league') return t('リーグ')
+  return t('機関')
+}
+
+function warningMessage(warning: AllocationWarning) {
+  const warningCode = warning.code as WarningCode
+  if (warningCode === 'team_unavailable') {
+    return t('{name} は利用不可', {
+      name: teamNameById(String(warning.params.teamId ?? '')),
+    })
+  }
+  if (warningCode === 'venue_unavailable') {
+    return t('会場 {name} は利用不可', {
+      name: venueName(String(warning.params.venueId ?? '')),
+    })
+  }
+  if (warningCode === 'team_side_imbalance') {
+    return t('{name} が片側に偏っています', {
+      name: teamNameById(String(warning.params.teamId ?? '')),
+    })
+  }
+  if (warningCode === 'team_same_institution') {
+    return t('{a} と {b} が同一{group}です', {
+      a: teamNameById(String(warning.params.teamAId ?? '')),
+      b: teamNameById(String(warning.params.teamBId ?? '')),
+      group: warningConflictGroupLabel(warning.params.groupCategory),
+    })
+  }
+  if (warningCode === 'team_different_win') {
+    return t('{a} と {b} の勝利数が異なります', {
+      a: teamNameById(String(warning.params.teamAId ?? '')),
+      b: teamNameById(String(warning.params.teamBId ?? '')),
+    })
+  }
+  if (warningCode === 'team_past_match') {
+    return t('{a} と {b} は過去に対戦済みです', {
+      a: teamNameById(String(warning.params.teamAId ?? '')),
+      b: teamNameById(String(warning.params.teamBId ?? '')),
+    })
+  }
+  if (warningCode === 'team_past_match_same_institution') {
+    return t('{a} と {b} は同一{group}の別チームと過去対戦があります', {
+      a: teamNameById(String(warning.params.teamAId ?? '')),
+      b: teamNameById(String(warning.params.teamBId ?? '')),
+      group: warningConflictGroupLabel(warning.params.groupCategory),
+    })
+  }
+  if (warningCode === 'adjudicator_unavailable') {
+    return t('{name} は利用不可', {
+      name: adjudicatorNameById(String(warning.params.adjudicatorId ?? '')),
+    })
+  }
+  if (warningCode === 'adjudicator_institution_conflict') {
+    return t('{adj} と {team} に{group}衝突', {
+      adj: adjudicatorNameById(String(warning.params.adjudicatorId ?? '')),
+      team: teamNameById(String(warning.params.teamId ?? '')),
+      group: warningConflictGroupLabel(warning.params.groupCategory),
+    })
+  }
+  if (warningCode === 'adjudicator_personal_conflict') {
+    return t('{adj} と {team} に個別衝突', {
+      adj: adjudicatorNameById(String(warning.params.adjudicatorId ?? '')),
+      team: teamNameById(String(warning.params.teamId ?? '')),
+    })
+  }
+  if (warningCode === 'adjudicator_already_judged') {
+    return t('{adj} は {team} を既に担当済み', {
+      adj: adjudicatorNameById(String(warning.params.adjudicatorId ?? '')),
+      team: teamNameById(String(warning.params.teamId ?? '')),
+    })
+  }
+  if (warningCode === 'adjudicator_same_institution') {
+    return t('{a} と {b} が同一{group}です', {
+      a: adjudicatorNameById(String(warning.params.adjudicatorAId ?? '')),
+      b: adjudicatorNameById(String(warning.params.adjudicatorBId ?? '')),
+      group: warningConflictGroupLabel(warning.params.groupCategory),
+    })
+  }
+  if (warningCode === 'adjudicator_none') return t('割り当てられたジャッジがいません')
+  if (warningCode === 'adjudicator_even_count') return t('ジャッジ人数が偶数です')
+  return ''
+}
+
+function warningSummary(counts: WarningSeverityCounts) {
+  return `${t('重大')} ${counts.critical} / ${t('注意')} ${counts.warn} / ${t('情報')} ${counts.info}`
+}
+
+function warningSummaryClass(counts: WarningSeverityCounts) {
+  if (counts.critical > 0) return 'warning-summary--critical'
+  if (counts.warn > 0) return 'warning-summary--warn'
+  return 'warning-summary--info'
+}
+
+const activeWarningRowIndex = ref<number | null>(null)
+const warningPopoverStyle = ref<Record<string, string>>({})
+let warningPopoverCloseTimer: number | null = null
+
+const activeWarningState = computed<RowWarningState | null>(() => {
+  if (activeWarningRowIndex.value === null) return null
+  const state = rowWarningState(activeWarningRowIndex.value)
+  return state.warnings.length > 0 ? state : null
+})
+
+function clearWarningPopoverTimer() {
+  if (warningPopoverCloseTimer === null) return
+  window.clearTimeout(warningPopoverCloseTimer)
+  warningPopoverCloseTimer = null
+}
+
+function closeWarningPopover() {
+  clearWarningPopoverTimer()
+  activeWarningRowIndex.value = null
+  warningPopoverStyle.value = {}
+  clearFocusedWarning()
+}
+
+function scheduleCloseWarningPopover() {
+  clearWarningPopoverTimer()
+  warningPopoverCloseTimer = window.setTimeout(() => {
+    closeWarningPopover()
+  }, 140)
+}
+
+function openWarningPopover(index: number, event: Event) {
+  const state = rowWarningState(index)
+  if (state.warnings.length === 0) {
+    closeWarningPopover()
+    return
+  }
+
+  clearWarningPopoverTimer()
+  activeWarningRowIndex.value = index
+
+  const anchor = event.currentTarget
+  if (!(anchor instanceof HTMLElement)) return
+
+  const viewportPadding = 10
+  const topGap = 8
+  const rect = anchor.getBoundingClientRect()
+  const popoverWidth = Math.max(280, Math.min(420, window.innerWidth - viewportPadding * 2))
+  const maxHeight = Math.max(120, Math.min(320, window.innerHeight - viewportPadding * 2))
+  const estimatedHeight = Math.min(maxHeight, 44 + state.warnings.length * 46)
+
+  let left = rect.left
+  if (left + popoverWidth > window.innerWidth - viewportPadding) {
+    left = window.innerWidth - popoverWidth - viewportPadding
+  }
+  left = Math.max(viewportPadding, left)
+
+  let top = rect.bottom + topGap
+  if (top + estimatedHeight > window.innerHeight - viewportPadding) {
+    top = rect.top - estimatedHeight - topGap
+  }
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - estimatedHeight - viewportPadding)
   )
-  if (hasAdjudicator && hasTeam) return 'warning-summary--mixed'
-  if (hasAdjudicator) return 'warning-summary--adjudicator'
-  if (warnings.every((warning) => warning.category === 'venue')) return 'warning-summary--venue'
-  return 'warning-summary--team'
+
+  warningPopoverStyle.value = {
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(popoverWidth)}px`,
+    maxHeight: `${Math.round(maxHeight)}px`,
+  }
+}
+
+const entityWarningIndex = computed(() => buildEntityWarningIndex(rowWarningStates.value))
+const focusedEntityKeys = ref<Set<string>>(new Set())
+
+function setFocusedWarning(warning: AllocationWarning | null) {
+  focusedEntityKeys.value = buildFocusedEntitySet(warning)
+}
+
+function clearFocusedWarning() {
+  focusedEntityKeys.value = new Set()
+}
+
+onBeforeUnmount(() => {
+  clearWarningPopoverTimer()
+})
+
+function warningEntityKeyByType(kind: 'team' | 'adjudicator' | 'venue', id: string) {
+  if (kind === 'adjudicator') return warningEntityKey('adj', id)
+  if (kind === 'venue') return warningEntityKey('venue', id)
+  return warningEntityKey('team', id)
+}
+
+function entityPillClasses(kind: 'team' | 'adjudicator' | 'venue', id?: string) {
+  const normalized = String(id ?? '').trim()
+  if (!normalized) return []
+  const key = warningEntityKeyByType(kind, normalized)
+  const classes: string[] = ['pill-entity']
+  const warningMeta = entityWarningIndex.value.get(key)
+  if (warningMeta) {
+    classes.push(`pill-severity--${warningMeta.maxSeverity}`)
+  }
+  if (focusedEntityKeys.value.has(key)) {
+    classes.push('pill-focused')
+  }
+  return classes
 }
 
 const availableTeams = computed(() =>
@@ -2339,7 +2954,16 @@ const expectedTeamIds = computed(() => {
   return set
 })
 
-const expectedAdjudicatorIds = computed(() => {
+const expectedBallotSubmitterIds = computed(() => {
+  const set = new Set<string>()
+  allocation.value.forEach((row) => {
+    ;(row.chairs ?? []).forEach((id) => set.add(id))
+    ;(row.panels ?? []).forEach((id) => set.add(id))
+  })
+  return set
+})
+
+const expectedFeedbackAdjudicatorIds = computed(() => {
   const set = new Set<string>()
   allocation.value.forEach((row) => {
     ;(row.chairs ?? []).forEach((id) => set.add(id))
@@ -2368,7 +2992,7 @@ const feedbackSubmittedIds = computed(() => {
 })
 
 const missingBallotSubmitters = computed(() => {
-  const ids = Array.from(expectedAdjudicatorIds.value).filter(
+  const ids = Array.from(expectedBallotSubmitterIds.value).filter(
     (id) => !ballotSubmittedIds.value.has(id)
   )
   return adjudicators.adjudicators.filter((adj) => ids.includes(adj._id))
@@ -2418,7 +3042,7 @@ const missingFeedbackFromTeams = computed(() => {
 
 const missingFeedbackFromAdjudicators = computed(() => {
   if (!evaluationFromAdjudicatorsEnabled.value) return []
-  const ids = Array.from(expectedAdjudicatorIds.value).filter(
+  const ids = Array.from(expectedFeedbackAdjudicatorIds.value).filter(
     (id) => !feedbackSubmittedIds.value.has(id)
   )
   return adjudicators.adjudicators.filter((adj) => ids.includes(adj._id))
@@ -2433,10 +3057,11 @@ const unknownFeedbackCount = computed(
 )
 
 const unsubmittedEnabled = computed(
-  () => expectedAdjudicatorIds.value.size > 0 || expectedTeamIds.value.size > 0
+  () => expectedFeedbackAdjudicatorIds.value.size > 0 || expectedTeamIds.value.size > 0
 )
 
 function onDragStart(kind: DragKind, id: string) {
+  if (locked.value) return
   dragPayload.value = { kind, id }
 }
 
@@ -2466,6 +3091,7 @@ function removeVenueFromAllocation(id: string) {
 }
 
 function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
   removeTeamFromAllocation(payload.id)
@@ -2478,6 +3104,7 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
 }
 
 function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'trainees') {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'adjudicator') return
   removeAdjudicatorFromAllocation(payload.id)
@@ -2488,6 +3115,7 @@ function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'tr
 }
 
 function dropVenue(row: DrawAllocationRow) {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
   removeVenueFromAllocation(payload.id)
@@ -2496,6 +3124,7 @@ function dropVenue(row: DrawAllocationRow) {
 }
 
 function dropToWaiting(kind: DragKind) {
+  if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== kind) return
   if (kind === 'team') removeTeamFromAllocation(payload.id)
@@ -2560,6 +3189,15 @@ watch(
   { immediate: true }
 )
 
+watch(defaultSnapshotTargetRound, () => {
+  if (compiledSnapshotOptions.value.length > 0) {
+    selectedDetailSnapshotId.value = defaultCompiledSnapshotId(compiledSnapshotOptions.value)
+  }
+  if (autoCompiledSnapshotOptions.value.length > 0) {
+    selectedAutoSnapshotId.value = defaultCompiledSnapshotId(autoCompiledSnapshotOptions.value)
+  }
+})
+
 watch(
   currentDraw,
   (next) => {
@@ -2579,9 +3217,14 @@ watch(
       selectedAutoSnapshotId.value = ''
       return
     }
-    const exists = options.some((option) => option.compiledId === selectedAutoSnapshotId.value)
+    const selected = String(selectedAutoSnapshotId.value ?? '').trim()
+    if (!selected) {
+      selectedAutoSnapshotId.value = defaultCompiledSnapshotId(options)
+      return
+    }
+    const exists = options.some((option) => option.compiledId === selected)
     if (!exists) {
-      selectedAutoSnapshotId.value = options[0].compiledId
+      selectedAutoSnapshotId.value = defaultCompiledSnapshotId(options)
     }
   },
   { immediate: true }
@@ -2594,9 +3237,14 @@ watch(
       selectedDetailSnapshotId.value = ''
       return
     }
-    const exists = options.some((option) => option.compiledId === selectedDetailSnapshotId.value)
+    const selected = String(selectedDetailSnapshotId.value ?? '').trim()
+    if (!selected) {
+      selectedDetailSnapshotId.value = defaultCompiledSnapshotId(options)
+      return
+    }
+    const exists = options.some((option) => option.compiledId === selected)
     if (!exists) {
-      selectedDetailSnapshotId.value = options[0].compiledId
+      selectedDetailSnapshotId.value = defaultCompiledSnapshotId(options)
     }
   },
   { immediate: true }
@@ -2607,7 +3255,22 @@ watch(
   (next) => {
     if (next === 'break') {
       requestScope.value = 'teams'
+      hydrateAutoBreakPolicyFromRound()
     }
+  }
+)
+
+watch(showAutoGenerateModal, (isOpen) => {
+  if (isOpen && autoOptions.value.teamAlgorithm === 'break') {
+    hydrateAutoBreakPolicyFromRound()
+  }
+})
+
+watch(
+  () => draws.error,
+  (message) => {
+    if (!message) return
+    openNotice(message)
   }
 )
 </script>
@@ -2651,27 +3314,101 @@ watch(
 .auto-generate-header {
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid #dbe2ea;
 }
 
 .auto-label {
   gap: var(--space-2);
+  align-items: center;
+}
+
+.auto-label strong {
+  font-size: 18px;
+  letter-spacing: 0.01em;
 }
 
 .auto-generate-layout {
+  gap: var(--space-3);
+}
+
+.auto-basic-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.auto-target-block {
   gap: var(--space-2);
 }
 
-.auto-group {
-  border: 1px solid var(--color-border);
+.auto-reference-block {
   gap: var(--space-2);
+}
+
+.auto-scope-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  background: #eef2f7;
+}
+
+.auto-scope-tab {
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: #334155;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.auto-scope-tab:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.82);
+  color: #0f172a;
+}
+
+.auto-scope-tab.active {
+  background: #ffffff;
+  border-color: #93c5fd;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.auto-scope-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auto-group {
+  border: 1px solid #dbe2ea;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  gap: var(--space-2);
+}
+
+.auto-group--basic {
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
 }
 
 .auto-group-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--color-text);
+  letter-spacing: 0.01em;
 }
 
 .option-title {
@@ -2770,6 +3507,19 @@ watch(
   gap: var(--space-3);
 }
 
+.embedded-reference-card {
+  border: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.embedded-reference-card h5 {
+  margin: 0;
+}
+
+.embedded-detail-snapshot-select {
+  width: min(520px, 100%);
+}
+
 .board-block {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -2780,6 +3530,12 @@ watch(
 .board-head {
   align-items: flex-end;
   justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.board-title-row {
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -2796,9 +3552,24 @@ watch(
   flex-wrap: wrap;
 }
 
+.preview-download-stack {
+  margin-top: var(--space-2);
+  gap: var(--space-1);
+}
+
+.section-download-row {
+  justify-content: flex-end;
+}
+
+.section-download-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .allocation-table-wrap {
   width: 100%;
   overflow-x: auto;
+  overflow-y: visible;
 }
 
 .allocation-table {
@@ -2825,6 +3596,24 @@ watch(
   width: 56px;
   text-align: center;
   font-weight: 700;
+}
+
+.match-col-draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.match-col-draggable:active {
+  cursor: grabbing;
+}
+
+.match-col-draggable.row-drag-source {
+  background: #eff6ff;
+}
+
+.match-col-draggable.row-drag-target {
+  outline: 2px dashed #93c5fd;
+  outline-offset: -2px;
 }
 
 .venue-col {
@@ -2855,9 +3644,9 @@ watch(
 }
 
 .warning-inline {
-  position: relative;
   display: inline-flex;
   align-items: center;
+  min-height: 24px;
 }
 
 .warning-summary {
@@ -2870,49 +3659,83 @@ watch(
   cursor: default;
 }
 
-.warning-summary--team {
+.warning-summary--critical {
+  background: #fff1f2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.warning-summary--warn {
   background: #fff7ed;
   color: #9a3412;
   border: 1px solid #fdba74;
 }
 
-.warning-summary--adjudicator {
+.warning-summary--info {
   background: #eff6ff;
   color: #1d4ed8;
   border: 1px solid #93c5fd;
 }
 
-.warning-summary--venue {
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
+.warning-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.warning-summary--mixed {
-  background: #faf5ff;
-  color: #6d28d9;
-  border: 1px solid #c4b5fd;
+.warning-legend-title {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.warning-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.warning-legend-item--critical {
+  color: #991b1b;
+  background: #fff1f2;
+  border-color: #fca5a5;
+}
+
+.warning-legend-item--warn {
+  color: #9a3412;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.warning-legend-item--info {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
 }
 
 .warning-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 15;
   min-width: 260px;
-  max-width: 420px;
+  max-width: min(420px, calc(100vw - 80px));
+  max-height: min(40vh, 280px);
   background: #ffffff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-2);
-  display: none;
+  display: grid;
   gap: var(--space-2);
   box-shadow: var(--shadow-card);
+  overflow-y: auto;
 }
 
-.warning-inline:hover .warning-popover,
-.warning-inline:focus-within .warning-popover {
-  display: grid;
+.warning-popover--floating {
+  position: fixed;
+  z-index: 60;
 }
 
 .checklist {
@@ -2927,13 +3750,53 @@ watch(
 }
 
 .pill {
-  background: var(--color-surface-muted);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #94a3b8;
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 3px 10px;
   font-size: 12px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   max-width: 100%;
+  color: #0f172a;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.06);
+}
+
+.pill-entity {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.pill-severity--critical {
+  border-color: #fca5a5;
+}
+
+.pill-severity--warn {
+  border-color: #fdba74;
+}
+
+.pill-severity--info {
+  border-color: #93c5fd;
+}
+
+.pill-focused {
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.15);
+  border-width: 2px;
+}
+
+.pill-focused.pill-severity--critical {
+  background: #fff1f2;
+}
+
+.pill-focused.pill-severity--warn {
+  background: #fff7ed;
+}
+
+.pill-focused.pill-severity--info {
+  background: #eff6ff;
 }
 
 .truncate-pill {
@@ -2944,14 +3807,15 @@ watch(
 
 .drop-zone {
   min-height: 34px;
-  border: 1px dashed var(--color-border);
+  border: 1px dashed #94a3b8;
   border-radius: var(--radius-md);
   padding: 4px 6px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  background: var(--color-surface-muted);
+  background: #f1f5f9;
+  position: relative;
 }
 
 .drop-zone.list {
@@ -2977,13 +3841,30 @@ watch(
   overflow-y: auto;
 }
 
+.drop-zone.allocation-drop-zone {
+  max-height: none;
+  overflow: visible;
+}
+
 .drop-zone.active {
-  border-color: var(--color-primary);
-  background: #eff6ff;
+  border-color: #1d4ed8;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(59, 130, 246, 0.14) 0 8px,
+      rgba(59, 130, 246, 0.24) 8px 16px
+    ),
+    #e0ecff;
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
 }
 
 .draggable {
   cursor: grab;
+}
+
+.draggable:hover {
+  border-color: #64748b;
+  background: #ffffff;
 }
 
 .list {
@@ -2997,10 +3878,25 @@ watch(
 }
 
 .warning-item {
-  display: flex;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: 2px;
   align-items: flex-start;
   font-size: 13px;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+
+.warning-item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.warning-item > :last-child {
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .option-help-text {
@@ -3024,34 +3920,56 @@ watch(
   font-weight: 700;
   line-height: 1.5;
   white-space: nowrap;
-}
-
-.warning-item--team {
-  color: #9a3412;
-}
-
-.warning-item--team .warning-kind {
-  background: #fff7ed;
-}
-
-.warning-item--adjudicator {
-  color: #1d4ed8;
-}
-
-.warning-item--adjudicator .warning-kind {
-  background: #eff6ff;
-}
-
-.warning-item--venue {
+  background: #f8fafc;
   color: #334155;
 }
 
-.warning-item--venue .warning-kind {
-  background: #f1f5f9;
+.warning-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.warning-severity--critical {
+  color: #991b1b;
+  background: #fff1f2;
+}
+
+.warning-severity--warn {
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.warning-severity--info {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.warning-item--critical {
+  color: #7f1d1d;
+}
+
+.warning-item--warn {
+  color: #7c2d12;
+}
+
+.warning-item--info {
+  color: #1e3a8a;
 }
 
 .waiting-area {
   gap: var(--space-3);
+}
+
+.drop-zone.waiting-drop-zone {
+  align-content: flex-start;
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 .add-row-wrap {
@@ -3126,6 +4044,13 @@ watch(
   gap: var(--space-2);
 }
 
+.detail-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+}
+
 .detail-row {
   display: grid;
   grid-template-columns: 140px 1fr;
@@ -3157,6 +4082,11 @@ watch(
 
 .auto-modal {
   gap: var(--space-3);
+  padding: clamp(14px, 2vw, 20px);
+  border: 1px solid #cbd5e1;
+  background:
+    radial-gradient(circle at top right, rgba(14, 116, 144, 0.09), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
 .import-info {
@@ -3166,6 +4096,19 @@ watch(
 .modal-actions {
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.auto-request-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fff1f2;
+  padding: 8px 10px;
+}
+
+.auto-modal-actions {
+  border-top: 1px solid #dbe2ea;
+  padding-top: var(--space-2);
 }
 
 .floating-detail {
@@ -3184,6 +4127,14 @@ watch(
 }
 
 @media (max-width: 960px) {
+  .auto-basic-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-scope-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .floating-detail {
     top: auto;
     bottom: 12px;

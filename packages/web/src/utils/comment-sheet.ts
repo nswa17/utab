@@ -51,7 +51,7 @@ export const DEFAULT_COMMENT_SHEET_CSV_LABELS: CommentSheetCsvLabels = {
   winner: 'Winner',
   adjudicator: 'Adjudicator',
   score: 'Score',
-  role: 'Role',
+  role: 'Submitter Type',
   comment: 'Comment',
   created_at: 'Created At',
   updated_at: 'Updated At',
@@ -66,6 +66,19 @@ function normalizeFiniteNumber(value: unknown): string {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   const parsed = Number(value)
   return Number.isFinite(parsed) ? String(parsed) : ''
+}
+
+function normalizeSubmittedEntityType(payload: Record<string, unknown>): string {
+  const type = normalizeText(payload.submittedEntityType)
+  if (type) return type
+  const legacyRole = normalizeText(payload.role).toLowerCase()
+  if (legacyRole === 'team' || legacyRole === 'speaker' || legacyRole === 'adjudicator') {
+    return legacyRole
+  }
+  if (legacyRole === 'chair' || legacyRole === 'panel' || legacyRole === 'trainee') {
+    return 'adjudicator'
+  }
+  return legacyRole
 }
 
 function escapeCsv(value: string): string {
@@ -107,7 +120,7 @@ export function buildCommentSheetRows(
       round_name: normalizeText(resolvers.resolveRoundName(round)),
       submitted_entity_id: submittedEntityId,
       submitted_entity_name: submittedEntityName,
-      role: normalizeText(payload.role),
+      role: normalizeSubmittedEntityType(payload),
       comment,
       created_at: normalizeText(submission.createdAt),
       updated_at: normalizeText(submission.updatedAt),
@@ -117,9 +130,14 @@ export function buildCommentSheetRows(
       const teamAId = normalizeText(payload.teamAId)
       const teamBId = normalizeText(payload.teamBId)
       const winnerId = normalizeText(payload.winnerId)
+      const draw = payload.draw === true
       const teamA = teamAId ? normalizeText(resolvers.resolveTeamName(teamAId)) : ''
       const teamB = teamBId ? normalizeText(resolvers.resolveTeamName(teamBId)) : ''
-      const winner = winnerId ? normalizeText(resolvers.resolveTeamName(winnerId)) : ''
+      const winner = draw
+        ? 'Draw'
+        : winnerId
+          ? normalizeText(resolvers.resolveTeamName(winnerId))
+          : ''
       const matchup = teamA || teamB ? `${teamA || teamAId} vs ${teamB || teamBId}` : ''
       rows.push({
         ...baseRow,

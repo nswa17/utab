@@ -23,7 +23,23 @@ export const useDrawsStore = defineStore('draws', () => {
           public: options?.forcePublic ? '1' : undefined,
         },
       })
-      draws.value = res.data?.data ?? []
+      const fetched = Array.isArray(res.data?.data) ? res.data.data : []
+      const normalizedRound = Number(round)
+      const shouldMergeByRound = Number.isInteger(normalizedRound)
+      if (!shouldMergeByRound) {
+        draws.value = fetched
+        return draws.value
+      }
+      const sameTournament = draws.value.filter(
+        (item) => String(item.tournamentId) === String(tournamentId)
+      )
+      const otherTournaments = draws.value.filter(
+        (item) => String(item.tournamentId) !== String(tournamentId)
+      )
+      const mergedTournamentDraws = sameTournament
+        .filter((item) => Number(item.round) !== normalizedRound)
+        .concat(fetched)
+      draws.value = otherTournaments.concat(mergedTournamentDraws)
       return draws.value
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load draws'

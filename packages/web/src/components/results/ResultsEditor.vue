@@ -26,9 +26,6 @@
       <textarea v-model="createPayload" rows="4" placeholder='{"standings": []}' />
     </form>
 
-    <p v-if="formError" class="error">{{ formError }}</p>
-    <p v-if="results.error" class="error">{{ results.error }}</p>
-
     <div v-if="items.length === 0" class="muted">{{ $t('結果がありません。') }}</div>
     <ul v-else class="list">
       <li v-for="result in items" :key="result._id" class="list-item result-item">
@@ -137,6 +134,8 @@
         </div>
       </div>
     </div>
+
+    <NoticeDialog v-model:open="showNoticeDialog" :message="noticeMessage" />
   </section>
 </template>
 
@@ -145,6 +144,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
+import NoticeDialog from '@/components/common/NoticeDialog.vue'
 import ReloadButton from '@/components/common/ReloadButton.vue'
 import { useResultsStore } from '@/stores/results'
 import type { Result } from '@/types/result'
@@ -172,7 +172,8 @@ const items = computed(() => {
 
 const createRound = ref(props.round ?? 1)
 const createPayload = ref('{"standings": []}')
-const formError = ref<string | null>(null)
+const showNoticeDialog = ref(false)
+const noticeMessage = ref('')
 
 const editingId = ref<string | null>(null)
 const editCardRef = ref<HTMLElement | null>(null)
@@ -185,6 +186,11 @@ const editStandings = ref<
 const deleteTarget = ref<Result | null>(null)
 const useStructured = ref(false)
 const structuredAvailable = computed(() => isStandingsPayload(editObject.value))
+
+function openNotice(message: string) {
+  noticeMessage.value = message
+  showNoticeDialog.value = true
+}
 
 function formatPayload(payload: Record<string, unknown>) {
   return JSON.stringify(payload, null, 2)
@@ -223,7 +229,6 @@ async function refresh() {
 }
 
 async function handleCreate() {
-  formError.value = null
   try {
     const payload = JSON.parse(createPayload.value)
     await results.createResult({
@@ -233,7 +238,7 @@ async function handleCreate() {
     })
     createPayload.value = '{"standings": []}'
   } catch {
-    formError.value = t('JSON形式が正しくありません')
+    openNotice(t('JSON形式が正しくありません'))
   }
 }
 
@@ -261,7 +266,6 @@ function cancelEdit() {
 
 async function saveEdit() {
   if (!editingId.value) return
-  formError.value = null
   try {
     let payload: any
     if (useStructured.value && structuredAvailable.value) {
@@ -295,7 +299,7 @@ async function saveEdit() {
     })
     cancelEdit()
   } catch {
-    formError.value = t('JSON形式が正しくありません')
+    openNotice(t('JSON形式が正しくありません'))
   }
 }
 
@@ -320,6 +324,14 @@ watch(
     if (next !== undefined) {
       createRound.value = next
     }
+  }
+)
+
+watch(
+  () => results.error,
+  (message) => {
+    if (!message) return
+    openNotice(message)
   }
 )
 
@@ -390,10 +402,6 @@ onMounted(() => {
 
 .payload-details[open] summary {
   margin-bottom: var(--space-2);
-}
-
-.error {
-  color: var(--color-danger);
 }
 
 .standings-row {

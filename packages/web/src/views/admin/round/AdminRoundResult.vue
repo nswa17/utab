@@ -102,6 +102,7 @@
       <div class="modal card stack" role="dialog" aria-modal="true">
         <h4>{{ $t('全削除') }}</h4>
         <p class="muted">{{ $t('このラウンドの結果をすべて削除しますか？') }}</p>
+        <p v-if="deleteAllError" class="error small">{{ deleteAllError }}</p>
         <div class="row modal-actions">
           <Button variant="ghost" size="sm" @click="closeDeleteAllModal">{{ $t('キャンセル') }}</Button>
           <Button variant="danger" size="sm" :disabled="raw.loading" @click="confirmDeleteAll">
@@ -245,6 +246,7 @@ const editing = ref(false)
 const editingId = ref<string | null>(null)
 const editPayload = ref('')
 const deleteAllModalOpen = ref(false)
+const deleteAllError = ref('')
 
 function format(value: any) {
   return JSON.stringify(value, null, 2)
@@ -352,19 +354,27 @@ async function remove(id?: string) {
 
 function openDeleteAllModal() {
   if (raw.loading) return
+  deleteAllError.value = ''
   deleteAllModalOpen.value = true
 }
 
 function closeDeleteAllModal() {
+  deleteAllError.value = ''
   deleteAllModalOpen.value = false
 }
 
 async function confirmDeleteAll() {
-  closeDeleteAllModal()
-  await raw.deleteRawResults(activeLabel.value, {
+  deleteAllError.value = ''
+  const deleted = await raw.deleteRawResults(activeLabel.value, {
     tournamentId: tournamentId.value,
     round: round.value,
   })
+  if (!deleted) {
+    deleteAllError.value = raw.error ?? t('全削除に失敗しました。')
+    raw.error = null
+    return
+  }
+  closeDeleteAllModal()
   await refresh()
 }
 

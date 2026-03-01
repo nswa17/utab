@@ -15,26 +15,6 @@
     <div v-else class="primary-nav-placeholder" aria-hidden="true"></div>
     <div class="actions">
       <span v-if="auth.username" class="muted">{{ auth.username }}</span>
-      <div class="lang-switch" role="group" :aria-label="$t('表示言語')">
-        <button
-          type="button"
-          class="lang-option"
-          :class="{ active: locale === 'ja' }"
-          :aria-pressed="locale === 'ja' ? 'true' : 'false'"
-          @click="changeLocale('ja')"
-        >
-          {{ $t('日本語') }}
-        </button>
-        <button
-          type="button"
-          class="lang-option"
-          :class="{ active: locale === 'en' }"
-          :aria-pressed="locale === 'en' ? 'true' : 'false'"
-          @click="changeLocale('en')"
-        >
-          {{ $t('English') }}
-        </button>
-      </div>
       <Button v-if="auth.isAuthenticated" variant="secondary" size="sm" @click="handleLogout">
         {{ $t('ログアウト') }}
       </Button>
@@ -46,15 +26,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
-import { setLocale, type Locale } from '@/i18n'
 import Button from '@/components/common/Button.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const { locale } = useI18n({ useScope: 'global' })
 
 const showPrimaryNav = computed(
   () => auth.isAuthenticated && (auth.role === 'superuser' || auth.role === 'organizer')
@@ -68,11 +45,6 @@ async function handleLogout() {
 function isPrimaryActive(section: 'admin' | 'user') {
   if (section === 'admin') return route.path.startsWith('/admin')
   return route.path.startsWith('/user') || route.path === '/'
-}
-
-function changeLocale(next: Locale) {
-  if (locale.value === next) return
-  setLocale(next)
 }
 </script>
 
@@ -189,47 +161,9 @@ function changeLocale(next: Locale) {
     display: none;
   }
 
-  .lang-option {
-    min-height: 34px;
-    padding: 0 10px;
-  }
-
   .actions :deep(.button) {
     min-height: 34px;
     padding-inline: 10px;
   }
-}
-
-.lang-switch {
-  display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--color-surface-muted);
-}
-
-.lang-option {
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-  min-height: 36px;
-  padding: 0 12px;
-  cursor: pointer;
-}
-
-.lang-option + .lang-option {
-  border-left: 1px solid var(--color-border);
-}
-
-.lang-option.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
-}
-
-.lang-option:focus-visible {
-  outline: 3px solid var(--color-focus);
-  outline-offset: -2px;
 }
 </style>
