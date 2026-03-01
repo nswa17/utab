@@ -2847,12 +2847,20 @@ function hasRequiredPreviousRoundReference(rounds: number[]): boolean {
   return rounds.includes(previousRound) && rounds[rounds.length - 1] === previousRound
 }
 
+function hasPersistedAllocationRows(draw: any | null | undefined): boolean {
+  return readAllocationTeamIds(draw?.allocation).length > 0
+}
+
 function hasConfirmedReferenceSelection(draw: any | null | undefined): boolean {
   if (priorRounds.value.length === 0) return true
   const userDefinedData = draw?.userDefinedData
   const sharedId = readDrawReferenceCompiledId(userDefinedData)
-  const teamId = readDrawReferenceCompiledIdByScope(userDefinedData, 'teams') || sharedId
-  const adjudicatorId = readDrawReferenceCompiledIdByScope(userDefinedData, 'adjudicators') || sharedId
+  const teamScopedId = readDrawReferenceCompiledIdByScope(userDefinedData, 'teams')
+  const adjudicatorScopedId = readDrawReferenceCompiledIdByScope(userDefinedData, 'adjudicators')
+  const teamId = teamScopedId || sharedId
+  const adjudicatorId = adjudicatorScopedId || sharedId
+  const hasAnyReferenceId = Boolean(sharedId || teamScopedId || adjudicatorScopedId)
+  if (!hasAnyReferenceId && hasPersistedAllocationRows(draw)) return true
   if (!teamId) return false
   if (shouldTrackAdjudicatorReference.value && !adjudicatorId) return false
   const teamRounds = normalizeReferenceRoundSelections(
@@ -3042,6 +3050,18 @@ async function confirmReferenceRounds() {
   }
   if (priorRounds.value.length > 0 && shouldTrackAdjudicatorReference.value && adjudicatorRounds.length === 0) {
     referenceConfirmError.value = t('ジャッジ結果参照ラウンドを1つ以上選択してください。')
+    return
+  }
+  if (priorRounds.value.length > 0 && !hasRequiredPreviousRoundReference(teamRounds)) {
+    referenceConfirmError.value = t('チーム結果参照ラウンドに直前ラウンドを含めてください。')
+    return
+  }
+  if (
+    priorRounds.value.length > 0 &&
+    shouldTrackAdjudicatorReference.value &&
+    !hasRequiredPreviousRoundReference(adjudicatorRounds)
+  ) {
+    referenceConfirmError.value = t('ジャッジ結果参照ラウンドに直前ラウンドを含めてください。')
     return
   }
   if (priorRounds.value.length === 0) {

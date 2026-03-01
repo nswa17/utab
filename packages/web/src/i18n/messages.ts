@@ -954,6 +954,10 @@ const en = {
     'Select at least one team result source round.',
   'ジャッジ結果参照ラウンドを1つ以上選択してください。':
     'Select at least one adjudicator result source round.',
+  'チーム結果参照ラウンドに直前ラウンドを含めてください。':
+    'Team result source rounds must include the immediately previous round.',
+  'ジャッジ結果参照ラウンドに直前ラウンドを含めてください。':
+    'Adjudicator result source rounds must include the immediately previous round.',
   '参照集計の確定に失敗しました。': 'Failed to finalize reference compile results.',
   '先に参照ラウンドを確定してください。': 'Finalize source rounds before continuing.',
   参照ラウンド: 'Source rounds',

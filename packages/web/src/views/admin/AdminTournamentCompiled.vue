@@ -1275,10 +1275,6 @@ function normalizeRoundSelection(roundNumbers: number[]): number[] {
 const availableCompileRoundNumbers = computed(() =>
   normalizeRoundSelection(sortedRounds.value.map((round) => round.round))
 )
-const latestAvailableCompileRound = computed<number | null>(() => {
-  if (availableCompileRoundNumbers.value.length === 0) return null
-  return availableCompileRoundNumbers.value[availableCompileRoundNumbers.value.length - 1]
-})
 const baseTeamResults = computed<any[]>(() => compiled.value?.compiled_team_results ?? [])
 const teamHasScores = computed(() =>
   phaseTeamResultsForDisplay.value.some((result) => result.details?.some((detail: any) => typeof detail.sum === 'number'))
@@ -2559,8 +2555,7 @@ function applyCompileDefaultsFromTournament() {
   compilePoiAggregation.value = normalizedOptions.duplicate_normalization.poi_aggregation
   compileBestAggregation.value = normalizedOptions.duplicate_normalization.best_aggregation
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
-  const latestRound = latestAvailableCompileRound.value
-  compileRounds.value = latestRound === null ? [] : [latestRound]
+  compileRounds.value = [...availableCompileRoundNumbers.value]
   compileDiffBaselineSelection.value = ''
 }
 
@@ -4219,7 +4214,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .existing-report-table-head {
   display: grid;
-  grid-template-columns: minmax(126px, 0.85fr) minmax(240px, 2fr) minmax(72px, 0.42fr) max-content;
+  grid-template-columns: minmax(120px, 0.82fr) minmax(0, 2fr) minmax(70px, 0.45fr) minmax(132px, 1fr);
   align-items: center;
   gap: var(--space-2);
   min-height: 34px;
@@ -4246,14 +4241,13 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .existing-report-row {
   display: grid;
-  grid-template-columns: minmax(126px, 0.85fr) minmax(240px, 2fr) minmax(72px, 0.42fr) max-content;
+  grid-template-columns: minmax(120px, 0.82fr) minmax(0, 2fr) minmax(70px, 0.45fr) minmax(132px, 1fr);
   align-items: center;
   gap: var(--space-2);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 0 var(--space-2);
   min-height: 54px;
-  overflow: hidden;
 }
 
 .existing-report-row:last-child {
@@ -4280,7 +4274,7 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   overflow: visible;
 }
 
-.existing-report-rounds-text {
+.existing-report-rounds-cell .existing-report-rounds-text {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -4304,9 +4298,9 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
 
 .existing-report-actions {
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: var(--space-1);
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   white-space: nowrap;
 }
 

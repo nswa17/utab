@@ -40,5 +40,8 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('CompiledSnapshotSelect')
     expect(source).toContain('handleSharedReferenceSnapshotSelection')
     expect(source).toContain('resolvePreferredSnapshotIdByReferenceRounds')
+    expect(source).toContain('hasPersistedAllocationRows')
+    expect(source).toContain('チーム結果参照ラウンドに直前ラウンドを含めてください。')
+    expect(source).toContain('ジャッジ結果参照ラウンドに直前ラウンドを含めてください。')
   })
 })
