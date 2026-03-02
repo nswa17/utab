@@ -1263,7 +1263,7 @@ describe('Server integration', () => {
     for (const name of ['Judge A', 'Judge B', 'Judge C', 'Judge D']) {
       const adjudicatorRes = await organizer
         .post('/api/adjudicators')
-        .send({ tournamentId, name, strength: 5 })
+        .send({ tournamentId, name, preev: 5 })
       expect(adjudicatorRes.status).toBe(201)
       adjudicatorRows.push(String(adjudicatorRes.body.data._id))
     }
@@ -1386,10 +1386,10 @@ describe('Server integration', () => {
 
     const chairRes = await organizer
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Split Chair', strength: 5 })
+      .send({ tournamentId, name: 'Split Chair', preev: 5 })
     const panelRes = await organizer
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Split Panel', strength: 5 })
+      .send({ tournamentId, name: 'Split Panel', preev: 5 })
     expect(chairRes.status).toBe(201)
     expect(panelRes.status).toBe(201)
     const chairId = String(chairRes.body.data._id)
@@ -1509,7 +1509,7 @@ describe('Server integration', () => {
     const adjudicatorRes = await organizer.post('/api/adjudicators').send({
       tournamentId,
       name: 'Fallback Judge',
-      strength: 5,
+      preev: 5,
     })
     expect(adjudicatorRes.status).toBe(201)
     const adjudicatorId = String(adjudicatorRes.body.data._id)
@@ -1569,7 +1569,7 @@ describe('Server integration', () => {
     const teamB = await organizer.post('/api/teams').send({ tournamentId: sourceTournamentId, name: 'Copy Team B' })
     const adjudicator = await organizer
       .post('/api/adjudicators')
-      .send({ tournamentId: sourceTournamentId, name: 'Copy Judge A', strength: 5 })
+      .send({ tournamentId: sourceTournamentId, name: 'Copy Judge A', preev: 5 })
     expect(teamA.status).toBe(201)
     expect(teamB.status).toBe(201)
     expect(adjudicator.status).toBe(201)
@@ -1640,7 +1640,7 @@ describe('Server integration', () => {
     const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'Clear Team B' })
     const adjudicator = await organizer
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Clear Judge A', strength: 5 })
+      .send({ tournamentId, name: 'Clear Judge A', preev: 5 })
     expect(teamA.status).toBe(201)
     expect(teamB.status).toBe(201)
     expect(adjudicator.status).toBe(201)

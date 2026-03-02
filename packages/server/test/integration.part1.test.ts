@@ -209,7 +209,6 @@ describe('Server integration', () => {
     const adjudicatorRes = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Judge 1',
-      strength: 5,
       preev: 2,
       details: [{ r: 1, institutions: ['internal-inst'] }],
       userDefinedData: { privateMemo: 'hidden' },
@@ -269,7 +268,7 @@ describe('Server integration', () => {
       `/api/adjudicators?tournamentId=${tournamentId}`
     )
     expect(publicAdjudicators.status).toBe(200)
-    expect('strength' in publicAdjudicators.body.data[0]).toBe(false)
+    expect('preev' in publicAdjudicators.body.data[0]).toBe(false)
     expect('details' in publicAdjudicators.body.data[0]).toBe(false)
     expect('userDefinedData' in publicAdjudicators.body.data[0]).toBe(false)
 
@@ -415,7 +414,7 @@ describe('Server integration', () => {
     const unavailableAdjudicatorRes = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Unavailable Judge',
-      strength: 3,
+      preev: 3,
       details: [{ r: 1, available: false }],
     })
     expect(unavailableAdjudicatorRes.status).toBe(201)
@@ -515,7 +514,6 @@ describe('Server integration', () => {
     const adjudicatorRes = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Judge 1',
-      strength: 5,
       preev: 2,
       details: [{ r: 1, conflicts: [teamId1], institutions: [institutionId] }],
     })
@@ -1630,11 +1628,11 @@ describe('Server integration', () => {
 
     const adjudicatorARes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Judge A', strength: 7 })
+      .send({ tournamentId, name: 'Judge A', preev: 7 })
     expect(adjudicatorARes.status).toBe(201)
     const adjudicatorBRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Judge B', strength: 6 })
+      .send({ tournamentId, name: 'Judge B', preev: 6 })
     expect(adjudicatorBRes.status).toBe(201)
 
     const venueARes = await agent.post('/api/venues').send({ tournamentId, name: 'Room 1' })
@@ -2748,7 +2746,7 @@ describe('Server integration', () => {
     const adjudicatorRes = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Solo Judge',
-      strength: 3,
+      preev: 3,
       details: [{ r: 1, available: true }],
     })
     expect(adjudicatorRes.status).toBe(201)

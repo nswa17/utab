@@ -154,14 +154,14 @@ async function main() {
         {
           tournamentId,
           name: 'Judge 1',
-          strength: 5,
+          preev: 5,
           template: { available: true, conflicts: [], conflict_teams: [] },
           details: [{ r: ROUND_NUMBER, available: true, conflicts: [], conflict_teams: [] }],
         },
         {
           tournamentId,
           name: 'Judge 2',
-          strength: 4,
+          preev: 4,
           template: { available: true, conflicts: [], conflict_teams: [] },
           details: [{ r: ROUND_NUMBER, available: true, conflicts: [], conflict_teams: [] }],
         },

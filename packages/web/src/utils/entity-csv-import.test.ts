@@ -40,8 +40,8 @@ describe('entity csv import', () => {
     const result = build({
       type: 'adjudicators',
       text: [
-        'name,strength,preev,available,conflicts,conflict_teams,available_r1,availability_r2,conflict_r2',
-        'Judge A,6,2,false,Institution A,Team A,1,,Team B',
+        'name,preev,available,conflicts,conflict_teams,available_r1,availability_r2,conflict_r2',
+        'Judge A,2,false,Institution A,Team A,1,,Team B',
       ].join('\n'),
     })
 
@@ -49,7 +49,6 @@ describe('entity csv import', () => {
     expect(result.payload).toHaveLength(1)
     const adjudicator = result.payload[0] as any
     expect(adjudicator.name).toBe('Judge A')
-    expect(adjudicator.strength).toBe(6)
     expect(adjudicator.preev).toBe(2)
     expect(adjudicator.template).toEqual({
       available: false,

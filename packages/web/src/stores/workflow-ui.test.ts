@@ -62,9 +62,9 @@ const PRESET = {
 楓高校B,伊藤 湊,true,true
 梅高校C,佐々木 凛,true,false
 松高校D,高橋 陽,true,false`,
-  adjudicatorsCsv: `name,strength,preev,available_r1,available_r2
-田中ジャッジ,7,4,true,true
-鈴木ジャッジ,6,3,true,true`,
+  adjudicatorsCsv: `name,preev,available_r1,available_r2
+田中ジャッジ,4,true,true
+鈴木ジャッジ,3,true,true`,
   expectedOrder: ['桜高校A', '楓高校B', '梅高校C', '松高校D'],
 }
 

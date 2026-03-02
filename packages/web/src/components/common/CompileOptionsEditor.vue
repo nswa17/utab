@@ -137,18 +137,55 @@
       </div>
     </section>
 
+    <section v-if="props.showRankingPriority" class="stack compile-group">
+      <RankingPriorityEditor
+        v-model="teamRankingPriorityOrderModel"
+        :title="$t('チーム順位優先度設定')"
+        :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+        :options="teamRankingPriorityOptions"
+        :disabled="props.disabled"
+        :min-active="1"
+        :active-title="$t('使用する基準')"
+        :inactive-title="$t('不使用')"
+        :inactive-empty-text="$t('不使用の指標はありません。')"
+        :active-action-label="$t('除外')"
+      />
+      <RankingPriorityEditor
+        v-model="adjudicatorRankingPriorityOrderModel"
+        :title="$t('ジャッジ順位優先度設定')"
+        :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
+        :options="adjudicatorRankingPriorityOptions"
+        :disabled="props.disabled"
+        :min-active="1"
+        :active-title="$t('使用する基準')"
+        :inactive-title="$t('不使用')"
+        :inactive-empty-text="$t('不使用の指標はありません。')"
+        :active-action-label="$t('除外')"
+      />
+    </section>
+
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type {
+  CompileAdjudicatorRankingMetric,
   CompileAggregationPolicy,
   CompileDuplicateMergePolicy,
   CompileMissingDataPolicy,
+  CompileRankingMetric,
   CompileWinnerPolicy,
+} from '@/types/compiled'
+import {
+  DEFAULT_COMPILE_OPTIONS,
+  compileAdjudicatorRankingMetrics,
+  compileRankingMetrics,
 } from '@/types/compiled'
 import Field from '@/components/common/Field.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
+import RankingPriorityEditor from '@/components/common/RankingPriorityEditor.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -156,6 +193,7 @@ const props = withDefaults(
     showSourceRounds?: boolean
     showWinnerScoring?: boolean
     showMergeAndMissing?: boolean
+    showRankingPriority?: boolean
     sourceRoundOptions?: Array<{ value: number; label: string; disabled?: boolean }>
   }>(),
   {
@@ -163,10 +201,12 @@ const props = withDefaults(
     showSourceRounds: false,
     showWinnerScoring: true,
     showMergeAndMissing: true,
+    showRankingPriority: false,
     sourceRoundOptions: () => [],
   }
 )
 
+const { t } = useI18n({ useScope: 'global' })
 const sourceRounds = defineModel<number[]>('sourceRounds', { default: () => [] })
 const winnerPolicy = defineModel<CompileWinnerPolicy>('winnerPolicy', { required: true })
 const tiePoints = defineModel<number>('tiePoints', { required: true })
@@ -174,6 +214,113 @@ const mergePolicy = defineModel<CompileDuplicateMergePolicy>('mergePolicy', { re
 const poiAggregation = defineModel<CompileAggregationPolicy>('poiAggregation', { required: true })
 const bestAggregation = defineModel<CompileAggregationPolicy>('bestAggregation', { required: true })
 const missingDataPolicy = defineModel<CompileMissingDataPolicy>('missingDataPolicy', { required: true })
+const teamRankingPriorityOrder = defineModel<CompileRankingMetric[]>('teamRankingPriorityOrder', {
+  default: () => [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order],
+})
+const adjudicatorRankingPriorityOrder = defineModel<CompileAdjudicatorRankingMetric[]>(
+  'adjudicatorRankingPriorityOrder',
+  {
+    default: () => [...DEFAULT_COMPILE_OPTIONS.adjudicator_ranking_priority.order],
+  }
+)
+
+function normalizeTeamRankingMetrics(values: string[]): CompileRankingMetric[] {
+  const normalized = Array.from(
+    new Set(
+      values.filter((value): value is CompileRankingMetric =>
+        compileRankingMetrics.includes(value as CompileRankingMetric)
+      )
+    )
+  )
+  if (normalized.length > 0) return normalized
+  return [...DEFAULT_COMPILE_OPTIONS.ranking_priority.order]
+}
+
+function normalizeAdjudicatorRankingMetrics(values: string[]): CompileAdjudicatorRankingMetric[] {
+  const normalized = Array.from(
+    new Set(
+      values.filter((value): value is CompileAdjudicatorRankingMetric =>
+        compileAdjudicatorRankingMetrics.includes(value as CompileAdjudicatorRankingMetric)
+      )
+    )
+  )
+  if (normalized.length > 0) return normalized
+  return [...DEFAULT_COMPILE_OPTIONS.adjudicator_ranking_priority.order]
+}
+
+const teamRankingPriorityOrderModel = computed<string[]>({
+  get: () => [...normalizeTeamRankingMetrics(teamRankingPriorityOrder.value)],
+  set: (next) => {
+    teamRankingPriorityOrder.value = normalizeTeamRankingMetrics(next)
+  },
+})
+
+const adjudicatorRankingPriorityOrderModel = computed<string[]>({
+  get: () => [...normalizeAdjudicatorRankingMetrics(adjudicatorRankingPriorityOrder.value)],
+  set: (next) => {
+    adjudicatorRankingPriorityOrder.value = normalizeAdjudicatorRankingMetrics(next)
+  },
+})
+
+function teamRankingMetricLabel(metric: CompileRankingMetric): string {
+  const labels: Record<CompileRankingMetric, string> = {
+    win: t('勝敗ポイント'),
+    sum: t('総得点'),
+    margin: t('得失点差'),
+    vote: t('ジャッジ支持数'),
+    average: t('平均得点'),
+    sd: t('得点の安定性'),
+  }
+  return labels[metric]
+}
+
+function teamRankingMetricDescription(metric: CompileRankingMetric): string {
+  const descriptions: Record<CompileRankingMetric, string> = {
+    win: t('勝ち=1点、引き分けは設定ポイント'),
+    sum: t('得点の合計値'),
+    margin: t('得点差の合計値'),
+    vote: t('ジャッジの支持数'),
+    average: t('平均得点'),
+    sd: t('得点のばらつき（小さいほど上位）'),
+  }
+  return descriptions[metric]
+}
+
+function adjudicatorRankingMetricLabel(metric: CompileAdjudicatorRankingMetric): string {
+  const labels: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('平均点'),
+    sd: t('標準偏差'),
+    num_experienced: t('ジャッジ担当回数'),
+    num_experienced_chair: t('チェア担当回数'),
+  }
+  return labels[metric]
+}
+
+function adjudicatorRankingMetricDescription(metric: CompileAdjudicatorRankingMetric): string {
+  const descriptions: Record<CompileAdjudicatorRankingMetric, string> = {
+    average: t('評価スコアの平均（高いほど上位）'),
+    sd: t('評価スコアのばらつき（小さいほど上位）'),
+    num_experienced: t('割り当てられた担当回数（多いほど上位）'),
+    num_experienced_chair: t('チェア担当回数（多いほど上位）'),
+  }
+  return descriptions[metric]
+}
+
+const teamRankingPriorityOptions = computed(() =>
+  compileRankingMetrics.map((metric) => ({
+    value: metric,
+    label: teamRankingMetricLabel(metric),
+    description: teamRankingMetricDescription(metric),
+  }))
+)
+
+const adjudicatorRankingPriorityOptions = computed(() =>
+  compileAdjudicatorRankingMetrics.map((metric) => ({
+    value: metric,
+    label: adjudicatorRankingMetricLabel(metric),
+    description: adjudicatorRankingMetricDescription(metric),
+  }))
+)
 
 function isSourceRoundSelected(roundNumber: number) {
   return sourceRounds.value.includes(roundNumber)

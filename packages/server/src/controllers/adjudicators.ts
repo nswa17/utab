@@ -4,7 +4,7 @@ import { sanitizeAdjudicatorForPublic } from '../services/response-sanitizer.js'
 import { createTournamentEntityCrudHandlers } from './shared/tournament-entity-crud.js'
 
 const handlers = createTournamentEntityCrudHandlers({
-  fields: ['name', 'strength', 'preev', 'template', 'details', 'userDefinedData'],
+  fields: ['name', 'preev', 'template', 'details', 'userDefinedData'],
   getModel: getAdjudicatorModel,
   sanitizeForPublic: sanitizeAdjudicatorForPublic,
   invalidEntityIdMessage: 'Invalid adjudicator id',

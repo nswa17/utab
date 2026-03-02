@@ -15,7 +15,6 @@ export interface Adjudicator {
   _id: string
   tournamentId: string
   name: string
-  strength: number
   preev?: number
   template?: AdjudicatorTemplate
   details?: AdjudicatorDetail[]

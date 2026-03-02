@@ -825,6 +825,8 @@
         <div class="stack recompute-panel">
           <CompileOptionsEditor
             v-model:source-rounds="compileRounds"
+            v-model:team-ranking-priority-order="teamRankingPriorityOrder"
+            v-model:adjudicator-ranking-priority-order="adjudicatorRankingPriorityOrder"
             v-model:winner-policy="compileWinnerPolicy"
             v-model:tie-points="compileTiePoints"
             v-model:merge-policy="compileDuplicateMergePolicy"
@@ -833,6 +835,7 @@
             v-model:missing-data-policy="compileMissingDataPolicy"
             :show-winner-scoring="false"
             :show-source-rounds="false"
+            :show-ranking-priority="true"
             :source-round-options="sortedRounds.map((round) => ({ value: round.round, label: round.name ?? $t('ラウンド {round}', { round: round.round }) }))"
             :disabled="isLoading"
           />
@@ -932,6 +935,7 @@ import {
   type CompileSource,
   type CompileOptions,
   type CompileOptionsInput,
+  type CompileAdjudicatorRankingMetric,
   type CompileRankingMetric,
 } from '@/types/compiled'
 import { normalizeRoundDefaults } from '@/utils/round-defaults'
@@ -1133,11 +1137,11 @@ const compileExecuted = ref(false)
 const resultSortKey = ref('ranking')
 const resultSortDirection = ref<'asc' | 'desc'>('asc')
 const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
-const rankingPriorityPreset = ref<CompileOptions['ranking_priority']['preset']>(
-  DEFAULT_COMPILE_OPTIONS.ranking_priority.preset
-)
-const rankingPriorityOrder = ref<CompileRankingMetric[]>([
+const teamRankingPriorityOrder = ref<CompileRankingMetric[]>([
   ...DEFAULT_COMPILE_OPTIONS.ranking_priority.order,
+])
+const adjudicatorRankingPriorityOrder = ref<CompileAdjudicatorRankingMetric[]>([
+  ...DEFAULT_COMPILE_OPTIONS.adjudicator_ranking_priority.order,
 ])
 const compileWinnerPolicy = ref<CompileOptions['winner_policy']>(
   DEFAULT_COMPILE_OPTIONS.winner_policy
@@ -1211,8 +1215,8 @@ type ReportSnapshotRow = {
 }
 type RecomputeOptionsSnapshot = {
   compileRounds: number[]
-  rankingPreset: CompileOptions['ranking_priority']['preset']
-  rankingOrder: CompileRankingMetric[]
+  teamRankingOrder: CompileRankingMetric[]
+  adjudicatorRankingOrder: CompileAdjudicatorRankingMetric[]
   winnerPolicy: CompileOptions['winner_policy']
   tiePoints: number
   mergePolicy: CompileOptions['duplicate_normalization']['merge_policy']
@@ -1555,19 +1559,19 @@ const compileIncludeLabelsFromRounds = computed(() =>
 function buildCompileOptions(overrides?: {
   missing_data_policy?: CompileOptions['missing_data_policy']
 }): CompileOptions {
-  const tournamentTeamRankingPriority = resolveTournamentTeamRankingPriority(
-    currentTournament.value?.user_defined_data?.team_ranking_priority
-  )
-  const tournamentAdjudicatorRankingPriority = resolveTournamentAdjudicatorRankingPriority(
-    currentTournament.value?.user_defined_data?.adjudicator_ranking_priority
-  )
+  const teamRankingPriority = resolveTournamentTeamRankingPriority({
+    order: teamRankingPriorityOrder.value,
+  })
+  const adjudicatorRankingPriority = resolveTournamentAdjudicatorRankingPriority({
+    order: adjudicatorRankingPriorityOrder.value,
+  })
   return {
     ranking_priority: {
-      preset: tournamentTeamRankingPriority.preset,
-      order: [...tournamentTeamRankingPriority.order],
+      preset: teamRankingPriority.preset,
+      order: [...teamRankingPriority.order],
     },
     adjudicator_ranking_priority: {
-      order: [...tournamentAdjudicatorRankingPriority.order],
+      order: [...adjudicatorRankingPriority.order],
     },
     winner_policy: compileWinnerPolicy.value,
     tie_points:
@@ -2545,10 +2549,13 @@ function applyCompileDefaultsFromTournament() {
   const tournamentTeamRankingPriority = resolveTournamentTeamRankingPriority(
     tournament.user_defined_data?.team_ranking_priority
   )
+  const tournamentAdjudicatorRankingPriority = resolveTournamentAdjudicatorRankingPriority(
+    tournament.user_defined_data?.adjudicator_ranking_priority
+  )
   const compileDefaults = normalizedDefaults.compile
   const normalizedOptions = normalizeCompileOptions(compileDefaults.options, compileDefaults.options)
-  rankingPriorityPreset.value = tournamentTeamRankingPriority.preset
-  rankingPriorityOrder.value = [...tournamentTeamRankingPriority.order]
+  teamRankingPriorityOrder.value = [...tournamentTeamRankingPriority.order]
+  adjudicatorRankingPriorityOrder.value = [...tournamentAdjudicatorRankingPriority.order]
   compileWinnerPolicy.value = normalizedOptions.winner_policy
   compileTiePoints.value = normalizedOptions.tie_points
   compileDuplicateMergePolicy.value = normalizedOptions.duplicate_normalization.merge_policy
@@ -2562,8 +2569,8 @@ function applyCompileDefaultsFromTournament() {
 function captureRecomputeSnapshot(): RecomputeOptionsSnapshot {
   return {
     compileRounds: [...compileRounds.value],
-    rankingPreset: rankingPriorityPreset.value,
-    rankingOrder: [...rankingPriorityOrder.value],
+    teamRankingOrder: [...teamRankingPriorityOrder.value],
+    adjudicatorRankingOrder: [...adjudicatorRankingPriorityOrder.value],
     winnerPolicy: compileWinnerPolicy.value,
     tiePoints: compileTiePoints.value,
     mergePolicy: compileDuplicateMergePolicy.value,
@@ -2575,8 +2582,8 @@ function captureRecomputeSnapshot(): RecomputeOptionsSnapshot {
 
 function restoreRecomputeSnapshot(snapshot: RecomputeOptionsSnapshot) {
   compileRounds.value = [...snapshot.compileRounds]
-  rankingPriorityPreset.value = snapshot.rankingPreset
-  rankingPriorityOrder.value = [...snapshot.rankingOrder]
+  teamRankingPriorityOrder.value = [...snapshot.teamRankingOrder]
+  adjudicatorRankingPriorityOrder.value = [...snapshot.adjudicatorRankingOrder]
   compileWinnerPolicy.value = snapshot.winnerPolicy
   compileTiePoints.value = snapshot.tiePoints
   compileDuplicateMergePolicy.value = snapshot.mergePolicy
@@ -3122,6 +3129,15 @@ function formatList(value: unknown) {
   return `${items.slice(0, 5).join(', ')} (+${items.length - 5})`
 }
 
+function formatCommentList(value: unknown) {
+  if (!Array.isArray(value)) return formatValue(value)
+  const items = value
+    .map((item) => String(item).trim())
+    .filter((item) => item !== '')
+  if (items.length === 0) return '—'
+  return items.map((item) => `💬 ${item}`).join('\n')
+}
+
 function rankingRowKey(row: any, index: number): string {
   const id = String(row?.id ?? '').trim()
   return id || `ranking-row-${index}`
@@ -3131,7 +3147,8 @@ function rankingEntityLabel(row: any): string {
   return entityName(String(row?.id ?? ''))
 }
 
-function rankingPlainValue(value: unknown): string {
+function rankingPlainValue(value: unknown, key: string): string {
+  if (key === 'comments') return formatCommentList(value)
   return formatList(value)
 }
 
@@ -3194,7 +3211,8 @@ function metricDeltaText(row: any, key: string) {
 
 function resultSortValue(row: any, key: string): number | string {
   if (key === 'id') return entityName(String(row?.id ?? ''))
-  if (key === 'comments' || key === 'judged_teams') return formatList(row?.[key])
+  if (key === 'comments') return formatCommentList(row?.[key])
+  if (key === 'judged_teams') return formatList(row?.[key])
   if (key === 'institutions' || key === 'teams') {
     if (Array.isArray(row?.[key])) return row[key].map((item: any) => String(item)).join(', ')
     return String(row?.[key] ?? '')

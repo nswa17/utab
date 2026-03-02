@@ -23,7 +23,6 @@ const adjudicatorSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
     name: { type: String, required: true },
-    strength: { type: Number, required: true },
     preev: { type: Number, default: 0 },
     template: { type: adjudicatorTemplateSchema, default: () => ({}) },
     details: { type: [adjudicatorDetailSchema], default: [] },

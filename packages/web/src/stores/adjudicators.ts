@@ -24,7 +24,6 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   async function createAdjudicator(payload: {
     tournamentId: string
     name: string
-    strength: number
     preev?: number
     template?: any
     details?: any[]
@@ -51,7 +50,6 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     tournamentId: string
     adjudicatorId: string
     name?: string
-    strength?: number
     preev?: number
     template?: any
     details?: any[]
@@ -63,7 +61,6 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       const res = await api.patch(`/adjudicators/${payload.adjudicatorId}`, {
         tournamentId: payload.tournamentId,
         name: payload.name,
-        strength: payload.strength,
         preev: payload.preev,
         template: payload.template,
         details: payload.details,

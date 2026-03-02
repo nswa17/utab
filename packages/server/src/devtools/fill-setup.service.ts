@@ -242,8 +242,7 @@ export async function fillTournamentSetupData(
       return {
         tournamentId,
         name: allocateName(adjudicatorNameSet, 'Dev Judge'),
-        strength: 5,
-        preev: 0,
+        preev: 5,
         template: {
           available: true,
           conflicts: assignedInstitutionId ? [assignedInstitutionId] : [],
