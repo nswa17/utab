@@ -17,7 +17,6 @@ const router: Router = Router()
 const createBodySchema = z.object({
   tournamentId: z.string(),
   name: z.string().min(1),
-  strength: z.number().nonnegative(),
   preev: z.number().optional(),
   template: z.any().optional(),
   details: z.any().optional(),
@@ -40,7 +39,6 @@ const updateSchema = {
     .object({
       tournamentId: z.string().min(1),
       name: z.string().min(1).optional(),
-      strength: z.number().nonnegative().optional(),
       preev: z.number().optional(),
       template: z.any().optional(),
       details: z.any().optional(),
@@ -49,7 +47,6 @@ const updateSchema = {
     .refine(
       (data) =>
         data.name !== undefined ||
-        data.strength !== undefined ||
         data.preev !== undefined ||
         data.template !== undefined ||
         data.details !== undefined ||
@@ -65,7 +62,6 @@ const bulkUpdateSchema = {
         id: z.string().min(1),
         tournamentId: z.string().min(1),
         name: z.string().min(1).optional(),
-        strength: z.number().nonnegative().optional(),
         preev: z.number().optional(),
         template: z.any().optional(),
         details: z.any().optional(),
@@ -74,7 +70,6 @@ const bulkUpdateSchema = {
       .refine(
         (data) =>
           data.name !== undefined ||
-          data.strength !== undefined ||
           data.preev !== undefined ||
           data.template !== undefined ||
           data.details !== undefined ||

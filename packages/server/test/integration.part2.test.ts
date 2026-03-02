@@ -225,7 +225,7 @@ describe('Server integration', () => {
 
     const adjudicatorRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Judge Sub', strength: 6 })
+      .send({ tournamentId, name: 'Judge Sub', preev: 6 })
     expect(adjudicatorRes.status).toBe(201)
     const adjudicatorId = adjudicatorRes.body.data._id
 
@@ -415,8 +415,8 @@ describe('Server integration', () => {
     )
 
     const adjudicatorsRes = await agent.post('/api/adjudicators').send([
-      { tournamentId, name: 'Judge 1', strength: 6 },
-      { tournamentId, name: 'Judge 2', strength: 5 },
+      { tournamentId, name: 'Judge 1', preev: 6 },
+      { tournamentId, name: 'Judge 2', preev: 5 },
     ])
     expect(adjudicatorsRes.status).toBe(201)
     expect(adjudicatorsRes.body.data.length).toBe(2)
@@ -680,25 +680,25 @@ describe('Server integration', () => {
 
     const chairRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Guard Chair', strength: 7 })
+      .send({ tournamentId, name: 'Guard Chair', preev: 7 })
     expect(chairRes.status).toBe(201)
     const chairId = chairRes.body.data._id
 
     const panelRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Guard Panel', strength: 6 })
+      .send({ tournamentId, name: 'Guard Panel', preev: 6 })
     expect(panelRes.status).toBe(201)
     const panelId = panelRes.body.data._id
 
     const traineeRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Guard Trainee', strength: 5 })
+      .send({ tournamentId, name: 'Guard Trainee', preev: 5 })
     expect(traineeRes.status).toBe(201)
     const traineeId = traineeRes.body.data._id
 
     const outsiderRes = await agent
       .post('/api/adjudicators')
-      .send({ tournamentId, name: 'Guard Outsider', strength: 4 })
+      .send({ tournamentId, name: 'Guard Outsider', preev: 4 })
     expect(outsiderRes.status).toBe(201)
     const outsiderId = outsiderRes.body.data._id
 

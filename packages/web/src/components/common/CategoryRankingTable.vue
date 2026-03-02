@@ -30,7 +30,7 @@
               {{ rankingDelta(row) }}
             </span>
           </span>
-          <span v-else-if="plainKeySet.has(key)">
+          <span v-else-if="plainKeySet.has(key)" class="plain-value">
             {{ plainCellValue(row, key) }}
           </span>
           <span v-else class="diff-value">
@@ -98,6 +98,10 @@ function plainCellValue(row: RankingRow, key: string): string {
 
 .diff-delta {
   font-size: 0.75rem;
+}
+
+.plain-value {
+  white-space: pre-line;
 }
 
 .diff-improved {

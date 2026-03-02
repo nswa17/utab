@@ -352,7 +352,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const adjudicatorInstances = adjudicators.map((adj) => ({
       id: adjudicatorMaps.map.get(String(adj._id))!,
       name: adj.name,
-      preev: (adj as any).preev ?? (adj as any).strength ?? 0,
+      preev: (adj as any).preev ?? 0,
       details: buildDetailsForRounds(
         (adj as any).details,
         roundsNeeded,

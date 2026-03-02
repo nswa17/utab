@@ -58,7 +58,6 @@ const knownStaticHeaders = new Set([
   'type',
   'priority',
   'speakers',
-  'strength',
   'preev',
   'available',
   'availability',
@@ -355,19 +354,18 @@ export function buildEntityImportPayload(
       const name = reader.read(row, ['name'], 0)
       if (!name) continue
 
-      const strength = toFiniteNumber(reader.read(row, ['strength'], 1), 0)
-      const preev = toFiniteNumber(reader.read(row, ['preev'], 2), 0)
+      const preev = toFiniteNumber(reader.read(row, ['preev'], 1), 0)
 
       const institutionIds = resolveNamedEntityIds(
         reader.read(row, ['conflicts', 'conflict', 'institutions', 'institution']),
         institutionLookup
       )
       const defaultAvailable = toBooleanCell(
-        reader.read(row, ['available', 'availability'], 3),
+        reader.read(row, ['available', 'availability'], 2),
         true
       )
       const baseConflictTeams = resolveNamedEntityIds(
-        reader.read(row, ['conflict_teams', 'conflict_team'], 4),
+        reader.read(row, ['conflict_teams', 'conflict_team'], 3),
         teamLookup
       )
 
@@ -401,7 +399,6 @@ export function buildEntityImportPayload(
       payload.push({
         tournamentId: options.tournamentId,
         name,
-        strength,
         preev,
         template: {
           available: defaultAvailable,

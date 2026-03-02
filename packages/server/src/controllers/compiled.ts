@@ -1072,7 +1072,7 @@ async function buildCompiledPayloadFromRaw(
       const adjudicator = adjudicatorId ? adjudicatorById.get(adjudicatorId) : null
       return {
         id: numericId,
-        preev: Number((adjudicator as any)?.preev ?? (adjudicator as any)?.strength ?? 0),
+        preev: Number((adjudicator as any)?.preev ?? 0),
         details: buildDetailsForRounds(
           (adjudicator as any)?.details,
           rounds,
@@ -1754,7 +1754,7 @@ async function buildCompiledPayloadFromSubmissions(
       const adjudicator = adjudicatorId ? adjudicatorById.get(adjudicatorId) : null
       return {
         id: numericId,
-        preev: Number((adjudicator as any)?.preev ?? (adjudicator as any)?.strength ?? 0),
+        preev: Number((adjudicator as any)?.preev ?? 0),
         details: buildDetailsForRounds(
           (adjudicator as any)?.details,
           rounds,

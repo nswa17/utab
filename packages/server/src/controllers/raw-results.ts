@@ -543,7 +543,7 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
         if (mappedId === undefined) return null
         return {
           id: mappedId,
-          preev: Number((adj as any).preev ?? (adj as any).strength ?? 0),
+          preev: Number((adj as any).preev ?? 0),
           details: buildDetailsForRounds(
             (adj as any).details,
             rounds,

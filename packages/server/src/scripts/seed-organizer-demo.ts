@@ -300,8 +300,7 @@ async function main() {
         {
           tournamentId,
           name: 'Judge 1',
-          strength: 5,
-          preev: 0,
+          preev: 5,
           template: {
             available: true,
             conflicts: [String(instA._id)],
@@ -315,8 +314,7 @@ async function main() {
         {
           tournamentId,
           name: 'Judge 2',
-          strength: 4,
-          preev: 0,
+          preev: 4,
           template: {
             available: true,
             conflicts: [String(instB._id)],

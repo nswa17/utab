@@ -804,28 +804,6 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('強さ')" :help="$t('推奨範囲: 0〜10')">
-                <template #label-suffix>
-                  <HelpTip
-                    :text="
-                      $t(
-                        '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。'
-                      )
-                    "
-                  />
-                </template>
-                <template #default="{ id, describedBy }">
-                  <input
-                    v-model.number="adjudicatorForm.strength"
-                    type="number"
-                    min="0"
-                    max="10"
-                    step="0.1"
-                    :id="id"
-                    :aria-describedby="describedBy"
-                  />
-                </template>
-              </Field>
               <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
                 <template #label-suffix>
                   <HelpTip
@@ -952,7 +930,7 @@
                 }}</span>
               </div>
               <div class="muted entity-secondary">
-                {{ $t('事前評価') }} {{ adj.preev ?? 0 }} / {{ $t('強さ') }} {{ adj.strength ?? 0 }}
+                {{ $t('事前評価') }} {{ adj.preev ?? 0 }}
               </div>
               <div class="row">
                 <Button
@@ -976,28 +954,6 @@
                   <label class="inline-control inline-control--grow">
                     <span class="inline-control-label">{{ $t('名前') }}</span>
                     <input v-model="entityForm.name" type="text" />
-                  </label>
-                  <label class="inline-control">
-                    <span class="inline-control-label">{{ $t('強さ') }}</span>
-                    <div class="number-stepper">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        @click="adjustEntityFormScore('strength', -0.5)"
-                      >
-                        -
-                      </Button>
-                      <input v-model.number="entityForm.strength" type="number" min="0" max="10" step="0.1" />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        @click="adjustEntityFormScore('strength', 0.5)"
-                      >
-                        +
-                      </Button>
-                    </div>
                   </label>
                   <label class="inline-control">
                     <span class="inline-control-label">{{ $t('事前評価') }}</span>
@@ -1593,6 +1549,8 @@
       :example="entityImportExample"
       :template-content="entityImportTemplate"
       :template-filename="entityImportTemplateFilename"
+      :header-guide-title="entityImportHeaderGuideTitle"
+      :header-guide-rows="entityImportHeaderGuideRows"
       :error="entityImportError"
       :disabled="isLoading"
       @file-change="handleEntityImportFile"
@@ -1869,7 +1827,6 @@ const teamSelectedSpeakerIds = ref<string[]>([])
 
 const adjudicatorForm = reactive({
   name: '',
-  strength: 5,
   preev: 0,
 })
 const adjudicatorInstitutionIds = ref<string[]>([])
@@ -1896,6 +1853,12 @@ type InstitutionOptionGroup = {
   items: Institution[]
 }
 const institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']
+type EntityImportHeaderGuideRow = {
+  header: string
+  required: boolean
+  description: string
+  example?: string
+}
 
 type EntityTabKey = 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
 const activeEntityTab = ref<EntityTabKey>('institutions')
@@ -1937,33 +1900,290 @@ const entityImportDescription = computed(() =>
   t('ヘッダー行は必須です。テンプレートをダウンロードして列名を維持したまま入力してください。')
 )
 
+function buildImportCsv(header: string[], rows: string[][]): string {
+  return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
+}
+
+function buildImportCsvPreview(csvText: string, maxLines = 6): string {
+  const lines = csvText.split('\n')
+  if (lines.length <= maxLines) return csvText
+  return [...lines.slice(0, maxLines), '...'].join('\n')
+}
+
+const importInstitutionRows: string[][] = [
+  ['Aurora University', 'institution', '1.2'],
+  ['Beacon College', 'institution', '1.0'],
+  ['Crest Institute', 'institution', '1.4'],
+  ['Delta Academy', 'institution', '0.9'],
+  ['East Block', 'region', '1.6'],
+  ['West Block', 'region', '1.5'],
+  ['North League', 'league', '1.3'],
+  ['South League', 'league', '1.1'],
+]
+
+const importVenueRows: string[][] = [
+  ['Room A1', '1', 'true', 'true', 'true'],
+  ['Room A2', '2', 'true', 'true', 'true'],
+  ['Room B1', '3', 'true', 'true', 'true'],
+  ['Room B2', '4', 'true', 'true', 'true'],
+]
+
+const importSpeakerRows: string[][] = Array.from({ length: 8 }, (_, teamIndex) => {
+  const teamNo = String(teamIndex + 1).padStart(2, '0')
+  return ['A', 'B', 'C'].map((suffix) => [`Speaker ${teamNo}${suffix}`])
+}).flat()
+
+const importTeamRows: string[][] = [
+  [
+    'Team 01',
+    'Aurora University|East Block|North League',
+    'Speaker 01A|Speaker 01B|Speaker 01C',
+    'true',
+    'true',
+    'true',
+  ],
+  [
+    'Team 02',
+    'Beacon College|East Block|South League',
+    'Speaker 02A|Speaker 02B|Speaker 02C',
+    'true',
+    'true',
+    'true',
+  ],
+  [
+    'Team 03',
+    'Crest Institute|East Block|North League',
+    'Speaker 03A|Speaker 03B|Speaker 03C',
+    'true',
+    'true',
+    'false',
+  ],
+  [
+    'Team 04',
+    'Delta Academy|East Block|South League',
+    'Speaker 04A|Speaker 04B|Speaker 04C',
+    'true',
+    'true',
+    'true',
+  ],
+  [
+    'Team 05',
+    'Aurora University|West Block|South League',
+    'Speaker 05A|Speaker 05B|Speaker 05C',
+    'false',
+    'false',
+    'true',
+  ],
+  [
+    'Team 06',
+    'Beacon College|West Block|North League',
+    'Speaker 06A|Speaker 06B|Speaker 06C',
+    'true',
+    'true',
+    'true',
+  ],
+  [
+    'Team 07',
+    'Crest Institute|West Block|South League',
+    'Speaker 07A|Speaker 07B|Speaker 07C',
+    'true',
+    'true',
+    'false',
+  ],
+  [
+    'Team 08',
+    'Delta Academy|West Block|North League',
+    'Speaker 08A|Speaker 08B|Speaker 08C',
+    'true',
+    'true',
+    'true',
+  ],
+]
+
+const importAdjudicatorRows: string[][] = [
+  ['Judge 01', '1', 'true', 'Aurora University', 'Team 05', 'true', 'false'],
+  ['Judge 02', '0', 'true', 'Beacon College', 'Team 02', 'true', 'true'],
+  ['Judge 03', '2', 'true', 'Crest Institute', 'Team 07', 'false', 'true'],
+  ['Judge 04', '-1', 'true', 'Delta Academy', 'Team 04', 'true', 'true'],
+  ['Judge 05', '1', 'true', 'East Block', '', 'true', 'false'],
+  ['Judge 06', '0', 'true', 'West Block', '', 'false', 'true'],
+  ['Judge 07', '3', 'true', 'North League', 'Team 08', 'true', 'true'],
+  ['Judge 08', '0', 'true', 'South League', 'Team 03', 'true', 'false'],
+  ['Judge 09', '2', 'true', 'Aurora University|East Block', 'Team 01', 'false', 'true'],
+  ['Judge 10', '1', 'true', 'Beacon College|West Block', 'Team 06', 'true', 'true'],
+  ['Judge 11', '1', 'true', 'Crest Institute|North League', 'Team 03', 'true', 'false'],
+  ['Judge 12', '-1', 'true', 'Delta Academy|South League', 'Team 04', 'false', 'true'],
+]
+
+const entityImportTemplateMap: Record<EntityTabKey, string> = {
+  teams: buildImportCsv(
+    ['name', 'institution', 'speakers', 'available', 'available_r1', 'available_r2'],
+    importTeamRows
+  ),
+  adjudicators: buildImportCsv(
+    [
+      'name',
+      'preev',
+      'available',
+      'conflicts',
+      'conflict_teams',
+      'available_r1',
+      'available_r2',
+    ],
+    importAdjudicatorRows
+  ),
+  venues: buildImportCsv(
+    ['name', 'priority', 'available', 'available_r1', 'available_r2'],
+    importVenueRows
+  ),
+  speakers: buildImportCsv(['name'], importSpeakerRows),
+  institutions: buildImportCsv(['name', 'category', 'priority'], importInstitutionRows),
+}
+
+const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRow[]> = {
+  teams: [
+    { header: 'name', required: true, description: 'チーム名。大会内で一意な名前を推奨。', example: 'Team 01' },
+    {
+      header: 'institution',
+      required: true,
+      description: '紐づけるコンフリクトグループ名。複数は | または ; 区切り。',
+      example: 'Aurora University|East Block|North League',
+    },
+    {
+      header: 'speakers',
+      required: true,
+      description: '所属スピーカー名。3 speakers/team を想定し、| または ; 区切り。',
+      example: 'Speaker 01A|Speaker 01B|Speaker 01C',
+    },
+    {
+      header: 'available',
+      required: false,
+      description: '全ラウンド共通のデフォルト出場可否 (true/false)。',
+      example: 'true',
+    },
+    {
+      header: 'available_r1',
+      required: false,
+      description: 'Round 1 の出場可否。未指定時は available を継承。',
+      example: 'true',
+    },
+    {
+      header: 'available_r2',
+      required: false,
+      description: 'Round 2 の出場可否。未指定時は available を継承。',
+      example: 'false',
+    },
+  ],
+  adjudicators: [
+    { header: 'name', required: true, description: 'ジャッジ名。', example: 'Judge 01' },
+    {
+      header: 'preev',
+      required: false,
+      description: '事前補正値。直近情報を反映する調整スコア (0基準・負数可)。',
+      example: '1',
+    },
+    {
+      header: 'available',
+      required: false,
+      description: '全ラウンド共通のデフォルト参加可否 (true/false)。',
+      example: 'true',
+    },
+    {
+      header: 'conflicts',
+      required: false,
+      description: 'コンフリクトグループ名。複数は | または ; 区切り。',
+      example: 'Aurora University|East Block',
+    },
+    {
+      header: 'conflict_teams',
+      required: false,
+      description: '個別コンフリクトのチーム名。複数は | または ; 区切り。',
+      example: 'Team 05',
+    },
+    {
+      header: 'available_r1',
+      required: false,
+      description: 'Round 1 の参加可否。未指定時は available を継承。',
+      example: 'true',
+    },
+    {
+      header: 'available_r2',
+      required: false,
+      description: 'Round 2 の参加可否。未指定時は available を継承。',
+      example: 'false',
+    },
+  ],
+  venues: [
+    { header: 'name', required: true, description: '会場名。', example: 'Room A1' },
+    {
+      header: 'priority',
+      required: false,
+      description: '会場優先度 (数値)。小さい値ほど優先利用。',
+      example: '1',
+    },
+    {
+      header: 'available',
+      required: false,
+      description: '全ラウンド共通の利用可否 (true/false)。',
+      example: 'true',
+    },
+    {
+      header: 'available_r1',
+      required: false,
+      description: 'Round 1 の利用可否。未指定時は available を継承。',
+      example: 'true',
+    },
+    {
+      header: 'available_r2',
+      required: false,
+      description: 'Round 2 の利用可否。未指定時は available を継承。',
+      example: 'true',
+    },
+  ],
+  speakers: [
+    { header: 'name', required: true, description: 'スピーカー名。', example: 'Speaker 01A' },
+  ],
+  institutions: [
+    {
+      header: 'name',
+      required: true,
+      description: 'コンフリクトグループ名。チーム/ジャッジCSVと同名で紐づく。',
+      example: 'Aurora University',
+    },
+    {
+      header: 'category',
+      required: false,
+      description: 'グループ種別 (institution / region / league)。',
+      example: 'region',
+    },
+    {
+      header: 'priority',
+      required: false,
+      description: '衝突優先度 (数値)。高いほど重視。',
+      example: '1.6',
+    },
+  ],
+}
+
 const entityImportExample = computed(() => {
-  if (entityImportType.value === 'teams')
-    return 'name,institution,speakers,available,available_r1\nTeam A,Institution A,Alice|Bob,true,true\nTeam B,Institution A,Bob,false,true'
-  if (entityImportType.value === 'adjudicators')
-    return 'name,strength,preev,available,conflicts,conflict_teams,available_r1\nJudge A,5,0,true,Institution A,Team A,true\nJudge B,4,1,false,Institution A,Team B,false'
-  if (entityImportType.value === 'venues')
-    return 'name,priority,available,available_r1\nRoom 101,1,true,true\nRoom 102,2,false,true'
-  if (entityImportType.value === 'speakers') return 'name\nSpeaker A\nSpeaker B'
-  if (entityImportType.value === 'institutions')
-    return 'name,category,priority\nInstitution A,region,2\nInstitution B,institution,1'
-  return ''
+  if (!entityImportType.value) return ''
+  return buildImportCsvPreview(entityImportTemplateMap[entityImportType.value])
 })
 
 const entityImportTemplate = computed(() => {
-  if (entityImportType.value === 'teams') {
-    return 'name,institution,speakers,available,available_r1\nTeam A,Institution A,Alice|Bob,true,true\nTeam B,Institution A,Bob,false,true'
-  }
-  if (entityImportType.value === 'adjudicators') {
-    return 'name,strength,preev,available,conflicts,conflict_teams,available_r1\nJudge A,5,0,true,Institution A,Team A,true\nJudge B,4,1,false,Institution A,Team B,false'
-  }
-  if (entityImportType.value === 'venues') {
-    return 'name,priority,available,available_r1\nRoom 101,1,true,true\nRoom 102,2,false,true'
-  }
-  if (entityImportType.value === 'speakers') return 'name\nSpeaker A\nSpeaker B'
-  if (entityImportType.value === 'institutions')
-    return 'name,category,priority\nInstitution A,region,2\nInstitution B,institution,1'
-  return ''
+  if (!entityImportType.value) return ''
+  return entityImportTemplateMap[entityImportType.value]
+})
+
+const entityImportHeaderGuideTitle = computed(() => {
+  const label = entityTabLabel(entityImportType.value)
+  if (!label) return t('CSVヘッダー説明')
+  return `${label} ${t('CSVヘッダー説明')}`
+})
+
+const entityImportHeaderGuideRows = computed<EntityImportHeaderGuideRow[]>(() => {
+  if (!entityImportType.value) return []
+  return entityImportHeaderGuideMap[entityImportType.value]
 })
 
 const entityImportTemplateFilename = computed(() => {
@@ -1997,7 +2217,6 @@ const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(nul
 const deleteEntityModalError = ref('')
 const entityForm = reactive<any>({
   name: '',
-  strength: 5,
   preev: 0,
   category: 'institution',
   priority: 1,
@@ -3339,13 +3558,11 @@ async function handleCreateAdjudicator() {
   await adjudicators.createAdjudicator({
     tournamentId: tournamentId.value,
     name: adjudicatorForm.name,
-    strength: adjudicatorForm.strength,
     preev: adjudicatorForm.preev,
     template,
     details,
   })
   adjudicatorForm.name = ''
-  adjudicatorForm.strength = 5
   adjudicatorForm.preev = 0
   adjudicatorInstitutionIds.value = []
   adjudicatorInstitutionSearch.value = ''
@@ -3569,7 +3786,7 @@ function adjustDetailPriority(row: any, delta: number) {
   row.priority = Math.max(1, Math.round(next))
 }
 
-function adjustEntityFormScore(field: 'strength' | 'preev', delta: number) {
+function adjustEntityFormScore(field: 'preev', delta: number) {
   const current = Number(entityForm[field] ?? 0)
   const next = Number.isFinite(current) ? current + delta : 0
   const clamped = Math.min(10, Math.max(0, next))
@@ -3585,7 +3802,6 @@ function adjustEntityFormPriority(delta: number) {
 function startEditEntity(type: string, entity: any) {
   editingEntity.value = { type, id: entity._id }
   entityForm.name = entity.name ?? ''
-  entityForm.strength = entity.strength ?? 5
   entityForm.preev = entity.preev ?? 0
   entityForm.category = institutionCategoryLabel(entity.category)
   entityForm.priority = institutionPriorityValue(entity.priority)
@@ -3655,7 +3871,6 @@ async function saveEntityEdit() {
       tournamentId: tournamentId.value,
       adjudicatorId: id,
       name: entityForm.name,
-      strength: Number(entityForm.strength),
       preev: Number(entityForm.preev),
       template,
       details: details.length > 0 ? details : undefined,

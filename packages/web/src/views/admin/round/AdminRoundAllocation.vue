@@ -2158,7 +2158,7 @@ const adjudicatorFilterOptions = computed(() => [
   {
     value: 'by_bubble',
     label: t('バブル配慮'),
-    description: t('勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ強度を調整します。'),
+    description: t('勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ評価を調整します。'),
   },
   {
     value: 'by_strength',

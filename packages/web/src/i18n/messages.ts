@@ -4,7 +4,7 @@ const en = {
   CSVダウンロード: 'Download CSV',
   'CSV例: Team A,Institution A,Speaker 1|Speaker 2':
     'CSV example: Team A,Institution A,Speaker 1|Speaker 2',
-  'CSV例: Judge A,5,0,true': 'CSV example: Judge A,5,0,true',
+  'CSV例: Judge A,0,true': 'CSV example: Judge A,0,true',
   'CSV例: Room 101': 'CSV example: Room 101',
   'CSV例: Speaker A': 'CSV example: Speaker A',
   'CSV例: Institution A': 'CSV example: Institution A',
@@ -18,6 +18,14 @@ const en = {
   CSV取り込みに失敗しました: 'CSV import failed.',
   'CSV/TSVファイル': 'CSV/TSV file',
   CSVテンプレートをダウンロード: 'Download CSV template',
+  ヘッダー説明を見る: 'View header guide',
+  CSVヘッダー説明: 'CSV header guide',
+  ヘッダー: 'Header',
+  意味: 'Meaning',
+  入力例: 'Example',
+  任意: 'Optional',
+  '列名は変更せず、値のみ編集してください。複数値は | または ; で区切れます。':
+    'Keep column names unchanged and edit only values. Separate multiple values with | or ;.',
   'CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。':
     'Select a CSV/TSV file and apply only non-empty cells to the draw.',
   'CSV/TSVファイルを選択して一括取り込みできます。':
@@ -589,8 +597,8 @@ const en = {
   '対戦表公開（ジャッジのみ）': 'Publish draw (adjudicators only)',
   バブル: 'Bubble',
   バブル配慮: 'Bubble consideration',
-  '勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ強度を調整します。':
-    'Prioritize rooms near the middle of the standings and tune adjudicator strength by room.',
+  '勝敗順位の中位に近い部屋を優先し、部屋ごとにジャッジ評価を調整します。':
+    'Prioritize rooms near the middle of the standings and tune adjudicator scores by room.',
   パスワード: 'Password',
   パスワードを表示: 'Show password',
   パスワードを隠す: 'Hide password',
@@ -842,11 +850,7 @@ const en = {
   '対象のジャッジが見つかりません。': 'Target adjudicator not found.',
   対象ラウンド: 'Target rounds',
   平均: 'Average',
-  強さ: 'Strength',
   機関衝突重み: 'Institution conflict weight',
-  '強さ: {value}': 'Strength: {value}',
-  '強さは自動割り当て時に使う内部指標です。値が高いほど上位卓の割り当て候補になりやすくなります。':
-    'Strength is an internal score used for auto allocation; higher values are more likely to be placed at top rooms.',
   '推奨範囲: 0〜10': 'Recommended range: 0 to 10',
   '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。':
     'Pre-evaluation is a prior estimate used for auto allocation priority.',
@@ -1500,8 +1504,8 @@ const en = {
   部屋順サマリ: 'Room-order summary',
   部屋順プレビュー: 'Room-order preview',
   Win順プレビュー: 'Win-order preview',
-  'CSV例: name,strength,preev,active,available,conflicts,available_r1':
-    'CSV example: name,strength,preev,active,available,conflicts,available_r1',
+  'CSV例: name,preev,active,available,conflicts,available_r1':
+    'CSV example: name,preev,active,available,conflicts,available_r1',
   'one-up-one-down': 'one-up-one-down',
   '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。':
     'Stable matching is preference-based; tournament standard/extended use win brackets.',
