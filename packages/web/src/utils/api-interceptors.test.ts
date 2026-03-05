@@ -27,6 +27,10 @@ describe('setupApiInterceptors', () => {
     vi.restoreAllMocks()
   })
 
+  it('uses the versioned API base URL by default', () => {
+    expect(api.defaults.baseURL).toBe('/api/v1')
+  })
+
   it('redirects to login on admin-route 401 responses with login-required message', async () => {
     const { rejected, replace } = await setup('/admin/abc')
     const error = {

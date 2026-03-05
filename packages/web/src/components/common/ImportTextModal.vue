@@ -53,7 +53,7 @@
           {{ headerGuideLabelText }}
         </Button>
       </div>
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="error import-error">{{ error }}</p>
 
       <div class="row import-modal-actions">
         <Button variant="ghost" size="sm" @click="emit('close')">{{ cancelLabelText }}</Button>
@@ -318,6 +318,11 @@ onUnmounted(() => {
   font-size: 12px;
   line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.import-error {
+  white-space: pre-line;
+  line-height: 1.5;
 }
 
 .template-download-button {

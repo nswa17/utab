@@ -349,8 +349,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
           adjudicatorInstitutionIds,
           input.institutionCategory
         )
-        const conflictCategory = conflictCategories[0]
-        if (conflictCategory) {
+        conflictCategories.forEach((conflictCategory) => {
           warnings.push(
             createWarning(
               rowIndex,
@@ -365,7 +364,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
               }
             )
           )
-        }
+        })
         if (input.adjudicatorConflicts(adjudicatorId).includes(teamId)) {
           warnings.push(
             createWarning(
@@ -402,8 +401,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
           input.adjudicatorInstitutions(adjudicatorB),
           input.institutionCategory
         )
-        const conflictCategory = conflictCategories[0]
-        if (conflictCategory) {
+        conflictCategories.forEach((conflictCategory) => {
           warnings.push(
             createWarning(
               rowIndex,
@@ -418,7 +416,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
               }
             )
           )
-        }
+        })
       }
     }
 

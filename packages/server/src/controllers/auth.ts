@@ -284,8 +284,11 @@ export const listServiceTokenRevocations: RequestHandler = async (req, res, next
         : 50
 
     const filter: Record<string, unknown> = {}
+    const now = new Date()
     if (active === 'true') {
-      filter.expireAt = { $gt: new Date() }
+      filter.expireAt = { $gt: now }
+    } else if (active === 'false') {
+      filter.expireAt = { $lte: now }
     }
     const items = await ServiceTokenRevocationModel.find(filter)
       .sort({ revokedAt: -1, _id: -1 })

@@ -18,15 +18,27 @@ function build(options: {
   type: 'teams' | 'adjudicators' | 'venues' | 'speakers' | 'institutions'
   text: string
   roundNumbers?: number[]
+  existingEntities?: Array<{ _id: string; name: string }>
 }) {
+  const defaultExistingEntities =
+    options.type === 'teams'
+      ? baseTeams
+      : options.type === 'speakers'
+        ? baseSpeakers
+        : options.type === 'institutions'
+          ? baseInstitutions
+          : []
   return buildEntityImportPayload({
     type: options.type,
     text: options.text,
     tournamentId,
     roundNumbers: options.roundNumbers ?? [1, 2, 3],
     teams: baseTeams,
+    adjudicators: [],
+    venues: [],
     speakers: baseSpeakers,
     institutions: baseInstitutions,
+    existingEntities: options.existingEntities ?? defaultExistingEntities,
     institutionCategoryLabel: (value) => String(value ?? 'institution'),
     institutionPriorityValue: (value) => {
       const parsed = Number(value)
@@ -143,8 +155,10 @@ describe('entity csv import', () => {
       roundNumbers: [1],
     })
 
-    expect(result.errors.some((message) => message.includes('institution'))).toBe(true)
-    expect(result.errors.some((message) => message.includes('speakers'))).toBe(true)
+    expect(result.warnings.some((message) => message.includes('institution'))).toBe(true)
+    expect(result.warnings.some((message) => message.includes('speakers'))).toBe(true)
+    expect(result.missingEntityWarnings.some((warning) => warning.kind === 'institution')).toBe(true)
+    expect(result.missingEntityWarnings.some((warning) => warning.kind === 'speaker')).toBe(true)
   })
 
   it('returns errors when adjudicator csv includes unknown conflict names', () => {
@@ -157,8 +171,38 @@ describe('entity csv import', () => {
       roundNumbers: [1, 2],
     })
 
-    expect(result.errors.some((message) => message.includes('conflicts'))).toBe(true)
-    expect(result.errors.some((message) => message.includes('conflict_teams'))).toBe(true)
-    expect(result.errors.some((message) => message.includes('conflicts_r2'))).toBe(true)
+    expect(result.warnings.some((message) => message.includes('conflicts'))).toBe(true)
+    expect(result.warnings.some((message) => message.includes('conflict_teams'))).toBe(true)
+    expect(result.warnings.some((message) => message.includes('conflicts_r2'))).toBe(true)
+    expect(result.missingEntityWarnings.some((warning) => warning.kind === 'institution')).toBe(true)
+    expect(result.missingEntityWarnings.some((warning) => warning.kind === 'team')).toBe(true)
+  })
+
+  it('returns duplicate warnings when csv includes an existing team name', () => {
+    const result = build({
+      type: 'teams',
+      text: ['name,institution,speakers', 'Team A,Institution A,Alice|Bob'].join('\n'),
+      roundNumbers: [1],
+    })
+
+    expect(result.duplicateNameWarnings).toEqual([
+      { line: 2, name: 'Team A', type: 'teams', source: 'existing' },
+    ])
+    expect(result.warnings.some((message) => message.includes('既存のチーム名と重複'))).toBe(true)
+  })
+
+  it('returns duplicate warnings when csv repeats the same speaker name', () => {
+    const result = build({
+      type: 'speakers',
+      text: ['name', 'New Speaker', 'New Speaker'].join('\n'),
+      existingEntities: [],
+    })
+
+    expect(result.duplicateNameWarnings).toEqual([
+      { line: 3, name: 'New Speaker', type: 'speakers', source: 'csv', firstLine: 2 },
+    ])
+    expect(result.warnings.some((message) => message.includes('CSV内でスピーカー名が重複'))).toBe(
+      true
+    )
   })
 })
