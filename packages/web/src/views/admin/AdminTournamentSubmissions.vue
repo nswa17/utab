@@ -132,9 +132,9 @@
                 <th>{{ $t('チーム') }}</th>
                 <th>{{ $t('スピーカー') }}</th>
                 <th>{{ $t('スコア') }}</th>
-                <th>{{ $t('Matter') }}</th>
-                <th>{{ $t('Manner') }}</th>
-                <th>{{ $t('Best') }}</th>
+                <th>{{ $t('マター') }}</th>
+                <th>{{ $t('マナー') }}</th>
+                <th>{{ $t('ベスト') }}</th>
                 <th>{{ $t('POI') }}</th>
               </tr>
             </thead>
@@ -228,7 +228,7 @@
                 v-model="editingFeedbackScore"
               />
             </Field>
-            <Field :label="$t('Matter')" v-slot="{ id, describedBy }">
+            <Field :label="$t('マター')" v-slot="{ id, describedBy }">
               <input
                 :id="id"
                 :aria-describedby="describedBy"
@@ -237,7 +237,7 @@
                 v-model="editingFeedbackMatter"
               />
             </Field>
-            <Field :label="$t('Manner')" v-slot="{ id, describedBy }">
+            <Field :label="$t('マナー')" v-slot="{ id, describedBy }">
               <input
                 :id="id"
                 :aria-describedby="describedBy"
@@ -473,9 +473,9 @@
                               <th>{{ $t('チーム') }}</th>
                               <th>{{ $t('スピーカー') }}</th>
                               <th>{{ $t('スコア') }}</th>
-                              <th>{{ $t('Matter') }}</th>
-                              <th>{{ $t('Manner') }}</th>
-                              <th>{{ $t('Best') }}</th>
+                              <th>{{ $t('マター') }}</th>
+                              <th>{{ $t('マナー') }}</th>
+                              <th>{{ $t('ベスト') }}</th>
                               <th>{{ $t('POI') }}</th>
                             </tr>
                           </thead>
@@ -503,9 +503,9 @@
                               <th>{{ $t('チーム') }}</th>
                               <th>{{ $t('スピーカー') }}</th>
                               <th>{{ $t('スコア') }}</th>
-                              <th>{{ $t('Matter') }}</th>
-                              <th>{{ $t('Manner') }}</th>
-                              <th>{{ $t('Best') }}</th>
+                              <th>{{ $t('マター') }}</th>
+                              <th>{{ $t('マナー') }}</th>
+                              <th>{{ $t('ベスト') }}</th>
                               <th>{{ $t('POI') }}</th>
                             </tr>
                           </thead>
@@ -623,7 +623,7 @@
                               v-model="editingFeedbackScore"
                             />
                           </Field>
-                          <Field :label="$t('Matter')" v-slot="{ id, describedBy }">
+                          <Field :label="$t('マター')" v-slot="{ id, describedBy }">
                             <input
                               :id="id"
                               :aria-describedby="describedBy"
@@ -632,7 +632,7 @@
                               v-model="editingFeedbackMatter"
                             />
                           </Field>
-                          <Field :label="$t('Manner')" v-slot="{ id, describedBy }">
+                          <Field :label="$t('マナー')" v-slot="{ id, describedBy }">
                             <input
                               :id="id"
                               :aria-describedby="describedBy"
@@ -697,11 +697,11 @@
                             <strong>{{ feedbackScoreText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                           </div>
                           <div class="stack feedback-read-item">
-                            <span class="muted small">{{ $t('Matter') }}</span>
+                            <span class="muted small">{{ $t('マター') }}</span>
                             <strong>{{ feedbackMatterText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                           </div>
                           <div class="stack feedback-read-item">
-                            <span class="muted small">{{ $t('Manner') }}</span>
+                            <span class="muted small">{{ $t('マナー') }}</span>
                             <strong>{{ feedbackMannerText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                           </div>
                           <div class="stack feedback-read-item">
@@ -866,9 +866,9 @@
                           <th>{{ $t('チーム') }}</th>
                           <th>{{ $t('スピーカー') }}</th>
                           <th>{{ $t('スコア') }}</th>
-                          <th>{{ $t('Matter') }}</th>
-                          <th>{{ $t('Manner') }}</th>
-                          <th>{{ $t('Best') }}</th>
+                          <th>{{ $t('マター') }}</th>
+                          <th>{{ $t('マナー') }}</th>
+                          <th>{{ $t('ベスト') }}</th>
                           <th>{{ $t('POI') }}</th>
                         </tr>
                       </thead>
@@ -896,9 +896,9 @@
                           <th>{{ $t('チーム') }}</th>
                           <th>{{ $t('スピーカー') }}</th>
                           <th>{{ $t('スコア') }}</th>
-                          <th>{{ $t('Matter') }}</th>
-                          <th>{{ $t('Manner') }}</th>
-                          <th>{{ $t('Best') }}</th>
+                          <th>{{ $t('マター') }}</th>
+                          <th>{{ $t('マナー') }}</th>
+                          <th>{{ $t('ベスト') }}</th>
                           <th>{{ $t('POI') }}</th>
                         </tr>
                       </thead>
@@ -1016,7 +1016,7 @@
                           v-model="editingFeedbackScore"
                         />
                       </Field>
-                      <Field :label="$t('Matter')" v-slot="{ id, describedBy }">
+                      <Field :label="$t('マター')" v-slot="{ id, describedBy }">
                         <input
                           :id="id"
                           :aria-describedby="describedBy"
@@ -1025,7 +1025,7 @@
                           v-model="editingFeedbackMatter"
                         />
                       </Field>
-                      <Field :label="$t('Manner')" v-slot="{ id, describedBy }">
+                      <Field :label="$t('マナー')" v-slot="{ id, describedBy }">
                         <input
                           :id="id"
                           :aria-describedby="describedBy"
@@ -1090,11 +1090,11 @@
                         <strong>{{ feedbackScoreText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                       </div>
                       <div class="stack feedback-read-item">
-                        <span class="muted small">{{ $t('Matter') }}</span>
+                        <span class="muted small">{{ $t('マター') }}</span>
                         <strong>{{ feedbackMatterText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                       </div>
                       <div class="stack feedback-read-item">
-                        <span class="muted small">{{ $t('Manner') }}</span>
+                        <span class="muted small">{{ $t('マナー') }}</span>
                         <strong>{{ feedbackMannerText((item.payload ?? {}) as Record<string, unknown>) }}</strong>
                       </div>
                       <div class="stack feedback-read-item">
@@ -2394,9 +2394,9 @@ function buildFeedbackPayloadFromForm() {
     return fail(t('スコアは0以上で入力してください。'))
   }
 
-  const matterResult = parseOptionalNumber(editingFeedbackMatter.value, t('Matter'))
+  const matterResult = parseOptionalNumber(editingFeedbackMatter.value, t('マター'))
   if (!matterResult.ok) return fail(matterResult.message)
-  const mannerResult = parseOptionalNumber(editingFeedbackManner.value, t('Manner'))
+  const mannerResult = parseOptionalNumber(editingFeedbackManner.value, t('マナー'))
   if (!mannerResult.ok) return fail(mannerResult.message)
 
   const payload: Record<string, unknown> = {

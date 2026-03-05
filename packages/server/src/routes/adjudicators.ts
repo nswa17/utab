@@ -9,6 +9,7 @@ import {
   listAdjudicators,
   updateAdjudicator,
 } from '../controllers/adjudicators.js'
+import { eraseAdjudicatorPersonalData } from '../controllers/privacy.js'
 import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 
@@ -84,6 +85,18 @@ const deleteSchema = {
   query: z.object({ tournamentId: z.string().min(1) }),
 }
 
+const erasePersonalDataSchema = {
+  params: z.object({ id: z.string().min(1) }),
+  query: z.object({ tournamentId: z.string().min(1) }),
+  body: z.object({
+    reason: z.string().min(5).max(500),
+    approvedBy: z.string().min(1).max(128).optional(),
+    targetRefs: z.array(z.string().min(1).max(256)).max(20).optional(),
+    eraseMode: z.enum(['anonymize', 'hard_delete']).optional(),
+    reauthPassword: z.string().min(1).max(200).optional(),
+  }),
+}
+
 const bulkDeleteSchema = {
   query: z.object({
     tournamentId: z.string().min(1),
@@ -106,6 +119,12 @@ router.get(
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createAdjudicator)
 router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateAdjudicators)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateAdjudicator)
+router.delete(
+  '/:id/personal-data',
+  requireTournamentAdmin(),
+  validateRequest(erasePersonalDataSchema),
+  eraseAdjudicatorPersonalData
+)
 router.delete('/', requireTournamentAdmin(), validateRequest(bulkDeleteSchema), bulkDeleteAdjudicators)
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteAdjudicator)
 

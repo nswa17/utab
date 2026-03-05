@@ -98,4 +98,11 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('adjustEntityFormPriority')
     expect(source).toContain('number-stepper')
   })
+
+  it('keeps selected CSV file visible while reading import text', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('@file-change="handleEntityImportFile"')
+    expect(source).toContain('entityImportText.value = await file.text()')
+    expect(source).not.toContain("input.value = ''")
+  })
 })

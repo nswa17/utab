@@ -42,7 +42,7 @@ function withSkipPredicate(skip?: SkipPredicate): SkipPredicate {
 }
 
 function isRateLimitBypassRole(req: Request): boolean {
-  const role = req.session?.usertype
+  const role = req.session?.usertype ?? req.serviceAccount?.role
   return role === 'superuser' || role === 'organizer'
 }
 

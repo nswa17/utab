@@ -54,7 +54,7 @@ describe('UserRoundBallotEntry winner selection rules', () => {
   it('places submitter step before speaker input', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     const submitterStep = "{ id: 'submitter', label: t('提出者入力'), title: t('提出者入力') }"
-    const speakerStep = "{ id: 'speaker', label: t('Speaker入力'), title: t('Speaker入力') }"
+    const speakerStep = "{ id: 'speaker', label: t('スピーカー入力'), title: t('スピーカー入力') }"
     expect(source).toContain(submitterStep)
     expect(source).toContain(speakerStep)
     expect(source.indexOf(submitterStep)).toBeLessThan(source.indexOf(speakerStep))

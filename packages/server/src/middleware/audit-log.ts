@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from 'express'
 import { AuditLogModel } from '../models/audit-log.js'
+import { getAuthenticatedActorId, getAuthenticatedActorRole } from './auth.js'
 import { logger } from './logging.js'
 
 type AuditEvent = {
@@ -124,6 +125,42 @@ function getResponseDataValue(responseBody: unknown, key: string): string | null
   return toSingleString((data as Record<string, unknown>)[key])
 }
 
+function getResponseResultValue(responseBody: unknown, key: string): string | null {
+  const data = getResponseData(responseBody)
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+  const result = (data as Record<string, unknown>).result
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return null
+  }
+  return toSingleString((result as Record<string, unknown>)[key])
+}
+
+function getResponseStringArray(responseBody: unknown, key: string): string[] | undefined {
+  const data = getResponseData(responseBody)
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined
+  }
+  const fromData = (data as Record<string, unknown>)[key]
+  if (Array.isArray(fromData)) {
+    const normalized = fromData
+      .map((item) => toSingleString(item))
+      .filter((item): item is string => typeof item === 'string' && item.length > 0)
+    if (normalized.length > 0) return normalized
+  }
+  const result = (data as Record<string, unknown>).result
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return undefined
+  }
+  const fromResult = (result as Record<string, unknown>)[key]
+  if (!Array.isArray(fromResult)) return undefined
+  const normalized = fromResult
+    .map((item) => toSingleString(item))
+    .filter((item): item is string => typeof item === 'string' && item.length > 0)
+  return normalized.length > 0 ? normalized : undefined
+}
+
 function extractTargetIdFromResponse(responseBody: unknown): string | null {
   const data = getResponseData(responseBody)
   if (!data) return null
@@ -153,8 +190,12 @@ function getHeaderValue(value: string | string[] | undefined): string | null {
 }
 
 function normalizePath(path: string): string {
-  if (path === '/api' || path.startsWith('/api/')) return path
-  return `/api${path}`
+  const withApiPrefix = path === '/api' || path.startsWith('/api/') ? path : `/api${path}`
+  if (withApiPrefix === '/api/v1') return '/api'
+  if (withApiPrefix.startsWith('/api/v1/')) {
+    return `/api${withApiPrefix.slice('/api/v1'.length)}`
+  }
+  return withApiPrefix
 }
 
 function isPathWithin(path: string, prefix: string): boolean {
@@ -187,6 +228,9 @@ function resolveAuditEvent(path: string, method: string, statusCode: number, res
   }
   if (method === 'POST' && path === '/api/auth/register') {
     return { action: 'auth.register', targetType: 'user' }
+  }
+  if (method === 'POST' && path === '/api/auth/service-token-revocations') {
+    return { action: 'auth.service_token.revoke', targetType: 'service_token' }
   }
   if (method === 'POST' && path === '/api/tournaments') {
     return { action: 'tournament.create', targetType: 'tournament' }
@@ -232,6 +276,64 @@ function resolveAuditEvent(path: string, method: string, statusCode: number, res
     }
   }
 
+  if (method === 'POST' && path === '/api/privacy/erasure-requests') {
+    return { action: 'privacy.erasure_request.create', targetType: 'erasure_request' }
+  }
+
+  const approveErasureMatch = path.match(/^\/api\/privacy\/erasure-requests\/([^/]+)\/approve$/)
+  if (approveErasureMatch && method === 'PATCH') {
+    return {
+      action: 'privacy.erasure_request.approve',
+      targetType: 'erasure_request',
+      targetId: approveErasureMatch[1],
+    }
+  }
+
+  const rejectErasureMatch = path.match(/^\/api\/privacy\/erasure-requests\/([^/]+)\/reject$/)
+  if (rejectErasureMatch && method === 'PATCH') {
+    return {
+      action: 'privacy.erasure_request.reject',
+      targetType: 'erasure_request',
+      targetId: rejectErasureMatch[1],
+    }
+  }
+
+  const cancelErasureMatch = path.match(/^\/api\/privacy\/erasure-requests\/([^/]+)\/cancel$/)
+  if (cancelErasureMatch && method === 'PATCH') {
+    return {
+      action: 'privacy.erasure_request.cancel',
+      targetType: 'erasure_request',
+      targetId: cancelErasureMatch[1],
+    }
+  }
+
+  const executeErasureMatch = path.match(/^\/api\/privacy\/erasure-requests\/([^/]+)\/execute$/)
+  if (executeErasureMatch && method === 'POST') {
+    return {
+      action: 'privacy.erasure_request.execute',
+      targetType: 'erasure_request',
+      targetId: executeErasureMatch[1],
+    }
+  }
+
+  const speakerPersonalDataMatch = path.match(/^\/api\/speakers\/([^/]+)\/personal-data$/)
+  if (speakerPersonalDataMatch && method === 'DELETE') {
+    return {
+      action: 'speaker.erase_personal_data',
+      targetType: 'speaker',
+      targetId: speakerPersonalDataMatch[1],
+    }
+  }
+
+  const adjudicatorPersonalDataMatch = path.match(/^\/api\/adjudicators\/([^/]+)\/personal-data$/)
+  if (adjudicatorPersonalDataMatch && method === 'DELETE') {
+    return {
+      action: 'adjudicator.erase_personal_data',
+      targetType: 'adjudicator',
+      targetId: adjudicatorPersonalDataMatch[1],
+    }
+  }
+
   if (method === 'POST' && isPathWithin(path, '/api/compiled')) {
     return { action: 'compiled.create', targetType: 'compiled' }
   }
@@ -273,6 +375,27 @@ function resolveAuditEvent(path: string, method: string, statusCode: number, res
 function truncate(value: string | null, maxLength: number): string | undefined {
   if (!value) return undefined
   return value.length > maxLength ? value.slice(0, maxLength) : value
+}
+
+function extractBodyStringArray(
+  req: Request,
+  key: string,
+  options?: { maxItems?: number; maxLength?: number }
+): string[] | undefined {
+  const maxItems = options?.maxItems ?? 20
+  const maxLength = options?.maxLength ?? 256
+  const body = req.body
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const value = (body as Record<string, unknown>)[key]
+  if (!Array.isArray(value)) return undefined
+
+  const out = value
+    .map((item) => toSingleString(item))
+    .filter((item): item is string => typeof item === 'string' && item.length > 0)
+    .slice(0, maxItems)
+    .map((item) => (item.length > maxLength ? item.slice(0, maxLength) : item))
+
+  return out.length > 0 ? out : undefined
 }
 
 function resolveTournamentId(req: Request, event: AuditEvent, responseBody: unknown): string | undefined {
@@ -322,8 +445,8 @@ function resolveTargetId(
 }
 
 export const auditRequestLogger: RequestHandler = (req, res, next) => {
-  const actorUserIdBefore = req.session?.userId
-  const actorRoleBefore = req.session?.usertype
+  const actorUserIdBefore = getAuthenticatedActorId(req)
+  const actorRoleBefore = getAuthenticatedActorRole(req)
   let responseBody: unknown
 
   const originalJson = res.json.bind(res)
@@ -336,16 +459,79 @@ export const auditRequestLogger: RequestHandler = (req, res, next) => {
     const rawPath = typeof req.originalUrl === 'string' ? req.originalUrl.split('?')[0] : req.path
     const path = normalizePath(rawPath)
     const method = req.method.toUpperCase()
+    const replayedHeader = String(res.getHeader('Idempotency-Replayed') ?? '').toLowerCase()
+    const isIdempotencyReplay = replayedHeader === 'true'
+    if (isIdempotencyReplay && MUTATING_METHODS.has(method)) {
+      return
+    }
     const statusCode = res.statusCode
     const event = resolveAuditEvent(path, method, statusCode, responseBody)
     if (!event) return
 
-    const actorUserId = req.session?.userId ?? actorUserIdBefore
-    const actorRole = req.session?.usertype ?? actorRoleBefore
+    const actorUserId = getAuthenticatedActorId(req) ?? actorUserIdBefore
+    const actorRole = getAuthenticatedActorRole(req) ?? actorRoleBefore
     const tournamentId = resolveTournamentId(req, event, responseBody)
-    const targetId = resolveTargetId(req, event, responseBody, actorUserIdBefore)
+    const targetId = resolveTargetId(req, event, responseBody, actorUserIdBefore ?? undefined)
     const ip = toSingleString(req.ip ?? req.socket.remoteAddress ?? null) ?? 'unknown'
     const userAgent = getHeaderValue(req.headers['user-agent']) ?? 'unknown'
+    const metadata: Record<string, unknown> = {
+      method,
+      path,
+      statusCode,
+    }
+    if (req.serviceAccount) {
+      metadata.authType = 'service_account'
+      metadata.serviceAccountJti = truncate(req.serviceAccount.jti, 128)
+      metadata.serviceAccountOrgId = truncate(req.serviceAccount.orgId, 128)
+    }
+
+    if (
+      event.action === 'speaker.erase_personal_data' ||
+      event.action === 'adjudicator.erase_personal_data' ||
+      event.action === 'privacy.erasure_request.create' ||
+      event.action === 'privacy.erasure_request.approve' ||
+      event.action === 'privacy.erasure_request.reject' ||
+      event.action === 'privacy.erasure_request.cancel' ||
+      event.action === 'privacy.erasure_request.execute'
+    ) {
+      const reason = truncate(
+        getRequestValue(req, 'reason') ??
+          getResponseDataValue(responseBody, 'rejectionReason') ??
+          getResponseDataValue(responseBody, 'reason') ??
+          getResponseResultValue(responseBody, 'reason'),
+        500
+      )
+      const approvedBy = truncate(
+        getRequestValue(req, 'approvedBy') ??
+          getResponseDataValue(responseBody, 'approvedBy') ??
+          getResponseResultValue(responseBody, 'approvedBy'),
+        128
+      )
+      const eraseMode = truncate(
+        getRequestValue(req, 'eraseMode') ??
+          getResponseDataValue(responseBody, 'eraseMode') ??
+          getResponseResultValue(responseBody, 'eraseMode'),
+        64
+      )
+      const targetRefs = extractBodyStringArray(req, 'targetRefs') ?? getResponseStringArray(responseBody, 'targetRefs')
+      if (reason) metadata.reason = reason
+      if (approvedBy) metadata.approvedBy = approvedBy
+      if (eraseMode) metadata.eraseMode = eraseMode
+      if (targetRefs) metadata.targetRefs = targetRefs
+    }
+
+    if (event.action === 'auth.service_token.revoke') {
+      const jti = truncate(
+        getRequestValue(req, 'jti') ?? getResponseDataValue(responseBody, 'jti'),
+        128
+      )
+      const reason = truncate(
+        getRequestValue(req, 'reason') ?? getResponseDataValue(responseBody, 'reason'),
+        500
+      )
+      if (jti) metadata.jti = jti
+      if (reason) metadata.reason = reason
+    }
 
     void AuditLogModel.create({
       tournamentId,
@@ -356,11 +542,7 @@ export const auditRequestLogger: RequestHandler = (req, res, next) => {
       targetId,
       ip: truncate(ip, 128),
       userAgent: truncate(userAgent, 512),
-      metadata: {
-        method,
-        path,
-        statusCode,
-      },
+      metadata,
     }).catch((err) => {
       logger.warn({ err, action: event.action, path }, 'failed to persist audit log')
     })

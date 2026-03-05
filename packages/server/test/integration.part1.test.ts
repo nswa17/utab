@@ -1,4 +1,5 @@
 import request from 'supertest'
+import jwt from 'jsonwebtoken'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
@@ -12,6 +13,43 @@ let mongo: MongoMemoryServer
 let connectDatabase: typeof import('../src/config/database.js').connectDatabase
 let disconnectDatabase: typeof import('../src/config/database.js').disconnectDatabase
 let closeTournamentConnections: typeof import('../src/services/tournament-db.service.js').closeTournamentConnections
+
+type ServiceTokenOptions = {
+  sub?: string
+  audience?: string
+  orgId?: string
+  role?: 'organizer' | 'superuser'
+  scopes?: string[]
+  tournamentIds?: '*' | string[]
+  jti?: string
+  expiresIn?: string | number
+}
+
+function createServiceToken(options: ServiceTokenOptions = {}): string {
+  const secret =
+    process.env.SERVICE_ACCOUNT_JWT_SECRET ??
+    process.env.SESSION_SECRET ??
+    'test-session-secret-123456'
+  const uniqueSuffix = Math.random().toString(36).slice(2)
+  const jti = options.jti ?? `jti-${uniqueSuffix}`
+
+  return jwt.sign(
+    {
+      sub: options.sub ?? `ops-service-${uniqueSuffix}`,
+      aud: options.audience ?? 'utab-api',
+      org_id: options.orgId ?? 'org-test',
+      role: options.role ?? 'organizer',
+      scopes: options.scopes ?? ['read', 'create', 'upsert', 'delete'],
+      tournament_ids: options.tournamentIds ?? '*',
+      jti,
+    },
+    secret,
+    {
+      algorithm: 'HS256',
+      expiresIn: options.expiresIn ?? '1h',
+    }
+  )
+}
 
 async function waitForResult<T>(
   fetcher: () => Promise<T>,
@@ -52,6 +90,7 @@ beforeAll(async () => {
   process.env.PORT = '0'
   process.env.MONGODB_URI = mongo.getUri('utab-test')
   process.env.SESSION_SECRET = 'test-session-secret-123456'
+  process.env.SERVICE_ACCOUNT_JWT_SECRET = 'test-service-account-secret-123456'
   process.env.CORS_ORIGIN = 'http://localhost'
   process.env.UTAB_LOG_LEVEL = 'silent'
   ;({ connectDatabase, disconnectDatabase } = await import('../src/config/database.js'))
@@ -99,10 +138,58 @@ afterAll(async () => {
 })
 
 describe('Server integration', () => {
-  it('returns health', async () => {
-    const res = await request(app).get('/api/health')
-    expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('ok')
+  it('returns health on v1 and legacy routes with deprecation headers on legacy', async () => {
+    const v1 = await request(app).get('/api/v1/health')
+    expect(v1.status).toBe(200)
+    expect(v1.body.data.status).toBe('ok')
+    expect(v1.headers.deprecation).toBeUndefined()
+
+    const legacy = await request(app).get('/api/health')
+    expect(legacy.status).toBe(200)
+    expect(legacy.body.data.status).toBe('ok')
+    expect(legacy.headers.deprecation).toBe('true')
+    expect(legacy.headers.sunset).toBeTruthy()
+    expect(String(legacy.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacy.headers.warning ?? '')).toContain('Deprecated API')
+  })
+
+  it('returns equivalent team list payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'legacy-compat-teams', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'legacy-compat-teams', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Legacy Compat Tournament', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const teamRes = await agent.post('/api/v1/teams').send({
+      tournamentId,
+      name: 'Legacy Compat Team',
+    })
+    expect(teamRes.status).toBe(201)
+
+    const v1Res = await agent.get(`/api/v1/teams?tournamentId=${tournamentId}`)
+    expect(v1Res.status).toBe(200)
+    expect(v1Res.headers.deprecation).toBeUndefined()
+
+    const legacyRes = await agent.get(`/api/teams?tournamentId=${tournamentId}`)
+    expect(legacyRes.status).toBe(200)
+    expect(legacyRes.headers.deprecation).toBe('true')
+    expect(legacyRes.headers.sunset).toBeTruthy()
+    expect(String(legacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyRes.headers.warning ?? '')).toContain('Deprecated API')
+
+    expect(legacyRes.body).toEqual(v1Res.body)
   })
 
   it('issues and reuses a rate-limit identity cookie', async () => {
@@ -147,6 +234,231 @@ describe('Server integration', () => {
       .set('Origin', allowedOrigin)
       .send({ username: 'csrf-allowed', password: 'password123', role: 'organizer' })
     expect(allowedRegister.status).toBe(201)
+  })
+
+  it('supports bearer service-account auth with scope and idempotency enforcement', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'service-account-owner', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'service-account-owner', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Service Account Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const noCreateScopeToken = createServiceToken({
+      scopes: ['read', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const noCreateScopeRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${noCreateScopeToken}`)
+      .set('X-Idempotency-Key', 'service-scope-check')
+      .send({
+        tournamentId,
+        name: 'Scope Denied Team',
+      })
+    expect(noCreateScopeRes.status).toBe(403)
+
+    const implicitReadOnlyToken = createServiceToken({
+      scopes: [],
+      tournamentIds: [tournamentId],
+    })
+    const implicitReadOnlyGetRes = await request(app)
+      .get(`/api/v1/teams?tournamentId=${tournamentId}`)
+      .set('Authorization', `Bearer ${implicitReadOnlyToken}`)
+    expect(implicitReadOnlyGetRes.status).toBe(200)
+    const implicitReadOnlyPostRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${implicitReadOnlyToken}`)
+      .set('X-Idempotency-Key', 'service-implicit-readonly-post')
+      .send({
+        tournamentId,
+        name: 'Implicit Readonly Team',
+      })
+    expect(implicitReadOnlyPostRes.status).toBe(403)
+
+    const missingIdempotencyToken = createServiceToken({
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const missingIdempotencyRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${missingIdempotencyToken}`)
+      .send({
+        tournamentId,
+        name: 'Missing Idempotency Team',
+      })
+    expect(missingIdempotencyRes.status).toBe(400)
+
+    const createToken = createServiceToken({
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const createTeamRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${createToken}`)
+      .set('X-Idempotency-Key', 'service-create-team')
+      .send({
+        tournamentId,
+        name: 'Service Team',
+      })
+    expect(createTeamRes.status).toBe(201)
+    const createdTeamId = createTeamRes.body.data._id as string
+
+    const replayCreateTeamRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${createToken}`)
+      .set('X-Idempotency-Key', 'service-create-team')
+      .send({
+        tournamentId,
+        name: 'Service Team',
+      })
+    expect(replayCreateTeamRes.status).toBe(201)
+    expect(replayCreateTeamRes.headers['idempotency-replayed']).toBe('true')
+    expect(replayCreateTeamRes.body.data._id).toBe(createdTeamId)
+
+    const conflictCreateTeamRes = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${createToken}`)
+      .set('X-Idempotency-Key', 'service-create-team')
+      .send({
+        tournamentId,
+        name: 'Service Team Modified',
+      })
+    expect(conflictCreateTeamRes.status).toBe(409)
+
+    const teamListRes = await agent.get(`/api/v1/teams?tournamentId=${tournamentId}`)
+    expect(teamListRes.status).toBe(200)
+    const serviceTeams = (teamListRes.body.data as Array<{ _id: string; name: string }>).filter(
+      (team) => team.name === 'Service Team'
+    )
+    expect(serviceTeams).toHaveLength(1)
+    expect(serviceTeams[0]._id).toBe(createdTeamId)
+
+    const teamCreateAuditRes = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('team.create')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(teamCreateAuditRes.status).toBe(200)
+    const serviceTeamCreateLogs = (
+      teamCreateAuditRes.body.data.items as Array<{ targetId?: string }>
+    ).filter((item) => item.targetId === createdTeamId)
+    expect(serviceTeamCreateLogs).toHaveLength(1)
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Service Speaker',
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const noDeleteScopeToken = createServiceToken({
+      scopes: ['read', 'create', 'upsert'],
+      tournamentIds: [tournamentId],
+    })
+    const noDeleteScopeRes = await request(app)
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .set('Authorization', `Bearer ${noDeleteScopeToken}`)
+      .set('X-Idempotency-Key', 'service-delete-scope-denied')
+      .send({
+        reason: 'deny delete scope request',
+      })
+    expect(noDeleteScopeRes.status).toBe(403)
+
+    const missingDeleteIdempotencyRes = await request(app)
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .set('Authorization', `Bearer ${createToken}`)
+      .send({
+        reason: 'missing delete idempotency key',
+      })
+    expect(missingDeleteIdempotencyRes.status).toBe(400)
+
+    const deleteScopeToken = createServiceToken({
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const deleteScopeRes = await request(app)
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .set('Authorization', `Bearer ${deleteScopeToken}`)
+      .set('X-Idempotency-Key', 'service-delete-speaker')
+      .send({
+        reason: 'allow delete scope request',
+      })
+    expect(deleteScopeRes.status).toBe(200)
+    expect(deleteScopeRes.body.data.redacted).toBe(true)
+
+    const invalidAudienceToken = createServiceToken({
+      audience: 'invalid-aud',
+      tournamentIds: [tournamentId],
+    })
+    const invalidAudienceRes = await request(app)
+      .get(`/api/v1/teams?tournamentId=${tournamentId}`)
+      .set('Authorization', `Bearer ${invalidAudienceToken}`)
+    expect(invalidAudienceRes.status).toBe(401)
+  })
+
+  it('revokes service-account tokens by jti and denies further use', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'token-revoker', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'token-revoker', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const revokedJti = `revoked-${Math.random().toString(36).slice(2)}`
+    const token = createServiceToken({
+      jti: revokedJti,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+    })
+
+    const beforeRevoke = await request(app)
+      .get('/api/v1/health')
+      .set('Authorization', `Bearer ${token}`)
+    expect(beforeRevoke.status).toBe(200)
+
+    const revokeRes = await agent.post('/api/v1/auth/service-token-revocations').send({
+      jti: revokedJti,
+      reason: 'token compromised',
+    })
+    expect(revokeRes.status).toBe(201)
+    expect(revokeRes.body.data.jti).toBe(revokedJti)
+
+    const listRes = await agent.get('/api/v1/auth/service-token-revocations?active=true&limit=20')
+    expect(listRes.status).toBe(200)
+    const listed = (listRes.body.data.items as Array<{ jti: string }>).find(
+      (item) => item.jti === revokedJti
+    )
+    expect(listed).toBeTruthy()
+
+    const duplicateRevokeRes = await agent.post('/api/v1/auth/service-token-revocations').send({
+      jti: revokedJti,
+      reason: 'duplicate request',
+    })
+    expect(duplicateRevokeRes.status).toBe(200)
+    expect(duplicateRevokeRes.body.data.jti).toBe(revokedJti)
+
+    const afterRevoke = await request(app)
+      .get('/api/v1/health')
+      .set('Authorization', `Bearer ${token}`)
+    expect(afterRevoke.status).toBe(401)
   })
 
   it('enforces route-specific JSON body size limits', async () => {
@@ -2713,6 +3025,1394 @@ describe('Server integration', () => {
     const finalMatch = breakAllocRes.body.data.allocation[0].teams
     expect(finalMatch.gov).toBe(betaId)
     expect(finalMatch.opp).toBe(alphaId)
+  })
+
+  it('erases speaker and adjudicator personal data via v1 endpoints', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-erase', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-erase', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Erase Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker Private',
+      userDefinedData: { email: 'speaker@example.com', phone: '000-1111' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const adjudicatorRes = await agent.post('/api/v1/adjudicators').send({
+      tournamentId,
+      name: 'Judge Private',
+      preev: 4,
+      template: { available: true, conflicts: ['abc'], conflict_teams: ['team-x'] },
+      details: [{ r: 1, available: true, conflicts: ['abc'], conflict_teams: ['team-x'] }],
+      userDefinedData: { email: 'judge@example.com', note: 'private-note' },
+    })
+    expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = adjudicatorRes.body.data._id as string
+
+    const eraseSpeakerMissingReason = await agent.delete(
+      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
+    ).send({})
+    expect(eraseSpeakerMissingReason.status).toBe(400)
+
+    const eraseSpeakerMissingReauth = await agent.delete(
+      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'participant requested erasure',
+    })
+    expect(eraseSpeakerMissingReauth.status).toBe(400)
+
+    const eraseSpeakerWrongReauth = await agent.delete(
+      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'participant requested erasure',
+      reauthPassword: 'wrong-password',
+    })
+    expect(eraseSpeakerWrongReauth.status).toBe(401)
+
+    const eraseSpeakerRes = await agent.delete(
+      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'participant requested erasure',
+      approvedBy: 'ops-approver-1',
+      targetRefs: ['ops:participant:privacy-erase'],
+      eraseMode: 'anonymize',
+      reauthPassword: 'password123',
+    })
+    expect(eraseSpeakerRes.status).toBe(200)
+    expect(eraseSpeakerRes.body.data.entityType).toBe('speaker')
+    expect(eraseSpeakerRes.body.data.redacted).toBe(true)
+    expect(eraseSpeakerRes.body.data.reason).toBe('participant requested erasure')
+    expect(eraseSpeakerRes.body.data.approvedBy).toBe('ops-approver-1')
+
+    const eraseAdjRes = await agent.delete(
+      `/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'judge requested erasure',
+      approvedBy: 'ops-approver-1',
+      targetRefs: ['ops:adjudicator:privacy-erase'],
+      eraseMode: 'anonymize',
+      reauthPassword: 'password123',
+    })
+    expect(eraseAdjRes.status).toBe(200)
+    expect(eraseAdjRes.body.data.entityType).toBe('adjudicator')
+    expect(eraseAdjRes.body.data.redacted).toBe(true)
+    expect(eraseAdjRes.body.data.reason).toBe('judge requested erasure')
+
+    const speakerGetRes = await agent.get(
+      `/api/v1/speakers/${speakerId}?tournamentId=${tournamentId}`
+    )
+    expect(speakerGetRes.status).toBe(200)
+    expect(String(speakerGetRes.body.data.name)).toContain('Deleted Speaker')
+    expect(speakerGetRes.body.data.userDefinedData).toEqual({})
+
+    const adjudicatorGetRes = await agent.get(
+      `/api/v1/adjudicators/${adjudicatorId}?tournamentId=${tournamentId}`
+    )
+    expect(adjudicatorGetRes.status).toBe(200)
+    expect(String(adjudicatorGetRes.body.data.name)).toContain('Deleted Adjudicator')
+    expect(adjudicatorGetRes.body.data.preev).toBe(0)
+    expect(Array.isArray(adjudicatorGetRes.body.data.details)).toBe(true)
+    expect(adjudicatorGetRes.body.data.details).toHaveLength(0)
+    expect(adjudicatorGetRes.body.data.userDefinedData).toEqual({})
+
+    const speakerAudit = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('speaker.erase_personal_data')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(speakerAudit.status).toBe(200)
+    expect(speakerAudit.body.data.items[0].metadata.reason).toBe('participant requested erasure')
+    expect(speakerAudit.body.data.items[0].metadata.approvedBy).toBe('ops-approver-1')
+
+    const adjudicatorAudit = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('adjudicator.erase_personal_data')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(adjudicatorAudit.status).toBe(200)
+    expect(adjudicatorAudit.body.data.items[0].metadata.reason).toBe('judge requested erasure')
+    expect(adjudicatorAudit.body.data.items[0].metadata.approvedBy).toBe('ops-approver-1')
+  })
+
+  it('returns equivalent speaker personal-data erase payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-speaker-compat', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-speaker-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Speaker Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerV1Res = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker Compat V1',
+      userDefinedData: { email: 'speaker-compat-v1@example.com' },
+    })
+    expect(speakerV1Res.status).toBe(201)
+    const speakerV1Id = speakerV1Res.body.data._id as string
+
+    const speakerLegacyRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker Compat Legacy',
+      userDefinedData: { email: 'speaker-compat-legacy@example.com' },
+    })
+    expect(speakerLegacyRes.status).toBe(201)
+    const speakerLegacyId = speakerLegacyRes.body.data._id as string
+
+    const eraseBody = {
+      reason: 'compatibility speaker erase',
+      approvedBy: 'ops-speaker-compat',
+      targetRefs: ['ops:compat:speaker'],
+      eraseMode: 'anonymize',
+      reauthPassword: 'password123',
+    }
+
+    const v1Res = await agent
+      .delete(`/api/v1/speakers/${speakerV1Id}/personal-data?tournamentId=${tournamentId}`)
+      .send(eraseBody)
+    expect(v1Res.status).toBe(200)
+    expect(v1Res.headers.deprecation).toBeUndefined()
+
+    const legacyRes = await agent
+      .delete(`/api/speakers/${speakerLegacyId}/personal-data?tournamentId=${tournamentId}`)
+      .send(eraseBody)
+    expect(legacyRes.status).toBe(200)
+    expect(legacyRes.headers.deprecation).toBe('true')
+    expect(legacyRes.headers.sunset).toBeTruthy()
+    expect(String(legacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyRes.headers.warning ?? '')).toContain('Deprecated API')
+
+    const normalizeErasePayload = (payload: unknown) => {
+      const body = payload as {
+        data?: { entityId?: string }
+      }
+      return {
+        ...(body ?? {}),
+        data: {
+          ...(body.data ?? {}),
+          entityId: '<redacted-id>',
+        },
+      }
+    }
+
+    expect(normalizeErasePayload(legacyRes.body)).toEqual(normalizeErasePayload(v1Res.body))
+  })
+
+  it('returns equivalent adjudicator personal-data erase payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-adj-compat', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-adj-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Adjudicator Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const adjudicatorV1Res = await agent.post('/api/v1/adjudicators').send({
+      tournamentId,
+      name: 'Adjudicator Compat V1',
+      preev: 5,
+      userDefinedData: { email: 'adj-compat-v1@example.com' },
+    })
+    expect(adjudicatorV1Res.status).toBe(201)
+    const adjudicatorV1Id = adjudicatorV1Res.body.data._id as string
+
+    const adjudicatorLegacyRes = await agent.post('/api/v1/adjudicators').send({
+      tournamentId,
+      name: 'Adjudicator Compat Legacy',
+      preev: 4,
+      userDefinedData: { email: 'adj-compat-legacy@example.com' },
+    })
+    expect(adjudicatorLegacyRes.status).toBe(201)
+    const adjudicatorLegacyId = adjudicatorLegacyRes.body.data._id as string
+
+    const eraseBody = {
+      reason: 'compatibility adjudicator erase',
+      approvedBy: 'ops-adj-compat',
+      targetRefs: ['ops:compat:adjudicator'],
+      eraseMode: 'anonymize',
+      reauthPassword: 'password123',
+    }
+
+    const v1Res = await agent
+      .delete(`/api/v1/adjudicators/${adjudicatorV1Id}/personal-data?tournamentId=${tournamentId}`)
+      .send(eraseBody)
+    expect(v1Res.status).toBe(200)
+    expect(v1Res.headers.deprecation).toBeUndefined()
+
+    const legacyRes = await agent
+      .delete(`/api/adjudicators/${adjudicatorLegacyId}/personal-data?tournamentId=${tournamentId}`)
+      .send(eraseBody)
+    expect(legacyRes.status).toBe(200)
+    expect(legacyRes.headers.deprecation).toBe('true')
+    expect(legacyRes.headers.sunset).toBeTruthy()
+    expect(String(legacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyRes.headers.warning ?? '')).toContain('Deprecated API')
+
+    const normalizeErasePayload = (payload: unknown) => {
+      const body = payload as {
+        data?: { entityId?: string }
+      }
+      return {
+        ...(body ?? {}),
+        data: {
+          ...(body.data ?? {}),
+          entityId: '<redacted-id>',
+        },
+      }
+    }
+
+    expect(normalizeErasePayload(legacyRes.body)).toEqual(normalizeErasePayload(v1Res.body))
+  })
+
+  it('hard deletes speaker/adjudicator and cleans tournament references', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-hard-delete', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-hard-delete', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Hard Delete Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Hard Delete Speaker',
+      userDefinedData: { email: 'hard-delete-speaker@example.com' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const teamGovRes = await agent.post('/api/v1/teams').send({
+      tournamentId,
+      name: 'Hard Gov',
+      template: { speakers: [speakerId] },
+      details: [{ r: 1, speakers: [speakerId] }],
+    })
+    expect(teamGovRes.status).toBe(201)
+    const govTeamId = teamGovRes.body.data._id as string
+
+    const teamOppRes = await agent.post('/api/v1/teams').send({
+      tournamentId,
+      name: 'Hard Opp',
+      template: { speakers: [] },
+      details: [{ r: 1, speakers: [] }],
+    })
+    expect(teamOppRes.status).toBe(201)
+    const oppTeamId = teamOppRes.body.data._id as string
+
+    const adjudicatorRes = await agent.post('/api/v1/adjudicators').send({
+      tournamentId,
+      name: 'Hard Delete Adjudicator',
+      preev: 5,
+      userDefinedData: { email: 'hard-delete-adj@example.com' },
+    })
+    expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = adjudicatorRes.body.data._id as string
+
+    const drawRes = await agent.post('/api/v1/draws').send({
+      tournamentId,
+      round: 1,
+      drawOpened: true,
+      allocationOpened: false,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: govTeamId, opp: oppTeamId },
+          chairs: [adjudicatorId],
+          panels: [adjudicatorId],
+          trainees: [adjudicatorId],
+        },
+      ],
+    })
+    expect(drawRes.status).toBe(201)
+
+    const rawSpeakerRes = await agent.post('/api/v1/raw-results/speakers').send({
+      tournamentId,
+      id: speakerId,
+      from_id: speakerId,
+      r: 1,
+      scores: [75],
+    })
+    expect(rawSpeakerRes.status).toBe(201)
+
+    const rawAdjRes = await agent.post('/api/v1/raw-results/adjudicators').send({
+      tournamentId,
+      id: adjudicatorId,
+      from_id: adjudicatorId,
+      r: 1,
+      score: 7.5,
+      judged_teams: [govTeamId, oppTeamId],
+      comment: 'private adjudicator comment',
+    })
+    expect(rawAdjRes.status).toBe(201)
+
+    const eraseSpeakerRes = await agent.delete(
+      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'hard delete speaker data',
+      approvedBy: 'ops-hard-delete',
+      eraseMode: 'hard_delete',
+      reauthPassword: 'password123',
+    })
+    expect(eraseSpeakerRes.status).toBe(200)
+    expect(eraseSpeakerRes.body.data.eraseMode).toBe('hard_delete')
+
+    const deletedSpeakerGetRes = await agent.get(
+      `/api/v1/speakers/${speakerId}?tournamentId=${tournamentId}`
+    )
+    expect(deletedSpeakerGetRes.status).toBe(404)
+
+    const teamsAfterSpeakerDelete = await agent.get(`/api/v1/teams?tournamentId=${tournamentId}`)
+    expect(teamsAfterSpeakerDelete.status).toBe(200)
+    const govTeam = (teamsAfterSpeakerDelete.body.data as Array<{ _id: string; template?: any; details?: any[] }>).find(
+      (item) => item._id === govTeamId
+    )
+    expect(govTeam).toBeTruthy()
+    expect(Array.isArray(govTeam?.template?.speakers)).toBe(true)
+    expect(govTeam?.template?.speakers).not.toContain(speakerId)
+    expect(Array.isArray(govTeam?.details)).toBe(true)
+    expect(govTeam?.details?.[0]?.speakers ?? []).not.toContain(speakerId)
+
+    const rawSpeakerAfterDelete = await agent.get(
+      `/api/v1/raw-results/speakers?tournamentId=${tournamentId}&id=${speakerId}`
+    )
+    expect(rawSpeakerAfterDelete.status).toBe(200)
+    expect(Array.isArray(rawSpeakerAfterDelete.body.data)).toBe(true)
+    expect(rawSpeakerAfterDelete.body.data).toHaveLength(0)
+
+    const eraseAdjRes = await agent.delete(
+      `/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`
+    ).send({
+      reason: 'hard delete adjudicator data',
+      approvedBy: 'ops-hard-delete',
+      eraseMode: 'hard_delete',
+      reauthPassword: 'password123',
+    })
+    expect(eraseAdjRes.status).toBe(200)
+    expect(eraseAdjRes.body.data.eraseMode).toBe('hard_delete')
+
+    const deletedAdjGetRes = await agent.get(
+      `/api/v1/adjudicators/${adjudicatorId}?tournamentId=${tournamentId}`
+    )
+    expect(deletedAdjGetRes.status).toBe(404)
+
+    const drawsAfterAdjDelete = await agent.get(`/api/v1/draws?tournamentId=${tournamentId}`)
+    expect(drawsAfterAdjDelete.status).toBe(200)
+    expect(Array.isArray(drawsAfterAdjDelete.body.data)).toBe(true)
+    const firstAllocation = drawsAfterAdjDelete.body.data[0]?.allocation?.[0]
+    expect(firstAllocation).toBeTruthy()
+    expect(firstAllocation.chairs).not.toContain(adjudicatorId)
+    expect(firstAllocation.panels).not.toContain(adjudicatorId)
+    expect(firstAllocation.trainees).not.toContain(adjudicatorId)
+
+    const rawAdjAfterDelete = await agent.get(
+      `/api/v1/raw-results/adjudicators?tournamentId=${tournamentId}&id=${adjudicatorId}`
+    )
+    expect(rawAdjAfterDelete.status).toBe(200)
+    expect(Array.isArray(rawAdjAfterDelete.body.data)).toBe(true)
+    expect(rawAdjAfterDelete.body.data).toHaveLength(0)
+
+    const speakerAudit = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('speaker.erase_personal_data')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(speakerAudit.status).toBe(200)
+    expect(speakerAudit.body.data.items[0].metadata.eraseMode).toBe('hard_delete')
+
+    const adjudicatorAudit = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('adjudicator.erase_personal_data')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(adjudicatorAudit.status).toBe(200)
+    expect(adjudicatorAudit.body.data.items[0].metadata.eraseMode).toBe('hard_delete')
+  })
+
+  it('supports erasure request workflow: create -> approve -> execute', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-workflow', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-workflow', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Workflow Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker Workflow',
+      userDefinedData: { email: 'workflow@example.com' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const createReqRes = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerId,
+      reason: 'workflow erasure request',
+      targetRefs: ['ops:privacy:workflow'],
+      eraseMode: 'anonymize',
+    })
+    expect(createReqRes.status).toBe(201)
+    expect(createReqRes.body.data.status).toBe('requested')
+    const erasureRequestId = createReqRes.body.data._id as string
+
+    const executeBeforeApproveRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${erasureRequestId}/execute`)
+      .send({ tournamentId, reauthPassword: 'password123' })
+    expect(executeBeforeApproveRes.status).toBe(409)
+
+    const approveRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${erasureRequestId}/approve`)
+      .send({ tournamentId, approvedBy: 'ops-workflow-approver' })
+    expect(approveRes.status).toBe(400)
+
+    const approveWithReauthRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${erasureRequestId}/approve`)
+      .send({
+        tournamentId,
+        approvedBy: 'ops-workflow-approver',
+        reauthPassword: 'password123',
+      })
+    expect(approveWithReauthRes.status).toBe(200)
+    expect(approveWithReauthRes.body.data.status).toBe('approved')
+
+    const executeWithoutReauthRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${erasureRequestId}/execute`)
+      .send({ tournamentId })
+    expect(executeWithoutReauthRes.status).toBe(400)
+
+    const executeRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${erasureRequestId}/execute`)
+      .send({ tournamentId, reauthPassword: 'password123' })
+    expect(executeRes.status).toBe(200)
+    expect(executeRes.body.data.status).toBe('completed')
+    expect(executeRes.body.data.result.entityType).toBe('speaker')
+    expect(executeRes.body.data.result.reason).toBe('workflow erasure request')
+
+    const speakerGetRes = await agent.get(
+      `/api/v1/speakers/${speakerId}?tournamentId=${tournamentId}`
+    )
+    expect(speakerGetRes.status).toBe(200)
+    expect(String(speakerGetRes.body.data.name)).toContain('Deleted Speaker')
+
+    const listReqRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${tournamentId}`
+    )
+    expect(listReqRes.status).toBe(200)
+    expect(Array.isArray(listReqRes.body.data.items)).toBe(true)
+    const found = (listReqRes.body.data.items as Array<{ _id: string; status: string }>).find(
+      (item) => item._id === erasureRequestId
+    )
+    expect(found?.status).toBe('completed')
+
+    const workflowAudit = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('privacy.erasure_request.execute')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(workflowAudit.status).toBe(200)
+    expect(workflowAudit.body.data.items[0].metadata.reason).toBe('workflow erasure request')
+  })
+
+  it('returns equivalent erasure workflow payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-workflow-compat', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-workflow-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Workflow Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerV1Res = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Workflow Compat Speaker V1',
+      userDefinedData: { email: 'workflow-compat-v1@example.com' },
+    })
+    expect(speakerV1Res.status).toBe(201)
+    const speakerV1Id = speakerV1Res.body.data._id as string
+
+    const speakerLegacyRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Workflow Compat Speaker Legacy',
+      userDefinedData: { email: 'workflow-compat-legacy@example.com' },
+    })
+    expect(speakerLegacyRes.status).toBe(201)
+    const speakerLegacyId = speakerLegacyRes.body.data._id as string
+
+    const createBody = {
+      tournamentId,
+      targetType: 'speaker',
+      reason: 'workflow compatibility request',
+      targetRefs: ['ops:compat:workflow'],
+      eraseMode: 'anonymize',
+    }
+
+    const createV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
+      ...createBody,
+      targetId: speakerV1Id,
+    })
+    expect(createV1Res.status).toBe(201)
+    expect(createV1Res.headers.deprecation).toBeUndefined()
+    const requestV1Id = createV1Res.body.data._id as string
+
+    const createLegacyRes = await agent.post('/api/privacy/erasure-requests').send({
+      ...createBody,
+      targetId: speakerLegacyId,
+    })
+    expect(createLegacyRes.status).toBe(201)
+    expect(createLegacyRes.headers.deprecation).toBe('true')
+    expect(createLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(createLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(createLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    const requestLegacyId = createLegacyRes.body.data._id as string
+
+    const normalizeRequestPayload = (payload: unknown) => {
+      const body = payload as {
+        data?: {
+          _id?: string
+          targetId?: string
+          requestedAt?: string
+          approvedAt?: string
+          executedAt?: string
+          createdAt?: string
+          updatedAt?: string
+          result?: { entityId?: string }
+        }
+      }
+      return {
+        ...(body ?? {}),
+        data: {
+          ...(body.data ?? {}),
+          _id: '<request-id>',
+          targetId: '<target-id>',
+          requestedAt: '<timestamp>',
+          approvedAt: body.data?.approvedAt ? '<timestamp>' : body.data?.approvedAt,
+          executedAt: body.data?.executedAt ? '<timestamp>' : body.data?.executedAt,
+          createdAt: body.data?.createdAt ? '<timestamp>' : body.data?.createdAt,
+          updatedAt: body.data?.updatedAt ? '<timestamp>' : body.data?.updatedAt,
+          result: body.data?.result
+            ? {
+                ...body.data.result,
+                entityId: '<target-id>',
+              }
+            : body.data?.result,
+        },
+      }
+    }
+
+    expect(normalizeRequestPayload(createLegacyRes.body)).toEqual(
+      normalizeRequestPayload(createV1Res.body)
+    )
+
+    const approveBody = {
+      tournamentId,
+      approvedBy: 'ops-compat-approver',
+      reauthPassword: 'password123',
+    }
+
+    const approveV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${requestV1Id}/approve`)
+      .send(approveBody)
+    expect(approveV1Res.status).toBe(200)
+    expect(approveV1Res.headers.deprecation).toBeUndefined()
+
+    const approveLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${requestLegacyId}/approve`)
+      .send(approveBody)
+    expect(approveLegacyRes.status).toBe(200)
+    expect(approveLegacyRes.headers.deprecation).toBe('true')
+    expect(approveLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(approveLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(approveLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(normalizeRequestPayload(approveLegacyRes.body)).toEqual(
+      normalizeRequestPayload(approveV1Res.body)
+    )
+
+    const executeBody = {
+      tournamentId,
+      reauthPassword: 'password123',
+    }
+
+    const executeV1Res = await agent
+      .post(`/api/v1/privacy/erasure-requests/${requestV1Id}/execute`)
+      .send(executeBody)
+    expect(executeV1Res.status).toBe(200)
+    expect(executeV1Res.headers.deprecation).toBeUndefined()
+
+    const executeLegacyRes = await agent
+      .post(`/api/privacy/erasure-requests/${requestLegacyId}/execute`)
+      .send(executeBody)
+    expect(executeLegacyRes.status).toBe(200)
+    expect(executeLegacyRes.headers.deprecation).toBe('true')
+    expect(executeLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(executeLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(executeLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(normalizeRequestPayload(executeLegacyRes.body)).toEqual(
+      normalizeRequestPayload(executeV1Res.body)
+    )
+  })
+
+  it('lists erasure requests with requestedBy filter and cursor pagination', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-list-pagination', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-list-pagination', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy List Pagination Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker List Pagination',
+      userDefinedData: { email: 'list-pagination@example.com' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const requesterA = 'erasure-requester-a'
+    const requesterB = 'erasure-requester-b'
+    const requesterAToken = createServiceToken({
+      sub: requesterA,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const requesterBToken = createServiceToken({
+      sub: requesterB,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+
+    const createA1Res = await request(app)
+      .post('/api/v1/privacy/erasure-requests')
+      .set('Authorization', `Bearer ${requesterAToken}`)
+      .set('X-Idempotency-Key', 'privacy-list-a-1')
+      .send({
+        tournamentId,
+        targetType: 'speaker',
+        targetId: speakerId,
+        reason: 'list pagination requester a one',
+        eraseMode: 'anonymize',
+      })
+    expect(createA1Res.status).toBe(201)
+
+    const createA2Res = await request(app)
+      .post('/api/v1/privacy/erasure-requests')
+      .set('Authorization', `Bearer ${requesterAToken}`)
+      .set('X-Idempotency-Key', 'privacy-list-a-2')
+      .send({
+        tournamentId,
+        targetType: 'speaker',
+        targetId: speakerId,
+        reason: 'list pagination requester a two',
+        eraseMode: 'anonymize',
+      })
+    expect(createA2Res.status).toBe(201)
+
+    const createB1Res = await request(app)
+      .post('/api/v1/privacy/erasure-requests')
+      .set('Authorization', `Bearer ${requesterBToken}`)
+      .set('X-Idempotency-Key', 'privacy-list-b-1')
+      .send({
+        tournamentId,
+        targetType: 'speaker',
+        targetId: speakerId,
+        reason: 'list pagination requester b one',
+        eraseMode: 'anonymize',
+    })
+    expect(createB1Res.status).toBe(201)
+
+    const v1CompatRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(tournamentId)}&limit=2`
+    )
+    expect(v1CompatRes.status).toBe(200)
+    expect(v1CompatRes.headers.deprecation).toBeUndefined()
+
+    const legacyCompatRes = await agent.get(
+      `/api/privacy/erasure-requests?tournamentId=${encodeURIComponent(tournamentId)}&limit=2`
+    )
+    expect(legacyCompatRes.status).toBe(200)
+    expect(legacyCompatRes.headers.deprecation).toBe('true')
+    expect(legacyCompatRes.headers.sunset).toBeTruthy()
+    expect(String(legacyCompatRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyCompatRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(legacyCompatRes.body).toEqual(v1CompatRes.body)
+
+    const page1Res = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(tournamentId)}&limit=2`
+    )
+    expect(page1Res.status).toBe(200)
+    expect(page1Res.body.data.items.length).toBe(2)
+    expect(page1Res.body.data.hasMore).toBe(true)
+    expect(typeof page1Res.body.data.nextCursor).toBe('string')
+
+    const page1Ids = (page1Res.body.data.items as Array<{ _id: string }>).map((item) => item._id)
+    const page2Res = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(
+        tournamentId
+      )}&limit=2&cursor=${encodeURIComponent(page1Res.body.data.nextCursor as string)}`
+    )
+    expect(page2Res.status).toBe(200)
+    expect(page2Res.body.data.items.length).toBeGreaterThanOrEqual(1)
+    const page2Ids = (page2Res.body.data.items as Array<{ _id: string }>).map((item) => item._id)
+    expect(page2Ids.some((id) => page1Ids.includes(id))).toBe(false)
+
+    const requesterARes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(
+        tournamentId
+      )}&requestedBy=${encodeURIComponent(requesterA)}`
+    )
+    expect(requesterARes.status).toBe(200)
+    expect(requesterARes.body.data.items.length).toBe(2)
+    expect(
+      (requesterARes.body.data.items as Array<{ requestedBy: string }>).every(
+        (item) => item.requestedBy === requesterA
+      )
+    ).toBe(true)
+
+    const invalidCursorRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(tournamentId)}&cursor=invalid-cursor`
+    )
+    expect(invalidCursorRes.status).toBe(400)
+
+    const malformedCursor = Buffer.from(
+      JSON.stringify({
+        createdAt: new Date().toISOString(),
+        id: 'not-an-object-id',
+      }),
+      'utf8'
+    ).toString('base64url')
+    const malformedCursorRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${encodeURIComponent(
+        tournamentId
+      )}&cursor=${encodeURIComponent(malformedCursor)}`
+    )
+    expect(malformedCursorRes.status).toBe(400)
+  })
+
+  it('supports erasure request workflow: reject and cancel', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'privacy-reject-cancel', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-reject-cancel', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Reject Cancel Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Speaker Reject Cancel',
+      userDefinedData: { email: 'reject-cancel@example.com' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = speakerRes.body.data._id as string
+
+    const createReqRes = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerId,
+      reason: 'reject flow request',
+      targetRefs: ['ops:privacy:reject'],
+      eraseMode: 'anonymize',
+    })
+    expect(createReqRes.status).toBe(201)
+    const rejectRequestId = createReqRes.body.data._id as string
+
+    const rejectWithoutReauthRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${rejectRequestId}/reject`)
+      .send({ tournamentId, reason: 'insufficient evidence' })
+    expect(rejectWithoutReauthRes.status).toBe(400)
+
+    const rejectRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${rejectRequestId}/reject`)
+      .send({
+        tournamentId,
+        reason: 'insufficient evidence',
+        reauthPassword: 'password123',
+      })
+    expect(rejectRes.status).toBe(200)
+    expect(rejectRes.body.data.status).toBe('rejected')
+    expect(rejectRes.body.data.rejectionReason).toBe('insufficient evidence')
+
+    const executeRejectedRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${rejectRequestId}/execute`)
+      .send({ tournamentId, reauthPassword: 'password123' })
+    expect(executeRejectedRes.status).toBe(409)
+
+    const createCancelReqRes = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerId,
+      reason: 'cancel flow request',
+      targetRefs: ['ops:privacy:cancel'],
+      eraseMode: 'anonymize',
+    })
+    expect(createCancelReqRes.status).toBe(201)
+    const cancelRequestId = createCancelReqRes.body.data._id as string
+
+    const approveForCancelRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${cancelRequestId}/approve`)
+      .send({
+        tournamentId,
+        approvedBy: 'ops-approver-cancel',
+        reauthPassword: 'password123',
+      })
+    expect(approveForCancelRes.status).toBe(200)
+    expect(approveForCancelRes.body.data.status).toBe('approved')
+
+    const cancelRes = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${cancelRequestId}/cancel`)
+      .send({
+        tournamentId,
+        reason: 'request withdrawn',
+        reauthPassword: 'password123',
+      })
+    expect(cancelRes.status).toBe(200)
+    expect(cancelRes.body.data.status).toBe('cancelled')
+    expect(cancelRes.body.data.rejectionReason).toBe('request withdrawn')
+
+    const executeCancelledRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${cancelRequestId}/execute`)
+      .send({ tournamentId, reauthPassword: 'password123' })
+    expect(executeCancelledRes.status).toBe(409)
+
+    const rejectedListRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${tournamentId}&status=rejected`
+    )
+    expect(rejectedListRes.status).toBe(200)
+    expect(
+      (rejectedListRes.body.data.items as Array<{ _id: string }>).some(
+        (item) => item._id === rejectRequestId
+      )
+    ).toBe(true)
+
+    const cancelledListRes = await agent.get(
+      `/api/v1/privacy/erasure-requests?tournamentId=${tournamentId}&status=cancelled`
+    )
+    expect(cancelledListRes.status).toBe(200)
+    expect(
+      (cancelledListRes.body.data.items as Array<{ _id: string }>).some(
+        (item) => item._id === cancelRequestId
+      )
+    ).toBe(true)
+
+    const rejectAuditRes = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('privacy.erasure_request.reject')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(rejectAuditRes.status).toBe(200)
+    const rejectAuditItems = rejectAuditRes.body.data.items as Array<{
+      targetId?: string
+      metadata?: { reason?: string }
+    }>
+    const rejectAudit = rejectAuditItems.find((item) => item.targetId === rejectRequestId)
+    expect(rejectAudit).toBeTruthy()
+    expect(rejectAudit?.metadata?.reason).toBe('insufficient evidence')
+
+    const cancelAuditRes = await waitForResult(
+      async () =>
+        agent.get(
+          `/api/v1/audit-logs?tournamentId=${tournamentId}&action=${encodeURIComponent('privacy.erasure_request.cancel')}`
+        ),
+      (response) => Array.isArray(response.body?.data?.items) && response.body.data.items.length > 0
+    )
+    expect(cancelAuditRes.status).toBe(200)
+    const cancelAuditItems = cancelAuditRes.body.data.items as Array<{
+      targetId?: string
+      metadata?: { reason?: string }
+    }>
+    const cancelAudit = cancelAuditItems.find((item) => item.targetId === cancelRequestId)
+    expect(cancelAudit).toBeTruthy()
+    expect(cancelAudit?.metadata?.reason).toBe('request withdrawn')
+  })
+
+  it('returns equivalent erasure reject/cancel payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({
+        username: 'privacy-reject-cancel-compat',
+        password: 'password123',
+        role: 'organizer',
+      })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-reject-cancel-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Reject Cancel Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerV1Res = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Reject Cancel Compat Speaker V1',
+      userDefinedData: { email: 'reject-cancel-compat-v1@example.com' },
+    })
+    expect(speakerV1Res.status).toBe(201)
+    const speakerV1Id = speakerV1Res.body.data._id as string
+
+    const speakerLegacyRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Reject Cancel Compat Speaker Legacy',
+      userDefinedData: { email: 'reject-cancel-compat-legacy@example.com' },
+    })
+    expect(speakerLegacyRes.status).toBe(201)
+    const speakerLegacyId = speakerLegacyRes.body.data._id as string
+
+    const normalizeRequestPayload = (payload: unknown) => {
+      const body = payload as {
+        data?: {
+          _id?: string
+          targetId?: string
+          requestedAt?: string
+          approvedAt?: string
+          rejectedAt?: string
+          executedAt?: string
+          createdAt?: string
+          updatedAt?: string
+        }
+      }
+      return {
+        ...(body ?? {}),
+        data: {
+          ...(body.data ?? {}),
+          _id: '<request-id>',
+          targetId: '<target-id>',
+          requestedAt: '<timestamp>',
+          approvedAt: body.data?.approvedAt ? '<timestamp>' : body.data?.approvedAt,
+          rejectedAt: body.data?.rejectedAt ? '<timestamp>' : body.data?.rejectedAt,
+          executedAt: body.data?.executedAt ? '<timestamp>' : body.data?.executedAt,
+          createdAt: body.data?.createdAt ? '<timestamp>' : body.data?.createdAt,
+          updatedAt: body.data?.updatedAt ? '<timestamp>' : body.data?.updatedAt,
+        },
+      }
+    }
+
+    const createRejectV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerV1Id,
+      reason: 'compat reject request',
+      targetRefs: ['ops:compat:reject'],
+      eraseMode: 'anonymize',
+    })
+    expect(createRejectV1Res.status).toBe(201)
+    const rejectV1Id = createRejectV1Res.body.data._id as string
+
+    const createRejectLegacyRes = await agent.post('/api/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerLegacyId,
+      reason: 'compat reject request',
+      targetRefs: ['ops:compat:reject'],
+      eraseMode: 'anonymize',
+    })
+    expect(createRejectLegacyRes.status).toBe(201)
+    expect(createRejectLegacyRes.headers.deprecation).toBe('true')
+    expect(createRejectLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(createRejectLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(createRejectLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    const rejectLegacyId = createRejectLegacyRes.body.data._id as string
+    expect(normalizeRequestPayload(createRejectLegacyRes.body)).toEqual(
+      normalizeRequestPayload(createRejectV1Res.body)
+    )
+
+    const rejectBody = {
+      tournamentId,
+      reason: 'compat reject reason',
+      reauthPassword: 'password123',
+    }
+
+    const rejectV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${rejectV1Id}/reject`)
+      .send(rejectBody)
+    expect(rejectV1Res.status).toBe(200)
+    expect(rejectV1Res.headers.deprecation).toBeUndefined()
+
+    const rejectLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${rejectLegacyId}/reject`)
+      .send(rejectBody)
+    expect(rejectLegacyRes.status).toBe(200)
+    expect(rejectLegacyRes.headers.deprecation).toBe('true')
+    expect(rejectLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(rejectLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(rejectLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(normalizeRequestPayload(rejectLegacyRes.body)).toEqual(normalizeRequestPayload(rejectV1Res.body))
+
+    const createCancelV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerV1Id,
+      reason: 'compat cancel request',
+      targetRefs: ['ops:compat:cancel'],
+      eraseMode: 'anonymize',
+    })
+    expect(createCancelV1Res.status).toBe(201)
+    const cancelV1Id = createCancelV1Res.body.data._id as string
+
+    const createCancelLegacyRes = await agent.post('/api/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerLegacyId,
+      reason: 'compat cancel request',
+      targetRefs: ['ops:compat:cancel'],
+      eraseMode: 'anonymize',
+    })
+    expect(createCancelLegacyRes.status).toBe(201)
+    expect(createCancelLegacyRes.headers.deprecation).toBe('true')
+    expect(createCancelLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(createCancelLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(createCancelLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    const cancelLegacyId = createCancelLegacyRes.body.data._id as string
+    expect(normalizeRequestPayload(createCancelLegacyRes.body)).toEqual(
+      normalizeRequestPayload(createCancelV1Res.body)
+    )
+
+    const approveBody = {
+      tournamentId,
+      approvedBy: 'ops-compat-approver',
+      reauthPassword: 'password123',
+    }
+    const approveV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${cancelV1Id}/approve`)
+      .send(approveBody)
+    expect(approveV1Res.status).toBe(200)
+
+    const approveLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${cancelLegacyId}/approve`)
+      .send(approveBody)
+    expect(approveLegacyRes.status).toBe(200)
+    expect(approveLegacyRes.headers.deprecation).toBe('true')
+    expect(approveLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(approveLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(approveLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(normalizeRequestPayload(approveLegacyRes.body)).toEqual(
+      normalizeRequestPayload(approveV1Res.body)
+    )
+
+    const cancelBody = {
+      tournamentId,
+      reason: 'compat cancel reason',
+      reauthPassword: 'password123',
+    }
+    const cancelV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${cancelV1Id}/cancel`)
+      .send(cancelBody)
+    expect(cancelV1Res.status).toBe(200)
+    expect(cancelV1Res.headers.deprecation).toBeUndefined()
+
+    const cancelLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${cancelLegacyId}/cancel`)
+      .send(cancelBody)
+    expect(cancelLegacyRes.status).toBe(200)
+    expect(cancelLegacyRes.headers.deprecation).toBe('true')
+    expect(cancelLegacyRes.headers.sunset).toBeTruthy()
+    expect(String(cancelLegacyRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(cancelLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(normalizeRequestPayload(cancelLegacyRes.body)).toEqual(normalizeRequestPayload(cancelV1Res.body))
+  })
+
+  it('returns equivalent erasure execute-before-approve conflict payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({
+        username: 'privacy-execute-conflict-compat',
+        password: 'password123',
+        role: 'organizer',
+      })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-execute-conflict-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Execute Conflict Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerV1Res = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Execute Conflict Speaker V1',
+      userDefinedData: { email: 'execute-conflict-v1@example.com' },
+    })
+    expect(speakerV1Res.status).toBe(201)
+    const speakerV1Id = speakerV1Res.body.data._id as string
+
+    const speakerLegacyRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Execute Conflict Speaker Legacy',
+      userDefinedData: { email: 'execute-conflict-legacy@example.com' },
+    })
+    expect(speakerLegacyRes.status).toBe(201)
+    const speakerLegacyId = speakerLegacyRes.body.data._id as string
+
+    const createV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerV1Id,
+      reason: 'execute conflict compatibility request',
+      targetRefs: ['ops:compat:execute-conflict'],
+      eraseMode: 'anonymize',
+    })
+    expect(createV1Res.status).toBe(201)
+    const v1RequestId = createV1Res.body.data._id as string
+
+    const createLegacyRes = await agent.post('/api/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerLegacyId,
+      reason: 'execute conflict compatibility request',
+      targetRefs: ['ops:compat:execute-conflict'],
+      eraseMode: 'anonymize',
+    })
+    expect(createLegacyRes.status).toBe(201)
+    const legacyRequestId = createLegacyRes.body.data._id as string
+
+    const executeBody = {
+      tournamentId,
+      reauthPassword: 'password123',
+    }
+
+    const v1ConflictRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${v1RequestId}/execute`)
+      .send(executeBody)
+    expect(v1ConflictRes.status).toBe(409)
+    expect(v1ConflictRes.headers.deprecation).toBeUndefined()
+
+    const legacyConflictRes = await agent
+      .post(`/api/privacy/erasure-requests/${legacyRequestId}/execute`)
+      .send(executeBody)
+    expect(legacyConflictRes.status).toBe(409)
+    expect(legacyConflictRes.headers.deprecation).toBe('true')
+    expect(legacyConflictRes.headers.sunset).toBeTruthy()
+    expect(String(legacyConflictRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyConflictRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(legacyConflictRes.body).toEqual(v1ConflictRes.body)
+  })
+
+  it('returns equivalent erasure execute-after-cancel conflict payloads on v1 and legacy routes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({
+        username: 'privacy-execute-cancel-conflict-compat',
+        password: 'password123',
+        role: 'organizer',
+      })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'privacy-execute-cancel-conflict-compat', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Privacy Execute Cancel Conflict Compat Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerV1Res = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Execute Cancel Conflict Speaker V1',
+      userDefinedData: { email: 'execute-cancel-conflict-v1@example.com' },
+    })
+    expect(speakerV1Res.status).toBe(201)
+    const speakerV1Id = speakerV1Res.body.data._id as string
+
+    const speakerLegacyRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Execute Cancel Conflict Speaker Legacy',
+      userDefinedData: { email: 'execute-cancel-conflict-legacy@example.com' },
+    })
+    expect(speakerLegacyRes.status).toBe(201)
+    const speakerLegacyId = speakerLegacyRes.body.data._id as string
+
+    const createV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerV1Id,
+      reason: 'execute cancel conflict compatibility request',
+      targetRefs: ['ops:compat:execute-cancel-conflict'],
+      eraseMode: 'anonymize',
+    })
+    expect(createV1Res.status).toBe(201)
+    const v1RequestId = createV1Res.body.data._id as string
+
+    const createLegacyRes = await agent.post('/api/privacy/erasure-requests').send({
+      tournamentId,
+      targetType: 'speaker',
+      targetId: speakerLegacyId,
+      reason: 'execute cancel conflict compatibility request',
+      targetRefs: ['ops:compat:execute-cancel-conflict'],
+      eraseMode: 'anonymize',
+    })
+    expect(createLegacyRes.status).toBe(201)
+    const legacyRequestId = createLegacyRes.body.data._id as string
+
+    const approveBody = {
+      tournamentId,
+      approvedBy: 'ops-compat-approver',
+      reauthPassword: 'password123',
+    }
+
+    const approveV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${v1RequestId}/approve`)
+      .send(approveBody)
+    expect(approveV1Res.status).toBe(200)
+
+    const approveLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${legacyRequestId}/approve`)
+      .send(approveBody)
+    expect(approveLegacyRes.status).toBe(200)
+
+    const cancelBody = {
+      tournamentId,
+      reason: 'compat cancel for execute conflict',
+      reauthPassword: 'password123',
+    }
+
+    const cancelV1Res = await agent
+      .patch(`/api/v1/privacy/erasure-requests/${v1RequestId}/cancel`)
+      .send(cancelBody)
+    expect(cancelV1Res.status).toBe(200)
+
+    const cancelLegacyRes = await agent
+      .patch(`/api/privacy/erasure-requests/${legacyRequestId}/cancel`)
+      .send(cancelBody)
+    expect(cancelLegacyRes.status).toBe(200)
+
+    const executeBody = {
+      tournamentId,
+      reauthPassword: 'password123',
+    }
+
+    const v1ConflictRes = await agent
+      .post(`/api/v1/privacy/erasure-requests/${v1RequestId}/execute`)
+      .send(executeBody)
+    expect(v1ConflictRes.status).toBe(409)
+    expect(v1ConflictRes.headers.deprecation).toBeUndefined()
+
+    const legacyConflictRes = await agent
+      .post(`/api/privacy/erasure-requests/${legacyRequestId}/execute`)
+      .send(executeBody)
+    expect(legacyConflictRes.status).toBe(409)
+    expect(legacyConflictRes.headers.deprecation).toBe('true')
+    expect(legacyConflictRes.headers.sunset).toBeTruthy()
+    expect(String(legacyConflictRes.headers.link ?? '')).toContain('/api/v1')
+    expect(String(legacyConflictRes.headers.warning ?? '')).toContain('Deprecated API')
+    expect(legacyConflictRes.body).toEqual(v1ConflictRes.body)
   })
 
   it('skips adjudicator allocation when adjudicators are insufficient', async () => {

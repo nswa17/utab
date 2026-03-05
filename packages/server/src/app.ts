@@ -10,6 +10,7 @@ import {
   isAllowedCorsOrigin,
   isProd,
   jsonBodyLimits,
+  legacyApiSettings,
   port,
 } from './config/environment.js'
 import { errorHandler, notFound } from './middleware/error.js'
@@ -17,6 +18,12 @@ import { connectDatabase } from './config/database.js'
 import { csrfOriginCheck } from './middleware/csrf.js'
 import { auditRequestLogger } from './middleware/audit-log.js'
 import { ensureRateLimitIdentity } from './middleware/rate-limit-identity.js'
+import {
+  attachServiceAccountPrincipal,
+  enforceServiceAccountScope,
+  requireServiceAccountIdempotencyKey,
+} from './middleware/service-account-auth.js'
+import { handleServiceAccountIdempotency } from './middleware/service-account-idempotency.js'
 import {
   apiIpGuardRateLimiter,
   apiRateLimiter,
@@ -47,12 +54,6 @@ export function createApp(): express.Express {
     })
   )
   app.use(csrfOriginCheck)
-  app.use('/api', ensureRateLimitIdentity)
-  app.use('/api', apiIpGuardRateLimiter)
-  app.use('/api', apiSlowDown, apiRateLimiter)
-
-  app.use('/api/auth', express.json({ limit: jsonBodyLimits.auth }))
-  app.use('/api/auth', authSlowDown, authRateLimiter)
 
   app.use(
     session({
@@ -70,15 +71,45 @@ export function createApp(): express.Express {
     })
   )
 
-  app.use('/api/submissions', submissionSlowDown, submissionRateLimiter)
-  app.use('/api/raw-results', rawResultSlowDown, rawResultRateLimiter)
-  app.use('/api/submissions', express.json({ limit: jsonBodyLimits.submissions }))
-  app.use('/api/raw-results', express.json({ limit: jsonBodyLimits.rawResults }))
-  app.use('/api', express.json({ limit: jsonBodyLimits.default }))
   app.use(httpLogger)
   app.use(auditRequestLogger)
 
-  app.use('/api', createRoutes())
+  function mountApiNamespace(prefix: '/api' | '/api/v1', options?: { deprecated?: boolean }) {
+    app.use(prefix, attachServiceAccountPrincipal)
+    app.use(prefix, enforceServiceAccountScope)
+    app.use(prefix, requireServiceAccountIdempotencyKey)
+
+    app.use(prefix, ensureRateLimitIdentity)
+    app.use(prefix, apiIpGuardRateLimiter)
+    app.use(prefix, apiSlowDown, apiRateLimiter)
+
+    app.use(`${prefix}/auth`, express.json({ limit: jsonBodyLimits.auth }))
+    app.use(`${prefix}/auth`, authSlowDown, authRateLimiter)
+
+    app.use(`${prefix}/submissions`, submissionSlowDown, submissionRateLimiter)
+    app.use(`${prefix}/raw-results`, rawResultSlowDown, rawResultRateLimiter)
+    app.use(`${prefix}/submissions`, express.json({ limit: jsonBodyLimits.submissions }))
+    app.use(`${prefix}/raw-results`, express.json({ limit: jsonBodyLimits.rawResults }))
+    app.use(prefix, express.json({ limit: jsonBodyLimits.default }))
+    app.use(prefix, handleServiceAccountIdempotency)
+
+    if (options?.deprecated) {
+      app.use(prefix, (_req, res, next) => {
+        res.setHeader('Deprecation', 'true')
+        res.setHeader('Sunset', legacyApiSettings.sunsetAt.toUTCString())
+        res.setHeader('Link', '</api/v1>; rel="successor-version"')
+        res.setHeader('Warning', '299 - "Deprecated API: use /api/v1"')
+        next()
+      })
+    }
+
+    app.use(prefix, createRoutes())
+  }
+
+  mountApiNamespace('/api/v1')
+  if (legacyApiSettings.enabled) {
+    mountApiNamespace('/api', { deprecated: true })
+  }
 
   app.use(notFound)
   app.use(errorHandler)

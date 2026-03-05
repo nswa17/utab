@@ -29,6 +29,22 @@ function toStringValue(value: unknown): string | null {
   return String(value)
 }
 
+export function getAuthenticatedActorId(req: Request): string | null {
+  const sessionUserId = toStringValue(req.session?.userId)
+  if (sessionUserId) return sessionUserId
+  return toStringValue(req.serviceAccount?.sub)
+}
+
+export function getAuthenticatedActorRole(req: Request): Role | null {
+  if (req.session?.usertype) return req.session.usertype
+  if (req.serviceAccount?.role) return req.serviceAccount.role
+  return null
+}
+
+function isAuthenticatedRequest(req: Request): boolean {
+  return getAuthenticatedActorId(req) !== null
+}
+
 function getTournamentId(req: Request, paramName = 'tournamentId'): string | null {
   const paramValue = (req.params as Record<string, unknown> | undefined)?.[paramName]
   const body = req.body as Record<string, unknown> | undefined
@@ -39,8 +55,14 @@ function getTournamentId(req: Request, paramName = 'tournamentId'): string | nul
 }
 
 function hasTournamentMembership(req: Request, tournamentId: string): boolean {
-  const tournaments = (req.session?.tournaments ?? []).map((id) => String(id))
-  return tournaments.includes(String(tournamentId))
+  const normalizedTournamentId = String(tournamentId)
+  const sessionTournaments = (req.session?.tournaments ?? []).map((id) => String(id))
+  if (sessionTournaments.includes(normalizedTournamentId)) return true
+
+  const serviceTournamentIds = req.serviceAccount?.tournamentIds
+  if (!serviceTournamentIds) return false
+  if (serviceTournamentIds === '*') return true
+  return serviceTournamentIds.map((id) => String(id)).includes(normalizedTournamentId)
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -79,12 +101,12 @@ function hasSessionTournamentAccess(req: Request, tournamentId: string, auth: un
 
 export async function hasTournamentAdminAccess(req: Request, tournamentId: string): Promise<boolean> {
   if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) return false
-  if (!req.session?.userId) return false
+  if (!isAuthenticatedRequest(req)) return false
 
   const tournament = await TournamentModel.findById(tournamentId).lean().exec()
   if (!tournament) return false
 
-  const role = req.session.usertype
+  const role = getAuthenticatedActorRole(req)
   if (role === 'superuser') return true
 
   if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
@@ -94,7 +116,7 @@ export async function hasTournamentAdminAccess(req: Request, tournamentId: strin
 }
 
 export const requireAuth: RequestHandler = (req, res, next) => {
-  if (!req.session?.userId) {
+  if (!isAuthenticatedRequest(req)) {
     respondUnauthorized(res)
     return
   }
@@ -102,11 +124,11 @@ export const requireAuth: RequestHandler = (req, res, next) => {
 }
 
 export const requireOrganizer: RequestHandler = (req, res, next) => {
-  if (!req.session?.userId) {
+  if (!isAuthenticatedRequest(req)) {
     respondUnauthorized(res)
     return
   }
-  const role = req.session.usertype
+  const role = getAuthenticatedActorRole(req)
   if (role === 'superuser' || role === 'organizer') {
     next()
     return
@@ -129,12 +151,12 @@ export function requireTournamentAdmin(paramName = 'tournamentId'): RequestHandl
         return
       }
 
-      if (!req.session?.userId) {
+      if (!isAuthenticatedRequest(req)) {
         respondUnauthorized(res)
         return
       }
 
-      const role = req.session.usertype
+      const role = getAuthenticatedActorRole(req)
       if (role === 'superuser') {
         next()
         return
@@ -189,7 +211,7 @@ export function requireTournamentRole(
       const authConfig = (tournament as any).auth
       const isPublic = isTournamentPublic(authConfig, publicRoles)
 
-      const role = req.session?.usertype
+      const role = getAuthenticatedActorRole(req)
       if (role === 'superuser') {
         next()
         return

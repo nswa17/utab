@@ -30,7 +30,7 @@
             :aria-pressed="locale === 'en' ? 'true' : 'false'"
             @click="changeLocale('en')"
           >
-            {{ $t('English') }}
+            {{ $t('英語') }}
           </button>
         </div>
       </div>

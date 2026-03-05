@@ -41,6 +41,17 @@ const envSchema = z.object({
   JSON_LIMIT_AUTH: z.string().default('32kb'),
   JSON_LIMIT_SUBMISSIONS: z.string().default('256kb'),
   JSON_LIMIT_RAW_RESULTS: z.string().default('1mb'),
+  SERVICE_ACCOUNT_JWT_SECRET: z.string().min(16).optional(),
+  SERVICE_ACCOUNT_JWT_AUDIENCE: z.string().min(1).default('utab-api'),
+  SERVICE_ACCOUNT_JWT_ISSUER: z.string().min(1).optional(),
+  SERVICE_ACCOUNT_REVOKED_JTIS: z.string().optional(),
+  SERVICE_ACCOUNT_IDEMPOTENCY_TTL_SECONDS: positiveInt.default(24 * 60 * 60),
+  SERVICE_TOKEN_REVOCATION_TTL_DAYS: positiveInt.default(180),
+  ENABLE_LEGACY_API_ROUTE: z.coerce.boolean().default(true),
+  LEGACY_API_SUNSET_AT: z
+    .string()
+    .datetime({ offset: true })
+    .default('2026-12-31T00:00:00.000Z'),
 })
 
 export const env = envSchema.parse(process.env)
@@ -113,4 +124,26 @@ export const jsonBodyLimits = {
   auth: env.JSON_LIMIT_AUTH,
   submissions: env.JSON_LIMIT_SUBMISSIONS,
   rawResults: env.JSON_LIMIT_RAW_RESULTS,
+} as const
+
+function splitCommaSeparated(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+export const serviceAccountAuthSettings = {
+  secret: env.SERVICE_ACCOUNT_JWT_SECRET ?? env.SESSION_SECRET,
+  audience: env.SERVICE_ACCOUNT_JWT_AUDIENCE,
+  issuer: env.SERVICE_ACCOUNT_JWT_ISSUER,
+  revokedJtis: new Set(splitCommaSeparated(env.SERVICE_ACCOUNT_REVOKED_JTIS)),
+  idempotencyTtlMs: env.SERVICE_ACCOUNT_IDEMPOTENCY_TTL_SECONDS * 1000,
+  revocationTtlMs: env.SERVICE_TOKEN_REVOCATION_TTL_DAYS * 24 * 60 * 60 * 1000,
+} as const
+
+export const legacyApiSettings = {
+  enabled: env.ENABLE_LEGACY_API_ROUTE,
+  sunsetAt: new Date(env.LEGACY_API_SUNSET_AT),
 } as const

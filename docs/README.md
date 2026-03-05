@@ -1,28 +1,19 @@
 # docs/
 
-設計資料・ロードマップ・UI資料をまとめるディレクトリです。  
-未完了の作業計画（次にやること）はルートの `PLAN.md` に集約します。
+UTab の設計資料・運用資料・履歴資料をまとめるディレクトリです。
 
-## 主要ドキュメント
+## 現行ドキュメント（優先参照）
 
-- [目標アーキテクチャ](architecture-v2.md)
-- [旧アーキテクチャ分析](legacy-analysis.md)
-- [Security & Access Control Roadmap](security-roadmap.md)
+- [architecture-v2.md](architecture-v2.md): 現行アーキテクチャ（v3 系モノレポ）
+- [security-roadmap.md](security-roadmap.md): セキュリティ/アクセス制御の設計と実装履歴
+- [ui/ui-map.md](ui/ui-map.md): UI 導線と画面マップ
+- [ui/ui-qa-checklist.md](ui/ui-qa-checklist.md): UI 回帰チェック観点
+- [../PLAN.md](../PLAN.md): 実装計画と進捗（未完了タスク含む）
 
-## UI
+## 履歴ドキュメント（参照用アーカイブ）
 
-- UI Modernization Plan はルートの [PLAN.md](../PLAN.md) に統合
-- [UI Map](ui/ui-map.md)
-- [UI Inventory](ui/ui-inventory.md)
-- [UI Issues](ui/ui-issues.md)
-- [Admin Participant QR](ui/admin-participant-qr.md)
-- [UI i18n Guidelines](ui/ui-i18n-guidelines.md)
-- [UI QA Checklist](ui/ui-qa-checklist.md)
+- [legacy-analysis.md](legacy-analysis.md): 旧実装分析
+- [migration/](migration/): 移行メモ・検証メモ・過去ロードマップ
+- [migration/tab-update-roadmap-2026-02-08.md](migration/tab-update-roadmap-2026-02-08.md): 2026-02 時点の計画スナップショット
 
-## Migration / Roadmap
-
-- 移行手順（v1 → v2）はルート `README.md` の「移行ガイド」セクションを参照
-- モダン化・統合移行計画（完了済み）と未完了計画は `PLAN.md` に集約
-- `migration/` 以下に移行メモ・検証メモを配置
-  - 例: `migration/task1-foundation.md`, `migration/task4-core.md`
-- [Tabシステム更新要望 ロードマップ（2026-02-08）](migration/tab-update-roadmap-2026-02-08.md)
+履歴ドキュメントには、作成当時の前提（古いパスやタスク状態）が残っている場合があります。実作業時は `PLAN.md` と現行コードを優先してください。

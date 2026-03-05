@@ -3639,7 +3639,6 @@ async function handleEntityImportFile(event: Event) {
   if (!file) return
   entityImportError.value = null
   entityImportText.value = await file.text()
-  input.value = ''
 }
 
 function openDeleteEntityModal(type: DeleteEntityType, id: string) {

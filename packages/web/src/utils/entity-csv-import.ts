@@ -269,13 +269,30 @@ function normalizeRoundNumbers(roundNumbers: number[]): number[] {
   ).sort((left, right) => left - right)
 }
 
-function resolveNamedEntityIds(values: string, lookup: Map<string, string>): string[] {
-  const ids = splitList(values).map((token) => {
+type NamedEntityResolveResult = {
+  ids: string[]
+  unknownTokens: string[]
+}
+
+function resolveNamedEntityIds(values: string, lookup: Map<string, string>): NamedEntityResolveResult {
+  const ids = new Set<string>()
+  const unknownTokens = new Set<string>()
+
+  splitList(values).forEach((token) => {
     const normalized = token.trim()
-    if (!normalized) return ''
-    return lookup.get(normalized) ?? lookup.get(normalized.toLowerCase()) ?? ''
+    if (!normalized) return
+    const id = lookup.get(normalized) ?? lookup.get(normalized.toLowerCase())
+    if (id) {
+      ids.add(id)
+      return
+    }
+    unknownTokens.add(normalized)
   })
-  return Array.from(new Set(ids.filter(Boolean)))
+
+  return {
+    ids: Array.from(ids),
+    unknownTokens: Array.from(unknownTokens),
+  }
 }
 
 function createNamedEntityLookup(items: NamedEntity[]): Map<string, string> {
@@ -304,25 +321,45 @@ export function buildEntityImportPayload(
     }
   }
   const reader = createCsvColumnReader(parsed)
+  const errors = reader.errors
   const payload: Array<Record<string, unknown>> = []
   const rounds = normalizeRoundNumbers(options.roundNumbers)
   const teamLookup = createNamedEntityLookup(options.teams)
   const speakerLookup = createNamedEntityLookup(options.speakers)
   const institutionLookup = createNamedEntityLookup(options.institutions)
 
-  for (const row of parsed.rows) {
+  const pushUnknownEntityError = (
+    line: number,
+    field: string,
+    unknownTokens: string[],
+    entityLabel: string
+  ) => {
+    if (unknownTokens.length === 0) return
+    errors.push(
+      `CSV ${line}行目の ${field} に未登録の${entityLabel}があります: ${unknownTokens.join(', ')}`
+    )
+  }
+
+  for (const [rowIndex, row] of parsed.rows.entries()) {
+    const line = rowIndex + 2
     if (options.type === 'teams') {
       const name = reader.read(row, ['name'], 0)
       if (!name) continue
       const institutionCell = reader.read(row, ['institution'], 1)
       const speakersCell = reader.read(row, ['speakers'], 2)
-      const speakerIds = resolveNamedEntityIds(speakersCell, speakerLookup)
+      const speakerResult = resolveNamedEntityIds(speakersCell, speakerLookup)
 
       const defaultAvailable = toBooleanCell(
         reader.read(row, ['available', 'availability'], 3),
         true
       )
-      const institutionIds = resolveNamedEntityIds(institutionCell, institutionLookup)
+      const institutionResult = resolveNamedEntityIds(institutionCell, institutionLookup)
+      const speakerIds = speakerResult.ids
+      const institutionIds = institutionResult.ids
+
+      pushUnknownEntityError(line, 'institution', institutionResult.unknownTokens, 'institution')
+      pushUnknownEntityError(line, 'speakers', speakerResult.unknownTokens, 'speaker')
+
       const details =
         rounds.length > 0 &&
         (defaultAvailable === false ||
@@ -356,7 +393,7 @@ export function buildEntityImportPayload(
 
       const preev = toFiniteNumber(reader.read(row, ['preev'], 1), 0)
 
-      const institutionIds = resolveNamedEntityIds(
+      const institutionResult = resolveNamedEntityIds(
         reader.read(row, ['conflicts', 'conflict', 'institutions', 'institution']),
         institutionLookup
       )
@@ -364,9 +401,19 @@ export function buildEntityImportPayload(
         reader.read(row, ['available', 'availability'], 2),
         true
       )
-      const baseConflictTeams = resolveNamedEntityIds(
+      const baseConflictTeamResult = resolveNamedEntityIds(
         reader.read(row, ['conflict_teams', 'conflict_team'], 3),
         teamLookup
+      )
+      const institutionIds = institutionResult.ids
+      const baseConflictTeams = baseConflictTeamResult.ids
+
+      pushUnknownEntityError(line, 'conflicts', institutionResult.unknownTokens, 'institution')
+      pushUnknownEntityError(
+        line,
+        'conflict_teams',
+        baseConflictTeamResult.unknownTokens,
+        'team'
       )
 
       const includeDetails =
@@ -383,15 +430,21 @@ export function buildEntityImportPayload(
               reader.readRound(row, 'availability', round),
               defaultAvailable
             )
-            const roundConflicts = resolveNamedEntityIds(
+            const roundConflictResult = resolveNamedEntityIds(
               reader.readRound(row, 'conflicts', round),
               teamLookup
+            )
+            pushUnknownEntityError(
+              line,
+              `conflicts_r${round}`,
+              roundConflictResult.unknownTokens,
+              'team'
             )
             return {
               r: round,
               available,
               conflicts: institutionIds,
-              conflict_teams: Array.from(new Set([...baseConflictTeams, ...roundConflicts])),
+              conflict_teams: Array.from(new Set([...baseConflictTeams, ...roundConflictResult.ids])),
             }
           })
         : undefined
@@ -466,5 +519,5 @@ export function buildEntityImportPayload(
     })
   }
 
-  return { payload, errors: reader.errors }
+  return { payload, errors }
 }

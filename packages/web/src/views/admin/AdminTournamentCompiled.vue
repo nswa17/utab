@@ -744,7 +744,7 @@
                 <label class="stack slide-setting-field slide-setting-field-compact">
                   <span class="muted">{{ $t('スライド言語') }}</span>
                   <select v-model="slideLanguage">
-                    <option value="en">{{ $t('English') }}</option>
+                    <option value="en">{{ $t('英語') }}</option>
                     <option value="ja">{{ $t('日本語') }}</option>
                   </select>
                 </label>
@@ -1909,13 +1909,13 @@ function breakOutcomeOrder(outcome: BreakOutcomeKey): number {
 }
 
 function breakOutcomeLabel(outcome: BreakOutcomeKey): string {
-  if (outcome === 'champion') return t('Champion')
-  if (outcome === 'grand_finalist') return t('Grand Finalist')
-  if (outcome === 'semi_finalist') return t('Semi-finalist')
-  if (outcome === 'quarter_finalist') return t('Quarter-finalist')
-  if (outcome === 'octo_finalist') return t('Octo-finalist')
-  if (outcome === 'double_octo_finalist') return t('Double-octo-finalist')
-  return t('Break Participant')
+  if (outcome === 'champion') return t('チャンピオン')
+  if (outcome === 'grand_finalist') return t('準優勝')
+  if (outcome === 'semi_finalist') return t('準決勝進出')
+  if (outcome === 'quarter_finalist') return t('準々決勝進出')
+  if (outcome === 'octo_finalist') return t('ベスト16')
+  if (outcome === 'double_octo_finalist') return t('ベスト32')
+  return t('ブレイク参加者')
 }
 
 function buildRoundStatsByTeam(results: any[]): Map<number, Map<string, { win: number; sum: number }>> {
