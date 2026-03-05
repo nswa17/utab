@@ -44,4 +44,11 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('チーム結果参照ラウンドに直前ラウンドを含めてください。')
     expect(source).toContain('ジャッジ結果参照ラウンドに直前ラウンドを含めてください。')
   })
+
+  it('keeps selected CSV file visible while reading allocation import text', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('@file-change="handleAllocationImportFile"')
+    expect(source).toContain('allocationImportText.value = await file.text()')
+    expect(source).not.toContain("input.value = ''")
+  })
 })

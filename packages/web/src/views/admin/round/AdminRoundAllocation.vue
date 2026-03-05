@@ -567,7 +567,7 @@
                     </th>
                     <th class="waiting-win-col">
                       <SortHeaderButton
-                        :label="$t('Win')"
+                        :label="$t('勝ち')"
                         compact
                         :indicator="referenceWaitingSortIndicator('win')"
                         @click="setReferenceWaitingSort('win')"
@@ -3220,7 +3220,6 @@ async function handleAllocationImportFile(event: Event) {
   if (!file) return
   allocationImportError.value = null
   allocationImportText.value = await file.text()
-  input.value = ''
 }
 
 function applyAllocationImport() {

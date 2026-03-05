@@ -17,6 +17,7 @@ import { styleRouter } from './styles.js'
 import { rawResultRouter } from './raw-results.js'
 import { auditLogRouter } from './audit-logs.js'
 import { devToolsRouter } from '../devtools/routes.js'
+import { privacyRouter } from './privacy.js'
 
 export function createRoutes(): Router {
   const router = Router()
@@ -37,6 +38,7 @@ export function createRoutes(): Router {
   router.use('/styles', styleRouter)
   router.use('/raw-results', rawResultRouter)
   router.use('/audit-logs', auditLogRouter)
+  router.use('/privacy', privacyRouter)
   router.use('/dev-tools', devToolsRouter)
   return router
 }

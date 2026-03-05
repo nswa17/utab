@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import type { RequestHandler } from 'express'
-import { hasTournamentAdminAccess } from '../middleware/auth.js'
+import { getAuthenticatedActorRole, hasTournamentAdminAccess } from '../middleware/auth.js'
 import { AuditLogModel } from '../models/audit-log.js'
 import { badRequest, isValidObjectId } from './shared/http-errors.js'
 
@@ -93,7 +93,7 @@ export const listAuditLogs: RequestHandler = async (req, res, next) => {
         ? Math.min(Math.max(rawLimit, 1), MAX_LIMIT)
         : DEFAULT_LIMIT
 
-    const isSuperuser = req.session?.usertype === 'superuser'
+    const isSuperuser = getAuthenticatedActorRole(req) === 'superuser'
     if (!isSuperuser) {
       if (!tournamentId) {
         badRequest(res, 'tournamentId is required')

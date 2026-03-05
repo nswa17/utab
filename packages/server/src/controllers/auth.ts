@@ -1,6 +1,9 @@
 import type { RequestHandler } from 'express'
 import { Types } from 'mongoose'
 import { hashPassword, verifyPassword } from '../services/hash.service.js'
+import { serviceAccountAuthSettings } from '../config/environment.js'
+import { getAuthenticatedActorId } from '../middleware/auth.js'
+import { ServiceTokenRevocationModel } from '../models/service-token-revocation.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
@@ -216,4 +219,81 @@ export const logout: RequestHandler = (req, res, next) => {
     }
     respondSuccess()
   })
+}
+
+function parseOptionalIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
+export const revokeServiceToken: RequestHandler = async (req, res, next) => {
+  try {
+    const actorUserId = getAuthenticatedActorId(req)
+    const { jti, reason, expiresAt } = req.body as {
+      jti: string
+      reason?: string
+      expiresAt?: string
+    }
+
+    const normalizedReason = typeof reason === 'string' ? reason.trim() : ''
+    const explicitExpireAt = parseOptionalIsoDate(expiresAt)
+    if (expiresAt !== undefined && !explicitExpireAt) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'Invalid expiresAt' }],
+      })
+      return
+    }
+
+    const expireAt = explicitExpireAt ?? new Date(Date.now() + serviceAccountAuthSettings.revocationTtlMs)
+    if (expireAt.getTime() <= Date.now()) {
+      res.status(400).json({
+        data: null,
+        errors: [{ name: 'BadRequest', message: 'expiresAt must be in the future' }],
+      })
+      return
+    }
+
+    const existing = await ServiceTokenRevocationModel.findOne({ jti }).lean().exec()
+    if (existing) {
+      res.json({ data: existing, errors: [] })
+      return
+    }
+
+    const created = await ServiceTokenRevocationModel.create({
+      jti,
+      reason: normalizedReason.length > 0 ? normalizedReason : undefined,
+      revokedBy: actorUserId ?? undefined,
+      revokedAt: new Date(),
+      expireAt,
+    })
+    res.status(201).json({ data: created.toJSON(), errors: [] })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const listServiceTokenRevocations: RequestHandler = async (req, res, next) => {
+  try {
+    const { limit, active } = req.query as { limit?: number; active?: 'true' | 'false' }
+    const normalizedLimit =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? Math.min(Math.max(limit, 1), 200)
+        : 50
+
+    const filter: Record<string, unknown> = {}
+    if (active === 'true') {
+      filter.expireAt = { $gt: new Date() }
+    }
+    const items = await ServiceTokenRevocationModel.find(filter)
+      .sort({ revokedAt: -1, _id: -1 })
+      .limit(normalizedLimit)
+      .lean()
+      .exec()
+    res.json({ data: { items, limit: normalizedLimit }, errors: [] })
+  } catch (err) {
+    next(err)
+  }
 }

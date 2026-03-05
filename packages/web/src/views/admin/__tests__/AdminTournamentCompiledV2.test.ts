@@ -45,7 +45,7 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('ブレイク結果統計')
     expect(source).toContain('breakRoundNumbersInCompiled')
     expect(source).toContain('break_outcome')
-    expect(source).toContain('Grand Finalist')
+    expect(source).toContain('準優勝')
     expect(messages).toContain('予選結果')
     expect(messages).toContain('ブレイク結果')
   })

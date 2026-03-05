@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express'
 import { TournamentModel } from '../models/tournament.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
+import { getAuthenticatedActorId, getAuthenticatedActorRole } from '../middleware/auth.js'
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
 import { verifyPassword } from '../services/hash.service.js'
 import {
@@ -12,8 +13,14 @@ import { sanitizeTournamentForPublic } from '../services/response-sanitizer.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function hasTournamentMembership(req: any, tournamentId: string): boolean {
-  const tournaments = (req.session?.tournaments ?? []).map((id: unknown) => String(id))
-  return tournaments.includes(String(tournamentId))
+  const normalizedTournamentId = String(tournamentId)
+  const sessionTournaments = (req.session?.tournaments ?? []).map((id: unknown) => String(id))
+  if (sessionTournaments.includes(normalizedTournamentId)) return true
+
+  const serviceTournamentIds = req.serviceAccount?.tournamentIds
+  if (!serviceTournamentIds) return false
+  if (serviceTournamentIds === '*') return true
+  return serviceTournamentIds.map((id: unknown) => String(id)).includes(normalizedTournamentId)
 }
 
 function ensureTournamentId(res: Parameters<RequestHandler>[1], tournamentId: string): boolean {
@@ -65,9 +72,8 @@ async function resolveTournamentCreatorNameMap(
 }
 
 function hasTournamentOrganizerAccess(req: any, tournament: any): boolean {
-  const role = req.session?.usertype
+  const role = getAuthenticatedActorRole(req)
   if (role === 'superuser') return true
-  if (!req.session?.userId) return false
 
   const tournamentId = String(tournament?._id)
   return role === 'organizer' && hasTournamentMembership(req, tournamentId)
@@ -85,7 +91,7 @@ export const listTournaments: RequestHandler = async (req, res, next) => {
   try {
     const tournaments = await TournamentModel.find().lean().exec()
     const visibleTournaments = tournaments.filter((tournament) => canViewTournament(req, tournament))
-    const isSuperuser = req.session?.usertype === 'superuser'
+    const isSuperuser = getAuthenticatedActorRole(req) === 'superuser'
     const creatorNameMap = isSuperuser
       ? await resolveTournamentCreatorNameMap(visibleTournaments as Array<Record<string, unknown>>)
       : null
@@ -161,7 +167,7 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       preev_weights,
       auth: mergedAuth.auth,
       user_defined_data,
-      createdBy: req.session?.userId,
+      createdBy: getAuthenticatedActorId(req),
     })
     if (req.session?.userId) {
       const tournamentId = created._id.toString()

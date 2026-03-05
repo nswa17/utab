@@ -4,12 +4,12 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
-import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
 import { buildDetailsForRounds, buildIdMaps, normalizeScoreWeights } from './shared/allocation-support.js'
@@ -28,17 +28,7 @@ function buildRawFilter(
 }
 
 async function isTournamentAdmin(req: Request, tournamentId: string): Promise<boolean> {
-  const role = req.session?.usertype
-  if (role === 'superuser') return true
-  if (!req.session?.userId) return false
-  const membership = await TournamentMemberModel.findOne({
-    tournamentId: String(tournamentId),
-    userId: String(req.session.userId),
-  })
-    .select({ role: 1, _id: 0 })
-    .lean()
-    .exec()
-  return membership?.role === 'organizer'
+  return hasTournamentAdminAccess(req, tournamentId)
 }
 
 function resolveRounds(requestedRound: number | undefined, ...rawLists: Array<Array<{ r?: number }>>) {

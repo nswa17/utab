@@ -21,7 +21,7 @@
           <span>{{ $t('チェアを常に評価') }}</span>
           <HelpTip :text="$t('チェアの評価入力を常に要求します。')" />
         </label>
-        <Field :label="$t('Evaluator in Team')">
+        <Field :label="$t('チーム内の評価者')">
           <template #default="{ id, describedBy }">
             <select v-model="evaluatorInTeam" :id="id" :aria-describedby="describedBy" :disabled="disabled">
               <option value="team">{{ $t('チーム') }}</option>

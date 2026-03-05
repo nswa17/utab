@@ -152,7 +152,7 @@
 
               <template v-if="useMatterManner">
                 <label class="stack">
-                  <span class="score-field-label">{{ $t('Matter') }}</span>
+                  <span class="score-field-label">{{ $t('マター') }}</span>
                   <div class="row score-adjust-row">
                     <button
                       type="button"
@@ -180,7 +180,7 @@
                   </div>
                 </label>
                 <label class="stack">
-                  <span class="score-field-label">{{ $t('Manner') }}</span>
+                  <span class="score-field-label">{{ $t('マナー') }}</span>
                   <div class="row score-adjust-row">
                     <button
                       type="button"
@@ -210,7 +210,7 @@
               </template>
               <template v-else>
                 <label class="stack">
-                  <span class="score-field-label">{{ $t('Score') }}</span>
+                  <span class="score-field-label">{{ $t('スコア') }}</span>
                   <div class="row score-adjust-row">
                     <button
                       type="button"
@@ -240,12 +240,12 @@
               </template>
 
               <div v-if="showActiveRoleTotalScore" class="stack">
-                <span class="score-field-label">{{ $t('Total Score') }}</span>
+                <span class="score-field-label">{{ $t('合計スコア') }}</span>
                 <div class="score-total-box">{{ activeRoleTotalScore }}</div>
               </div>
 
               <div v-if="bestEnabled" class="row toggle-field">
-                <span class="toggle-title">{{ $t('Best Debater') }}</span>
+                <span class="toggle-title">{{ $t('ベストディベーター') }}</span>
                 <span class="row toggle-control">
                   <button
                     type="button"
@@ -255,7 +255,7 @@
                   >
                     No
                   </button>
-                  <ToggleSwitch v-model="activeRoleBest" :aria-label="$t('Best Debater')" />
+                  <ToggleSwitch v-model="activeRoleBest" :aria-label="$t('ベストディベーター')" />
                   <button
                     type="button"
                     class="toggle-label toggle-label-button"
@@ -374,7 +374,7 @@
             <strong>{{ govLabel }} {{ totalScoreA }} / {{ oppLabel }} {{ totalScoreB }}</strong>
           </div>
           <div v-if="bestEnabled && !noSpeakerScore" class="confirm-card stack full">
-            <span class="muted small">{{ $t('Best Debater') }}</span>
+            <span class="muted small">{{ $t('ベストディベーター') }}</span>
             <div v-if="bestDebaterSummaryItems.length > 0" class="confirm-marker-inline">
               <span
                 v-for="item in bestDebaterSummaryItems"
@@ -661,7 +661,7 @@ const ballotSteps = computed<BallotStep[]>(() => {
   }
   return [
     { id: 'submitter', label: t('提出者入力'), title: t('提出者入力') },
-    { id: 'speaker', label: t('Speaker入力'), title: t('Speaker入力') },
+    { id: 'speaker', label: t('スピーカー入力'), title: t('スピーカー入力') },
     { id: 'score', label: t('スコア入力'), title: t('スコア入力') },
     { id: 'winner', label: t('勝者入力'), title: t('勝者入力') },
   ]

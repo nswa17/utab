@@ -1,5 +1,7 @@
 # UTab Security & Access Control Roadmap
 
+> 2026-02 時点の設計・実装ログです。現行運用では完了フェーズの参照資料として扱います。
+
 ## 目的
 - 公開サービスとして運用しつつ、未認証ユーザーによるDB書き込みを最小化する。
 - 大会ごとのパスワード制で、audience / speaker / adjudicator のアクセスを制御する。
@@ -72,8 +74,8 @@
 レスポンスは `createdAt` 降順でページング対応（`limit`/`cursor`）とし、`ip`/`userAgent`/`actorRole` を含める。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/PLAN.md
-- /Users/neon/Desktop/utab/docs/task11-validation.md
+- PLAN.md
+- docs/migration/task11-validation.md
 
 ## Phase 1: 認証・権限制御の基盤改修
 **目標**
@@ -93,17 +95,17 @@
 - [x] 統合テストを更新し、`superuser` 自己登録拒否と「メンバーシップ剥奪後の organizer 操作拒否」を追加。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/models/user.ts
-- /Users/neon/Desktop/utab/packages/server/src/models/tournament.ts
-- /Users/neon/Desktop/utab/packages/server/src/models/tournament-member.ts (新規)
-- /Users/neon/Desktop/utab/packages/server/src/middleware/auth.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/auth.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/tournament-users.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/auth.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/tournaments.ts
+- packages/server/src/models/user.ts
+- packages/server/src/models/tournament.ts
+- packages/server/src/models/tournament-member.ts (新規)
+- packages/server/src/middleware/auth.ts
+- packages/server/src/controllers/auth.ts
+- packages/server/src/controllers/tournament-users.ts
+- packages/server/src/routes/auth.ts
+- packages/server/src/routes/tournaments.ts
 
 **テスト更新**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
+- packages/server/test/integration.part*.test.ts
 
 ## Phase 2: 大会アクセスセッション（大会パスワード）
 **目標**
@@ -124,14 +126,14 @@
 - [x] 統合テストで「保護大会の閲覧/送信拒否」「access 成功後の許可」「exit とパスワード更新による失効」を追加。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/models/tournament.ts
-- /Users/neon/Desktop/utab/packages/server/src/types/express-session.d.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/tournaments.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/tournaments.ts
-- /Users/neon/Desktop/utab/packages/server/src/middleware/auth.ts
+- packages/server/src/models/tournament.ts
+- packages/server/src/types/express-session.d.ts
+- packages/server/src/controllers/tournaments.ts
+- packages/server/src/routes/tournaments.ts
+- packages/server/src/middleware/auth.ts
 
 **テスト更新**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
+- packages/server/test/integration.part*.test.ts
 
 ## Phase 3: APIアクセス制御の置換
 **目標**
@@ -151,21 +153,21 @@
 - [x] `pnpm -C packages/server test` で統合テストを実行し、回帰がないことを確認。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/middleware/auth.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/teams.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/speakers.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/adjudicators.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/venues.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/institutions.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/rounds.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/draws.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/results.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/compiled.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/raw-results.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/submissions.ts
+- packages/server/src/middleware/auth.ts
+- packages/server/src/routes/teams.ts
+- packages/server/src/routes/speakers.ts
+- packages/server/src/routes/adjudicators.ts
+- packages/server/src/routes/venues.ts
+- packages/server/src/routes/institutions.ts
+- packages/server/src/routes/rounds.ts
+- packages/server/src/routes/draws.ts
+- packages/server/src/routes/results.ts
+- packages/server/src/routes/compiled.ts
+- packages/server/src/routes/raw-results.ts
+- packages/server/src/routes/submissions.ts
 
 **テスト更新**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
+- packages/server/test/integration.part*.test.ts
 
 ## Phase 4: 公開レスポンスの制限
 **目標**
@@ -183,19 +185,19 @@
 - [x] 統合テストを更新し、公開レスポンスで内部フィールドが除去されることを検証。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/services/response-sanitizer.ts (新規)
-- /Users/neon/Desktop/utab/packages/server/src/controllers/teams.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/speakers.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/adjudicators.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/venues.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/institutions.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/rounds.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/results.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/compiled.ts
-- /Users/neon/Desktop/utab/packages/server/src/controllers/raw-results.ts
+- packages/server/src/services/response-sanitizer.ts (新規)
+- packages/server/src/controllers/teams.ts
+- packages/server/src/controllers/speakers.ts
+- packages/server/src/controllers/adjudicators.ts
+- packages/server/src/controllers/venues.ts
+- packages/server/src/controllers/institutions.ts
+- packages/server/src/controllers/rounds.ts
+- packages/server/src/controllers/results.ts
+- packages/server/src/controllers/compiled.ts
+- packages/server/src/controllers/raw-results.ts
 
 **テスト更新**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
+- packages/server/test/integration.part*.test.ts
 
 ## Phase 5: HTTPS / CORS / CSRF
 **目標**
@@ -215,8 +217,8 @@
 - [x] 統合テストに「許可Originのpreflight成功」「非許可Originの拒否」「非許可OriginでのPOST拒否」を追加。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/app.ts
-- /Users/neon/Desktop/utab/packages/server/src/config/environment.ts
+- packages/server/src/app.ts
+- packages/server/src/config/environment.ts
 
 ## Phase 6: レートリミットとDoS耐性
 **目標**
@@ -256,8 +258,8 @@
 - `JSON_LIMIT_AUTH` / `JSON_LIMIT_SUBMISSIONS` / `JSON_LIMIT_RAW_RESULTS` / `JSON_LIMIT_DEFAULT`
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/app.ts
-- /Users/neon/Desktop/utab/packages/server/src/routes/*.ts
+- packages/server/src/app.ts
+- packages/server/src/routes/*.ts
 
 ## Phase 7: 監査ログ
 **目標**
@@ -275,13 +277,13 @@
 - [x] 統合テストに「監査ログ記録」「フィルタ検索」「カーソルページング」「権限制御」を追加。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/src/models/audit-log.ts (新規)
-- /Users/neon/Desktop/utab/packages/server/src/controllers/audit-logs.ts (新規)
-- /Users/neon/Desktop/utab/packages/server/src/routes/audit-logs.ts (新規)
-- /Users/neon/Desktop/utab/packages/server/src/controllers/*
+- packages/server/src/models/audit-log.ts (新規)
+- packages/server/src/controllers/audit-logs.ts (新規)
+- packages/server/src/routes/audit-logs.ts (新規)
+- packages/server/src/controllers/*
 
 **テスト更新**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
+- packages/server/test/integration.part*.test.ts
 
 ## Phase 8: 移行と回帰テスト
 **目標**
@@ -300,9 +302,9 @@
 - [x] 統合テストに「Phase 8 移行（アクセス補正・パスワードハッシュ化・メンバーシップ移行・冪等性）」を追加。
 
 **編集候補ファイル**
-- /Users/neon/Desktop/utab/packages/server/test/integration.test.ts
-- /Users/neon/Desktop/utab/README.md
-- /Users/neon/Desktop/utab/PLAN.md
-- /Users/neon/Desktop/utab/packages/server/src/services/startup-data-maintenance.service.ts
-- /Users/neon/Desktop/utab/packages/server/src/services/tournament-access-maintenance.service.ts
-- /Users/neon/Desktop/utab/packages/server/src/services/tournament-membership-maintenance.service.ts
+- packages/server/test/integration.part*.test.ts
+- README.md
+- PLAN.md
+- packages/server/src/services/startup-data-maintenance.service.ts
+- packages/server/src/services/tournament-access-maintenance.service.ts
+- packages/server/src/services/tournament-membership-maintenance.service.ts

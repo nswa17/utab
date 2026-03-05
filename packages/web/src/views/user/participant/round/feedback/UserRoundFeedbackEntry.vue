@@ -66,7 +66,7 @@
       <div v-if="judge" class="card stack">
         <h4>{{ judge.name }}</h4>
         <p class="muted">{{ $t('ジャッジのフィードバックを入力してください。') }}</p>
-        <Field v-if="useMatterManner" :label="$t('Matter')" v-slot="{ id, describedBy }">
+        <Field v-if="useMatterManner" :label="$t('マター')" v-slot="{ id, describedBy }">
           <input
             v-model.number="matter"
             :id="id"
@@ -77,7 +77,7 @@
             :step="range.unit"
           />
         </Field>
-        <Field v-if="useMatterManner" :label="$t('Manner')" v-slot="{ id, describedBy }">
+        <Field v-if="useMatterManner" :label="$t('マナー')" v-slot="{ id, describedBy }">
           <input
             v-model.number="manner"
             :id="id"

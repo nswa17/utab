@@ -133,4 +133,32 @@ describe('entity csv import', () => {
     expect(result.payload).toEqual([])
     expect(result.errors[0]).toContain('1行目にCSVヘッダーが必要です')
   })
+
+  it('returns errors when teams csv includes unknown institution or speaker names', () => {
+    const result = build({
+      type: 'teams',
+      text: ['name,institution,speakers', 'Team New,Unknown Institution,Alice|Unknown Speaker'].join(
+        '\n'
+      ),
+      roundNumbers: [1],
+    })
+
+    expect(result.errors.some((message) => message.includes('institution'))).toBe(true)
+    expect(result.errors.some((message) => message.includes('speakers'))).toBe(true)
+  })
+
+  it('returns errors when adjudicator csv includes unknown conflict names', () => {
+    const result = build({
+      type: 'adjudicators',
+      text: [
+        'name,preev,available,conflicts,conflict_teams,conflicts_r2',
+        'Judge A,2,true,Unknown Institution,Unknown Team,Another Unknown Team',
+      ].join('\n'),
+      roundNumbers: [1, 2],
+    })
+
+    expect(result.errors.some((message) => message.includes('conflicts'))).toBe(true)
+    expect(result.errors.some((message) => message.includes('conflict_teams'))).toBe(true)
+    expect(result.errors.some((message) => message.includes('conflicts_r2'))).toBe(true)
+  })
 })

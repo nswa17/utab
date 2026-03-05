@@ -1,0 +1,1068 @@
+openapi: 3.0.3
+info:
+  title: UTab API v1
+  version: 0.1.1
+  description: >
+    Contract-first API used by tournament operations. This is the initial
+    machine-readable contract for Phase 0.
+servers:
+  - url: https://tab.example.com
+security:
+  - sessionAuth: []
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Tournaments
+  - name: Rounds
+  - name: Teams
+  - name: Speakers
+  - name: Adjudicators
+  - name: Compiled
+  - name: Submissions
+  - name: Privacy
+paths:
+  /api/v1/auth/service-token-revocations:
+    get:
+      tags: [Auth]
+      summary: List revoked service-account tokens
+      operationId: listServiceTokenRevocations
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeServiceTokenRevocationList"
+    post:
+      tags: [Auth]
+      summary: Revoke service-account token by jti
+      operationId: revokeServiceToken
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceTokenRevocationCreateRequest"
+      responses:
+        "200":
+          description: Already revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeServiceTokenRevocation"
+        "201":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeServiceTokenRevocation"
+  /api/v1/tournaments:
+    post:
+      tags: [Tournaments]
+      summary: Create tournament
+      operationId: createTournament
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeTournament"
+  /api/v1/tournaments/{id}:
+    patch:
+      tags: [Tournaments]
+      summary: Update tournament
+      operationId: updateTournament
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - $ref: "#/components/parameters/TournamentIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentPatchRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeTournament"
+  /api/v1/rounds:
+    post:
+      tags: [Rounds]
+      summary: Create one or many rounds
+      operationId: createRounds
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/RoundCreateRequest"
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/RoundCreateRequest"
+      responses:
+        "201":
+          description: Created
+    patch:
+      tags: [Rounds]
+      summary: Bulk update rounds
+      operationId: bulkUpdateRounds
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/RoundPatchRequest"
+      responses:
+        "200":
+          description: Updated
+  /api/v1/teams:
+    post:
+      tags: [Teams]
+      summary: Create one or many teams
+      operationId: createTeams
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/TeamCreateRequest"
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/TeamCreateRequest"
+      responses:
+        "201":
+          description: Created
+    patch:
+      tags: [Teams]
+      summary: Bulk update teams
+      operationId: bulkUpdateTeams
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/TeamPatchRequest"
+      responses:
+        "200":
+          description: Updated
+  /api/v1/speakers:
+    post:
+      tags: [Speakers]
+      summary: Create one or many speakers
+      operationId: createSpeakers
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/SpeakerCreateRequest"
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/SpeakerCreateRequest"
+      responses:
+        "201":
+          description: Created
+    patch:
+      tags: [Speakers]
+      summary: Bulk update speakers
+      operationId: bulkUpdateSpeakers
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/SpeakerPatchRequest"
+      responses:
+        "200":
+          description: Updated
+  /api/v1/speakers/{id}/personal-data:
+    delete:
+      tags: [Privacy]
+      summary: Erase speaker personal data for one tournament
+      operationId: eraseSpeakerPersonalData
+      parameters:
+        - $ref: "#/components/parameters/SpeakerIdPath"
+        - $ref: "#/components/parameters/TournamentIdQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestBody"
+      responses:
+        "200":
+          description: Erased
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureResult"
+  /api/v1/adjudicators:
+    post:
+      tags: [Adjudicators]
+      summary: Create one or many adjudicators
+      operationId: createAdjudicators
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AdjudicatorCreateRequest"
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/AdjudicatorCreateRequest"
+      responses:
+        "201":
+          description: Created
+    patch:
+      tags: [Adjudicators]
+      summary: Bulk update adjudicators
+      operationId: bulkUpdateAdjudicators
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdjudicatorPatchRequest"
+      responses:
+        "200":
+          description: Updated
+  /api/v1/adjudicators/{id}/personal-data:
+    delete:
+      tags: [Privacy]
+      summary: Erase adjudicator personal data for one tournament
+      operationId: eraseAdjudicatorPersonalData
+      parameters:
+        - $ref: "#/components/parameters/AdjudicatorIdPath"
+        - $ref: "#/components/parameters/TournamentIdQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestBody"
+      responses:
+        "200":
+          description: Erased
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureResult"
+  /api/v1/privacy/erasure-requests:
+    get:
+      tags: [Privacy]
+      summary: List erasure requests for one tournament
+      operationId: listErasureRequests
+      parameters:
+        - $ref: "#/components/parameters/TournamentIdQuery"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [requested, approved, rejected, running, completed, failed, cancelled]
+        - name: targetType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [speaker, adjudicator]
+        - name: targetId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: requestedBy
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 500
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequestList"
+    post:
+      tags: [Privacy]
+      summary: Create erasure request
+      operationId: createErasureRequest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestCreateBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequest"
+  /api/v1/privacy/erasure-requests/{id}/approve:
+    patch:
+      tags: [Privacy]
+      summary: Approve erasure request
+      operationId: approveErasureRequest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestApproveBody"
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequest"
+        "404":
+          description: Erasure request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+        "409":
+          description: Erasure request is not in a valid state for approval
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+  /api/v1/privacy/erasure-requests/{id}/reject:
+    patch:
+      tags: [Privacy]
+      summary: Reject erasure request
+      operationId: rejectErasureRequest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestDecisionBody"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequest"
+        "404":
+          description: Erasure request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+        "409":
+          description: Erasure request is not in a valid state for rejection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+  /api/v1/privacy/erasure-requests/{id}/cancel:
+    patch:
+      tags: [Privacy]
+      summary: Cancel erasure request
+      operationId: cancelErasureRequest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestDecisionBody"
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequest"
+        "404":
+          description: Erasure request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+        "409":
+          description: Erasure request is not cancellable in current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+  /api/v1/privacy/erasure-requests/{id}/execute:
+    post:
+      tags: [Privacy]
+      summary: Execute approved erasure request
+      operationId: executeErasureRequest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ErasureRequestExecuteBody"
+      responses:
+        "200":
+          description: Executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeErasureRequest"
+        "404":
+          description: Erasure request or target not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+        "409":
+          description: Erasure request must be approved before execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeError"
+  /api/v1/compiled:
+    get:
+      tags: [Compiled]
+      summary: Get latest compiled data
+      operationId: listCompiled
+      parameters:
+        - $ref: "#/components/parameters/TournamentIdQuery"
+        - name: latest
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "true"]
+      responses:
+        "200":
+          description: Ok
+  /api/v1/submissions:
+    get:
+      tags: [Submissions]
+      summary: List submissions by filters
+      operationId: listSubmissions
+      parameters:
+        - $ref: "#/components/parameters/TournamentIdQuery"
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ballot, feedback]
+        - name: round
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Ok
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKeyHeader:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+      description: Required for service-account authenticated POST/PATCH/DELETE requests.
+    TournamentIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Tournament ObjectId
+    SpeakerIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Speaker ObjectId
+    AdjudicatorIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Adjudicator ObjectId
+    TournamentIdQuery:
+      name: tournamentId
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Tournament ObjectId
+  schemas:
+    EnvelopeServiceTokenRevocation:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          $ref: "#/components/schemas/ServiceTokenRevocation"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeServiceTokenRevocationList:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          type: object
+          required: [items, limit]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ServiceTokenRevocation"
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeTournament:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          $ref: "#/components/schemas/Tournament"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeErasureResult:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          $ref: "#/components/schemas/ErasureResult"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeErasureRequest:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          $ref: "#/components/schemas/ErasureRequestDocument"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeErasureRequestList:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          type: object
+          required: [items, limit, hasMore, nextCursor]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ErasureRequestDocument"
+            limit:
+              type: integer
+            hasMore:
+              type: boolean
+            nextCursor:
+              type: string
+              nullable: true
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    EnvelopeError:
+      type: object
+      required: [data, errors]
+      properties:
+        data:
+          nullable: true
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorItem"
+    Tournament:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        style:
+          type: number
+    TournamentCreateRequest:
+      type: object
+      required: [name, style]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        style:
+          type: number
+        options:
+          type: object
+          additionalProperties: true
+        total_round_num:
+          type: integer
+        current_round_num:
+          type: integer
+        preev_weights:
+          type: array
+          items:
+            type: number
+        auth:
+          type: object
+          additionalProperties: true
+        user_defined_data:
+          type: object
+          additionalProperties: true
+    TournamentPatchRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: true
+    RoundCreateRequest:
+      type: object
+      required: [tournamentId, round]
+      properties:
+        tournamentId:
+          type: string
+        round:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        motions:
+          type: array
+          items:
+            type: string
+        userDefinedData:
+          type: object
+          additionalProperties: true
+    RoundPatchRequest:
+      type: object
+      required: [id, tournamentId]
+      properties:
+        id:
+          type: string
+        tournamentId:
+          type: string
+      additionalProperties: true
+    TeamCreateRequest:
+      type: object
+      required: [tournamentId, name]
+      properties:
+        tournamentId:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        template:
+          type: object
+          additionalProperties: true
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        userDefinedData:
+          type: object
+          additionalProperties: true
+    TeamPatchRequest:
+      type: object
+      required: [id, tournamentId]
+      properties:
+        id:
+          type: string
+        tournamentId:
+          type: string
+      additionalProperties: true
+    SpeakerCreateRequest:
+      type: object
+      required: [tournamentId, name]
+      properties:
+        tournamentId:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        userDefinedData:
+          type: object
+          additionalProperties: true
+    SpeakerPatchRequest:
+      type: object
+      required: [id, tournamentId]
+      properties:
+        id:
+          type: string
+        tournamentId:
+          type: string
+      additionalProperties: true
+    AdjudicatorCreateRequest:
+      type: object
+      required: [tournamentId, name]
+      properties:
+        tournamentId:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        preev:
+          type: number
+        template:
+          type: object
+          additionalProperties: true
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        userDefinedData:
+          type: object
+          additionalProperties: true
+    AdjudicatorPatchRequest:
+      type: object
+      required: [id, tournamentId]
+      properties:
+        id:
+          type: string
+        tournamentId:
+          type: string
+      additionalProperties: true
+    ErasureResult:
+      type: object
+      required: [tournamentId, entityType, entityId, redacted]
+      properties:
+        tournamentId:
+          type: string
+        entityType:
+          type: string
+          enum: [speaker, adjudicator]
+        entityId:
+          type: string
+        redacted:
+          type: boolean
+        eraseMode:
+          type: string
+          enum: [anonymize, hard_delete]
+        reason:
+          type: string
+        approvedBy:
+          type: string
+          nullable: true
+        targetRefs:
+          type: array
+          items:
+            type: string
+        submissionCommentsCleared:
+          type: integer
+          minimum: 0
+    ServiceTokenRevocation:
+      type: object
+      properties:
+        _id:
+          type: string
+        jti:
+          type: string
+        reason:
+          type: string
+        revokedBy:
+          type: string
+        revokedAt:
+          type: string
+          format: date-time
+        expireAt:
+          type: string
+          format: date-time
+    ServiceTokenRevocationCreateRequest:
+      type: object
+      required: [jti]
+      properties:
+        jti:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        expiresAt:
+          type: string
+          format: date-time
+    ErasureRequestBody:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+        approvedBy:
+          type: string
+          minLength: 1
+          maxLength: 128
+        targetRefs:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        eraseMode:
+          type: string
+          enum: [anonymize, hard_delete]
+        reauthPassword:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >
+            Required for interactive organizer flows. Service-account callers
+            are exempt.
+    ErasureRequestCreateBody:
+      type: object
+      required: [tournamentId, targetType, targetId, reason]
+      properties:
+        tournamentId:
+          type: string
+        targetType:
+          type: string
+          enum: [speaker, adjudicator]
+        targetId:
+          type: string
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+        targetRefs:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        eraseMode:
+          type: string
+          enum: [anonymize, hard_delete]
+    ErasureRequestApproveBody:
+      type: object
+      required: [tournamentId]
+      properties:
+        tournamentId:
+          type: string
+        approvedBy:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reauthPassword:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >
+            Required for interactive organizer flows. Service-account callers
+            are exempt.
+    ErasureRequestDecisionBody:
+      type: object
+      required: [tournamentId]
+      properties:
+        tournamentId:
+          type: string
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        reauthPassword:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >
+            Required for interactive organizer flows. Service-account callers
+            are exempt.
+    ErasureRequestExecuteBody:
+      type: object
+      required: [tournamentId]
+      properties:
+        tournamentId:
+          type: string
+        reauthPassword:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >
+            Required for interactive organizer flows. Service-account callers
+            are exempt.
+    ErasureRequestDocument:
+      type: object
+      properties:
+        _id:
+          type: string
+        tournamentId:
+          type: string
+        targetType:
+          type: string
+          enum: [speaker, adjudicator]
+        targetId:
+          type: string
+        eraseMode:
+          type: string
+          enum: [anonymize, hard_delete]
+        reason:
+          type: string
+        targetRefs:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [requested, approved, rejected, running, completed, failed, cancelled]
+        requestedBy:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+        rejectedBy:
+          type: string
+        rejectedAt:
+          type: string
+          format: date-time
+        rejectionReason:
+          type: string
+        executedBy:
+          type: string
+        executedAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
+        result:
+          $ref: "#/components/schemas/ErasureResult"
+    ErrorItem:
+      type: object
+      required: [name, message]
+      properties:
+        name:
+          type: string
+        message:
+          type: string
