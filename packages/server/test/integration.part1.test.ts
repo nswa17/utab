@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { ServiceTokenRevocationModel } from '../src/models/service-token-revocation.js'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
 import { UserModel } from '../src/models/user.js'
@@ -459,6 +460,23 @@ describe('Server integration', () => {
       .get('/api/v1/health')
       .set('Authorization', `Bearer ${token}`)
     expect(afterRevoke.status).toBe(401)
+
+    const expiredAt = new Date(Date.now() - 60 * 1000)
+    await ServiceTokenRevocationModel.updateOne({ jti: revokedJti }, { $set: { expireAt: expiredAt } }).exec()
+
+    const activeListRes = await agent.get('/api/v1/auth/service-token-revocations?active=true&limit=20')
+    expect(activeListRes.status).toBe(200)
+    const activeEntry = (activeListRes.body.data.items as Array<{ jti: string }>).find(
+      (item) => item.jti === revokedJti
+    )
+    expect(activeEntry).toBeUndefined()
+
+    const inactiveListRes = await agent.get('/api/v1/auth/service-token-revocations?active=false&limit=20')
+    expect(inactiveListRes.status).toBe(200)
+    const inactiveEntry = (inactiveListRes.body.data.items as Array<{ jti: string }>).find(
+      (item) => item.jti === revokedJti
+    )
+    expect(inactiveEntry).toBeTruthy()
   })
 
   it('enforces route-specific JSON body size limits', async () => {

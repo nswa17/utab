@@ -1,7 +1,7 @@
 <template>
   <section class="devtools-bar" aria-label="開発補完ツール">
     <div class="devtools-layout">
-      <section class="devtools-card">
+      <section class="devtools-card devtools-card--setup">
         <h3 class="devtools-card-title">大会データ補完</h3>
         <div class="devtools-field-grid">
           <label class="devtools-field">
@@ -25,23 +25,33 @@
             <input v-model.number="speakersPerTeam" type="number" min="1" />
           </label>
         </div>
-        <button
-          type="button"
-          class="devtools-button primary"
-          :disabled="setupBusy || !tournamentId"
-          @click="onFillSetup"
-        >
-          {{ setupBusy ? '補完中...' : '大会データ補完' }}
-        </button>
+        <div class="devtools-action-grid devtools-action-grid--setup">
+          <button
+            type="button"
+            class="devtools-button primary"
+            :disabled="setupBusy || clearSetupBusy || !tournamentId"
+            @click="onFillSetup"
+          >
+            {{ setupBusy ? '補完中...' : '大会データ補完' }}
+          </button>
+          <button
+            type="button"
+            class="devtools-button warn"
+            :disabled="setupBusy || clearSetupBusy || !tournamentId"
+            @click="onClearSetupEntities"
+          >
+            {{ clearSetupBusy ? '削除中...' : '大会データ一括削除' }}
+          </button>
+        </div>
       </section>
 
-      <section class="devtools-card">
+      <section class="devtools-card devtools-card--round">
         <h3 class="devtools-card-title">ラウンド提出運営</h3>
-        <label class="devtools-field compact">
+        <label class="devtools-field devtools-field--round">
           <span class="devtools-field-label">Round</span>
           <input v-model.number="roundInput" type="number" min="1" />
         </label>
-        <div class="devtools-actions">
+        <div class="devtools-action-grid devtools-action-grid--round">
           <button
             type="button"
             class="devtools-button primary"
@@ -60,7 +70,7 @@
           </button>
           <button
             type="button"
-            class="devtools-button warn"
+            class="devtools-button warn devtools-button--span"
             :disabled="clearRoundBusy || !tournamentId || !resolvedRound"
             @click="onClearRoundSubmissions"
           >
@@ -69,11 +79,8 @@
         </div>
       </section>
 
-      <section class="devtools-card">
+      <section class="devtools-card devtools-card--copy">
         <h3 class="devtools-card-title">大会コピー</h3>
-        <p class="small muted devtools-copy-note">
-          大会データと提出データを新しい大会IDへ複製します。
-        </p>
         <button
           type="button"
           class="devtools-button"
@@ -85,7 +92,17 @@
       </section>
     </div>
 
-    <div class="devtools-messages" v-if="errorMessage || copySummary || fillSetupSummary || fillRoundSummary || clearRoundSummary">
+    <div
+      class="devtools-messages"
+      v-if="
+        errorMessage ||
+        copySummary ||
+        fillSetupSummary ||
+        clearSetupSummary ||
+        fillRoundSummary ||
+        clearRoundSummary
+      "
+    >
       <p v-if="errorMessage" class="small error">{{ errorMessage }}</p>
       <p v-if="copySummary" class="small devtools-summary">
         copy: {{ copySummary.sourceTournamentName }} -> {{ copySummary.tournamentName }} (id
@@ -97,6 +114,13 @@
         {{ fillSetupSummary.created.speakers }} / +adjs {{ fillSetupSummary.created.adjudicators }} /
         +venues {{ fillSetupSummary.created.venues }} / +insts
         {{ fillSetupSummary.created.institutions }}
+      </p>
+      <p v-if="clearSetupSummary" class="small devtools-summary">
+        data: deleted teams {{ clearSetupSummary.deleted.teams }} / speakers
+        {{ clearSetupSummary.deleted.speakers }} / adjs
+        {{ clearSetupSummary.deleted.adjudicators }} / venues
+        {{ clearSetupSummary.deleted.venues }} / insts
+        {{ clearSetupSummary.deleted.institutions }}
       </p>
       <p v-if="fillRoundSummary" class="small devtools-summary">
         round {{ fillRoundSummary.round }} ({{ fillModeLabel(fillRoundSummary.mode) }}): expected
@@ -118,7 +142,9 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  type ClearSetupEntitiesResponse,
   type FillRoundSubmissionsMode,
+  requestClearSetupEntities,
   requestClearRoundSubmissions,
   requestCopyTournament,
   requestFillRoundSubmissions,
@@ -140,12 +166,14 @@ const speakersPerTeam = ref(2)
 const roundInput = ref(1)
 
 const setupBusy = ref(false)
+const clearSetupBusy = ref(false)
 const roundBusyMode = ref<FillRoundSubmissionsMode | null>(null)
 const clearRoundBusy = ref(false)
 const copyBusy = ref(false)
 const errorMessage = ref('')
 const copySummary = ref<CopyTournamentResponse | null>(null)
 const fillSetupSummary = ref<FillSetupResponse | null>(null)
+const clearSetupSummary = ref<ClearSetupEntitiesResponse | null>(null)
 const fillRoundSummary = ref<FillRoundSubmissionsResponse | null>(null)
 const clearRoundSummary = ref<ClearRoundSubmissionsResponse | null>(null)
 const roundBusy = computed(() => roundBusyMode.value !== null)
@@ -179,6 +207,7 @@ async function onFillSetup() {
   if (
     !tournamentId.value ||
     setupBusy.value ||
+    clearSetupBusy.value ||
     roundBusy.value ||
     clearRoundBusy.value ||
     copyBusy.value
@@ -188,6 +217,7 @@ async function onFillSetup() {
   setupBusy.value = true
   errorMessage.value = ''
   copySummary.value = null
+  clearSetupSummary.value = null
   fillRoundSummary.value = null
   clearRoundSummary.value = null
   try {
@@ -210,6 +240,43 @@ async function onFillSetup() {
   }
 }
 
+async function onClearSetupEntities() {
+  if (
+    !tournamentId.value ||
+    setupBusy.value ||
+    clearSetupBusy.value ||
+    roundBusy.value ||
+    clearRoundBusy.value ||
+    copyBusy.value
+  )
+    return
+
+  const confirmed = window.confirm(
+    'Teams / Speakers / Adjudicators / Venues / Institutions を全削除します。提出や結果は削除しません。続行しますか？'
+  )
+  if (!confirmed) return
+
+  clearSetupBusy.value = true
+  errorMessage.value = ''
+  copySummary.value = null
+  fillSetupSummary.value = null
+  clearSetupSummary.value = null
+  fillRoundSummary.value = null
+  clearRoundSummary.value = null
+  try {
+    const data = await requestClearSetupEntities(tournamentId.value)
+    clearSetupSummary.value = data
+    window.setTimeout(() => {
+      window.location.reload()
+    }, 400)
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.errors?.[0]?.message ?? '大会データ一括削除に失敗しました。'
+  } finally {
+    clearSetupBusy.value = false
+  }
+}
+
 function fillModeLabel(mode: FillRoundSubmissionsMode): string {
   if (mode === 'ballot') return 'チーム評価'
   if (mode === 'feedback') return 'ジャッジ評価'
@@ -222,6 +289,7 @@ async function onFillRoundSubmissions(mode: FillRoundSubmissionsMode) {
   if (
     !tournamentId.value ||
     setupBusy.value ||
+    clearSetupBusy.value ||
     roundBusy.value ||
     clearRoundBusy.value ||
     copyBusy.value ||
@@ -233,6 +301,7 @@ async function onFillRoundSubmissions(mode: FillRoundSubmissionsMode) {
   errorMessage.value = ''
   copySummary.value = null
   fillSetupSummary.value = null
+  clearSetupSummary.value = null
   clearRoundSummary.value = null
   try {
     const data = await requestFillRoundSubmissions(tournamentId.value, {
@@ -255,6 +324,7 @@ async function onClearRoundSubmissions() {
   if (
     !tournamentId.value ||
     setupBusy.value ||
+    clearSetupBusy.value ||
     roundBusy.value ||
     clearRoundBusy.value ||
     copyBusy.value ||
@@ -266,6 +336,7 @@ async function onClearRoundSubmissions() {
   errorMessage.value = ''
   copySummary.value = null
   fillSetupSummary.value = null
+  clearSetupSummary.value = null
   fillRoundSummary.value = null
   try {
     const data = await requestClearRoundSubmissions(tournamentId.value, {
@@ -287,6 +358,7 @@ async function onCopyTournament() {
   if (
     !tournamentId.value ||
     setupBusy.value ||
+    clearSetupBusy.value ||
     roundBusy.value ||
     clearRoundBusy.value ||
     copyBusy.value
@@ -296,6 +368,7 @@ async function onCopyTournament() {
   copyBusy.value = true
   errorMessage.value = ''
   fillSetupSummary.value = null
+  clearSetupSummary.value = null
   fillRoundSummary.value = null
   clearRoundSummary.value = null
   try {
@@ -336,6 +409,14 @@ async function onCopyTournament() {
   gap: 10px;
 }
 
+.devtools-card--copy {
+  align-content: space-between;
+}
+
+.devtools-card--round {
+  align-content: start;
+}
+
 .devtools-card-title {
   margin: 0;
   font-size: 0.84rem;
@@ -370,19 +451,26 @@ async function onCopyTournament() {
   font-size: 0.95rem;
 }
 
-.devtools-field.compact {
-  max-width: 130px;
+.devtools-field--round {
+  max-width: 150px;
 }
 
-.devtools-actions {
-  display: flex;
-  align-items: center;
+.devtools-action-grid {
+  display: grid;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.devtools-action-grid--setup {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.devtools-action-grid--round {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .devtools-button {
-  min-height: 34px;
+  width: 100%;
+  min-height: 38px;
   border-radius: 6px;
   border: 1px solid #64748b;
   background: #1e293b;
@@ -390,6 +478,10 @@ async function onCopyTournament() {
   padding: 0 10px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .devtools-button.primary {
@@ -412,9 +504,8 @@ async function onCopyTournament() {
   margin-left: 6px;
 }
 
-.devtools-copy-note {
-  margin: 0;
-  line-height: 1.4;
+.devtools-button--span {
+  grid-column: 1 / -1;
 }
 
 .devtools-messages {
@@ -438,7 +529,7 @@ async function onCopyTournament() {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 
-  .devtools-field.compact {
+  .devtools-field--round {
     max-width: none;
   }
 }

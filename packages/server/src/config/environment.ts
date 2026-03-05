@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { strictEnvBoolean } from './env-parsers.js'
 
 const positiveInt = z.coerce.number().int().positive()
 
@@ -47,7 +48,7 @@ const envSchema = z.object({
   SERVICE_ACCOUNT_REVOKED_JTIS: z.string().optional(),
   SERVICE_ACCOUNT_IDEMPOTENCY_TTL_SECONDS: positiveInt.default(24 * 60 * 60),
   SERVICE_TOKEN_REVOCATION_TTL_DAYS: positiveInt.default(180),
-  ENABLE_LEGACY_API_ROUTE: z.coerce.boolean().default(true),
+  ENABLE_LEGACY_API_ROUTE: strictEnvBoolean.default(true),
   LEGACY_API_SUNSET_AT: z
     .string()
     .datetime({ offset: true })

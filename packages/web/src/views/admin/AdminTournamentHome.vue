@@ -548,7 +548,7 @@
     </template>
 
     <section v-else-if="activeSection === 'data'" class="stack entity-panel">
-      <p v-if="csvError" class="error">{{ csvError }}</p>
+      <p v-if="csvError" class="error csv-import-error">{{ csvError }}</p>
 
       <div class="row entity-switch">
         <button
@@ -730,10 +730,15 @@
                     <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
+                        <input
+                          v-model="row.institutionSearch"
+                          type="text"
+                          :placeholder="$t('コンフリクトグループ名で検索')"
+                        />
                         <div class="relation-picker compact-relation-picker">
-                          <template v-if="groupedRoundDetailInstitutionOptions.length > 0">
+                          <template v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0">
                             <div
-                              v-for="group in groupedRoundDetailInstitutionOptions"
+                              v-for="group in groupedRoundDetailInstitutionOptionsForRow(row)"
                               :key="`team-inline-round-inst-group-${row.r}-${group.category}`"
                               class="relation-subgroup"
                             >
@@ -756,16 +761,24 @@
                       </label>
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('スピーカー') }}</span>
+                        <input
+                          v-model="row.speakerSearch"
+                          type="text"
+                          :placeholder="$t('スピーカー名で絞り込み')"
+                        />
                         <div class="relation-picker compact-relation-picker">
                           <label
-                            v-for="speaker in roundDetailSpeakerOptions"
+                            v-for="speaker in roundDetailSpeakerOptionsForRow(row)"
                             :key="`team-inline-speaker-${row.r}-${speaker._id}`"
                             class="row small relation-item relation-choice"
                           >
                             <input v-model="row.speakers" type="checkbox" :value="speaker._id" />
                             <span>{{ speaker.name }}</span>
                           </label>
-                          <p v-if="roundDetailSpeakerOptions.length === 0" class="muted small relation-empty">
+                          <p
+                            v-if="roundDetailSpeakerOptionsForRow(row).length === 0"
+                            class="muted small relation-empty"
+                          >
                             {{ $t('候補がありません。') }}
                           </p>
                         </div>
@@ -1000,10 +1013,16 @@
                     <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
+                        <input
+                          v-model="row.institutionSearch"
+                          type="search"
+                          class="relation-search-input"
+                          :placeholder="$t('コンフリクトグループ名で検索')"
+                        />
                         <div class="relation-picker compact-relation-picker">
-                          <template v-if="groupedRoundDetailInstitutionOptions.length > 0">
+                          <template v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0">
                             <div
-                              v-for="group in groupedRoundDetailInstitutionOptions"
+                              v-for="group in groupedRoundDetailInstitutionOptionsForRow(row)"
                               :key="`adj-inline-round-inst-group-${row.r}-${group.category}`"
                               class="relation-subgroup"
                             >
@@ -1026,9 +1045,15 @@
                       </label>
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('コンフリクトチーム') }}</span>
+                        <input
+                          v-model="row.teamSearch"
+                          type="search"
+                          class="relation-search-input"
+                          :placeholder="$t('チーム名で検索')"
+                        />
                         <div class="relation-picker compact-relation-picker">
                           <label
-                            v-for="teamOption in roundDetailTeamOptions"
+                            v-for="teamOption in roundDetailTeamOptionsForRow(row)"
                             :key="`adj-inline-team-${row.r}-${teamOption._id}`"
                             class="row small relation-item relation-choice"
                           >
@@ -1039,7 +1064,10 @@
                             />
                             <span>{{ teamOption.name }}</span>
                           </label>
-                          <p v-if="roundDetailTeamOptions.length === 0" class="muted small relation-empty">
+                          <p
+                            v-if="roundDetailTeamOptionsForRow(row).length === 0"
+                            class="muted small relation-empty"
+                          >
                             {{ $t('候補がありません。') }}
                           </p>
                         </div>
@@ -1559,6 +1587,34 @@
     />
 
     <div
+      v-if="activeSection === 'data' && pendingMissingEntityImport"
+      class="modal-backdrop"
+      role="presentation"
+      @click.self="closePendingMissingEntityImportModal"
+    >
+      <div class="modal card stack" role="dialog" aria-modal="true">
+        <h4>{{ pendingReviewTitleText }}</h4>
+        <p class="muted small">{{ pendingMissingEntitySummaryText }}</p>
+        <pre class="missing-entity-warning-preview">{{ pendingMissingEntityWarningText }}</pre>
+        <p v-if="pendingMissingEntityImportError" class="error small csv-import-error">
+          {{ pendingMissingEntityImportError }}
+        </p>
+        <div class="row modal-actions">
+          <Button variant="ghost" size="sm" @click="closePendingMissingEntityImportModal">
+            {{ $t('戻る') }}
+          </Button>
+          <Button
+            size="sm"
+            :disabled="isLoading || !pendingReviewCanProceed"
+            @click="confirmEntityImportWithMissingCreate"
+          >
+            {{ pendingMissingEntityActionLabel }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <div
       v-if="activeSection === 'data' && deleteEntityModal"
       class="modal-backdrop"
       role="presentation"
@@ -1599,7 +1655,11 @@ import { useInstitutionsStore } from '@/stores/institutions'
 import { useSubmissionsStore } from '@/stores/submissions'
 import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
-import { buildEntityImportPayload } from '@/utils/entity-csv-import'
+import {
+  buildEntityImportPayload,
+  type DuplicateNameWarning,
+  type MissingEntityWarning,
+} from '@/utils/entity-csv-import'
 import {
   buildRoundUserDefinedFromDefaults,
   defaultRoundDefaults,
@@ -1866,13 +1926,59 @@ const entityTabs = computed<Array<{ key: EntityTabKey; label: string; step: 1 | 
   { key: 'institutions', label: t('コンフリクトグループ'), step: 1 },
   { key: 'venues', label: t('会場'), step: 1 },
   { key: 'speakers', label: t('スピーカー'), step: 2 },
-  { key: 'adjudicators', label: t('ジャッジ'), step: 2 },
-  { key: 'teams', label: t('チーム'), step: 3 },
+  { key: 'teams', label: t('チーム'), step: 2 },
+  { key: 'adjudicators', label: t('ジャッジ'), step: 3 },
 ])
 const showEntityImportModal = ref(false)
 const entityImportType = ref<EntityTabKey | null>(null)
 const entityImportText = ref('')
 const entityImportError = ref<string | null>(null)
+const pendingMissingEntityImport = ref<{
+  type: EntityTabKey
+  text: string
+  warnings: string[]
+  missingEntityWarnings: MissingEntityWarning[]
+  duplicateNameWarnings: DuplicateNameWarning[]
+} | null>(null)
+const pendingMissingEntityImportError = ref('')
+
+function missingEntityKindLabel(kind: MissingEntityWarning['kind']): string {
+  const labels: Record<MissingEntityWarning['kind'], string> = {
+    institution: t('コンフリクトグループ'),
+    speaker: t('スピーカー'),
+    team: t('チーム'),
+  }
+  return labels[kind]
+}
+
+function missingEntityKinds(warnings: MissingEntityWarning[]): MissingEntityWarning['kind'][] {
+  const order: MissingEntityWarning['kind'][] = ['institution', 'speaker', 'team']
+  const kinds = new Set(warnings.map((warning) => warning.kind))
+  return order.filter((kind) => kinds.has(kind))
+}
+
+function missingEntityKindsLabel(warnings: MissingEntityWarning[]): string {
+  return missingEntityKinds(warnings).map((kind) => missingEntityKindLabel(kind)).join('・')
+}
+
+function missingCreatableEntityKindsLabel(warnings: MissingEntityWarning[]): string {
+  return missingEntityKinds(warnings)
+    .filter((kind) => kind !== 'team')
+    .map((kind) => missingEntityKindLabel(kind))
+    .join('・')
+}
+
+function hasBlockingMissingEntities(warnings: MissingEntityWarning[]): boolean {
+  return warnings.some((warning) => warning.kind === 'team')
+}
+
+function duplicateEntityKindLabel(type: EntityTabKey): string {
+  return entityTabLabel(type)
+}
+
+function hasDuplicateNameWarnings(warnings: DuplicateNameWarning[]): boolean {
+  return warnings.length > 0
+}
 
 function entityTabLabel(type: EntityTabKey | null) {
   if (!type) return ''
@@ -1899,6 +2005,99 @@ const entityImportHelpText = computed(() =>
 const entityImportDescription = computed(() =>
   t('ヘッダー行は必須です。テンプレートをダウンロードして列名を維持したまま入力してください。')
 )
+
+const pendingMissingEntityWarningText = computed(() => {
+  if (!pendingMissingEntityImport.value) return ''
+  return pendingMissingEntityImport.value.warnings.join('\n\n')
+})
+
+const pendingMissingEntityKindsLabel = computed(() => {
+  if (!pendingMissingEntityImport.value) return ''
+  return missingEntityKindsLabel(pendingMissingEntityImport.value.missingEntityWarnings)
+})
+
+const pendingReviewDuplicateKindsLabel = computed(() => {
+  if (!pendingMissingEntityImport.value) return ''
+  if (!hasDuplicateNameWarnings(pendingMissingEntityImport.value.duplicateNameWarnings)) return ''
+  return duplicateEntityKindLabel(pendingMissingEntityImport.value.type)
+})
+
+const pendingReviewTitleText = computed(() => {
+  if (!pendingMissingEntityImport.value) return t('取り込み内容の確認')
+  const labels = [pendingMissingEntityKindsLabel.value, pendingReviewDuplicateKindsLabel.value].filter(Boolean)
+  const uniqueLabels = Array.from(new Set(labels))
+  if (uniqueLabels.length === 0) return t('取り込み内容の確認')
+  return t(`${uniqueLabels.join('・')}の確認`)
+})
+
+const pendingMissingEntityCanAutoCreate = computed(() => {
+  if (!pendingMissingEntityImport.value) return false
+  const warnings = pendingMissingEntityImport.value.missingEntityWarnings
+  return warnings.length > 0 && !hasBlockingMissingEntities(warnings)
+})
+
+const pendingReviewCanProceed = computed(() => {
+  if (!pendingMissingEntityImport.value) return false
+  const missingWarnings = pendingMissingEntityImport.value.missingEntityWarnings
+  const duplicateWarnings = pendingMissingEntityImport.value.duplicateNameWarnings
+  if (hasBlockingMissingEntities(missingWarnings)) return false
+  return missingWarnings.length > 0 || duplicateWarnings.length > 0
+})
+
+const pendingMissingEntitySummaryText = computed(() => {
+  if (!pendingMissingEntityImport.value) return ''
+  const missingLabel = pendingMissingEntityKindsLabel.value
+  const duplicateLabel = pendingReviewDuplicateKindsLabel.value
+  const hasMissing = pendingMissingEntityImport.value.missingEntityWarnings.length > 0
+  const hasDuplicate = pendingMissingEntityImport.value.duplicateNameWarnings.length > 0
+  if (hasMissing && hasDuplicate && pendingReviewCanProceed.value) {
+    return t(
+      `未登録の${missingLabel}と重複する${duplicateLabel}名があります。問題なければ不足項目を作成し、重複行をスキップして続行できます。`
+    )
+  }
+  if (hasMissing && pendingReviewCanProceed.value) {
+    return t(`未登録の${missingLabel}があります。問題なければ新規作成してから取り込みを続行できます。`)
+  }
+  if (hasDuplicate && pendingReviewCanProceed.value) {
+    return t(`重複する${duplicateLabel}名があります。問題なければ重複行をスキップして続行できます。`)
+  }
+  if (hasMissing) {
+    return t(`未登録の${missingLabel}があります。自動作成できない項目が含まれるため、先に登録するかCSVを修正してください。`)
+  }
+  if (hasDuplicate) {
+    return t(`重複する${duplicateLabel}名があります。先に既存データまたはCSVを確認してください。`)
+  }
+  return ''
+})
+
+const pendingMissingEntityActionLabel = computed(() => {
+  if (!pendingMissingEntityImport.value) return t('続行')
+  const hasMissing = pendingMissingEntityImport.value.missingEntityWarnings.length > 0
+  const hasDuplicate = pendingMissingEntityImport.value.duplicateNameWarnings.length > 0
+  if (!pendingReviewCanProceed.value) {
+    return t('先に修正が必要です')
+  }
+  if (hasMissing && hasDuplicate) {
+    const missingLabel =
+      missingCreatableEntityKindsLabel(pendingMissingEntityImport.value.missingEntityWarnings) ||
+      pendingMissingEntityKindsLabel.value ||
+      t('項目')
+    const duplicateLabel = pendingReviewDuplicateKindsLabel.value || t('項目')
+    return t(`不足${missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`)
+  }
+  if (hasMissing) {
+    const label =
+      missingCreatableEntityKindsLabel(pendingMissingEntityImport.value.missingEntityWarnings) ||
+      pendingMissingEntityKindsLabel.value ||
+      t('項目')
+    return t(`不足${label}を作成して続行`)
+  }
+  if (hasDuplicate) {
+    const label = pendingReviewDuplicateKindsLabel.value || t('項目')
+    return t(`重複${label}をスキップして続行`)
+  }
+  return t('続行')
+})
 
 function buildImportCsv(header: string[], rows: string[][]): string {
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
@@ -2191,7 +2390,7 @@ const entityImportTemplateFilename = computed(() => {
   if (entityImportType.value === 'adjudicators') return 'adjudicators_import_template.csv'
   if (entityImportType.value === 'venues') return 'venues_import_template.csv'
   if (entityImportType.value === 'speakers') return 'speakers_import_template.csv'
-  if (entityImportType.value === 'institutions') return 'institutions_import_template.csv'
+  if (entityImportType.value === 'institutions') return 'conflicts.csv'
   return 'import_template.csv'
 })
 
@@ -2251,6 +2450,45 @@ const deleteEntityPrompt = computed(() => {
   if (type === 'speaker') return t('スピーカーを削除しますか？')
   return t('コンフリクトグループを削除しますか？')
 })
+
+function groupedRoundDetailInstitutionOptionsForRow(row: {
+  institutionSearch?: string
+}): InstitutionOptionGroup[] {
+  const query = String(row?.institutionSearch ?? '')
+    .trim()
+    .toLowerCase()
+  if (!query) return groupedRoundDetailInstitutionOptions.value
+  const filtered = roundDetailInstitutionOptions.value.filter((inst) =>
+    String(inst.name ?? '')
+      .toLowerCase()
+      .includes(query)
+  )
+  return buildInstitutionOptionGroups(filtered)
+}
+
+function roundDetailSpeakerOptionsForRow(row: { speakerSearch?: string }) {
+  const query = String(row?.speakerSearch ?? '')
+    .trim()
+    .toLowerCase()
+  if (!query) return roundDetailSpeakerOptions.value
+  return roundDetailSpeakerOptions.value.filter((speaker) =>
+    String(speaker.name ?? '')
+      .toLowerCase()
+      .includes(query)
+  )
+}
+
+function roundDetailTeamOptionsForRow(row: { teamSearch?: string }) {
+  const query = String(row?.teamSearch ?? '')
+    .trim()
+    .toLowerCase()
+  if (!query) return roundDetailTeamOptions.value
+  return roundDetailTeamOptions.value.filter((team) =>
+    String(team.name ?? '')
+      .toLowerCase()
+      .includes(query)
+  )
+}
 
 const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round - b.round))
 const hasBreakRounds = computed(() =>
@@ -3345,6 +3583,8 @@ function buildTeamEditDetailRows(entity: any) {
         detail?.conflicts ?? detail?.institutions ?? defaultConflicts
       ),
       speakers: normalizeRoundDetailIds(detail?.speakers ?? defaultSpeakers),
+      institutionSearch: '',
+      speakerSearch: '',
     }
   })
 }
@@ -3371,6 +3611,8 @@ function buildAdjudicatorEditDetailRows(entity: any) {
       conflict_teams: normalizeRoundDetailIds(
         hasConflictTeams ? detail?.conflict_teams : detail?.conflicts ?? defaultConflictTeams
       ),
+      institutionSearch: '',
+      teamSearch: '',
     }
   })
 }
@@ -3623,6 +3865,8 @@ function openEntityImportModal(type: EntityTabKey) {
   entityImportType.value = type
   entityImportText.value = ''
   entityImportError.value = null
+  pendingMissingEntityImport.value = null
+  pendingMissingEntityImportError.value = ''
   showEntityImportModal.value = true
 }
 
@@ -3631,6 +3875,8 @@ function closeEntityImportModal() {
   entityImportType.value = null
   entityImportText.value = ''
   entityImportError.value = null
+  pendingMissingEntityImport.value = null
+  pendingMissingEntityImportError.value = ''
 }
 
 async function handleEntityImportFile(event: Event) {
@@ -3955,12 +4201,24 @@ function adjudicatorInstitutionsLabel(adjudicator: any) {
   return unique.length > 0 ? unique.join(', ') : t('未設定')
 }
 
-async function importEntitiesFromText(type: EntityTabKey, text: string) {
+function buildEntityImportRequest(type: EntityTabKey, text: string) {
   const roundNumbers = sortedRounds.value
     .map((round) => Number(round.round))
     .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
 
-  const { payload, errors } = buildEntityImportPayload({
+  const existingEntities =
+    type === 'teams'
+      ? teams.teams
+      : type === 'adjudicators'
+        ? adjudicators.adjudicators
+        : type === 'venues'
+          ? venues.venues
+          : type === 'speakers'
+            ? speakers.speakers
+            : institutions.institutions
+
+  const { payload, payloadEntries, errors, warnings, missingEntityWarnings, duplicateNameWarnings } =
+    buildEntityImportPayload({
     type,
     text,
     tournamentId: tournamentId.value,
@@ -3968,6 +4226,14 @@ async function importEntitiesFromText(type: EntityTabKey, text: string) {
     teams: teams.teams.map((team) => ({
       _id: String(team._id),
       name: String(team.name ?? ''),
+    })),
+    adjudicators: adjudicators.adjudicators.map((adj) => ({
+      _id: String(adj._id),
+      name: String(adj.name ?? ''),
+    })),
+    venues: venues.venues.map((venue) => ({
+      _id: String(venue._id),
+      name: String(venue.name ?? ''),
     })),
     speakers: speakers.speakers.map((speaker) => ({
       _id: String(speaker._id),
@@ -3977,17 +4243,14 @@ async function importEntitiesFromText(type: EntityTabKey, text: string) {
       _id: String(institution._id),
       name: String(institution.name ?? ''),
     })),
+    existingEntities: existingEntities.map((entity: any) => ({
+      _id: String(entity._id),
+      name: String(entity.name ?? ''),
+    })),
     institutionCategoryLabel,
     institutionPriorityValue,
   })
 
-  if (errors.length > 0) {
-    throw new Error(errors.join('\n'))
-  }
-
-  if (payload.length === 0) {
-    throw new Error(t('取り込み可能な行がありません。'))
-  }
   const endpoint =
     type === 'teams'
       ? '/teams'
@@ -3998,6 +4261,169 @@ async function importEntitiesFromText(type: EntityTabKey, text: string) {
           : type === 'speakers'
             ? '/speakers'
             : '/institutions'
+
+  return {
+    payload,
+    payloadEntries,
+    errors,
+    warnings,
+    missingEntityWarnings,
+    duplicateNameWarnings,
+    endpoint,
+  }
+}
+
+function missingEntityNamesByKind(
+  warnings: MissingEntityWarning[],
+  kind: MissingEntityWarning['kind']
+): string[] {
+  const names = warnings
+    .filter((warning) => warning.kind === kind)
+    .flatMap((warning) => warning.values)
+    .map((name) => String(name ?? '').trim())
+    .filter((name) => name.length > 0)
+  return Array.from(new Set(names))
+}
+
+async function createMissingEntitiesForImport(warnings: MissingEntityWarning[]) {
+  const missingInstitutions = missingEntityNamesByKind(warnings, 'institution')
+  const missingSpeakers = missingEntityNamesByKind(warnings, 'speaker')
+  const missingTeams = missingEntityNamesByKind(warnings, 'team')
+
+  if (missingTeams.length > 0) {
+    throw new Error(
+      [
+        t('conflict_teams の未登録チームは自動作成できません。teams を先に登録してください。'),
+        '',
+        `- ${missingTeams.join('\n- ')}`,
+      ].join('\n')
+    )
+  }
+
+  if (missingInstitutions.length > 0) {
+    await api.post(
+      '/institutions',
+      missingInstitutions.map((name) => ({
+        tournamentId: tournamentId.value,
+        name,
+        category: 'institution',
+        priority: 1,
+      }))
+    )
+  }
+
+  if (missingSpeakers.length > 0) {
+    await api.post(
+      '/speakers',
+      missingSpeakers.map((name) => ({
+        tournamentId: tournamentId.value,
+        name,
+      }))
+    )
+  }
+
+  if (missingInstitutions.length > 0 || missingSpeakers.length > 0) {
+    await refreshEntities()
+  }
+}
+
+async function importEntitiesFromText(
+  type: EntityTabKey,
+  text: string,
+  options: { autoCreateMissing?: boolean; skipDuplicateNames?: boolean } = {}
+) {
+  const { autoCreateMissing = false, skipDuplicateNames = false } = options
+  const {
+    payload,
+    payloadEntries,
+    errors,
+    warnings,
+    missingEntityWarnings,
+    duplicateNameWarnings,
+    endpoint,
+  } = buildEntityImportRequest(type, text)
+
+  if (errors.length > 0) {
+    throw new Error(errors.join('\n'))
+  }
+
+  if (missingEntityWarnings.length > 0 || duplicateNameWarnings.length > 0) {
+    if (!autoCreateMissing && !skipDuplicateNames) {
+      const missingLabel = missingEntityWarnings.length > 0 ? missingEntityKindsLabel(missingEntityWarnings) : ''
+      const duplicateLabel =
+        duplicateNameWarnings.length > 0 ? duplicateEntityKindLabel(type) : ''
+      const issueLabel = [missingLabel, duplicateLabel ? `重複する${duplicateLabel}名` : '']
+        .filter(Boolean)
+        .join('と')
+      const actionLabel = hasBlockingMissingEntities(missingEntityWarnings)
+        ? t('先に登録するかCSVを修正')
+        : missingEntityWarnings.length > 0 && duplicateNameWarnings.length > 0
+          ? t(
+              `不足${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`
+            )
+          : missingEntityWarnings.length > 0
+            ? t(`不足${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成して続行`)
+            : t(`重複${duplicateLabel}をスキップして続行`)
+      const err = new Error(
+        [
+          t(`${issueLabel}が見つかりました。内容確認後、必要なら「${actionLabel}」を実行してください。`),
+          '',
+          warnings.join('\n\n'),
+        ].join('\n')
+      ) as Error & {
+        code: 'IMPORT_REVIEW_REQUIRED'
+        warnings: string[]
+        missingEntityWarnings: MissingEntityWarning[]
+        duplicateNameWarnings: DuplicateNameWarning[]
+        importType: EntityTabKey
+        importText: string
+      }
+      err.code = 'IMPORT_REVIEW_REQUIRED'
+      err.warnings = warnings
+      err.missingEntityWarnings = missingEntityWarnings
+      err.duplicateNameWarnings = duplicateNameWarnings
+      err.importType = type
+      err.importText = text
+      throw err
+    }
+
+    if (missingEntityWarnings.length > 0) {
+      await createMissingEntitiesForImport(missingEntityWarnings)
+    }
+    const rebuilt = buildEntityImportRequest(type, text)
+    if (rebuilt.errors.length > 0) {
+      throw new Error(rebuilt.errors.join('\n'))
+    }
+    if (rebuilt.missingEntityWarnings.length > 0) {
+      const label = missingEntityKindsLabel(rebuilt.missingEntityWarnings) || t('項目')
+      throw new Error(
+        [
+          t(`未登録の${label}が残っています。自動作成できない参照が含まれています。`),
+          '',
+          rebuilt.warnings.join('\n\n'),
+        ].join('\n')
+      )
+    }
+    const duplicateLinesToSkip = new Set(
+      (skipDuplicateNames ? rebuilt.duplicateNameWarnings : []).map((warning) => warning.line)
+    )
+    const filteredPayload =
+      duplicateLinesToSkip.size > 0
+        ? rebuilt.payloadEntries
+            .filter((entry) => !duplicateLinesToSkip.has(entry.line))
+            .map((entry) => entry.payload)
+        : rebuilt.payload
+    if (filteredPayload.length === 0) {
+      throw new Error(t('取り込み可能な行がありません。'))
+    }
+    await api.post(rebuilt.endpoint, filteredPayload)
+    await refreshEntities()
+    return
+  }
+
+  if (payload.length === 0) {
+    throw new Error(t('取り込み可能な行がありません。'))
+  }
   await api.post(endpoint, payload)
   await refreshEntities()
 }
@@ -4006,12 +4432,59 @@ async function applyEntityImport() {
   if (!entityImportType.value) return
   entityImportError.value = null
   csvError.value = null
+  pendingMissingEntityImport.value = null
+  pendingMissingEntityImportError.value = ''
   try {
     await importEntitiesFromText(entityImportType.value, entityImportText.value)
     closeEntityImportModal()
   } catch (err: any) {
+    if (err?.code === 'IMPORT_REVIEW_REQUIRED') {
+      pendingMissingEntityImport.value = {
+        type: err.importType ?? entityImportType.value,
+        text: err.importText ?? entityImportText.value,
+        warnings: Array.isArray(err.warnings) ? err.warnings : [],
+        missingEntityWarnings: Array.isArray(err.missingEntityWarnings)
+          ? err.missingEntityWarnings
+          : [],
+        duplicateNameWarnings: Array.isArray(err.duplicateNameWarnings)
+          ? err.duplicateNameWarnings
+          : [],
+      }
+      const message = t('取り込み内容の確認が必要です。')
+      showEntityImportModal.value = false
+      entityImportError.value = message
+      csvError.value = message
+      return
+    }
     const message =
       err?.response?.data?.errors?.[0]?.message ?? err?.message ?? t('CSV取り込みに失敗しました')
+    entityImportError.value = message
+    csvError.value = message
+  }
+}
+
+function closePendingMissingEntityImportModal() {
+  pendingMissingEntityImport.value = null
+  pendingMissingEntityImportError.value = ''
+  showEntityImportModal.value = true
+}
+
+async function confirmEntityImportWithMissingCreate() {
+  const pending = pendingMissingEntityImport.value
+  if (!pending) return
+  pendingMissingEntityImportError.value = ''
+  entityImportError.value = null
+  csvError.value = null
+  try {
+    await importEntitiesFromText(pending.type, pending.text, {
+      autoCreateMissing: pending.missingEntityWarnings.length > 0,
+      skipDuplicateNames: pending.duplicateNameWarnings.length > 0,
+    })
+    closeEntityImportModal()
+  } catch (err: any) {
+    const message =
+      err?.response?.data?.errors?.[0]?.message ?? err?.message ?? t('CSV取り込みに失敗しました')
+    pendingMissingEntityImportError.value = message
     entityImportError.value = message
     csvError.value = message
   }
@@ -4920,6 +5393,23 @@ textarea {
 
 .entity-edit-modal {
   gap: var(--space-4);
+}
+
+.csv-import-error {
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+.missing-entity-warning-preview {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 960px) {

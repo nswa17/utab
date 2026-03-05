@@ -389,7 +389,7 @@ export const executeErasureRequest: RequestHandler = async (req, res, next) => {
       return
     }
 
-    await ErasureRequestModel.updateOne(
+    const transitionResult = await ErasureRequestModel.updateOne(
       { _id: id, tournamentId, status: 'approved' },
       {
         $set: {
@@ -399,6 +399,10 @@ export const executeErasureRequest: RequestHandler = async (req, res, next) => {
         },
       }
     ).exec()
+    if (transitionResult.modifiedCount !== 1) {
+      conflict(res, 'Erasure request changed while starting execution')
+      return
+    }
 
     const eraseInput: PersonalDataEraseInput = {
       tournamentId,

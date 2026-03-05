@@ -177,4 +177,50 @@ describe('allocation warnings', () => {
     expect(adjudicatorTargets.has('team:team-2')).toBe(true)
     expect(venueTargets.has('venue:venue-1')).toBe(true)
   })
+
+  it('emits adjudicator conflict warnings for all overlapping categories', () => {
+    const multiCategory = buildRowWarningStates({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { gov: 'team-1', opp: null },
+          chairs: ['adj-1'],
+          panels: ['adj-2'],
+          trainees: [],
+        },
+      ],
+      isTeamAvailable: () => true,
+      isAdjudicatorAvailable: () => true,
+      isVenueAvailable: () => true,
+      teamInstitutions: (teamId) => {
+        if (teamId === 'team-1') return ['inst-a', 'league-a']
+        return []
+      },
+      adjudicatorInstitutions: (adjudicatorId) => {
+        if (adjudicatorId === 'adj-1' || adjudicatorId === 'adj-2') return ['inst-a', 'league-a']
+        return []
+      },
+      institutionCategory: (institutionId) => {
+        if (institutionId.startsWith('league-')) return 'league'
+        return 'institution'
+      },
+      adjudicatorConflicts: () => [],
+      teamWin: () => undefined,
+      teamPastOpponents: () => [],
+      teamPastSides: () => [],
+      adjudicatorJudgedTeams: () => [],
+    })
+
+    const institutionConflictCategories = multiCategory[0].warnings
+      .filter((warning) => warning.code === 'adjudicator_institution_conflict')
+      .map((warning) => warning.params.groupCategory)
+    expect(institutionConflictCategories).toContain('institution')
+    expect(institutionConflictCategories).toContain('league')
+
+    const sameInstitutionCategories = multiCategory[0].warnings
+      .filter((warning) => warning.code === 'adjudicator_same_institution')
+      .map((warning) => warning.params.groupCategory)
+    expect(sameInstitutionCategories).toContain('institution')
+    expect(sameInstitutionCategories).toContain('league')
+  })
 })

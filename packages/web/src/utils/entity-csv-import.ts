@@ -35,15 +35,44 @@ export type BuildEntityImportPayloadOptions = {
   tournamentId: string
   roundNumbers: number[]
   teams: NamedEntity[]
+  adjudicators?: NamedEntity[]
+  venues?: NamedEntity[]
   speakers: NamedEntity[]
   institutions: NamedEntity[]
+  existingEntities?: NamedEntity[]
   institutionCategoryLabel: (value?: string) => string
   institutionPriorityValue: (value?: number) => number
 }
 
+export type BuildEntityImportPayloadEntry = {
+  line: number
+  payload: Record<string, unknown>
+}
+
 export type BuildEntityImportPayloadResult = {
   payload: Array<Record<string, unknown>>
+  payloadEntries: BuildEntityImportPayloadEntry[]
   errors: string[]
+  warnings: string[]
+  missingEntityWarnings: MissingEntityWarning[]
+  duplicateNameWarnings: DuplicateNameWarning[]
+}
+
+export type MissingEntityKind = 'institution' | 'speaker' | 'team'
+
+export type MissingEntityWarning = {
+  line: number
+  field: string
+  kind: MissingEntityKind
+  values: string[]
+}
+
+export type DuplicateNameWarning = {
+  line: number
+  name: string
+  type: EntityImportType
+  source: 'existing' | 'csv'
+  firstLine?: number
 }
 
 const roundAvailabilityPattern = /^(?:available|availability)_r(\d+)$/
@@ -310,6 +339,52 @@ function createNamedEntityLookup(items: NamedEntity[]): Map<string, string> {
   return map
 }
 
+function entityImportTypeLabel(type: EntityImportType): string {
+  const labels: Record<EntityImportType, string> = {
+    teams: 'チーム',
+    adjudicators: 'ジャッジ',
+    venues: '会場',
+    speakers: 'スピーカー',
+    institutions: 'コンフリクトグループ',
+  }
+  return labels[type]
+}
+
+function detectDuplicateNameWarnings(
+  type: EntityImportType,
+  entries: BuildEntityImportPayloadEntry[],
+  existingEntities: NamedEntity[]
+): DuplicateNameWarning[] {
+  const warnings: DuplicateNameWarning[] = []
+  const existingNames = new Set(existingEntities.map((entity) => String(entity.name ?? '').trim()).filter(Boolean))
+  const firstLineByName = new Map<string, number>()
+
+  entries.forEach((entry) => {
+    const name = String(entry.payload.name ?? '').trim()
+    if (!name) return
+    if (existingNames.has(name)) {
+      warnings.push({ line: entry.line, name, type, source: 'existing' })
+      return
+    }
+    const firstLine = firstLineByName.get(name)
+    if (firstLine !== undefined) {
+      warnings.push({ line: entry.line, name, type, source: 'csv', firstLine })
+      return
+    }
+    firstLineByName.set(name, entry.line)
+  })
+
+  return warnings
+}
+
+function duplicateNameWarningMessage(warning: DuplicateNameWarning): string {
+  const label = entityImportTypeLabel(warning.type)
+  if (warning.source === 'existing') {
+    return `CSV ${warning.line}行目: 既存の${label}名と重複しています\n- ${warning.name}`
+  }
+  return `CSV ${warning.line}行目: CSV内で${label}名が重複しています (CSV ${warning.firstLine}行目)\n- ${warning.name}`
+}
+
 export function buildEntityImportPayload(
   options: BuildEntityImportPayloadOptions
 ): BuildEntityImportPayloadResult {
@@ -317,27 +392,34 @@ export function buildEntityImportPayload(
   if (!parsed.hasHeader) {
     return {
       payload: [],
+      payloadEntries: [],
       errors: ['1行目にCSVヘッダーが必要です。テンプレートをダウンロードして列名を揃えてください。'],
+      warnings: [],
+      missingEntityWarnings: [],
+      duplicateNameWarnings: [],
     }
   }
   const reader = createCsvColumnReader(parsed)
   const errors = reader.errors
+  const warnings: string[] = []
+  const missingEntityWarnings: MissingEntityWarning[] = []
+  const payloadEntries: BuildEntityImportPayloadEntry[] = []
   const payload: Array<Record<string, unknown>> = []
   const rounds = normalizeRoundNumbers(options.roundNumbers)
   const teamLookup = createNamedEntityLookup(options.teams)
   const speakerLookup = createNamedEntityLookup(options.speakers)
   const institutionLookup = createNamedEntityLookup(options.institutions)
+  let adjudicatorConflictTeamsDependsOnTeams = false
 
-  const pushUnknownEntityError = (
+  const pushUnknownEntityWarning = (
     line: number,
     field: string,
     unknownTokens: string[],
-    entityLabel: string
+    kind: MissingEntityKind
   ) => {
     if (unknownTokens.length === 0) return
-    errors.push(
-      `CSV ${line}行目の ${field} に未登録の${entityLabel}があります: ${unknownTokens.join(', ')}`
-    )
+    warnings.push(`CSV ${line}行目: ${field} に未登録の${kind}があります\n- ${unknownTokens.join('\n- ')}`)
+    missingEntityWarnings.push({ line, field, kind, values: [...unknownTokens] })
   }
 
   for (const [rowIndex, row] of parsed.rows.entries()) {
@@ -357,8 +439,8 @@ export function buildEntityImportPayload(
       const speakerIds = speakerResult.ids
       const institutionIds = institutionResult.ids
 
-      pushUnknownEntityError(line, 'institution', institutionResult.unknownTokens, 'institution')
-      pushUnknownEntityError(line, 'speakers', speakerResult.unknownTokens, 'speaker')
+      pushUnknownEntityWarning(line, 'institution', institutionResult.unknownTokens, 'institution')
+      pushUnknownEntityWarning(line, 'speakers', speakerResult.unknownTokens, 'speaker')
 
       const details =
         rounds.length > 0 &&
@@ -374,7 +456,7 @@ export function buildEntityImportPayload(
             }))
           : undefined
 
-      payload.push({
+      const teamPayload = {
         tournamentId: options.tournamentId,
         name,
         template: {
@@ -383,7 +465,9 @@ export function buildEntityImportPayload(
           speakers: speakerIds,
         },
         details,
-      })
+      }
+      payloadEntries.push({ line, payload: teamPayload })
+      payload.push(teamPayload)
       continue
     }
 
@@ -408,13 +492,16 @@ export function buildEntityImportPayload(
       const institutionIds = institutionResult.ids
       const baseConflictTeams = baseConflictTeamResult.ids
 
-      pushUnknownEntityError(line, 'conflicts', institutionResult.unknownTokens, 'institution')
-      pushUnknownEntityError(
+      pushUnknownEntityWarning(line, 'conflicts', institutionResult.unknownTokens, 'institution')
+      pushUnknownEntityWarning(
         line,
         'conflict_teams',
         baseConflictTeamResult.unknownTokens,
         'team'
       )
+      if (baseConflictTeamResult.unknownTokens.length > 0) {
+        adjudicatorConflictTeamsDependsOnTeams = true
+      }
 
       const includeDetails =
         rounds.length > 0 &&
@@ -434,12 +521,15 @@ export function buildEntityImportPayload(
               reader.readRound(row, 'conflicts', round),
               teamLookup
             )
-            pushUnknownEntityError(
+            pushUnknownEntityWarning(
               line,
               `conflicts_r${round}`,
               roundConflictResult.unknownTokens,
               'team'
             )
+            if (roundConflictResult.unknownTokens.length > 0) {
+              adjudicatorConflictTeamsDependsOnTeams = true
+            }
             return {
               r: round,
               available,
@@ -449,7 +539,7 @@ export function buildEntityImportPayload(
           })
         : undefined
 
-      payload.push({
+      const adjudicatorPayload = {
         tournamentId: options.tournamentId,
         name,
         preev,
@@ -459,7 +549,9 @@ export function buildEntityImportPayload(
           conflict_teams: baseConflictTeams,
         },
         details,
-      })
+      }
+      payloadEntries.push({ line, payload: adjudicatorPayload })
+      payload.push(adjudicatorPayload)
       continue
     }
 
@@ -481,7 +573,7 @@ export function buildEntityImportPayload(
             }))
           : undefined
 
-      payload.push({
+      const venuePayload = {
         tournamentId: options.tournamentId,
         name,
         template: {
@@ -492,14 +584,18 @@ export function buildEntityImportPayload(
         userDefinedData: {
           availableDefault: defaultAvailable,
         },
-      })
+      }
+      payloadEntries.push({ line, payload: venuePayload })
+      payload.push(venuePayload)
       continue
     }
 
     if (options.type === 'speakers') {
       const name = reader.read(row, ['name'], 0)
       if (!name) continue
-      payload.push({ tournamentId: options.tournamentId, name })
+      const speakerPayload = { tournamentId: options.tournamentId, name }
+      payloadEntries.push({ line, payload: speakerPayload })
+      payload.push(speakerPayload)
       continue
     }
 
@@ -511,13 +607,37 @@ export function buildEntityImportPayload(
     const priority = options.institutionPriorityValue(
       toFiniteNumber(reader.read(row, ['priority'], 2), 1)
     )
-    payload.push({
+    const institutionPayload = {
       tournamentId: options.tournamentId,
       name,
       category,
       priority,
-    })
+    }
+    payloadEntries.push({ line, payload: institutionPayload })
+    payload.push(institutionPayload)
   }
 
-  return { payload, errors }
+  if (adjudicatorConflictTeamsDependsOnTeams) {
+    errors.push(
+      'adjudicators CSV で conflict_teams / conflicts_r* を使う場合は、先に teams を取り込んでください。'
+    )
+  }
+
+  const duplicateNameWarnings = detectDuplicateNameWarnings(
+    options.type,
+    payloadEntries,
+    options.existingEntities ?? []
+  )
+  duplicateNameWarnings.forEach((warning) => {
+    warnings.push(duplicateNameWarningMessage(warning))
+  })
+
+  return {
+    payload,
+    payloadEntries,
+    errors,
+    warnings,
+    missingEntityWarnings,
+    duplicateNameWarnings,
+  }
 }

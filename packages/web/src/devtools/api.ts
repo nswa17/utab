@@ -25,6 +25,19 @@ export type FillSetupResponse = {
   request: FillSetupRequest
 }
 
+export type SetupEntitySummary = {
+  teams: number
+  speakers: number
+  adjudicators: number
+  venues: number
+  institutions: number
+}
+
+export type ClearSetupEntitiesResponse = {
+  tournamentId: string
+  deleted: SetupEntitySummary
+}
+
 export type SubmissionCountSummary = {
   ballot: number
   feedback: number
@@ -76,6 +89,40 @@ export async function requestFillSetup(
 ): Promise<FillSetupResponse> {
   const response = await api.post(`/dev-tools/tournaments/${tournamentId}/fill-setup`, payload)
   return response.data?.data as FillSetupResponse
+}
+
+function normalizeDeletedCount(value: unknown): number {
+  const normalized = Number(value)
+  if (!Number.isFinite(normalized) || normalized < 0) return 0
+  return Math.floor(normalized)
+}
+
+async function requestEntityDeleteCount(endpoint: string, tournamentId: string): Promise<number> {
+  const response = await api.delete(endpoint, {
+    params: { tournamentId },
+  })
+  return normalizeDeletedCount(response.data?.data?.deletedCount)
+}
+
+export async function requestClearSetupEntities(
+  tournamentId: string
+): Promise<ClearSetupEntitiesResponse> {
+  const teams = await requestEntityDeleteCount('/teams', tournamentId)
+  const adjudicators = await requestEntityDeleteCount('/adjudicators', tournamentId)
+  const venues = await requestEntityDeleteCount('/venues', tournamentId)
+  const speakers = await requestEntityDeleteCount('/speakers', tournamentId)
+  const institutions = await requestEntityDeleteCount('/institutions', tournamentId)
+
+  return {
+    tournamentId,
+    deleted: {
+      teams,
+      speakers,
+      adjudicators,
+      venues,
+      institutions,
+    },
+  }
 }
 
 export async function requestFillRoundSubmissions(
