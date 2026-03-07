@@ -51,4 +51,74 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('allocationImportText.value = await file.text()')
     expect(source).not.toContain("input.value = ''")
   })
+
+  it('offers class_based adjudicator allocation with explicit constraints', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('class_based')
+    expect(source).toContain('クラスベース')
+    expect(source).toContain(
+      'judge_class の優先ロールを反映し、chair_preferred は chair、chair_or_panel は chair / panel、panel_or_trainee は panel / trainee を優先します。'
+    )
+    expect(source).toContain("v-if=\"autoOptions.adjudicatorAlgorithm !== 'class_based'\"")
+    expect(source).toContain('class_based では panel_or_trainee を chair に置きません。')
+    expect(source).toContain(
+      'judge_class が全員未設定なら standard に戻り、一部未設定は chair_preferred として扱います。'
+    )
+    expect(source).not.toContain('A/B/C クラスを role ごとの優先順に反映し、chair は A/B 優先、panel/trainee は C を優先します。')
+    expect(source).not.toContain('class_based では C を chair に置きません。')
+    expect(source).toContain('<option value="random">{{ $t(\'ランダム\') }}</option>')
+    expect(source).toContain('シャッフルしたジャッジを、既存の対戦カードに対してチェア→パネル→トレーニーの順で埋めます。')
+    expect(source).toContain('シャッフルしたチームをそのまま順に組み合わせます。')
+  })
+
+  it('resets auto-generate target to all and blocks judge-empty team-only generation', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain("requestScope.value = 'all'")
+    expect(source).toContain('const requestScopeWarningText = computed(() => {')
+    expect(source).toContain(
+      '対象がチームのみのため、ジャッジは新規生成されません。現在のドローにジャッジ割当がないため、生成後も空欄のままです。ジャッジも作るには対象を全体かジャッジにしてください。'
+    )
+    expect(source).toContain('const adjudicatorCapacityWarning = computed(() => {')
+    expect(source).toContain(
+      '使用可能ジャッジが足りません。必要 {required} 人 / 使用可能 {available} 人です。人数設定か availability を見直してください。'
+    )
+  })
+
+  it('shows adjudicator role counts in detail instead of total assignments', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain("label: t('ジャッジクラス')")
+    expect(source).toContain("label: t('チェア担当回数')")
+    expect(source).toContain("label: t('パネル担当回数')")
+    expect(source).toContain("label: t('トレイニー担当回数')")
+    expect(source).not.toContain("label: t('担当数')")
+  })
+
+  it('resolves conflict group labels from normalized institution references', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('function resolveInstitutionRecord')
+    expect(source).toContain('detail?.conflicts ?? [],')
+    expect(source).toContain('detail?.institutions ?? [],')
+    expect(source).toContain('team?.template?.conflicts ?? [],')
+    expect(source).toContain('team?.template?.institutions ?? []')
+    expect(source).toContain('adj?.template?.conflicts ?? [],')
+    expect(source).toContain('adj?.template?.institutions ?? []')
+    expect(source).toContain('token === institutionId || token === fallbackId || token === institutionName')
+  })
+
+  it('adds drag-time conflict and history highlighting to placement pills and cells', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('buildAllocationDragHighlightIndex')
+    expect(source).toContain('allocationDragHighlightToneForIds')
+    expect(source).toContain('activeHighlightPayload')
+    expect(source).toContain('hoverPayload')
+    expect(source).toContain('onEntityHover(')
+    expect(source).toContain('onEntityHoverEnd(')
+    expect(source).toContain('dropZoneClasses(')
+    expect(source).toContain('pill-drag-related--conflict')
+    expect(source).toContain('pill-drag-related--history')
+    expect(source).toContain('pill-drag-source')
+    expect(source).toContain('pill-hover-source')
+    expect(source).not.toContain('drop-zone--drag-related--conflict')
+    expect(source).not.toContain('drop-zone--drag-related--history')
+  })
 })

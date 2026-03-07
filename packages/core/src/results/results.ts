@@ -183,7 +183,7 @@ export function summarizeTeamResults(
             filtered.map((raw) => raw.win),
             1
           ) / filtered.length
-        win = vote > 0 ? 1 : 0
+        win = vote > 0 ? 1 : vote < 0 ? 0 : 0.5
       }
     } else {
       vote = null

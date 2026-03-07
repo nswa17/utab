@@ -33,6 +33,28 @@ describe('results/results', () => {
     expect(team2?.side).toBe('opp')
   })
 
+  it('treats split ballots as a tied round result', () => {
+    const teams = [{ id: 1 }, { id: 2 }]
+    const style = { team_num: 2 }
+    const rawTeamResults = [
+      { id: 1, r: 1, win: 1, opponents: [2], side: 'gov' },
+      { id: 1, r: 1, win: 0, opponents: [2], side: 'gov' },
+      { id: 2, r: 1, win: 0, opponents: [1], side: 'opp' },
+      { id: 2, r: 1, win: 1, opponents: [1], side: 'opp' },
+    ]
+
+    const results = summarizeTeamResults(teams, rawTeamResults, 1, style)
+    const team1 = results.find((r) => r.id === 1)
+    const team2 = results.find((r) => r.id === 2)
+
+    expect(team1?.vote).toBe(0)
+    expect(team2?.vote).toBe(0)
+    expect(team1?.vote_rate).toBe(0.5)
+    expect(team2?.vote_rate).toBe(0.5)
+    expect(team1?.win).toBe(0.5)
+    expect(team2?.win).toBe(0.5)
+  })
+
   it('summarizes speaker results with weighted average', () => {
     const speakers = [{ id: 11 }, { id: 12 }]
     const style = { score_weights: [1, 1] }

@@ -95,6 +95,32 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     }
   }
 
+  async function bulkDeleteInstitutions(tournamentId: string, ids: string[]) {
+    const normalizedIds = Array.from(
+      new Set(ids.map((id) => String(id ?? '').trim()).filter((id) => id.length > 0))
+    )
+    if (normalizedIds.length === 0) return 0
+
+    loading.value = true
+    error.value = null
+    try {
+      const res = await api.delete('/institutions', {
+        params: { tournamentId, ids: normalizedIds.join(',') },
+      })
+      const deletedIds = new Set(normalizedIds)
+      institutions.value = institutions.value.filter(
+        (item) => !deletedIds.has(String(item._id ?? ''))
+      )
+      const deletedCount = Number(res.data?.data?.deletedCount)
+      return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     institutions,
     loading,
@@ -103,5 +129,6 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     createInstitution,
     updateInstitution,
     deleteInstitution,
+    bulkDeleteInstitutions,
   }
 })

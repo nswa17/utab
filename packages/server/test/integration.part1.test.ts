@@ -1134,6 +1134,100 @@ describe('Server integration', () => {
     expect(powerpairDrawRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('powerpair')
   })
 
+  it('supports class_based adjudicator allocation through the API', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'class-based-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'class-based-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const stylesRes = await agent.get('/api/styles')
+    expect(stylesRes.status).toBe(200)
+    const styleId = stylesRes.body.data[0].id ?? 1
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Class Based Open',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1, 1, 1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    for (const name of ['Team A', 'Team B', 'Team C', 'Team D']) {
+      const teamRes = await agent.post('/api/teams').send({ tournamentId, name })
+      expect(teamRes.status).toBe(201)
+    }
+
+    const judgeB1Res = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Judge B1',
+      preev: 9,
+      userDefinedData: { judge_class: 'B' },
+    })
+    expect(judgeB1Res.status).toBe(201)
+    const judgeB1Id = judgeB1Res.body.data._id as string
+
+    const judgeB2Res = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Judge B2',
+      preev: 7,
+      userDefinedData: { judge_class: 'B' },
+    })
+    expect(judgeB2Res.status).toBe(201)
+
+    const judgeCRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Judge C1',
+      preev: 3,
+      userDefinedData: { judge_class: 'C' },
+    })
+    expect(judgeCRes.status).toBe(201)
+    const judgeCId = judgeCRes.body.data._id as string
+
+    const judgeB3Res = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Judge B3',
+      preev: 5,
+      userDefinedData: { judge_class: 'B' },
+    })
+    expect(judgeB3Res.status).toBe(201)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const drawRes = await agent.post('/api/draws/generate').send({
+      tournamentId,
+      round: 1,
+      save: false,
+      options: {
+        team_allocation_algorithm: 'standard',
+        adjudicator_allocation_algorithm: 'class_based',
+        numbers_of_adjudicators: { chairs: 1, panels: 1, trainees: 0 },
+        venue_allocation_algorithm_options: { shuffle: false },
+      },
+    })
+    expect(drawRes.status).toBe(200)
+
+    const allocation = drawRes.body.data.allocation as Array<{
+      chairs?: string[]
+      panels?: string[]
+    }>
+    const rowWithC = allocation.find((square) => (square.panels ?? []).includes(judgeCId))
+    expect(rowWithC).toBeTruthy()
+    expect(rowWithC?.chairs).toEqual([judgeB1Id])
+  })
+
   it('supports compile preview and explicit snapshot save with stale detection', async () => {
     const agent = request.agent(app)
 
@@ -1481,6 +1575,11 @@ describe('Server integration', () => {
             best: true,
             allow_low_tie_win: false,
           },
+          compile: {
+            options: {
+              tie_points: 0.25,
+            },
+          },
         },
       },
     })
@@ -1503,6 +1602,7 @@ describe('Server integration', () => {
     expect(round1Res.body.data.userDefinedData.break.size).toBe(16)
     expect(round1Res.body.data.userDefinedData.break.source).toBe('raw')
     expect(round1Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('include_all')
+    expect(round1Res.body.data.userDefinedData.compile.options.tie_points).toBe(0.5)
 
     const round2Res = await agent.post('/api/rounds').send({
       tournamentId,

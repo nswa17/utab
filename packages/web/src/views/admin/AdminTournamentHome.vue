@@ -135,7 +135,9 @@
               >
                 {{ isSavingTournamentBreak ? $t('更新中...') : $t('ブレイク設定を保存') }}
               </Button>
-              <span v-if="tournamentBreakSaved" class="muted small">{{ $t('更新しました。') }}</span>
+              <span v-if="tournamentBreakSaved" class="muted small">{{
+                $t('更新しました。')
+              }}</span>
             </div>
             <p v-if="tournamentBreakSaveError" class="error small">
               {{ tournamentBreakSaveError }}
@@ -179,11 +181,7 @@
                 :disabled="isLoading || isSavingTournamentTeamRanking"
                 @click="saveTournamentTeamRankingSettings"
               >
-                {{
-                  isSavingTournamentTeamRanking
-                    ? $t('更新中...')
-                    : $t('チーム順位優先度を保存')
-                }}
+                {{ isSavingTournamentTeamRanking ? $t('更新中...') : $t('チーム順位優先度を保存') }}
               </Button>
               <span v-if="tournamentTeamRankingSaved" class="muted small">{{
                 $t('更新しました。')
@@ -269,7 +267,11 @@
               min="1"
             />
           </Field>
-          <Field class="setup-round-name-field" :label="$t('ラウンド名')" v-slot="{ id, describedBy }">
+          <Field
+            class="setup-round-name-field"
+            :label="$t('ラウンド名')"
+            v-slot="{ id, describedBy }"
+          >
             <input
               v-model="setupRoundForm.name"
               :id="id"
@@ -437,7 +439,6 @@
                           v-model:score-by-matter-manner="
                             setupRoundEditForm.userDefinedData.score_by_matter_manner
                           "
-                          v-model:tie-points="setupRoundEditForm.compile.options.tie_points"
                           v-model:poi="setupRoundEditForm.userDefinedData.poi"
                           v-model:best="setupRoundEditForm.userDefinedData.best"
                           :lock-allow-low-tie-win="setupRoundEditForm.breakEnabled"
@@ -523,7 +524,12 @@
             <div class="muted small">{{ $t('大会アクセスURL') }}</div>
             <code class="qr-url">{{ participantUrl }}</code>
             <div class="row qr-actions">
-              <Button class="qr-copy-button" variant="secondary" size="sm" @click="copyParticipantUrl">
+              <Button
+                class="qr-copy-button"
+                variant="secondary"
+                size="sm"
+                @click="copyParticipantUrl"
+              >
                 {{ copyStatus === 'copied' ? $t('コピーしました。') : $t('URLをコピー') }}
               </Button>
             </div>
@@ -673,14 +679,25 @@
         </section>
 
         <section class="stack entity-block">
-          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
-            <input
-              v-model="teamSearch"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('名前/コンフリクトグループ/スピーカーで検索')"
-            />
-          </Field>
+          <div class="entity-list-toolbar">
+            <Field class="entity-search-field" :label="$t('検索')" v-slot="{ id, describedBy }">
+              <input
+                v-model="teamSearch"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('名前/コンフリクトグループ/スピーカーで検索')"
+              />
+            </Field>
+            <Button
+              variant="danger"
+              size="md"
+              class="entity-toolbar-action"
+              :disabled="teams.loading || filteredTeams.length === 0"
+              @click="removeAllTeams"
+            >
+              {{ $t('一括削除') }}
+            </Button>
+          </div>
           <p v-if="teams.error" class="error">{{ teams.error }}</p>
           <ul class="list compact">
             <li v-for="team in visibleTeams" :key="team._id" class="list-item entity-list-item">
@@ -701,7 +718,10 @@
                   {{ $t('削除') }}
                 </Button>
               </div>
-              <div v-if="isEntityInlineEditing('team', team._id)" class="entity-inline-editor stack">
+              <div
+                v-if="isEntityInlineEditing('team', team._id)"
+                class="entity-inline-editor stack"
+              >
                 <div class="inline-edit-row">
                   <label class="inline-control inline-control--grow">
                     <span class="inline-control-label">{{ $t('名前') }}</span>
@@ -709,7 +729,11 @@
                   </label>
                 </div>
                 <div v-if="detailRows.length > 0" class="stack entity-round-details">
-                  <div v-for="row in detailRows" :key="`team-inline-round-${row.r}`" class="detail-row">
+                  <div
+                    v-for="row in detailRows"
+                    :key="`team-inline-round-${row.r}`"
+                    class="detail-row"
+                  >
                     <div class="row detail-row-head">
                       <button
                         type="button"
@@ -727,7 +751,10 @@
                         <span class="muted small">{{ $t('有効') }}</span>
                       </label>
                     </div>
-                    <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
+                    <div
+                      v-if="isRoundDetailExpanded(Number(row.r))"
+                      class="row round-detail-inline-line"
+                    >
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
                         <input
@@ -736,7 +763,9 @@
                           :placeholder="$t('コンフリクトグループ名で検索')"
                         />
                         <div class="relation-picker compact-relation-picker">
-                          <template v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0">
+                          <template
+                            v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0"
+                          >
                             <div
                               v-for="group in groupedRoundDetailInstitutionOptionsForRow(row)"
                               :key="`team-inline-round-inst-group-${row.r}-${group.category}`"
@@ -756,7 +785,9 @@
                               </label>
                             </div>
                           </template>
-                          <p v-else class="muted small relation-empty">{{ $t('候補がありません。') }}</p>
+                          <p v-else class="muted small relation-empty">
+                            {{ $t('候補がありません。') }}
+                          </p>
                         </div>
                       </label>
                       <label class="stack round-detail-inline-field">
@@ -787,7 +818,9 @@
                   </div>
                 </div>
                 <div class="row modal-actions">
-                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{
+                    $t('取消')
+                  }}</Button>
                   <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
                 </div>
               </div>
@@ -817,15 +850,9 @@
                   :aria-describedby="describedBy"
                 />
               </Field>
-              <Field :label="$t('事前評価')" :help="$t('推奨範囲: 0〜10')">
+              <Field :label="$t('事前評価')">
                 <template #label-suffix>
-                  <HelpTip
-                    :text="
-                      $t(
-                        '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。'
-                      )
-                    "
-                  />
+                  <HelpTip :text="preevHelpText" />
                 </template>
                 <template #default="{ id, describedBy }">
                   <input
@@ -837,6 +864,27 @@
                     :id="id"
                     :aria-describedby="describedBy"
                   />
+                </template>
+              </Field>
+              <Field :label="$t('ジャッジクラス')">
+                <template #label-suffix>
+                  <HelpTip :text="judgeClassHelpText" />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <select
+                    v-model="adjudicatorForm.judgeClass"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  >
+                    <option value="">{{ $t('未設定') }}</option>
+                    <option
+                      v-for="option in judgeClassOptions"
+                      :key="`create-judge-class-${option.value}`"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
                 </template>
               </Field>
               <div class="stack full relation-group">
@@ -921,14 +969,25 @@
         </section>
 
         <section class="stack entity-block">
-          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
-            <input
-              v-model="adjudicatorSearch"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('名前で検索')"
-            />
-          </Field>
+          <div class="entity-list-toolbar">
+            <Field class="entity-search-field" :label="$t('検索')" v-slot="{ id, describedBy }">
+              <input
+                v-model="adjudicatorSearch"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('名前で検索')"
+              />
+            </Field>
+            <Button
+              variant="danger"
+              size="md"
+              class="entity-toolbar-action"
+              :disabled="adjudicators.loading || filteredAdjudicators.length === 0"
+              @click="removeAllAdjudicators"
+            >
+              {{ $t('一括削除') }}
+            </Button>
+          </div>
           <p v-if="adjudicators.error" class="error">{{ adjudicators.error }}</p>
           <ul class="list compact">
             <li
@@ -944,6 +1003,9 @@
               </div>
               <div class="muted entity-secondary">
                 {{ $t('事前評価') }} {{ adj.preev ?? 0 }}
+                <template v-if="adjudicatorJudgeClassCode(adj)">
+                  / {{ $t('ジャッジクラス') }} {{ adjudicatorJudgeClassLabel(adj) }}
+                </template>
               </div>
               <div class="row">
                 <Button
@@ -951,9 +1013,7 @@
                   size="sm"
                   @click="toggleEntityInlineEdit('adjudicator', adj)"
                 >
-                  {{
-                    isEntityInlineEditing('adjudicator', adj._id) ? $t('閉じる') : $t('編集')
-                  }}
+                  {{ isEntityInlineEditing('adjudicator', adj._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeAdjudicator(adj._id)">
                   {{ $t('削除') }}
@@ -979,7 +1039,13 @@
                       >
                         -
                       </Button>
-                      <input v-model.number="entityForm.preev" type="number" min="0" max="10" step="0.1" />
+                      <input
+                        v-model.number="entityForm.preev"
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                      />
                       <Button
                         type="button"
                         variant="ghost"
@@ -990,9 +1056,29 @@
                       </Button>
                     </div>
                   </label>
+                  <label class="inline-control inline-control--judge-class">
+                    <span class="inline-control-label inline-control-label--with-help">
+                      {{ $t('ジャッジクラス') }}
+                      <HelpTip :text="judgeClassHelpText" />
+                    </span>
+                    <select v-model="entityForm.judgeClass">
+                      <option value="">{{ $t('未設定') }}</option>
+                      <option
+                        v-for="option in judgeClassOptions"
+                        :key="`edit-judge-class-${option.value}`"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
                 </div>
                 <div v-if="detailRows.length > 0" class="stack entity-round-details">
-                  <div v-for="row in detailRows" :key="`adj-inline-round-${row.r}`" class="detail-row">
+                  <div
+                    v-for="row in detailRows"
+                    :key="`adj-inline-round-${row.r}`"
+                    class="detail-row"
+                  >
                     <div class="row detail-row-head">
                       <button
                         type="button"
@@ -1010,7 +1096,10 @@
                         <span class="muted small">{{ $t('有効') }}</span>
                       </label>
                     </div>
-                    <div v-if="isRoundDetailExpanded(Number(row.r))" class="row round-detail-inline-line">
+                    <div
+                      v-if="isRoundDetailExpanded(Number(row.r))"
+                      class="row round-detail-inline-line"
+                    >
                       <label class="stack round-detail-inline-field">
                         <span class="field-label">{{ $t('コンフリクトグループ') }}</span>
                         <input
@@ -1020,7 +1109,9 @@
                           :placeholder="$t('コンフリクトグループ名で検索')"
                         />
                         <div class="relation-picker compact-relation-picker">
-                          <template v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0">
+                          <template
+                            v-if="groupedRoundDetailInstitutionOptionsForRow(row).length > 0"
+                          >
                             <div
                               v-for="group in groupedRoundDetailInstitutionOptionsForRow(row)"
                               :key="`adj-inline-round-inst-group-${row.r}-${group.category}`"
@@ -1040,7 +1131,9 @@
                               </label>
                             </div>
                           </template>
-                          <p v-else class="muted small relation-empty">{{ $t('候補がありません。') }}</p>
+                          <p v-else class="muted small relation-empty">
+                            {{ $t('候補がありません。') }}
+                          </p>
                         </div>
                       </label>
                       <label class="stack round-detail-inline-field">
@@ -1076,7 +1169,9 @@
                   </div>
                 </div>
                 <div class="row modal-actions">
-                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{
+                    $t('取消')
+                  }}</Button>
                   <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
                 </div>
               </div>
@@ -1097,7 +1192,7 @@
         <section class="stack entity-block">
           <h4 class="entity-block-title">{{ $t('新規追加') }}</h4>
           <section class="stack block-panel">
-            <form class="grid" @submit.prevent="handleCreateVenue">
+            <form class="grid aligned-field-grid" @submit.prevent="handleCreateVenue">
               <Field :label="$t('会場名')" required v-slot="{ id, describedBy }">
                 <input
                   v-model="venueForm.name"
@@ -1107,9 +1202,12 @@
                 />
               </Field>
               <div class="availability-control">
-                <label class="row small">
-                  <input v-model="venueForm.available" type="checkbox" />
-                  <span>{{ $t('使用可能（デフォルト値）') }}</span>
+                <label class="row small round-detail-switch">
+                  <ToggleSwitch
+                    v-model="venueForm.available"
+                    :aria-label="$t('会場を有効化')"
+                  />
+                  <span class="muted small">{{ $t('有効') }}</span>
                 </label>
               </div>
               <div class="row entity-submit-row">
@@ -1129,14 +1227,25 @@
         </section>
 
         <section class="stack entity-block">
-          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
-            <input
-              v-model="venueSearch"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('会場名で検索')"
-            />
-          </Field>
+          <div class="entity-list-toolbar">
+            <Field class="entity-search-field" :label="$t('検索')" v-slot="{ id, describedBy }">
+              <input
+                v-model="venueSearch"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('会場名で検索')"
+              />
+            </Field>
+            <Button
+              variant="danger"
+              size="md"
+              class="entity-toolbar-action"
+              :disabled="venues.loading || filteredVenues.length === 0"
+              @click="removeAllVenues"
+            >
+              {{ $t('一括削除') }}
+            </Button>
+          </div>
           <p v-if="venues.error" class="error">{{ venues.error }}</p>
           <ul class="list compact">
             <li v-for="venue in visibleVenues" :key="venue._id" class="list-item entity-list-item">
@@ -1151,7 +1260,10 @@
                   {{ $t('削除') }}
                 </Button>
               </div>
-              <div v-if="isEntityInlineEditing('venue', venue._id)" class="entity-inline-editor stack">
+              <div
+                v-if="isEntityInlineEditing('venue', venue._id)"
+                class="entity-inline-editor stack"
+              >
                 <div class="inline-edit-row">
                   <label class="inline-control inline-control--grow">
                     <span class="inline-control-label">{{ $t('名前') }}</span>
@@ -1159,7 +1271,11 @@
                   </label>
                 </div>
                 <div v-if="detailRows.length > 0" class="stack entity-round-details">
-                  <div v-for="row in detailRows" :key="`venue-inline-round-${row.r}`" class="detail-row">
+                  <div
+                    v-for="row in detailRows"
+                    :key="`venue-inline-round-${row.r}`"
+                    class="detail-row"
+                  >
                     <div class="row detail-row-head detail-row-head--compact">
                       <strong>{{ $t('ラウンド {round}', { round: row.r }) }}</strong>
                       <label class="row small round-detail-switch">
@@ -1200,7 +1316,9 @@
                   </div>
                 </div>
                 <div class="row modal-actions">
-                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{
+                    $t('取消')
+                  }}</Button>
                   <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
                 </div>
               </div>
@@ -1249,14 +1367,25 @@
         </section>
 
         <section class="stack entity-block">
-          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
-            <input
-              v-model="speakerSearch"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('名前で検索')"
-            />
-          </Field>
+          <div class="entity-list-toolbar">
+            <Field class="entity-search-field" :label="$t('検索')" v-slot="{ id, describedBy }">
+              <input
+                v-model="speakerSearch"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('名前で検索')"
+              />
+            </Field>
+            <Button
+              variant="danger"
+              size="md"
+              class="entity-toolbar-action"
+              :disabled="speakers.loading || filteredSpeakers.length === 0"
+              @click="removeAllSpeakers"
+            >
+              {{ $t('一括削除') }}
+            </Button>
+          </div>
           <p v-if="speakers.error" class="error">{{ speakers.error }}</p>
           <ul class="list compact">
             <li
@@ -1268,14 +1397,21 @@
                 <strong>{{ speaker.name }}</strong>
               </div>
               <div class="row">
-                <Button variant="ghost" size="sm" @click="toggleEntityInlineEdit('speaker', speaker)">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  @click="toggleEntityInlineEdit('speaker', speaker)"
+                >
                   {{ isEntityInlineEditing('speaker', speaker._id) ? $t('閉じる') : $t('編集') }}
                 </Button>
                 <Button variant="danger" size="sm" @click="removeSpeaker(speaker._id)">
                   {{ $t('削除') }}
                 </Button>
               </div>
-              <div v-if="isEntityInlineEditing('speaker', speaker._id)" class="entity-inline-editor stack">
+              <div
+                v-if="isEntityInlineEditing('speaker', speaker._id)"
+                class="entity-inline-editor stack"
+              >
                 <div class="inline-edit-row">
                   <label class="inline-control inline-control--grow">
                     <span class="inline-control-label">{{ $t('名前') }}</span>
@@ -1283,7 +1419,9 @@
                   </label>
                 </div>
                 <div class="row modal-actions">
-                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{
+                    $t('取消')
+                  }}</Button>
                   <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
                 </div>
               </div>
@@ -1368,14 +1506,25 @@
         </section>
 
         <section class="stack entity-block">
-          <Field :label="$t('検索')" v-slot="{ id, describedBy }">
-            <input
-              v-model="institutionSearch"
-              :id="id"
-              :aria-describedby="describedBy"
-              :placeholder="$t('コンフリクトグループ名で検索')"
-            />
-          </Field>
+          <div class="entity-list-toolbar">
+            <Field class="entity-search-field" :label="$t('検索')" v-slot="{ id, describedBy }">
+              <input
+                v-model="institutionSearch"
+                :id="id"
+                :aria-describedby="describedBy"
+                :placeholder="$t('コンフリクトグループ名で検索')"
+              />
+            </Field>
+            <Button
+              variant="danger"
+              size="md"
+              class="entity-toolbar-action"
+              :disabled="institutions.loading || filteredInstitutions.length === 0"
+              @click="removeAllInstitutions"
+            >
+              {{ $t('一括削除') }}
+            </Button>
+          </div>
           <p v-if="institutions.error" class="error">{{ institutions.error }}</p>
           <ul class="list compact">
             <li
@@ -1430,7 +1579,12 @@
                   <label class="inline-control institution-priority-inline">
                     <span class="inline-control-label">{{ $t('優先度') }}</span>
                     <div class="number-stepper">
-                      <Button type="button" variant="ghost" size="sm" @click="adjustEntityFormPriority(-0.1)">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormPriority(-0.1)"
+                      >
                         -
                       </Button>
                       <input
@@ -1440,14 +1594,21 @@
                         step="0.1"
                         :aria-label="$t('優先度')"
                       />
-                      <Button type="button" variant="ghost" size="sm" @click="adjustEntityFormPriority(0.1)">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        @click="adjustEntityFormPriority(0.1)"
+                      >
                         +
                       </Button>
                     </div>
                   </label>
                 </div>
                 <div class="row modal-actions">
-                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{ $t('取消') }}</Button>
+                  <Button variant="ghost" size="sm" @click="cancelEditEntity">{{
+                    $t('取消')
+                  }}</Button>
                   <Button size="sm" @click="saveEntityEdit">{{ $t('更新') }}</Button>
                 </div>
               </div>
@@ -1497,7 +1658,6 @@
             v-model:score-by-matter-manner="
               roundDefaultsForm.userDefinedData.score_by_matter_manner
             "
-            v-model:tie-points="roundDefaultsForm.compile.options.tie_points"
             v-model:poi="roundDefaultsForm.userDefinedData.poi"
             v-model:best="roundDefaultsForm.userDefinedData.best"
             :disabled="isLoading"
@@ -1621,7 +1781,7 @@
       @click.self="closeDeleteEntityModal"
     >
       <div class="modal card stack" role="dialog" aria-modal="true">
-        <h4>{{ $t('削除') }}</h4>
+        <h4>{{ deleteEntityModalTitle }}</h4>
         <p class="muted">{{ deleteEntityPrompt }}</p>
         <p v-if="deleteEntityModalError" class="error small">{{ deleteEntityModalError }}</p>
         <div class="row modal-actions">
@@ -1629,7 +1789,7 @@
             $t('キャンセル')
           }}</Button>
           <Button variant="danger" size="sm" :disabled="isLoading" @click="confirmDeleteEntity">
-            {{ $t('削除') }}
+            {{ deleteEntityModalActionLabel }}
           </Button>
         </div>
       </div>
@@ -1663,6 +1823,7 @@ import {
 import {
   buildRoundUserDefinedFromDefaults,
   defaultRoundDefaults,
+  normalizeRoundCompileOptions,
   normalizeRoundDefaults,
   serializeRoundDefaults,
 } from '@/utils/round-defaults'
@@ -1778,7 +1939,7 @@ const setupRoundEditForm = reactive<{
   compile: {
     ...defaultRoundDefaults().compile,
     source_rounds: [...defaultRoundDefaults().compile.source_rounds],
-    options: normalizeCompileOptions(defaultRoundDefaults().compile.options),
+    options: normalizeRoundCompileOptions(defaultRoundDefaults().compile.options),
   },
 })
 const setupRoundEditError = ref('')
@@ -1888,6 +2049,7 @@ const teamSelectedSpeakerIds = ref<string[]>([])
 const adjudicatorForm = reactive({
   name: '',
   preev: 0,
+  judgeClass: '',
 })
 const adjudicatorInstitutionIds = ref<string[]>([])
 const adjudicatorInstitutionSearch = ref('')
@@ -1906,6 +2068,69 @@ const institutionCategoryOptions = [
   { value: 'region', label: 'region' },
   { value: 'league', label: 'league' },
 ] as const
+
+const JUDGE_CLASS_VALUES = ['A', 'B', 'C'] as const
+const JUDGE_CLASS_LABELS: Record<(typeof JUDGE_CLASS_VALUES)[number], string> = {
+  A: 'chair_preferred',
+  B: 'chair_or_panel',
+  C: 'panel_or_trainee',
+}
+const preevHelpText = computed(() =>
+  t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。推奨範囲は 0〜10 です。')
+)
+const judgeClassHelpText = computed(() =>
+  t(
+    'chair_preferred は主に Chair、chair_or_panel は Chair または panel、panel_or_trainee は Chair にせず主に panel / trainee に回します。'
+  )
+)
+const judgeClassOptions = computed(() =>
+  JUDGE_CLASS_VALUES.map((value) => ({
+    value,
+    label: t(JUDGE_CLASS_LABELS[value]),
+  }))
+)
+
+function normalizeJudgeClass(value: unknown): '' | 'A' | 'B' | 'C' {
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim().toUpperCase()
+  return JUDGE_CLASS_VALUES.includes(normalized as (typeof JUDGE_CLASS_VALUES)[number])
+    ? (normalized as 'A' | 'B' | 'C')
+    : ''
+}
+
+function judgeClassLabel(value: '' | 'A' | 'B' | 'C'): string {
+  if (!value) return t('未設定')
+  return t(JUDGE_CLASS_LABELS[value])
+}
+
+function adjudicatorJudgeClassCode(
+  entity: { userDefinedData?: Record<string, any> } | null | undefined
+) {
+  return normalizeJudgeClass(entity?.userDefinedData?.judge_class)
+}
+
+function adjudicatorJudgeClassLabel(
+  entity: { userDefinedData?: Record<string, any> } | null | undefined
+) {
+  return judgeClassLabel(adjudicatorJudgeClassCode(entity))
+}
+
+function buildAdjudicatorUserDefinedData(
+  entity: { userDefinedData?: Record<string, any> } | null | undefined,
+  judgeClass: unknown
+) {
+  const normalized = normalizeJudgeClass(judgeClass)
+  const base =
+    entity?.userDefinedData && typeof entity.userDefinedData === 'object'
+      ? ({ ...entity.userDefinedData } as Record<string, any>)
+      : {}
+  if (normalized) {
+    base.judge_class = normalized
+    return base
+  }
+  delete base.judge_class
+  return Object.keys(base).length > 0 ? base : undefined
+}
 type InstitutionCategory = (typeof institutionCategoryOptions)[number]['value']
 type InstitutionOptionGroup = {
   category: InstitutionCategory
@@ -1958,7 +2183,9 @@ function missingEntityKinds(warnings: MissingEntityWarning[]): MissingEntityWarn
 }
 
 function missingEntityKindsLabel(warnings: MissingEntityWarning[]): string {
-  return missingEntityKinds(warnings).map((kind) => missingEntityKindLabel(kind)).join('・')
+  return missingEntityKinds(warnings)
+    .map((kind) => missingEntityKindLabel(kind))
+    .join('・')
 }
 
 function missingCreatableEntityKindsLabel(warnings: MissingEntityWarning[]): string {
@@ -2024,7 +2251,10 @@ const pendingReviewDuplicateKindsLabel = computed(() => {
 
 const pendingReviewTitleText = computed(() => {
   if (!pendingMissingEntityImport.value) return t('取り込み内容の確認')
-  const labels = [pendingMissingEntityKindsLabel.value, pendingReviewDuplicateKindsLabel.value].filter(Boolean)
+  const labels = [
+    pendingMissingEntityKindsLabel.value,
+    pendingReviewDuplicateKindsLabel.value,
+  ].filter(Boolean)
   const uniqueLabels = Array.from(new Set(labels))
   if (uniqueLabels.length === 0) return t('取り込み内容の確認')
   return t(`${uniqueLabels.join('・')}の確認`)
@@ -2052,17 +2282,23 @@ const pendingMissingEntitySummaryText = computed(() => {
   const hasDuplicate = pendingMissingEntityImport.value.duplicateNameWarnings.length > 0
   if (hasMissing && hasDuplicate && pendingReviewCanProceed.value) {
     return t(
-      `未登録の${missingLabel}と重複する${duplicateLabel}名があります。問題なければ不足項目を作成し、重複行をスキップして続行できます。`
+      `未登録の${missingLabel}と重複する${duplicateLabel}名があります。問題なければ未登録の${missingLabel}を作成し、重複行をスキップして続行できます。`
     )
   }
   if (hasMissing && pendingReviewCanProceed.value) {
-    return t(`未登録の${missingLabel}があります。問題なければ新規作成してから取り込みを続行できます。`)
+    return t(
+      `未登録の${missingLabel}があります。問題なければ新規作成してから取り込みを続行できます。`
+    )
   }
   if (hasDuplicate && pendingReviewCanProceed.value) {
-    return t(`重複する${duplicateLabel}名があります。問題なければ重複行をスキップして続行できます。`)
+    return t(
+      `重複する${duplicateLabel}名があります。問題なければ重複行をスキップして続行できます。`
+    )
   }
   if (hasMissing) {
-    return t(`未登録の${missingLabel}があります。自動作成できない項目が含まれるため、先に登録するかCSVを修正してください。`)
+    return t(
+      `未登録の${missingLabel}があります。自動作成できない項目が含まれるため、先に登録するかCSVを修正してください。`
+    )
   }
   if (hasDuplicate) {
     return t(`重複する${duplicateLabel}名があります。先に既存データまたはCSVを確認してください。`)
@@ -2083,14 +2319,14 @@ const pendingMissingEntityActionLabel = computed(() => {
       pendingMissingEntityKindsLabel.value ||
       t('項目')
     const duplicateLabel = pendingReviewDuplicateKindsLabel.value || t('項目')
-    return t(`不足${missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`)
+    return t(`未登録の${missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`)
   }
   if (hasMissing) {
     const label =
       missingCreatableEntityKindsLabel(pendingMissingEntityImport.value.missingEntityWarnings) ||
       pendingMissingEntityKindsLabel.value ||
       t('項目')
-    return t(`不足${label}を作成して続行`)
+    return t(`未登録の${label}を作成して続行`)
   }
   if (hasDuplicate) {
     const label = pendingReviewDuplicateKindsLabel.value || t('項目')
@@ -2200,18 +2436,18 @@ const importTeamRows: string[][] = [
 ]
 
 const importAdjudicatorRows: string[][] = [
-  ['Judge 01', '1', 'true', 'Aurora University', 'Team 05', 'true', 'false'],
-  ['Judge 02', '0', 'true', 'Beacon College', 'Team 02', 'true', 'true'],
-  ['Judge 03', '2', 'true', 'Crest Institute', 'Team 07', 'false', 'true'],
-  ['Judge 04', '-1', 'true', 'Delta Academy', 'Team 04', 'true', 'true'],
-  ['Judge 05', '1', 'true', 'East Block', '', 'true', 'false'],
-  ['Judge 06', '0', 'true', 'West Block', '', 'false', 'true'],
-  ['Judge 07', '3', 'true', 'North League', 'Team 08', 'true', 'true'],
-  ['Judge 08', '0', 'true', 'South League', 'Team 03', 'true', 'false'],
-  ['Judge 09', '2', 'true', 'Aurora University|East Block', 'Team 01', 'false', 'true'],
-  ['Judge 10', '1', 'true', 'Beacon College|West Block', 'Team 06', 'true', 'true'],
-  ['Judge 11', '1', 'true', 'Crest Institute|North League', 'Team 03', 'true', 'false'],
-  ['Judge 12', '-1', 'true', 'Delta Academy|South League', 'Team 04', 'false', 'true'],
+  ['Judge 01', '1', 'chair_preferred', 'true', 'Aurora University', 'Team 05', 'true', 'false'],
+  ['Judge 02', '0', 'chair_or_panel', 'true', 'Beacon College', 'Team 02', 'true', 'true'],
+  ['Judge 03', '2', 'panel_or_trainee', 'true', 'Crest Institute', 'Team 07', 'false', 'true'],
+  ['Judge 04', '-1', 'chair_preferred', 'true', 'Delta Academy', 'Team 04', 'true', 'true'],
+  ['Judge 05', '1', '', 'true', 'East Block', '', 'true', 'false'],
+  ['Judge 06', '0', 'chair_or_panel', 'true', 'West Block', '', 'false', 'true'],
+  ['Judge 07', '3', 'chair_preferred', 'true', 'North League', 'Team 08', 'true', 'true'],
+  ['Judge 08', '0', 'panel_or_trainee', 'true', 'South League', 'Team 03', 'true', 'false'],
+  ['Judge 09', '2', 'chair_or_panel', 'true', 'Aurora University|East Block', 'Team 01', 'false', 'true'],
+  ['Judge 10', '1', 'chair_preferred', 'true', 'Beacon College|West Block', 'Team 06', 'true', 'true'],
+  ['Judge 11', '1', 'chair_or_panel', 'true', 'Crest Institute|North League', 'Team 03', 'true', 'false'],
+  ['Judge 12', '-1', 'panel_or_trainee', 'true', 'Delta Academy|South League', 'Team 04', 'false', 'true'],
 ]
 
 const entityImportTemplateMap: Record<EntityTabKey, string> = {
@@ -2223,6 +2459,7 @@ const entityImportTemplateMap: Record<EntityTabKey, string> = {
     [
       'name',
       'preev',
+      'judge_class',
       'available',
       'conflicts',
       'conflict_teams',
@@ -2241,7 +2478,12 @@ const entityImportTemplateMap: Record<EntityTabKey, string> = {
 
 const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRow[]> = {
   teams: [
-    { header: 'name', required: true, description: 'チーム名。大会内で一意な名前を推奨。', example: 'Team 01' },
+    {
+      header: 'name',
+      required: true,
+      description: 'チーム名。大会内で一意な名前を推奨。',
+      example: 'Team 01',
+    },
     {
       header: 'institution',
       required: true,
@@ -2280,6 +2522,13 @@ const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRo
       required: false,
       description: '事前補正値。直近情報を反映する調整スコア (0基準・負数可)。',
       example: '1',
+    },
+    {
+      header: 'judge_class',
+      required: false,
+      description:
+        'chair_preferred / chair_or_panel / panel_or_trainee を指定します。',
+      example: 'chair_or_panel',
     },
     {
       header: 'available',
@@ -2412,11 +2661,17 @@ const institutionLimit = ref(20)
 
 const editingEntity = ref<{ type: string; id: string } | null>(null)
 type DeleteEntityType = 'team' | 'adjudicator' | 'venue' | 'speaker' | 'institution'
-const deleteEntityModal = ref<{ type: DeleteEntityType; id: string } | null>(null)
+type DeleteEntityMode = 'single' | 'bulk'
+const deleteEntityModal = ref<{
+  type: DeleteEntityType
+  ids: string[]
+  mode: DeleteEntityMode
+} | null>(null)
 const deleteEntityModalError = ref('')
 const entityForm = reactive<any>({
   name: '',
   preev: 0,
+  judgeClass: '',
   category: 'institution',
   priority: 1,
 })
@@ -2441,14 +2696,54 @@ const roundDetailTeamOptions = computed(() =>
     .slice()
     .sort((a, b) => naturalSortCollator.compare(String(a.name ?? ''), String(b.name ?? '')))
 )
+function deleteEntityTypeLabel(type: DeleteEntityType): string {
+  if (type === 'team') return t('チーム')
+  if (type === 'adjudicator') return t('ジャッジ')
+  if (type === 'venue') return t('会場')
+  if (type === 'speaker') return t('スピーカー')
+  return t('コンフリクトグループ')
+}
+
+function findDeleteEntityName(type: DeleteEntityType, id: string): string {
+  if (!id) return ''
+  if (type === 'team') {
+    return String(teams.teams.find((team) => String(team._id) === id)?.name ?? '')
+  }
+  if (type === 'adjudicator') {
+    return String(adjudicators.adjudicators.find((adj) => String(adj._id) === id)?.name ?? '')
+  }
+  if (type === 'venue') {
+    return String(venues.venues.find((venue) => String(venue._id) === id)?.name ?? '')
+  }
+  if (type === 'speaker') {
+    return String(speakers.speakers.find((speaker) => String(speaker._id) === id)?.name ?? '')
+  }
+  return String(institutions.institutions.find((inst) => String(inst._id) === id)?.name ?? '')
+}
+
+const deleteEntityModalTitle = computed(() =>
+  deleteEntityModal.value?.mode === 'bulk' ? t('一括削除') : t('削除')
+)
+
+const deleteEntityModalActionLabel = computed(() =>
+  deleteEntityModal.value?.mode === 'bulk' ? t('一括削除') : t('削除')
+)
+
 const deleteEntityPrompt = computed(() => {
-  if (!deleteEntityModal.value) return ''
-  const { type } = deleteEntityModal.value
-  if (type === 'team') return t('チームを削除しますか？')
-  if (type === 'adjudicator') return t('ジャッジを削除しますか？')
-  if (type === 'venue') return t('会場を削除しますか？')
-  if (type === 'speaker') return t('スピーカーを削除しますか？')
-  return t('コンフリクトグループを削除しますか？')
+  const modal = deleteEntityModal.value
+  if (!modal) return ''
+  const label = deleteEntityTypeLabel(modal.type)
+  if (modal.mode === 'bulk') {
+    return t('現在の検索結果に含まれる{label} {count}件を一括削除しますか？', {
+      label,
+      count: modal.ids.length,
+    })
+  }
+  const name = findDeleteEntityName(modal.type, modal.ids[0] ?? '')
+  if (name) {
+    return t('{label}「{name}」を削除しますか？', { label, name })
+  }
+  return t('{label}を削除しますか？', { label })
 })
 
 function groupedRoundDetailInstitutionOptionsForRow(row: {
@@ -2790,7 +3085,7 @@ function applyRoundDefaultsForm() {
   Object.assign(roundDefaultsForm.compile, {
     ...normalized.compile,
     source_rounds: [...normalized.compile.source_rounds],
-    options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
+    options: normalizeRoundCompileOptions(normalized.compile.options, normalized.compile.options),
   })
 }
 
@@ -2954,7 +3249,7 @@ async function flushTournamentAutosave() {
 
 function serializeRoundDefaultsForTournamentStorage() {
   const normalized = serializeRoundDefaults(roundDefaultsForm) as Record<string, any>
-  const normalizedCompile = normalizeCompileOptions(
+  const normalizedCompile = normalizeRoundCompileOptions(
     normalized?.compile?.options ?? normalized?.compile
   ) as Record<string, any>
   const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
@@ -3078,7 +3373,9 @@ async function saveTournamentAdjudicatorRankingSettings() {
   }
   Object.assign(
     tournamentAdjudicatorRankingForm,
-    normalizeTournamentAdjudicatorRankingConfig(updated.user_defined_data?.adjudicator_ranking_priority)
+    normalizeTournamentAdjudicatorRankingConfig(
+      updated.user_defined_data?.adjudicator_ranking_priority
+    )
   )
   tournamentAdjudicatorRankingSaved.value = true
   if (tournamentAdjudicatorRankingSavedTimer) {
@@ -3295,8 +3592,11 @@ async function createRoundFromSetup() {
   }
 
   const normalizedDefaults = normalizeRoundDefaults(roundDefaultsForm)
-  const userDefinedData = buildRoundUserDefinedFromDefaults(normalizedDefaults) as Record<string, any>
-  const compileOptions = normalizeCompileOptions(userDefinedData?.compile?.options)
+  const userDefinedData = buildRoundUserDefinedFromDefaults(normalizedDefaults) as Record<
+    string,
+    any
+  >
+  const compileOptions = normalizeRoundCompileOptions(userDefinedData?.compile?.options)
   const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
     compileOptions as Record<string, any>
   void _ignoredRankingPriority
@@ -3382,7 +3682,7 @@ function startEditRoundFromSetup(round: any) {
   Object.assign(setupRoundEditForm.compile, {
     ...normalized.compile,
     source_rounds: [...normalized.compile.source_rounds],
-    options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
+    options: normalizeRoundCompileOptions(normalized.compile.options, normalized.compile.options),
   })
   applyBreakRoundConstraints(
     setupRoundEditForm.userDefinedData as Record<string, any>,
@@ -3402,7 +3702,7 @@ function cancelEditRoundFromSetup() {
   Object.assign(setupRoundEditForm.compile, {
     ...defaultRoundDefaults().compile,
     source_rounds: [...defaultRoundDefaults().compile.source_rounds],
-    options: normalizeCompileOptions(defaultRoundDefaults().compile.options),
+    options: normalizeRoundCompileOptions(defaultRoundDefaults().compile.options),
   })
 }
 
@@ -3433,9 +3733,7 @@ async function saveEditRoundFromSetup(round: any) {
   const normalizedBreak = normalizeBreakConfigForRoundEdit(currentUserDefined.break)
   const breakSizeRaw = Number(setupRoundEditForm.break.size)
   const breakSize =
-    Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1
-      ? breakSizeRaw
-      : breakDefaults.size
+    Number.isInteger(breakSizeRaw) && breakSizeRaw >= 1 ? breakSizeRaw : breakDefaults.size
   const breakCutoffTiePolicy =
     setupRoundEditForm.break.cutoff_tie_policy === 'include_all' ||
     setupRoundEditForm.break.cutoff_tie_policy === 'strict'
@@ -3445,7 +3743,7 @@ async function saveEditRoundFromSetup(round: any) {
     roundNumber,
     setupRoundEditForm.compile.source_rounds
   )
-  const compileOptions = normalizeCompileOptions(setupRoundEditForm.compile.options)
+  const compileOptions = normalizeRoundCompileOptions(setupRoundEditForm.compile.options)
   const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
     compileOptions as Record<string, any>
   void _ignoredRankingPriority
@@ -3547,9 +3845,7 @@ function normalizeRoundDetailIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return Array.from(
     new Set(
-      value
-        .map((entry: any) => String(entry ?? '').trim())
-        .filter((entry) => entry.length > 0)
+      value.map((entry: any) => String(entry ?? '').trim()).filter((entry) => entry.length > 0)
     )
   )
 }
@@ -3571,14 +3867,18 @@ function buildTeamEditDetailRows(entity: any) {
   const template = entity?.template ?? {}
   const defaultAvailable =
     typeof template.available === 'boolean' ? Boolean(template.available) : true
-  const defaultConflicts = normalizeRoundDetailIds(template?.conflicts ?? template?.institutions ?? [])
+  const defaultConflicts = normalizeRoundDetailIds(
+    template?.conflicts ?? template?.institutions ?? []
+  )
   const defaultSpeakers = normalizeRoundDetailIds(template?.speakers)
 
   return rounds.map((roundNumber) => {
-    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    const detail =
+      (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
     return {
       r: roundNumber,
-      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      available:
+        typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
       conflicts: normalizeRoundDetailIds(
         detail?.conflicts ?? detail?.institutions ?? defaultConflicts
       ),
@@ -3594,22 +3894,26 @@ function buildAdjudicatorEditDetailRows(entity: any) {
   const template = entity?.template ?? {}
   const defaultAvailable =
     typeof template.available === 'boolean' ? Boolean(template.available) : true
-  const defaultConflicts = normalizeRoundDetailIds(template?.conflicts ?? template?.institutions ?? [])
+  const defaultConflicts = normalizeRoundDetailIds(
+    template?.conflicts ?? template?.institutions ?? []
+  )
   const defaultConflictTeams = normalizeRoundDetailIds(template?.conflict_teams)
 
   return rounds.map((roundNumber) => {
-    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    const detail =
+      (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
     const hasConflictTeams = Array.isArray(detail?.conflict_teams)
     return {
       r: roundNumber,
-      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      available:
+        typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
       conflicts: normalizeRoundDetailIds(
         hasConflictTeams
           ? detail?.conflicts
-          : detail?.institutions ?? detail?.conflicts ?? defaultConflicts
+          : (detail?.institutions ?? detail?.conflicts ?? defaultConflicts)
       ),
       conflict_teams: normalizeRoundDetailIds(
-        hasConflictTeams ? detail?.conflict_teams : detail?.conflicts ?? defaultConflictTeams
+        hasConflictTeams ? detail?.conflict_teams : (detail?.conflicts ?? defaultConflictTeams)
       ),
       institutionSearch: '',
       teamSearch: '',
@@ -3631,11 +3935,15 @@ function buildVenueEditDetailRows(entity: any) {
     : 1
 
   return rounds.map((roundNumber) => {
-    const detail = (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
+    const detail =
+      (entity?.details ?? []).find((row: any) => Number(row?.r) === Number(roundNumber)) ?? {}
     return {
       r: roundNumber,
-      available: typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
-      priority: Number.isFinite(Number(detail?.priority)) ? Number(detail.priority) : defaultPriority,
+      available:
+        typeof detail?.available === 'boolean' ? Boolean(detail.available) : defaultAvailable,
+      priority: Number.isFinite(Number(detail?.priority))
+        ? Number(detail.priority)
+        : defaultPriority,
     }
   })
 }
@@ -3685,7 +3993,10 @@ function buildTeamDetailsPayload(options: {
   }))
 }
 
-function buildTeamTemplatePayload(options: { selectedInstitutionIds: string[]; selectedSpeakerIds: string[] }) {
+function buildTeamTemplatePayload(options: {
+  selectedInstitutionIds: string[]
+  selectedSpeakerIds: string[]
+}) {
   return {
     available: true,
     conflicts: options.selectedInstitutionIds.slice(),
@@ -3735,7 +4046,9 @@ function institutionPriorityValue(value?: number) {
 
 function resolveAdjudicatorInstitutionIds(entity: any): string[] {
   const detailIds = Array.isArray(entity?.details)
-    ? entity.details.flatMap((detail: any) => (detail?.conflicts ?? []).map((id: any) => String(id)))
+    ? entity.details.flatMap((detail: any) =>
+        (detail?.conflicts ?? []).map((id: any) => String(id))
+      )
     : []
   const templateIds = Array.isArray(entity?.template?.conflicts)
     ? entity.template.conflicts.map((id: any) => String(id))
@@ -3803,9 +4116,11 @@ async function handleCreateAdjudicator() {
     preev: adjudicatorForm.preev,
     template,
     details,
+    userDefinedData: buildAdjudicatorUserDefinedData(undefined, adjudicatorForm.judgeClass),
   })
   adjudicatorForm.name = ''
   adjudicatorForm.preev = 0
+  adjudicatorForm.judgeClass = ''
   adjudicatorInstitutionIds.value = []
   adjudicatorInstitutionSearch.value = ''
   adjudicatorConflictIds.value = []
@@ -3888,9 +4203,21 @@ async function handleEntityImportFile(event: Event) {
 }
 
 function openDeleteEntityModal(type: DeleteEntityType, id: string) {
-  if (!id) return
+  const ids = normalizeDeleteEntityIds([id])
+  if (ids.length === 0) return
   deleteEntityModalError.value = ''
-  deleteEntityModal.value = { type, id }
+  deleteEntityModal.value = { type, ids, mode: 'single' }
+}
+
+function normalizeDeleteEntityIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.map((id) => String(id ?? '').trim()).filter((id) => id.length > 0)))
+}
+
+function openBulkDeleteEntityModal(type: DeleteEntityType, ids: string[]) {
+  const normalizedIds = normalizeDeleteEntityIds(ids)
+  if (normalizedIds.length === 0) return
+  deleteEntityModalError.value = ''
+  deleteEntityModal.value = { type, ids: normalizedIds, mode: 'bulk' }
 }
 
 function closeDeleteEntityModal() {
@@ -3898,57 +4225,120 @@ function closeDeleteEntityModal() {
   deleteEntityModal.value = null
 }
 
+function cleanupDeletedEntities(type: DeleteEntityType, ids: string[]) {
+  const deletedIds = new Set(normalizeDeleteEntityIds(ids))
+  if (
+    deletedIds.size > 0 &&
+    editingEntity.value &&
+    String(editingEntity.value.type ?? '') === String(type) &&
+    deletedIds.has(String(editingEntity.value.id ?? ''))
+  ) {
+    cancelEditEntity()
+  }
+}
+
 async function confirmDeleteEntity() {
   const modal = deleteEntityModal.value
   if (!modal) return
   deleteEntityModalError.value = ''
   if (modal.type === 'team') {
-    const deleted = await teams.deleteTeam(tournamentId.value, modal.id)
-    if (!deleted) {
-      deleteEntityModalError.value = teams.error ?? t('チームの削除に失敗しました。')
-      teams.error = null
-      return
+    if (modal.mode === 'bulk') {
+      const deletedCount = await teams.bulkDeleteTeams(tournamentId.value, modal.ids)
+      if (deletedCount === null) {
+        deleteEntityModalError.value = teams.error ?? t('チームの一括削除に失敗しました。')
+        teams.error = null
+        return
+      }
+    } else {
+      const deleted = await teams.deleteTeam(tournamentId.value, modal.ids[0] ?? '')
+      if (!deleted) {
+        deleteEntityModalError.value = teams.error ?? t('チームの削除に失敗しました。')
+        teams.error = null
+        return
+      }
     }
+    cleanupDeletedEntities('team', modal.ids)
     closeDeleteEntityModal()
     return
   }
   if (modal.type === 'adjudicator') {
-    const deleted = await adjudicators.deleteAdjudicator(tournamentId.value, modal.id)
-    if (!deleted) {
-      deleteEntityModalError.value = adjudicators.error ?? t('ジャッジの削除に失敗しました。')
-      adjudicators.error = null
-      return
+    if (modal.mode === 'bulk') {
+      const deletedCount = await adjudicators.bulkDeleteAdjudicators(tournamentId.value, modal.ids)
+      if (deletedCount === null) {
+        deleteEntityModalError.value = adjudicators.error ?? t('ジャッジの一括削除に失敗しました。')
+        adjudicators.error = null
+        return
+      }
+    } else {
+      const deleted = await adjudicators.deleteAdjudicator(tournamentId.value, modal.ids[0] ?? '')
+      if (!deleted) {
+        deleteEntityModalError.value = adjudicators.error ?? t('ジャッジの削除に失敗しました。')
+        adjudicators.error = null
+        return
+      }
     }
+    cleanupDeletedEntities('adjudicator', modal.ids)
     closeDeleteEntityModal()
     return
   }
   if (modal.type === 'venue') {
-    const deleted = await venues.deleteVenue(tournamentId.value, modal.id)
-    if (!deleted) {
-      deleteEntityModalError.value = venues.error ?? t('会場の削除に失敗しました。')
-      venues.error = null
-      return
+    if (modal.mode === 'bulk') {
+      const deletedCount = await venues.bulkDeleteVenues(tournamentId.value, modal.ids)
+      if (deletedCount === null) {
+        deleteEntityModalError.value = venues.error ?? t('会場の一括削除に失敗しました。')
+        venues.error = null
+        return
+      }
+    } else {
+      const deleted = await venues.deleteVenue(tournamentId.value, modal.ids[0] ?? '')
+      if (!deleted) {
+        deleteEntityModalError.value = venues.error ?? t('会場の削除に失敗しました。')
+        venues.error = null
+        return
+      }
     }
+    cleanupDeletedEntities('venue', modal.ids)
     closeDeleteEntityModal()
     return
   }
   if (modal.type === 'speaker') {
-    const deleted = await speakers.deleteSpeaker(tournamentId.value, modal.id)
-    if (!deleted) {
-      deleteEntityModalError.value = speakers.error ?? t('スピーカーの削除に失敗しました。')
-      speakers.error = null
-      return
+    if (modal.mode === 'bulk') {
+      const deletedCount = await speakers.bulkDeleteSpeakers(tournamentId.value, modal.ids)
+      if (deletedCount === null) {
+        deleteEntityModalError.value = speakers.error ?? t('スピーカーの一括削除に失敗しました。')
+        speakers.error = null
+        return
+      }
+    } else {
+      const deleted = await speakers.deleteSpeaker(tournamentId.value, modal.ids[0] ?? '')
+      if (!deleted) {
+        deleteEntityModalError.value = speakers.error ?? t('スピーカーの削除に失敗しました。')
+        speakers.error = null
+        return
+      }
     }
+    cleanupDeletedEntities('speaker', modal.ids)
     closeDeleteEntityModal()
     return
   }
-  const deleted = await institutions.deleteInstitution(tournamentId.value, modal.id)
-  if (!deleted) {
-    deleteEntityModalError.value =
-      institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
-    institutions.error = null
-    return
+  if (modal.mode === 'bulk') {
+    const deletedCount = await institutions.bulkDeleteInstitutions(tournamentId.value, modal.ids)
+    if (deletedCount === null) {
+      deleteEntityModalError.value =
+        institutions.error ?? t('コンフリクトグループの一括削除に失敗しました。')
+      institutions.error = null
+      return
+    }
+  } else {
+    const deleted = await institutions.deleteInstitution(tournamentId.value, modal.ids[0] ?? '')
+    if (!deleted) {
+      deleteEntityModalError.value =
+        institutions.error ?? t('コンフリクトグループの削除に失敗しました。')
+      institutions.error = null
+      return
+    }
   }
+  cleanupDeletedEntities('institution', modal.ids)
   closeDeleteEntityModal()
 }
 
@@ -3970,6 +4360,41 @@ function removeSpeaker(id: string) {
 
 function removeInstitution(id: string) {
   openDeleteEntityModal('institution', id)
+}
+
+function removeAllTeams() {
+  openBulkDeleteEntityModal(
+    'team',
+    filteredTeams.value.map((team) => String(team._id ?? ''))
+  )
+}
+
+function removeAllAdjudicators() {
+  openBulkDeleteEntityModal(
+    'adjudicator',
+    filteredAdjudicators.value.map((adj) => String(adj._id ?? ''))
+  )
+}
+
+function removeAllVenues() {
+  openBulkDeleteEntityModal(
+    'venue',
+    filteredVenues.value.map((venue) => String(venue._id ?? ''))
+  )
+}
+
+function removeAllSpeakers() {
+  openBulkDeleteEntityModal(
+    'speaker',
+    filteredSpeakers.value.map((speaker) => String(speaker._id ?? ''))
+  )
+}
+
+function removeAllInstitutions() {
+  openBulkDeleteEntityModal(
+    'institution',
+    filteredInstitutions.value.map((institution) => String(institution._id ?? ''))
+  )
 }
 
 function isEntityInlineEditing(type: string, id: string): boolean {
@@ -4048,6 +4473,7 @@ function startEditEntity(type: string, entity: any) {
   editingEntity.value = { type, id: entity._id }
   entityForm.name = entity.name ?? ''
   entityForm.preev = entity.preev ?? 0
+  entityForm.judgeClass = type === 'adjudicator' ? adjudicatorJudgeClassCode(entity) : ''
   entityForm.category = institutionCategoryLabel(entity.category)
   entityForm.priority = institutionPriorityValue(entity.priority)
   if (type === 'team') {
@@ -4100,6 +4526,7 @@ async function saveEntityEdit() {
       return
     }
   } else if (editingEntity.value.type === 'adjudicator') {
+    const currentEntity = adjudicators.adjudicators.find((item) => item._id === id)
     const details = detailRows.value.map((row: any) => ({
       r: Number(row?.r),
       available: row?.available !== false,
@@ -4119,6 +4546,7 @@ async function saveEntityEdit() {
       preev: Number(entityForm.preev),
       template,
       details: details.length > 0 ? details : undefined,
+      userDefinedData: buildAdjudicatorUserDefinedData(currentEntity, entityForm.judgeClass),
     })
     if (!updated?._id) {
       entityError.value = adjudicators.error ?? t('ジャッジの更新に失敗しました。')
@@ -4217,8 +4645,14 @@ function buildEntityImportRequest(type: EntityTabKey, text: string) {
             ? speakers.speakers
             : institutions.institutions
 
-  const { payload, payloadEntries, errors, warnings, missingEntityWarnings, duplicateNameWarnings } =
-    buildEntityImportPayload({
+  const {
+    payload,
+    payloadEntries,
+    errors,
+    warnings,
+    missingEntityWarnings,
+    duplicateNameWarnings,
+  } = buildEntityImportPayload({
     type,
     text,
     tournamentId: tournamentId.value,
@@ -4349,9 +4783,9 @@ async function importEntitiesFromText(
 
   if (missingEntityWarnings.length > 0 || duplicateNameWarnings.length > 0) {
     if (!autoCreateMissing && !skipDuplicateNames) {
-      const missingLabel = missingEntityWarnings.length > 0 ? missingEntityKindsLabel(missingEntityWarnings) : ''
-      const duplicateLabel =
-        duplicateNameWarnings.length > 0 ? duplicateEntityKindLabel(type) : ''
+      const missingLabel =
+        missingEntityWarnings.length > 0 ? missingEntityKindsLabel(missingEntityWarnings) : ''
+      const duplicateLabel = duplicateNameWarnings.length > 0 ? duplicateEntityKindLabel(type) : ''
       const issueLabel = [missingLabel, duplicateLabel ? `重複する${duplicateLabel}名` : '']
         .filter(Boolean)
         .join('と')
@@ -4359,14 +4793,18 @@ async function importEntitiesFromText(
         ? t('先に登録するかCSVを修正')
         : missingEntityWarnings.length > 0 && duplicateNameWarnings.length > 0
           ? t(
-              `不足${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`
+              `未登録の${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成し、重複${duplicateLabel}をスキップして続行`
             )
           : missingEntityWarnings.length > 0
-            ? t(`不足${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成して続行`)
+            ? t(
+                `未登録の${missingCreatableEntityKindsLabel(missingEntityWarnings) || missingLabel}を作成して続行`
+              )
             : t(`重複${duplicateLabel}をスキップして続行`)
       const err = new Error(
         [
-          t(`${issueLabel}が見つかりました。内容確認後、必要なら「${actionLabel}」を実行してください。`),
+          t(
+            `${issueLabel}が見つかりました。内容確認後、必要なら「${actionLabel}」を実行してください。`
+          ),
           '',
           warnings.join('\n\n'),
         ].join('\n')
@@ -4991,6 +5429,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
   min-height: 96px;
 }
 
+.aligned-field-grid > :deep(.field) :deep(input:not([type='checkbox'])),
+.aligned-field-grid > :deep(.field) :deep(select) {
+  min-height: 44px;
+  height: 44px;
+  margin: 0;
+}
+
 .aligned-field-grid > .availability-control {
   align-items: flex-end;
 }
@@ -5084,9 +5529,21 @@ textarea {
   flex: 1 1 300px;
 }
 
+.inline-control--judge-class {
+  flex: 1 1 360px;
+  min-width: 320px;
+}
+
 .inline-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.inline-control-label--with-help {
   white-space: nowrap;
 }
 
@@ -5100,6 +5557,11 @@ textarea {
 .inline-control--grow input:not([type='checkbox']),
 .inline-control--grow select {
   width: 100%;
+}
+
+.inline-control--judge-class select {
+  width: 100%;
+  min-width: 220px;
 }
 
 .detail-row-head {
@@ -5276,6 +5738,21 @@ textarea {
   font-size: 14px;
 }
 
+.entity-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.entity-search-field {
+  min-width: 0;
+}
+
+.entity-toolbar-action {
+  min-width: max-content;
+}
+
 .block-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -5447,6 +5924,17 @@ textarea {
 
   .team-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .entity-list-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .entity-search-field,
+  .entity-toolbar-action {
+    width: 100%;
+    min-width: 0;
   }
 
   .detail-row-head,

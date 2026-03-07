@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import express, { Router } from 'express'
 import { z } from 'zod'
 import {
   accessTournament,
@@ -10,6 +10,7 @@ import {
   updateTournament,
 } from '../controllers/tournaments.js'
 import { exportTournamentBundle } from '../controllers/tournament-export.js'
+import { importTournamentBundle } from '../controllers/tournament-import.js'
 import { addTournamentUser, removeTournamentUser } from '../controllers/tournament-users.js'
 import {
   requireOrganizer,
@@ -80,6 +81,15 @@ router.get(
   requireTournamentAdmin('id'),
   validateRequest(idParamSchema),
   exportTournamentBundle
+)
+router.post(
+  '/import',
+  requireOrganizer,
+  express.raw({
+    type: ['application/zip', 'application/octet-stream', 'application/x-zip-compressed'],
+    limit: '128mb',
+  }),
+  importTournamentBundle
 )
 router.post('/', requireOrganizer, validateRequest(createSchema), createTournament)
 router.patch('/:id', requireTournamentAdmin('id'), validateRequest(updateSchema), updateTournament)

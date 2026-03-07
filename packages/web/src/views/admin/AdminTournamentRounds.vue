@@ -235,7 +235,6 @@
                   v-model:score-by-matter-manner="
                     roundDraft(round).userDefined.score_by_matter_manner
                   "
-                  v-model:tie-points="roundDraft(round).compile.options.tie_points"
                   v-model:poi="roundDraft(round).userDefined.poi"
                   v-model:best="roundDraft(round).userDefined.best"
                   :lock-allow-low-tie-win="roundDraft(round).breakEnabled"
@@ -405,14 +404,13 @@ import { useTournamentStore } from '@/stores/tournament'
 import { useTeamsStore } from '@/stores/teams'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
-import { defaultRoundDefaults } from '@/utils/round-defaults'
+import { defaultRoundDefaults, normalizeRoundCompileOptions } from '@/utils/round-defaults'
 import {
   isRoundBreakEnabled as readRoundBreakEnabled,
   withRoundBreakEnabled,
 } from '@/utils/tournament-break'
 import {
   compileAdjudicatorRankingMetrics,
-  normalizeCompileOptions,
   type CompileAdjudicatorRankingMetric,
   type CompileOptions,
 } from '@/types/compiled'
@@ -490,7 +488,7 @@ function defaultRoundCompile() {
   return {
     source: compileDefaults.source,
     source_rounds: [...compileDefaults.source_rounds],
-    options: normalizeCompileOptions(compileDefaults.options, compileDefaults.options),
+    options: normalizeRoundCompileOptions(compileDefaults.options, compileDefaults.options),
   }
 }
 
@@ -548,7 +546,7 @@ function createRoundDraft(round: any): RoundSettingsDraft {
     compile: {
       source: compileSource.source === 'raw' ? 'raw' : defaultRoundCompile().source,
       source_rounds: normalizeSourceRounds(roundNumber, compileSource.source_rounds),
-      options: normalizeCompileOptions(compileOptionsSource),
+      options: normalizeRoundCompileOptions(compileOptionsSource),
     },
     breakEnabled: roundBreakEnabled,
   }
@@ -893,7 +891,7 @@ async function saveRoundSettings(round: any) {
     Number(round.round),
     draft.compile.source_rounds
   )
-  const compileOptions = normalizeCompileOptions(draft.compile.options)
+  const compileOptions = normalizeRoundCompileOptions(draft.compile.options)
   const { ranking_priority: _ignoredRankingPriority, ...compileOptionsWithoutRanking } =
     compileOptions as Record<string, any>
   void _ignoredRankingPriority

@@ -80,11 +80,22 @@ function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSee
   return fallback
 }
 
+function normalizeRoundCompileOptions(
+  input?: CompileOptionsInput,
+  fallback: CompileOptions = DEFAULT_COMPILE_OPTIONS
+): CompileOptions {
+  const normalized = normalizeCompileOptions(input, fallback)
+  return {
+    ...normalized,
+    tie_points: DEFAULT_COMPILE_OPTIONS.tie_points,
+  }
+}
+
 function sanitizeRoundCompileConfig(value: unknown): Record<string, unknown> {
   const source = asRecord(value)
   const compileOptionsSource =
     source.options && typeof source.options === 'object' ? source.options : source
-  const normalizedOptions = normalizeCompileOptions(
+  const normalizedOptions = normalizeRoundCompileOptions(
     compileOptionsSource as CompileOptionsInput,
     DEFAULT_COMPILE_OPTIONS
   ) as Record<string, unknown>
@@ -126,7 +137,7 @@ function defaultRoundDefaults(): RoundDefaults {
     compile: {
       source: 'submissions',
       source_rounds: [],
-      options: normalizeCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
+      options: normalizeRoundCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
     },
   }
 }
@@ -188,7 +199,7 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
     compile: {
       source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
       source_rounds: asRoundList(compileSource.source_rounds),
-      options: normalizeCompileOptions(
+      options: normalizeRoundCompileOptions(
         compileOptionsSource as CompileOptionsInput,
         fallback.compile.options
       ),
@@ -223,7 +234,7 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
     merged.compile = sanitizeRoundCompileConfig({
       source: defaults.compile.source,
       source_rounds: [...defaults.compile.source_rounds],
-      options: normalizeCompileOptions(defaults.compile.options, defaults.compile.options),
+      options: normalizeRoundCompileOptions(defaults.compile.options, defaults.compile.options),
     })
   } else {
     merged.compile = sanitizeRoundCompileConfig(merged.compile)

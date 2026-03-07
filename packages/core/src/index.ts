@@ -99,6 +99,13 @@ type TeamDrawGetOptions =
       algorithm: 'powerpair'
       algorithm_options?: TeamDrawAlgorithmOptions
     }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'random'
+      algorithm_options?: TeamDrawAlgorithmOptions
+    }
 
 type AdjudicatorDrawGetOptions =
   | {
@@ -117,6 +124,22 @@ type AdjudicatorDrawGetOptions =
       algorithm_options?: AdjudicatorDrawAlgorithmOptions
       numbers_of_adjudicators?: NumbersOfAdjudicators
     }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'class_based'
+      algorithm_options?: AdjudicatorDrawAlgorithmOptions
+      numbers_of_adjudicators?: NumbersOfAdjudicators
+    }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
+      algorithm: 'random'
+      algorithm_options?: AdjudicatorDrawAlgorithmOptions
+      numbers_of_adjudicators?: NumbersOfAdjudicators
+    }
 
 type VenueDrawGetOptions = {
   by?: number[]
@@ -129,6 +152,7 @@ type DrawPipelineOptions =
   | ({ team_allocation_algorithm?: 'standard' } & DrawGetOptions)
   | ({ team_allocation_algorithm: 'strict' } & DrawGetOptions)
   | ({ team_allocation_algorithm: 'powerpair' } & DrawGetOptions)
+  | ({ team_allocation_algorithm: 'random' } & DrawGetOptions)
 
 export interface TournamentOptions {
   id?: number
@@ -326,11 +350,19 @@ export class TournamentHandler {
               ? allocations.teams.powerpair.get(
                   _for,
                   teams,
+                compiledTeamResults,
+                algorithm_options,
+                configWithInstitutionPriority
+              )
+            : algorithm === 'random'
+              ? allocations.teams.random.get(
+                  _for,
+                  teams,
                   compiledTeamResults,
                   algorithm_options,
                   configWithInstitutionPriority
                 )
-              : allocations.teams.standard.get(
+            : allocations.teams.standard.get(
                   _for,
                   teams,
                   compiledTeamResults,
@@ -390,6 +422,30 @@ export class TournamentHandler {
                 config,
                 algorithm_options
               )
+            : algorithm === 'class_based'
+              ? allocations.adjudicators.class_based.get(
+                  _for,
+                  normalizedDraw,
+                  adjudicators,
+                  teams,
+                  compiledTeamResults,
+                  compiledAdjudicatorResults,
+                  numbers_of_adjudicators,
+                  config,
+                  algorithm_options
+                )
+              : algorithm === 'random'
+                ? allocations.adjudicators.random.get(
+                    _for,
+                    normalizedDraw,
+                    adjudicators,
+                    teams,
+                    compiledTeamResults,
+                    compiledAdjudicatorResults,
+                    numbers_of_adjudicators,
+                    config,
+                    algorithm_options
+                  )
             : allocations.adjudicators.standard.get(
                 _for,
                 normalizedDraw,

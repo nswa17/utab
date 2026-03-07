@@ -100,6 +100,35 @@ function extractFileNameFromCollection(collectionName: string): string {
   return normalized.length > 0 ? normalized : 'collection'
 }
 
+type CollectionBundleEntry = {
+  collectionName: string
+  docs: unknown[]
+  jsonPath: string
+  csvPath: string
+}
+
+function buildCollectionBundleEntries(
+  collectionEntries: Array<{ collectionName: string; docs: unknown[] }>
+): CollectionBundleEntry[] {
+  const usedCollectionFileNames = new Set<string>()
+  return collectionEntries.map((entry) => {
+    const baseFileName = extractFileNameFromCollection(entry.collectionName)
+    let fileName = baseFileName
+    let serial = 2
+    while (usedCollectionFileNames.has(fileName)) {
+      fileName = `${baseFileName}_${serial}`
+      serial += 1
+    }
+    usedCollectionFileNames.add(fileName)
+    return {
+      collectionName: entry.collectionName,
+      docs: entry.docs,
+      jsonPath: `json/collections/${fileName}.json`,
+      csvPath: `csv/collections/${fileName}.csv`,
+    }
+  })
+}
+
 export const exportTournamentBundle: RequestHandler = async (req, res, next) => {
   try {
     const tournamentId = String(req.params.id ?? '')
@@ -143,6 +172,7 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
       })
     )
 
+    const bundleCollectionEntries = buildCollectionBundleEntries(collectionEntries)
     const generatedAt = new Date()
     const metadata = {
       format: 'utab.tournament.export/v2',
@@ -150,8 +180,12 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
       tournamentId,
       tournamentName: tournament.name,
       exportedBy: req.session?.userId ?? null,
-      collectionCount: collectionEntries.length,
-      collectionNames: collectionEntries.map((entry) => entry.collectionName),
+      collectionCount: bundleCollectionEntries.length,
+      collectionNames: bundleCollectionEntries.map((entry) => entry.collectionName),
+      collectionFiles: bundleCollectionEntries.map((entry) => ({
+        path: entry.jsonPath,
+        collectionName: entry.collectionName,
+      })),
       fileLayout: {
         jsonDir: 'json/',
         csvDir: 'csv/',
@@ -177,22 +211,13 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
       })
     }
 
-    const usedCollectionFileNames = new Set<string>()
-    for (const entry of collectionEntries) {
-      const baseFileName = extractFileNameFromCollection(entry.collectionName)
-      let fileName = baseFileName
-      let serial = 2
-      while (usedCollectionFileNames.has(fileName)) {
-        fileName = `${baseFileName}_${serial}`
-        serial += 1
-      }
-      usedCollectionFileNames.add(fileName)
+    for (const entry of bundleCollectionEntries) {
       zipEntries.push({
-        path: `json/collections/${fileName}.json`,
+        path: entry.jsonPath,
         content: toJsonText(entry.docs),
       })
       zipEntries.push({
-        path: `csv/collections/${fileName}.csv`,
+        path: entry.csvPath,
         content: buildCsv(entry.docs),
       })
     }

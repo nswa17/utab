@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-type TeamAlgorithm = 'standard' | 'strict' | 'powerpair' | 'break'
-type AdjudicatorAlgorithm = 'standard' | 'traditional'
+type TeamAlgorithm = 'standard' | 'strict' | 'powerpair' | 'random' | 'break'
+type AdjudicatorAlgorithm = 'standard' | 'traditional' | 'class_based' | 'random'
 type DetailEntityKind = 'team' | 'adjudicator' | 'venue'
 
 const teamStandardFilters = [
@@ -64,6 +64,7 @@ const teamPowerpairOptionsSchema = z
   .strict()
 
 const teamBreakOptionsSchema = z.object({}).strict()
+const teamRandomOptionsSchema = z.object({}).strict()
 
 const adjudicatorStandardOptionsSchema = z
   .object({
@@ -87,6 +88,14 @@ const adjudicatorTraditionalOptionsSchema = z
   })
   .strict()
 
+const adjudicatorClassBasedOptionsSchema = z
+  .object({
+    filters: z.array(z.enum(adjudicatorStandardFilters)).optional(),
+  })
+  .strict()
+
+const adjudicatorRandomOptionsSchema = z.object({}).strict()
+
 const numbersOfAdjudicatorsSchema = z
   .object({
     chairs: nonNegativeIntegerSchema.optional(),
@@ -103,9 +112,9 @@ const venueOptionsSchema = z
 
 const allocationOptionsEnvelopeSchema = z
   .object({
-    team_allocation_algorithm: z.enum(['standard', 'strict', 'powerpair', 'break']).optional(),
+    team_allocation_algorithm: z.enum(['standard', 'strict', 'powerpair', 'random', 'break']).optional(),
     team_allocation_algorithm_options: z.unknown().optional(),
-    adjudicator_allocation_algorithm: z.enum(['standard', 'traditional']).optional(),
+    adjudicator_allocation_algorithm: z.enum(['standard', 'traditional', 'class_based', 'random']).optional(),
     adjudicator_allocation_algorithm_options: z.unknown().optional(),
     numbers_of_adjudicators: z.unknown().optional(),
     venue_allocation_algorithm_options: z.unknown().optional(),
@@ -196,11 +205,17 @@ export function validateAllocationOptions(rawOptions: unknown): ValidatedAllocat
             parsedEnvelope.team_allocation_algorithm_options ?? {},
             'Invalid team powerpair options'
           )
-        : teamAlgorithm === 'break'
+      : teamAlgorithm === 'break'
           ? parseWithMessage(
               teamBreakOptionsSchema,
               parsedEnvelope.team_allocation_algorithm_options ?? {},
               'Invalid team break options'
+            )
+        : teamAlgorithm === 'random'
+          ? parseWithMessage(
+              teamRandomOptionsSchema,
+              parsedEnvelope.team_allocation_algorithm_options ?? {},
+              'Invalid team random options'
             )
         : parseWithMessage(
             teamStandardOptionsSchema,
@@ -215,6 +230,18 @@ export function validateAllocationOptions(rawOptions: unknown): ValidatedAllocat
           parsedEnvelope.adjudicator_allocation_algorithm_options ?? {},
           'Invalid adjudicator traditional options'
         )
+      : adjudicatorAlgorithm === 'class_based'
+        ? parseWithMessage(
+            adjudicatorClassBasedOptionsSchema,
+            parsedEnvelope.adjudicator_allocation_algorithm_options ?? {},
+            'Invalid adjudicator class_based options'
+          )
+      : adjudicatorAlgorithm === 'random'
+        ? parseWithMessage(
+            adjudicatorRandomOptionsSchema,
+            parsedEnvelope.adjudicator_allocation_algorithm_options ?? {},
+            'Invalid adjudicator random options'
+          )
       : parseWithMessage(
           adjudicatorStandardOptionsSchema,
           parsedEnvelope.adjudicator_allocation_algorithm_options ?? {},

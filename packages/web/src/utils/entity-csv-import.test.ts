@@ -52,8 +52,8 @@ describe('entity csv import', () => {
     const result = build({
       type: 'adjudicators',
       text: [
-        'name,preev,available,conflicts,conflict_teams,available_r1,availability_r2,conflict_r2',
-        'Judge A,2,false,Institution A,Team A,1,,Team B',
+        'name,preev,judge_class,available,conflicts,conflict_teams,available_r1,availability_r2,conflict_r2',
+        'Judge A,2,chair_or_panel,false,Institution A,Team A,1,,Team B',
       ].join('\n'),
     })
 
@@ -67,11 +67,38 @@ describe('entity csv import', () => {
       conflicts: ['inst-a'],
       conflict_teams: ['team-a'],
     })
+    expect(adjudicator.userDefinedData).toEqual({ judge_class: 'B' })
     expect(adjudicator.details).toEqual([
       { r: 1, available: true, conflicts: ['inst-a'], conflict_teams: ['team-a'] },
       { r: 2, available: false, conflicts: ['inst-a'], conflict_teams: ['team-a', 'team-b'] },
       { r: 3, available: false, conflicts: ['inst-a'], conflict_teams: ['team-a'] },
     ])
+  })
+
+  it('rejects legacy adjudicator judge_class letter values', () => {
+    const result = build({
+      type: 'adjudicators',
+      text: ['name,preev,judge_class', 'Judge A,2,C'].join('\n'),
+      roundNumbers: [1],
+    })
+
+    expect(result.payload).toEqual([])
+    expect(result.errors).toContain(
+      'CSV 2行目: judge_class は chair_preferred / chair_or_panel / panel_or_trainee で指定してください。'
+    )
+  })
+
+  it('returns an error for invalid adjudicator judge_class values', () => {
+    const result = build({
+      type: 'adjudicators',
+      text: ['name,preev,judge_class', 'Judge A,2,Z'].join('\n'),
+      roundNumbers: [1],
+    })
+
+    expect(result.payload).toEqual([])
+    expect(result.errors).toContain(
+      'CSV 2行目: judge_class は chair_preferred / chair_or_panel / panel_or_trainee で指定してください。'
+    )
   })
 
   it('parses venue round availability headers', () => {

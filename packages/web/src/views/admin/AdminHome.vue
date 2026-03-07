@@ -20,8 +20,27 @@
           <input v-model="form.hidden" type="checkbox" />
           {{ $t('大会を非公開') }}
         </label>
-        <Button type="submit" :loading="tournament.loading">{{ $t('作成') }}</Button>
+        <input
+          ref="restoreFileInput"
+          class="hidden-file-input"
+          type="file"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          @change="handleRestoreFileSelected"
+        />
+        <div class="row create-actions">
+          <Button type="submit" :loading="tournament.loading">{{ $t('作成') }}</Button>
+          <Button
+            variant="secondary"
+            :loading="restoreLoading"
+            :disabled="restoreLoading"
+            @click="openRestoreDialog"
+          >
+            {{ $t('バックアップから復元') }}
+          </Button>
+        </div>
         <p v-if="createError" class="error">{{ createError }}</p>
+        <p v-if="restoreError" class="error">{{ restoreError }}</p>
+        <p v-if="restoreSuccess" class="muted small">{{ restoreSuccess }}</p>
       </form>
     </div>
     <div class="card stack">
@@ -128,6 +147,10 @@ const { t } = useI18n({ useScope: 'global' })
 const downloadError = ref<string | null>(null)
 const downloadLoadingMap = ref<Record<string, boolean>>({})
 const createError = ref<string | null>(null)
+const restoreError = ref<string | null>(null)
+const restoreSuccess = ref<string | null>(null)
+const restoreLoading = ref(false)
+const restoreFileInput = ref<HTMLInputElement | null>(null)
 const tournamentsLoadError = ref<string | null>(null)
 const deleteModalError = ref<string | null>(null)
 const isSuperuser = computed(() => auth.role === 'superuser')
@@ -270,7 +293,7 @@ function triggerDownload(filename: string, blob: Blob) {
   URL.revokeObjectURL(url)
 }
 
-async function extractDownloadErrorMessage(err: any): Promise<string | null> {
+async function extractApiErrorMessage(err: any): Promise<string | null> {
   const directMessage = err?.response?.data?.errors?.[0]?.message
   if (typeof directMessage === 'string' && directMessage.length > 0) {
     return directMessage
@@ -307,9 +330,58 @@ async function downloadTournamentBundle(tournamentId: string, tournamentName: st
     triggerDownload(filename, blob)
   } catch (err: any) {
     downloadError.value =
-      (await extractDownloadErrorMessage(err)) ?? t('大会データの一括ダウンロードに失敗しました。')
+      (await extractApiErrorMessage(err)) ?? t('大会データの一括ダウンロードに失敗しました。')
   } finally {
     setDownloadLoading(tournamentId, false)
+  }
+}
+
+function openRestoreDialog() {
+  if (restoreLoading.value) return
+  restoreError.value = null
+  restoreSuccess.value = null
+  restoreFileInput.value?.click()
+}
+
+async function handleRestoreFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+  if (!file) return
+
+  const fileType = String(file.type ?? '').toLowerCase()
+  if (!/\.zip$/i.test(file.name) && !fileType.includes('zip')) {
+    restoreError.value = t('ZIPファイルを選択してください。')
+    restoreSuccess.value = null
+    return
+  }
+
+  restoreError.value = null
+  restoreSuccess.value = null
+  restoreLoading.value = true
+
+  try {
+    const response = await api.post('/tournaments/import', file, {
+      headers: {
+        'Content-Type': file.type || 'application/zip',
+      },
+    })
+    const restoredTournament = response.data?.data?.tournament
+    const restoredTournamentId = String(restoredTournament?._id ?? '').trim()
+    const restoredTournamentName = String(restoredTournament?.name ?? file.name).trim() || file.name
+
+    if (restoredTournamentId && !auth.tournaments.includes(restoredTournamentId)) {
+      auth.tournaments = [...auth.tournaments, restoredTournamentId]
+    }
+
+    restoreSuccess.value = t('バックアップを復元しました: {name}', {
+      name: restoredTournamentName,
+    })
+    await tournament.fetchTournaments()
+  } catch (err: any) {
+    restoreError.value = (await extractApiErrorMessage(err)) ?? t('バックアップの復元に失敗しました。')
+  } finally {
+    restoreLoading.value = false
   }
 }
 
@@ -369,10 +441,26 @@ async function confirmDeleteTournament() {
   gap: var(--space-2);
 }
 
+.create-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.create-actions :deep(.btn) {
+  width: 100%;
+  justify-content: center;
+}
+
 .checkbox-field {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .name-link {

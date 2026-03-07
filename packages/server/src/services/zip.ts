@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { inflateRawSync } from 'node:zlib'
 
 export interface ZipFileEntry {
   path: string
@@ -6,7 +7,19 @@ export interface ZipFileEntry {
   modifiedAt?: Date
 }
 
+export interface ExtractedZipEntry {
+  path: string
+  content: Buffer
+}
+
 const CRC32_TABLE = buildCrc32Table()
+const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
+const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50
+const ZIP_UTF8_FLAG = 0x0800
+const ZIP_ENCRYPTED_FLAG = 0x0001
+const ZIP_METHOD_STORE = 0
+const ZIP_METHOD_DEFLATE = 8
 
 function buildCrc32Table(): Uint32Array {
   const table = new Uint32Array(256)
@@ -55,6 +68,102 @@ function toDosDateTime(value: Date): { date: number; time: number } {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+function decodeZipString(buffer: Buffer, offset: number, length: number, flags: number): string {
+  const encoding = (flags & ZIP_UTF8_FLAG) !== 0 ? 'utf8' : 'utf8'
+  return normalizePath(buffer.toString(encoding, offset, offset + length))
+}
+
+function findEndOfCentralDirectory(buffer: Buffer): number {
+  const minOffset = Math.max(0, buffer.length - 0xffff - 22)
+  for (let offset = buffer.length - 22; offset >= minOffset; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+      return offset
+    }
+  }
+  throw new Error('Invalid zip archive: end of central directory not found')
+}
+
+export function extractZip(buffer: Buffer): ExtractedZipEntry[] {
+  if (buffer.length < 22) {
+    throw new Error('Invalid zip archive: file is too small')
+  }
+
+  const eocdOffset = findEndOfCentralDirectory(buffer)
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10)
+  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12)
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16)
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize
+
+  if (centralDirectoryEnd > buffer.length) {
+    throw new Error('Invalid zip archive: central directory exceeds file size')
+  }
+
+  const entries: ExtractedZipEntry[] = []
+  let offset = centralDirectoryOffset
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > buffer.length) {
+      throw new Error('Invalid zip archive: truncated central directory header')
+    }
+    if (buffer.readUInt32LE(offset) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+      throw new Error('Invalid zip archive: invalid central directory header')
+    }
+
+    const flags = buffer.readUInt16LE(offset + 8)
+    if ((flags & ZIP_ENCRYPTED_FLAG) !== 0) {
+      throw new Error('Unsupported zip archive: encrypted entries are not supported')
+    }
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10)
+    const compressedSize = buffer.readUInt32LE(offset + 20)
+    const uncompressedSize = buffer.readUInt32LE(offset + 24)
+    const fileNameLength = buffer.readUInt16LE(offset + 28)
+    const extraFieldLength = buffer.readUInt16LE(offset + 30)
+    const fileCommentLength = buffer.readUInt16LE(offset + 32)
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42)
+    const path = decodeZipString(buffer, offset + 46, fileNameLength, flags)
+
+    offset += 46 + fileNameLength + extraFieldLength + fileCommentLength
+
+    if (!path || path.endsWith('/')) {
+      continue
+    }
+
+    if (localHeaderOffset + 30 > buffer.length) {
+      throw new Error(`Invalid zip archive: truncated local file header for ${path}`)
+    }
+    if (buffer.readUInt32LE(localHeaderOffset) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+      throw new Error(`Invalid zip archive: invalid local file header for ${path}`)
+    }
+
+    const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26)
+    const localExtraFieldLength = buffer.readUInt16LE(localHeaderOffset + 28)
+    const dataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength
+    const compressedEnd = dataOffset + compressedSize
+    if (compressedEnd > buffer.length) {
+      throw new Error(`Invalid zip archive: truncated file data for ${path}`)
+    }
+
+    const compressed = buffer.subarray(dataOffset, compressedEnd)
+    let content: Buffer
+    if (compressionMethod === ZIP_METHOD_STORE) {
+      content = Buffer.from(compressed)
+    } else if (compressionMethod === ZIP_METHOD_DEFLATE) {
+      content = inflateRawSync(compressed)
+    } else {
+      throw new Error(`Unsupported zip compression method for ${path}`)
+    }
+
+    if (content.length !== uncompressedSize) {
+      throw new Error(`Invalid zip archive: size mismatch for ${path}`)
+    }
+
+    entries.push({ path, content })
+  }
+
+  return entries
 }
 
 export function buildZip(entries: ZipFileEntry[]): Buffer {

@@ -1,5 +1,6 @@
 import { teamAllocationPrecheck } from './teams/checks.js'
 import { sortTeams, sortDecorator, type CompiledTeamResult } from '../general/sortings.js'
+import { shuffle } from '../general/math.js'
 import { mGaleShapley } from './teams/matchings.js'
 import { strictMatching } from './teams/strict_matchings.js'
 import { getTeamDrawPowerpair } from './teams/powerpair.js'
@@ -390,6 +391,32 @@ function getTeamDrawStrict(
   return { r, allocation: teamAllocation }
 }
 
+function getTeamDrawRandom(
+  r: number,
+  teams: TeamEntity[],
+  _compiledTeamResults: CompiledTeamResult[],
+  _options: TeamDrawAlgorithmOptions = {},
+  config: AllocationConfig
+): Draw {
+  const teamNum = config.style.team_num
+  const availableTeamIds = filterAvailable(teams, r).map((team) => team.id)
+  const shuffledTeamIds = shuffle(availableTeamIds, `${Date.now()}:team-random:${config.name ?? 'draw'}:${r}`)
+  const allocation: Draw['allocation'] = []
+
+  for (let index = 0; index < shuffledTeamIds.length; index += teamNum) {
+    allocation.push({
+      id: allocation.length,
+      teams: shuffledTeamIds.slice(index, index + teamNum),
+      chairs: [],
+      panels: [],
+      trainees: [],
+      venue: null,
+    })
+  }
+
+  return { r, allocation }
+}
+
 const filterMethods: Record<string, RankFilter> = {
   by_side: filters.filterBySide,
   by_conflict_group: filters.filterByConflictGroup,
@@ -402,7 +429,8 @@ const filterMethods: Record<string, RankFilter> = {
 const standard = { get: getTeamDraw }
 const strict = { get: getTeamDrawStrict }
 const powerpair = { get: getTeamDrawPowerpair }
+const random = { get: getTeamDrawRandom }
 const precheck = teamAllocationPrecheck
 
-export { standard, strict, powerpair, precheck }
-export default { standard, strict, powerpair, precheck }
+export { standard, strict, powerpair, random, precheck }
+export default { standard, strict, powerpair, random, precheck }

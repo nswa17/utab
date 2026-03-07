@@ -858,6 +858,58 @@ describe('Server integration', () => {
     expect(String(invalidFeedbackSelfAdjudicator.body.errors?.[0]?.message ?? '')).toContain(
       'submittedEntityId is not allowed for this feedback target'
     )
+
+    const validFeedbackToPanel = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: panelId,
+      score: 8.2,
+      submittedEntityId: chairId,
+    })
+    expect(validFeedbackToPanel.status).toBe(201)
+
+    const validFeedbackToTrainee = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: traineeId,
+      score: 7.8,
+      submittedEntityId: panelId,
+    })
+    expect(validFeedbackToTrainee.status).toBe(201)
+
+    const compiledRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: {
+        include_labels: ['adjudicators'],
+      },
+    })
+    expect(compiledRes.status).toBe(201)
+
+    const adjudicatorResults = compiledRes.body.data.payload.compiled_adjudicator_results as Array<any>
+    const chairResult = adjudicatorResults.find((row) => row.id === chairId)
+    const panelResult = adjudicatorResults.find((row) => row.id === panelId)
+    const traineeResult = adjudicatorResults.find((row) => row.id === traineeId)
+
+    expect(chairResult).toMatchObject({
+      num_experienced: 1,
+      num_experienced_chair: 1,
+      num_experienced_panel: 0,
+      num_experienced_trainee: 0,
+    })
+    expect(panelResult).toMatchObject({
+      num_experienced: 1,
+      num_experienced_chair: 0,
+      num_experienced_panel: 1,
+      num_experienced_trainee: 0,
+    })
+    expect(traineeResult).toMatchObject({
+      num_experienced: 1,
+      num_experienced_chair: 0,
+      num_experienced_panel: 0,
+      num_experienced_trainee: 1,
+    })
   })
 
   it('enforces score order when draw and winner-score mismatch are disabled', async () => {

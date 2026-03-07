@@ -19,7 +19,10 @@ describe('core index exports', () => {
 
   it('exports allocations modules', () => {
     expect(typeof teams.standard.get).toBe('function')
+    expect(typeof teams.random.get).toBe('function')
     expect(typeof adjudicators.standard.get).toBe('function')
+    expect(typeof adjudicators.class_based.get).toBe('function')
+    expect(typeof adjudicators.random.get).toBe('function')
     expect(typeof venues.standard.get).toBe('function')
     expect(typeof sys.decidePositions).toBe('function')
   })

@@ -353,6 +353,10 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       id: adjudicatorMaps.map.get(String(adj._id))!,
       name: adj.name,
       preev: (adj as any).preev ?? 0,
+      user_defined_data:
+        (adj as any).userDefinedData && typeof (adj as any).userDefinedData === 'object'
+          ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<string, unknown>)
+          : {},
       details: buildDetailsForRounds(
         (adj as any).details,
         roundsNeeded,
@@ -486,6 +490,14 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
               teamAlgorithmOptions,
               config
             )
+          : teamAlgorithm === 'random'
+            ? allocations.teams.random.get(
+                round,
+                teamInstances,
+                compiledTeamResults,
+                teamAlgorithmOptions,
+                config
+              )
           : allocations.teams.standard.get(
               round,
               teamInstances,
@@ -523,17 +535,41 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
               config,
               adjudicatorOptions
             )
-          : allocations.adjudicators.standard.get(
-              round,
-              draw,
-              adjudicatorInstances,
-              teamInstances,
-              compiledTeamResults,
-              compiledAdjudicatorResults,
-              numbersOfAdjudicators,
-              config,
-              adjudicatorOptions
-            )
+          : adjudicatorAlgorithm === 'class_based'
+            ? allocations.adjudicators.class_based.get(
+                round,
+                draw,
+                adjudicatorInstances,
+                teamInstances,
+                compiledTeamResults,
+                compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                config,
+                adjudicatorOptions
+              )
+            : adjudicatorAlgorithm === 'random'
+              ? allocations.adjudicators.random.get(
+                  round,
+                  draw,
+                  adjudicatorInstances,
+                  teamInstances,
+                  compiledTeamResults,
+                  compiledAdjudicatorResults,
+                  numbersOfAdjudicators,
+                  config,
+                  adjudicatorOptions
+                )
+            : allocations.adjudicators.standard.get(
+                round,
+                draw,
+                adjudicatorInstances,
+                teamInstances,
+                compiledTeamResults,
+                compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                config,
+                adjudicatorOptions
+              )
     }
 
     const venueOptions = validatedOptions.venue_allocation_algorithm_options
