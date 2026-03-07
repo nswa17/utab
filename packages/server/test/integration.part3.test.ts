@@ -1056,11 +1056,13 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
 
-    const [{ getTournamentConnection }, { getTeamModel }, { getRoundModel }] = await Promise.all([
-      import('../src/services/tournament-db.service.js'),
-      import('../src/models/team.js'),
-      import('../src/models/round.js'),
-    ])
+    const [{ getTournamentConnection }, { getTeamModel }, { getRoundModel }, { buildZip, extractZip }] =
+      await Promise.all([
+        import('../src/services/tournament-db.service.js'),
+        import('../src/models/team.js'),
+        import('../src/models/round.js'),
+        import('../src/services/zip.js'),
+      ])
     const connection = await getTournamentConnection(tournamentId)
     const TeamModel = getTeamModel(connection)
     const RoundModel = getRoundModel(connection)
@@ -1095,10 +1097,41 @@ describe('Server integration', () => {
     expect(exportRes.status).toBe(200)
     expect(Buffer.isBuffer(exportRes.body)).toBe(true)
 
+    const extractedEntries = extractZip(exportRes.body as Buffer)
+    const metadataEntry = extractedEntries.find((entry) => entry.path === 'metadata.json')
+    expect(metadataEntry).toBeTruthy()
+    const metadata = JSON.parse(metadataEntry?.content.toString('utf8') ?? '{}') as {
+      collectionFiles?: Array<{ path: string; collectionName: string }>
+    }
+    expect(metadata.collectionFiles).toHaveLength(2)
+    expect(metadata.collectionFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ collectionName: 'rounds' }),
+        expect.objectContaining({ collectionName: 'teams' }),
+      ])
+    )
+
+    const collectionJsonEntries = extractedEntries.filter(
+      (entry) => entry.path.startsWith('json/collections/') && entry.path.endsWith('.json')
+    )
+    expect(collectionJsonEntries).toHaveLength(2)
+    const reorderedBundle = buildZip(
+      [
+        ...extractedEntries.filter(
+          (entry) => !entry.path.startsWith('json/collections/') || !entry.path.endsWith('.json')
+        ),
+        ...[...collectionJsonEntries].reverse(),
+      ].map((entry) => ({
+        path: entry.path,
+        content: entry.content,
+        modifiedAt: new Date('2024-01-01T00:00:00Z'),
+      }))
+    )
+
     const importRes = await agent
       .post('/api/tournaments/import')
       .set('Content-Type', 'application/zip')
-      .send(exportRes.body as Buffer)
+      .send(reorderedBundle)
     expect(importRes.status).toBe(201)
 
     const restoredTournament = importRes.body.data.tournament as { _id: string; name: string }

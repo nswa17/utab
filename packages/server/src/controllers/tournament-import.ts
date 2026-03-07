@@ -94,11 +94,62 @@ function deriveCollectionName(path: string): string {
   return normalized
 }
 
+function extractFileNameFromCollection(collectionName: string): string {
+  const normalized = collectionName.trim().replace(/[^a-zA-Z0-9._-]/g, '_')
+  return normalized.length > 0 ? normalized : 'collection'
+}
+
 function normalizeCollectionNames(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value
     .map((item) => normalizeString(item))
     .filter((item) => item.length > 0)
+}
+
+function normalizeCollectionPath(value: unknown): string {
+  return normalizeString(value).replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+function normalizeCollectionFileMappings(value: unknown): Map<string, string> {
+  if (!Array.isArray(value)) return new Map()
+  const mappings = new Map<string, string>()
+  value.forEach((entry, index) => {
+    const record = requireRecord(entry, `metadata.collectionFiles[${index}]`)
+    const path = normalizeCollectionPath(record.path)
+    const collectionName = normalizeString(record.collectionName)
+    if (!path || !collectionName || mappings.has(path)) {
+      throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
+    }
+    mappings.set(path, collectionName)
+  })
+  return mappings
+}
+
+function buildCollectionNameByPath(metadata: PlainObject): Map<string, string> {
+  const explicitMappings = normalizeCollectionFileMappings(metadata.collectionFiles)
+  if (explicitMappings.size > 0) {
+    return explicitMappings
+  }
+
+  const metadataCollectionNames = normalizeCollectionNames(metadata.collectionNames)
+  if (metadataCollectionNames.length === 0) {
+    return new Map()
+  }
+
+  const usedCollectionFileNames = new Set<string>()
+  const mappings = new Map<string, string>()
+  metadataCollectionNames.forEach((collectionName) => {
+    const baseFileName = extractFileNameFromCollection(collectionName)
+    let fileName = baseFileName
+    let serial = 2
+    while (usedCollectionFileNames.has(fileName)) {
+      fileName = `${baseFileName}_${serial}`
+      serial += 1
+    }
+    usedCollectionFileNames.add(fileName)
+    mappings.set(`json/collections/${fileName}.json`, collectionName)
+  })
+  return mappings
 }
 
 function reviveZipValue(
@@ -220,11 +271,8 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
   const collectionJsonEntries = zipEntries.filter(
     (entry) => entry.path.startsWith('json/collections/') && entry.path.endsWith('.json')
   )
-  const metadataCollectionNames = normalizeCollectionNames(metadata.collectionNames)
-  if (
-    metadataCollectionNames.length > 0 &&
-    metadataCollectionNames.length !== collectionJsonEntries.length
-  ) {
+  const collectionNameByPath = buildCollectionNameByPath(metadata)
+  if (collectionNameByPath.size > 0 && collectionNameByPath.size !== collectionJsonEntries.length) {
     throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
   }
 
@@ -259,7 +307,13 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
 
     for (let index = 0; index < collectionJsonEntries.length; index += 1) {
       const entry = collectionJsonEntries[index]
-      const collectionName = metadataCollectionNames[index] ?? deriveCollectionName(entry.path)
+      const collectionName =
+        collectionNameByPath.size > 0
+          ? collectionNameByPath.get(entry.path)
+          : deriveCollectionName(entry.path)
+      if (!collectionName) {
+        throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
+      }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
       const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
       if (revivedDocs.length > 0) {
