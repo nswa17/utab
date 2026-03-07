@@ -1,44 +1,54 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express'
 import { healthRouter } from './health.js'
-import { authRouter } from './auth.js'
-import { tournamentRouter } from './tournaments.js'
-import { resultRouter } from './results.js'
-import { teamRouter } from './teams.js'
-import { adjudicatorRouter } from './adjudicators.js'
-import { submissionRouter } from './submissions.js'
-import { drawRouter } from './draws.js'
-import { allocationRouter } from './allocations.js'
-import { compiledRouter } from './compiled.js'
-import { venueRouter } from './venues.js'
-import { speakerRouter } from './speakers.js'
-import { institutionRouter } from './institutions.js'
-import { roundRouter } from './rounds.js'
-import { styleRouter } from './styles.js'
-import { rawResultRouter } from './raw-results.js'
-import { auditLogRouter } from './audit-logs.js'
-import { devToolsRouter } from '../devtools/routes.js'
-import { privacyRouter } from './privacy.js'
+
+type RouterModuleLoader = () => Promise<Record<string, unknown>>
+
+function lazyRoute(loader: RouterModuleLoader, exportName: string): RequestHandler {
+  let resolved: RequestHandler | null = null
+  let pending: Promise<RequestHandler> | null = null
+
+  async function load(): Promise<RequestHandler> {
+    if (resolved) return resolved
+    if (!pending) {
+      pending = loader().then((mod) => {
+        const route = mod[exportName]
+        if (typeof route !== 'function') {
+          throw new Error(`Route module export "${exportName}" is not a router`)
+        }
+        resolved = route as RequestHandler
+        return resolved
+      })
+    }
+    return pending
+  }
+
+  return (req, res, next) => {
+    void load()
+      .then((route) => route(req, res, next))
+      .catch(next)
+  }
+}
 
 export function createRoutes(): Router {
   const router = Router()
   router.use('/health', healthRouter)
-  router.use('/auth', authRouter)
-  router.use('/tournaments', tournamentRouter)
-  router.use('/results', resultRouter)
-  router.use('/teams', teamRouter)
-  router.use('/adjudicators', adjudicatorRouter)
-  router.use('/submissions', submissionRouter)
-  router.use('/draws', drawRouter)
-  router.use('/allocations', allocationRouter)
-  router.use('/compiled', compiledRouter)
-  router.use('/venues', venueRouter)
-  router.use('/speakers', speakerRouter)
-  router.use('/institutions', institutionRouter)
-  router.use('/rounds', roundRouter)
-  router.use('/styles', styleRouter)
-  router.use('/raw-results', rawResultRouter)
-  router.use('/audit-logs', auditLogRouter)
-  router.use('/privacy', privacyRouter)
-  router.use('/dev-tools', devToolsRouter)
+  router.use('/auth', lazyRoute(() => import('./auth.js'), 'authRouter'))
+  router.use('/tournaments', lazyRoute(() => import('./tournaments.js'), 'tournamentRouter'))
+  router.use('/results', lazyRoute(() => import('./results.js'), 'resultRouter'))
+  router.use('/teams', lazyRoute(() => import('./teams.js'), 'teamRouter'))
+  router.use('/adjudicators', lazyRoute(() => import('./adjudicators.js'), 'adjudicatorRouter'))
+  router.use('/submissions', lazyRoute(() => import('./submissions.js'), 'submissionRouter'))
+  router.use('/draws', lazyRoute(() => import('./draws.js'), 'drawRouter'))
+  router.use('/allocations', lazyRoute(() => import('./allocations.js'), 'allocationRouter'))
+  router.use('/compiled', lazyRoute(() => import('./compiled.js'), 'compiledRouter'))
+  router.use('/venues', lazyRoute(() => import('./venues.js'), 'venueRouter'))
+  router.use('/speakers', lazyRoute(() => import('./speakers.js'), 'speakerRouter'))
+  router.use('/institutions', lazyRoute(() => import('./institutions.js'), 'institutionRouter'))
+  router.use('/rounds', lazyRoute(() => import('./rounds.js'), 'roundRouter'))
+  router.use('/styles', lazyRoute(() => import('./styles.js'), 'styleRouter'))
+  router.use('/raw-results', lazyRoute(() => import('./raw-results.js'), 'rawResultRouter'))
+  router.use('/audit-logs', lazyRoute(() => import('./audit-logs.js'), 'auditLogRouter'))
+  router.use('/privacy', lazyRoute(() => import('./privacy.js'), 'privacyRouter'))
+  router.use('/dev-tools', lazyRoute(() => import('../devtools/routes.js'), 'devToolsRouter'))
   return router
 }

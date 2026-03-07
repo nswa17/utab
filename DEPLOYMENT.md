@@ -29,7 +29,7 @@ pnpm --filter @utab/web test
   - `NODE_ENV=production`
   - `CORS_ORIGIN=https://tab.example.com`
 - Web（production 例）
-  - `VITE_API_URL=https://api.tab.example.com/api`
+  - `VITE_API_URL=https://api.tab.example.com/api/v1`
   - `VITE_APP_TITLE=UTab`
   - `VITE_BRAND_NAME=UTab` (任意)
   - `VITE_BRAND_LOGO_URL=/logo.png` (任意)
@@ -66,6 +66,14 @@ DNS 反映後に、両方のドメインで HTTPS が有効化されているこ
 - `packages/web/public/logo.png`（仮画像）
 - `docker/nginx.vps-ip.conf.example`
 
+注意:
+
+- このリポジトリ自体は TLS 証明書の取得・自動更新を行わない
+- VPS ではホスト側 Nginx が `80` / `443` を持ち、コンテナは `127.0.0.1:8080` で待ち受ける
+- IP 証明書を使う場合、Let’s Encrypt の短命証明書になるため、ホスト側で更新失敗を監視する
+- `certbot --standalone` のままだと、Nginx が `80` 番を使用中のため自動更新に失敗する
+- VPS では `webroot` 認証に切り替え、更新後に Nginx を reload する構成にする
+
 手順:
 
 1. `docker-compose.vps.yml` の以下を編集する
@@ -87,6 +95,33 @@ docker compose -f docker-compose.vps.yml up -d --build
    - `docker/nginx.vps-ip.conf.example` を `/etc/nginx/sites-available/utab.conf` にコピー
    - `YOUR_VPS_IP` を実IPに置換
    - `/etc/nginx/sites-enabled/` にリンクして `nginx -t && systemctl reload nginx`
+6. ACME challenge 用ディレクトリを作成
+
+```bash
+sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
+sudo chown -R www-data:www-data /var/www/certbot
+```
+
+7. 初回証明書取得は `webroot` を使う
+
+```bash
+sudo snap run certbot certonly --webroot -w /var/www/certbot -d YOUR_VPS_IP
+```
+
+8. 更新後に Nginx を reload する hook を置く
+
+```bash
+sudo install -d /etc/letsencrypt/renewal-hooks/deploy
+printf '%s\n' '#!/bin/sh' 'systemctl reload nginx' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh >/dev/null
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+```
+
+9. 動作確認
+
+```bash
+sudo snap run certbot renew --dry-run
+systemctl status snap.certbot.renew.timer
+```
 
 ## 2. Staging 反映
 
@@ -143,7 +178,7 @@ vercel --prod
 
 ## 4. 反映後チェック（本番）
 
-- `/api/health` もしくは主要 API の 200 応答確認
+- `/api/v1/health` もしくは主要 API の 200 応答確認
 - 管理画面初期表示
 - 参加者画面初期表示
 - 直近ラウンドの閲覧・提出導線
