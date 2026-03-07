@@ -279,7 +279,7 @@
                     <td class="venue-col">
                       <div
                         class="drop-zone compact single-line"
-                        :class="{ active: dragKind === 'venue' }"
+                        :class="dropZoneClasses('venue', [row.venue])"
                         @dragover.prevent
                         @drop="dropVenue(row)"
                       >
@@ -295,6 +295,8 @@
                           :draggable="canDragEntity('venue', row.venue)"
                           @dragstart="onDragStart('venue', row.venue)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('venue', row.venue)"
+                          @mouseleave="onEntityHoverEnd('venue', row.venue)"
                           @click.stop="selectDetail('venue', row.venue)"
                         >
                           {{ venueName(row.venue) }}
@@ -305,7 +307,7 @@
                     <td class="team-col">
                       <div
                         class="drop-zone compact single-line"
-                        :class="{ active: dragKind === 'team' }"
+                        :class="dropZoneClasses('team', [row.teams.gov])"
                         @dragover.prevent
                         @drop="dropTeam(row, 'gov')"
                       >
@@ -321,6 +323,8 @@
                           :draggable="canDragEntity('team', row.teams.gov)"
                           @dragstart="onDragStart('team', row.teams.gov)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('team', row.teams.gov)"
+                          @mouseleave="onEntityHoverEnd('team', row.teams.gov)"
                           @click.stop="selectDetail('team', row.teams.gov)"
                         >
                           <span class="team-pill-name">{{ teamName(row.teams.gov) }}</span>
@@ -337,7 +341,7 @@
                     <td class="team-col">
                       <div
                         class="drop-zone compact single-line"
-                        :class="{ active: dragKind === 'team' }"
+                        :class="dropZoneClasses('team', [row.teams.opp])"
                         @dragover.prevent
                         @drop="dropTeam(row, 'opp')"
                       >
@@ -353,6 +357,8 @@
                           :draggable="canDragEntity('team', row.teams.opp)"
                           @dragstart="onDragStart('team', row.teams.opp)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('team', row.teams.opp)"
+                          @mouseleave="onEntityHoverEnd('team', row.teams.opp)"
                           @click.stop="selectDetail('team', row.teams.opp)"
                         >
                           <span class="team-pill-name">{{ teamName(row.teams.opp) }}</span>
@@ -369,7 +375,7 @@
                     <td class="adjudicator-col">
                       <div
                         class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="{ active: dragKind === 'adjudicator' }"
+                        :class="dropZoneClasses('adjudicator', row.chairs)"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'chairs')"
                       >
@@ -386,6 +392,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -407,7 +415,7 @@
                     <td class="adjudicator-col">
                       <div
                         class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="{ active: dragKind === 'adjudicator' }"
+                        :class="dropZoneClasses('adjudicator', row.panels)"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'panels')"
                       >
@@ -424,6 +432,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -445,7 +455,7 @@
                     <td class="adjudicator-col">
                       <div
                         class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="{ active: dragKind === 'adjudicator' }"
+                        :class="dropZoneClasses('adjudicator', row.trainees)"
                         @dragover.prevent
                         @drop="dropAdjudicator(row, 'trainees')"
                       >
@@ -462,6 +472,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -602,7 +614,10 @@
                 <tbody>
                   <tr v-for="row in sortedReferenceUnassignedTeamRows" :key="row.key">
                     <td class="venue-col">
-                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone compact single-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('venue', [row.venueId])"
+                      >
                         <span
                           v-if="row.venueId"
                           :class="[
@@ -615,6 +630,8 @@
                           :draggable="canDragEntity('venue', row.venueId)"
                           @dragstart="onDragStart('venue', row.venueId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('venue', row.venueId)"
+                          @mouseleave="onEntityHoverEnd('venue', row.venueId)"
                           @click.stop="selectDetail('venue', row.venueId)"
                         >
                           {{ venueName(row.venueId) }}
@@ -622,7 +639,10 @@
                       </div>
                     </td>
                     <td class="team-col">
-                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone compact single-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('team', row.govTeamIds)"
+                      >
                         <span
                           v-for="teamId in row.govTeamIds"
                           :key="`${row.key}-gov-${teamId}`"
@@ -636,6 +656,8 @@
                           :draggable="canDragEntity('team', teamId)"
                           @dragstart="onDragStart('team', teamId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('team', teamId)"
+                          @mouseleave="onEntityHoverEnd('team', teamId)"
                           @click.stop="selectDetail('team', teamId)"
                         >
                           <span class="team-pill-name">{{ teamName(teamId) }}</span>
@@ -649,7 +671,10 @@
                       </div>
                     </td>
                     <td class="team-col">
-                      <div class="drop-zone compact single-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone compact single-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('team', row.oppTeamIds)"
+                      >
                         <span
                           v-for="teamId in row.oppTeamIds"
                           :key="`${row.key}-opp-${teamId}`"
@@ -663,6 +688,8 @@
                           :draggable="canDragEntity('team', teamId)"
                           @dragstart="onDragStart('team', teamId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('team', teamId)"
+                          @mouseleave="onEntityHoverEnd('team', teamId)"
                           @click.stop="selectDetail('team', teamId)"
                         >
                           <span class="team-pill-name">{{ teamName(teamId) }}</span>
@@ -679,7 +706,10 @@
                       <span class="waiting-win-label">{{ referenceWaitingWinLabel(row) }}</span>
                     </td>
                     <td class="adjudicator-col">
-                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone list compact multi-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('adjudicator', row.chairIds)"
+                      >
                         <span
                           v-for="adjId in row.chairIds"
                           :key="`${row.key}-chair-${adjId}`"
@@ -693,6 +723,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -709,7 +741,10 @@
                       </div>
                     </td>
                     <td class="adjudicator-col">
-                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone list compact multi-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('adjudicator', row.panelIds)"
+                      >
                         <span
                           v-for="adjId in row.panelIds"
                           :key="`${row.key}-panel-${adjId}`"
@@ -723,6 +758,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -739,7 +776,10 @@
                       </div>
                     </td>
                     <td class="adjudicator-col">
-                      <div class="drop-zone list compact multi-line waiting-placeholder-zone">
+                      <div
+                        class="drop-zone list compact multi-line waiting-placeholder-zone"
+                        :class="dropZoneClasses('adjudicator', row.traineeIds)"
+                      >
                         <span
                           v-for="adjId in row.traineeIds"
                           :key="`${row.key}-trainee-${adjId}`"
@@ -753,6 +793,8 @@
                           :draggable="canDragEntity('adjudicator', adjId)"
                           @dragstart="onDragStart('adjudicator', adjId)"
                           @dragend="onDragEnd"
+                          @mouseenter="onEntityHover('adjudicator', adjId)"
+                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
                           @click.stop="selectDetail('adjudicator', adjId)"
                         >
                           <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
@@ -799,6 +841,8 @@
                   :draggable="canDragEntity('venue', venue._id)"
                   @dragstart="onDragStart('venue', venue._id)"
                   @dragend="onDragEnd"
+                  @mouseenter="onEntityHover('venue', venue._id)"
+                  @mouseleave="onEntityHoverEnd('venue', venue._id)"
                   @click.stop="selectDetail('venue', venue._id)"
                 >
                   {{ venue.name }}
@@ -829,6 +873,8 @@
                   :draggable="canDragEntity('team', team._id)"
                   @dragstart="onDragStart('team', team._id)"
                   @dragend="onDragEnd"
+                  @mouseenter="onEntityHover('team', team._id)"
+                  @mouseleave="onEntityHoverEnd('team', team._id)"
                   @click.stop="selectDetail('team', team._id)"
                 >
                   <span class="team-pill-name">{{ team.name }}</span>
@@ -867,6 +913,8 @@
                   :draggable="canDragEntity('adjudicator', adj._id)"
                   @dragstart="onDragStart('adjudicator', adj._id)"
                   @dragend="onDragEnd"
+                  @mouseenter="onEntityHover('adjudicator', adj._id)"
+                  @mouseleave="onEntityHoverEnd('adjudicator', adj._id)"
                   @click.stop="selectDetail('adjudicator', adj._id)"
                 >
                   <span class="adjudicator-pill-name">{{ adj.name }}</span>
@@ -1065,6 +1113,9 @@
                   </button>
                 </div>
                 <p class="muted tiny option-help-text">{{ requestScopeDescription }}</p>
+                <p v-if="requestScopeWarningText" class="error tiny option-help-text">
+                  {{ requestScopeWarningText }}
+                </p>
                 <p v-if="autoScopeRequiresExistingDraw" class="muted tiny option-help-text">
                   {{
                     $t(
@@ -1084,7 +1135,7 @@
                 <HelpTip
                   :text="
                     $t(
-                      '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。'
+                      '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケット、ランダムは単純シャッフルです。'
                     )
                   "
                 />
@@ -1096,6 +1147,7 @@
                 <option value="break" :disabled="!isBreakRound">
                   {{ isBreakRound ? $t('ブレイク') : $t('ブレイク（ブレイクラウンドのみ）') }}
                 </option>
+                <option value="random">{{ $t('ランダム') }}</option>
               </select>
               <p class="muted tiny option-help-text">{{ teamAlgorithmDescription }}</p>
               <p v-if="!isBreakRound" class="muted tiny option-help-text">
@@ -1383,13 +1435,20 @@
             <label class="stack">
               <span class="option-title">
                 {{ $t('ジャッジアルゴリズム') }}
-                <HelpTip :text="$t('安定マッチングまたは大会標準を選択します。')" />
+                <HelpTip :text="$t('標準 / クラスベース / 大会標準 / ランダムから選択します。')" />
               </span>
               <select v-model="autoOptions.adjudicatorAlgorithm">
                 <option value="standard">{{ $t('安定マッチング') }}</option>
+                <option value="class_based">{{ $t('クラスベース') }}</option>
                 <option value="traditional">{{ $t('大会標準') }}</option>
+                <option value="random">{{ $t('ランダム') }}</option>
               </select>
-              <p class="muted tiny option-help-text">{{ adjudicatorAlgorithmDescription }}</p>
+              <p
+                v-if="autoOptions.adjudicatorAlgorithm !== 'class_based'"
+                class="muted tiny option-help-text"
+              >
+                {{ adjudicatorAlgorithmDescription }}
+              </p>
             </label>
             <div
               class="stack auto-algorithm-editor"
@@ -1421,7 +1480,10 @@
                 </div>
               </div>
             </div>
-            <div class="stack auto-algorithm-editor" v-else>
+            <div
+              class="stack auto-algorithm-editor"
+              v-else-if="autoOptions.adjudicatorAlgorithm === 'traditional'"
+            >
               <div class="grid auto-detail-grid">
                 <label class="stack auto-wide-field">
                   <span class="option-title">
@@ -1457,6 +1519,40 @@
                 </p>
               </div>
             </div>
+            <div
+              v-else-if="autoOptions.adjudicatorAlgorithm === 'class_based'"
+              class="stack auto-algorithm-editor"
+            >
+              <p class="muted tiny option-help-text">
+                {{
+                  $t(
+                    'judge_class の優先ロールを反映し、chair_preferred は chair、chair_or_panel は chair / panel、panel_or_trainee は panel / trainee を優先します。'
+                  )
+                }}
+              </p>
+              <p class="muted tiny option-help-text">
+                {{ $t('class_based では panel_or_trainee を chair に置きません。') }}
+              </p>
+              <p class="muted tiny option-help-text">
+                {{
+                  $t(
+                    'judge_class が全員未設定なら standard に戻り、一部未設定は chair_preferred として扱います。'
+                  )
+                }}
+              </p>
+            </div>
+            <div
+              v-else-if="autoOptions.adjudicatorAlgorithm === 'random'"
+              class="stack auto-algorithm-editor"
+            >
+              <p class="muted tiny option-help-text">
+                {{
+                  $t(
+                    '既存の対戦カードに対して、シャッフルしたジャッジをチェア→パネル→トレーニーの順で順番に割り当てます。'
+                  )
+                }}
+              </p>
+            </div>
             <div class="stack auto-algorithm-editor">
               <span class="option-title auto-subsection-title">{{ $t('人数設定') }}</span>
               <div class="grid auto-detail-grid">
@@ -1482,6 +1578,9 @@
                   <input v-model.number="autoOptions.trainees" type="number" min="0" />
                 </label>
               </div>
+              <p v-if="adjudicatorCapacityWarning" class="error tiny option-help-text">
+                {{ adjudicatorCapacityWarning }}
+              </p>
             </div>
           </section>
 
@@ -1642,6 +1741,12 @@ import {
   type WarningSeverity,
   type WarningSeverityCounts,
 } from '@/utils/allocation-warnings'
+import {
+  allocationDragHighlightToneForIds,
+  buildAllocationDragHighlightIndex,
+  type AllocationDragHighlightTone,
+  type AllocationDragKind,
+} from '@/utils/allocation-drag-highlights'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -1674,6 +1779,12 @@ const emit = defineEmits<{
 type RequestScope = 'all' | 'teams' | 'adjudicators' | 'venues'
 type AllocationSortKey = 'match' | 'venue' | 'gov' | 'opp' | 'chairs' | 'panels' | 'trainees'
 type AllocationSortDirection = 'asc' | 'desc'
+const JUDGE_CLASS_VALUES = ['A', 'B', 'C'] as const
+const JUDGE_CLASS_LABELS: Record<(typeof JUDGE_CLASS_VALUES)[number], string> = {
+  A: 'chair_preferred',
+  B: 'chair_or_panel',
+  C: 'panel_or_trainee',
+}
 const DRAW_REFERENCE_COMPILED_ID_KEY = 'reference_compiled_id'
 const DRAW_REFERENCE_COMPILED_ROUNDS_KEY = 'reference_compiled_rounds'
 const DRAW_REFERENCE_COMPILED_ID_TEAMS_KEY = 'reference_compiled_id_teams'
@@ -2615,6 +2726,51 @@ const requestScopeDescriptions = computed<Record<string, string>>(() => ({
 const requestScopeDescription = computed(
   () => requestScopeDescriptions.value[requestScope.value] ?? ''
 )
+const allocationMatchCount = computed(() =>
+  allocation.value.filter((row) => String(row.teams?.gov ?? '') && String(row.teams?.opp ?? '')).length
+)
+const allocationHasAssignedAdjudicators = computed(() =>
+  allocation.value.some(
+    (row) =>
+      (row.chairs?.length ?? 0) > 0 || (row.panels?.length ?? 0) > 0 || (row.trainees?.length ?? 0) > 0
+  )
+)
+const availableAdjudicatorCount = computed(() =>
+  adjudicators.adjudicators.filter((adj) => {
+    const detail = adj.details?.find((item) => Number(item.r) === round.value)
+    return detail?.available === true
+  }).length
+)
+const requestedAdjudicatorsPerMatch = computed(
+  () =>
+    normalizeNonNegativeInteger(autoOptions.value.chairs, 1) +
+    normalizeNonNegativeInteger(autoOptions.value.panels, 0) +
+    normalizeNonNegativeInteger(autoOptions.value.trainees, 0)
+)
+const requestedAdjudicatorCount = computed(
+  () => allocationMatchCount.value * requestedAdjudicatorsPerMatch.value
+)
+const requestScopeWarningText = computed(() => {
+  if (requestScope.value !== 'teams') return ''
+  if (allocationMatchCount.value === 0) return ''
+  if (allocationHasAssignedAdjudicators.value) return ''
+  return t(
+    '対象がチームのみのため、ジャッジは新規生成されません。現在のドローにジャッジ割当がないため、生成後も空欄のままです。ジャッジも作るには対象を全体かジャッジにしてください。'
+  )
+})
+const adjudicatorCapacityWarning = computed(() => {
+  if (!scopeIncludesAdjudicators.value) return ''
+  if (allocationMatchCount.value === 0) return ''
+  if (requestedAdjudicatorCount.value === 0) return ''
+  if (availableAdjudicatorCount.value >= requestedAdjudicatorCount.value) return ''
+  return t(
+    '使用可能ジャッジが足りません。必要 {required} 人 / 使用可能 {available} 人です。人数設定か availability を見直してください。',
+    {
+      required: requestedAdjudicatorCount.value,
+      available: availableAdjudicatorCount.value,
+    }
+  )
+})
 function resolveSnapshotIdForScope(scope: RequestScope, useOverrides = true): string {
   const sharedId = String(selectedDetailSnapshotId.value ?? '').trim()
   if (!useOverrides) return sharedId
@@ -2635,6 +2791,7 @@ const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
     '勝ち数ブラケット内で組みます。人数が奇数のブラケットは下位ブラケットから繰り上げて調整します。'
   ),
   break: t('ブレイク参加者シードを使い、1位対最下位の順で対戦を作ります。'),
+  random: t('シャッフルしたチームをそのまま順に組み合わせます。'),
 }))
 const teamAlgorithmDescription = computed(
   () => teamAlgorithmDescriptions.value[autoOptions.value.teamAlgorithm] ?? ''
@@ -2644,8 +2801,14 @@ const adjudicatorAlgorithmDescriptions = computed<Record<string, string>>(() => 
   standard: t(
     '対戦とジャッジの双方の希望順を作り、安定マッチングでチェア→パネル→トレーニーの順に割り当てます。'
   ),
+  class_based: t(
+    'judge_class の優先ロールを反映し、chair_preferred は chair、chair_or_panel は chair / panel、panel_or_trainee は panel / trainee を優先します。'
+  ),
   traditional: t(
     '部屋とジャッジを並べて上から割り当てる方式です。割当戦略と分散オプションで配り方を変えます。'
+  ),
+  random: t(
+    'シャッフルしたジャッジを、既存の対戦カードに対してチェア→パネル→トレーニーの順で埋めます。'
   ),
 }))
 const adjudicatorAlgorithmDescription = computed(
@@ -3184,9 +3347,7 @@ function openAutoGenerateModal() {
   } else if (!isBreakRound.value && autoOptions.value.teamAlgorithm === 'break') {
     autoOptions.value.teamAlgorithm = 'standard'
   }
-  if (scopeRequiresExistingDraw(requestScope.value)) {
-    requestScope.value = 'all'
-  }
+  requestScope.value = 'all'
   if (autoOptions.value.teamAlgorithm === 'break') {
     hydrateAutoBreakPolicyFromRound()
   }
@@ -3329,7 +3490,7 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
   })
 }
 
-const TEAM_ALGORITHM_VALUES = ['standard', 'powerpair', 'strict', 'break'] as const
+const TEAM_ALGORITHM_VALUES = ['standard', 'powerpair', 'strict', 'break', 'random'] as const
 const TEAM_STANDARD_METHOD_VALUES = ['original', 'straight', 'weighted', 'custom'] as const
 const TEAM_STANDARD_SIDE_SPREAD_FILTER = 'spread_sides_by_school' as const
 const TEAM_STANDARD_FILTER_VALUES = [
@@ -3353,7 +3514,7 @@ const TEAM_STRICT_POSITION_VALUES = ['random', 'adjusted'] as const
 const TEAM_POWERPAIR_ODD_BRACKET_VALUES = ['pullup_top', 'pullup_bottom', 'pullup_random'] as const
 const TEAM_POWERPAIR_PAIRING_VALUES = ['slide', 'fold', 'random'] as const
 const TEAM_CONFLICT_MODE_VALUES = ['one_up_one_down', 'off'] as const
-const ADJUDICATOR_ALGORITHM_VALUES = ['standard', 'traditional'] as const
+const ADJUDICATOR_ALGORITHM_VALUES = ['standard', 'class_based', 'traditional', 'random'] as const
 const ADJUDICATOR_STANDARD_FILTER_VALUES = [
   'by_bubble',
   'by_strength',
@@ -3411,6 +3572,14 @@ async function requestAllocation() {
   requestError.value = null
   if (locked.value) {
     requestError.value = t('ドローがロックされているため自動生成できません。')
+    return
+  }
+  if (requestScopeWarningText.value) {
+    requestError.value = requestScopeWarningText.value
+    return
+  }
+  if (adjudicatorCapacityWarning.value) {
+    requestError.value = adjudicatorCapacityWarning.value
     return
   }
   requestLoading.value = true
@@ -3507,6 +3676,8 @@ async function requestAllocation() {
             }
           : effectiveTeamAlgorithm === 'break'
             ? {}
+            : effectiveTeamAlgorithm === 'random'
+              ? {}
             : {
                 method: normalizeEnumValue(
                   autoOptions.value.teamMethod,
@@ -3516,6 +3687,11 @@ async function requestAllocation() {
                 filters: standardTeamFilters,
                 spread_sides_by_school: spreadSidesBySchool,
               }
+    const numbersOfAdjudicators = {
+      chairs: normalizeNonNegativeInteger(autoOptions.value.chairs, 1),
+      panels: normalizeNonNegativeInteger(autoOptions.value.panels, 0),
+      trainees: normalizeNonNegativeInteger(autoOptions.value.trainees, 0),
+    }
     const adjudicatorOptions =
       requestedAdjudicatorAlgorithm === 'traditional'
         ? {
@@ -3526,18 +3702,17 @@ async function requestAllocation() {
             ),
             scatter: Boolean(autoOptions.value.adjudicatorScatter),
           }
-        : {
-            filters: normalizeUniqueStringList(
-              autoOptions.value.adjudicatorFilters,
-              ADJUDICATOR_STANDARD_FILTER_VALUES,
-              ADJUDICATOR_STANDARD_FILTER_VALUES
-            ),
-          }
-    const numbersOfAdjudicators = {
-      chairs: normalizeNonNegativeInteger(autoOptions.value.chairs, 1),
-      panels: normalizeNonNegativeInteger(autoOptions.value.panels, 0),
-      trainees: normalizeNonNegativeInteger(autoOptions.value.trainees, 0),
-    }
+        : requestedAdjudicatorAlgorithm === 'class_based'
+          ? {}
+          : requestedAdjudicatorAlgorithm === 'random'
+            ? {}
+          : {
+              filters: normalizeUniqueStringList(
+                autoOptions.value.adjudicatorFilters,
+                ADJUDICATOR_STANDARD_FILTER_VALUES,
+                ADJUDICATOR_STANDARD_FILTER_VALUES
+              ),
+            }
     const useScopedOverrides = true
     const teamSnapshotId = resolveSnapshotIdForScope('teams', useScopedOverrides)
     const adjudicatorSnapshotId = resolveSnapshotIdForScope('adjudicators', useScopedOverrides)
@@ -3680,40 +3855,86 @@ function normalizeInstitutionCategory(value: unknown): ConflictGroupCategory {
   return 'institution'
 }
 
+function normalizeInstitutionToken(value: unknown) {
+  return String(value ?? '').trim()
+}
+
 function normalizeInstitutions(values: string[] = []) {
   const mapped = new Set<string>()
   values.forEach((value) => {
-    const token = String(value)
+    const token = normalizeInstitutionToken(value)
     if (!token) return
     mapped.add(token)
   })
   return Array.from(mapped)
 }
 
+function resolveInstitutionRecord(value: unknown) {
+  const token = normalizeInstitutionToken(value)
+  if (!token) return null
+  return (
+    institutions.institutions.find((inst: any) => {
+      const institutionId = normalizeInstitutionToken(inst?._id)
+      const fallbackId = normalizeInstitutionToken(inst?.id)
+      const institutionName = normalizeInstitutionToken(inst?.name)
+      return token === institutionId || token === fallbackId || token === institutionName
+    }) ?? null
+  )
+}
+
 function institutionCategoryById(value: string): ConflictGroupCategory {
-  const token = String(value ?? '').trim()
-  if (!token) return 'institution'
-  const match = institutions.institutions.find((inst) => inst._id === token)
+  const match = resolveInstitutionRecord(value)
   return normalizeInstitutionCategory(match?.category)
 }
 
 function teamInstitutions(team: any) {
   if (!team) return []
   const detail = detailForRound(team.details, round.value)
-  const base = ([] as string[]).concat(detail.conflicts ?? [], team?.template?.conflicts ?? [])
+  const base = ([] as string[]).concat(
+    detail?.conflicts ?? [],
+    detail?.institutions ?? [],
+    team?.template?.conflicts ?? [],
+    team?.template?.institutions ?? []
+  )
   return normalizeInstitutions(base)
 }
 
 function adjudicatorInstitutions(adj: any) {
   if (!adj) return []
   const detail = detailForRound(adj.details, round.value)
-  return normalizeInstitutions(([] as string[]).concat(detail.conflicts ?? [], adj?.template?.conflicts ?? []))
+  return normalizeInstitutions(
+    ([] as string[]).concat(
+      detail?.conflicts ?? [],
+      detail?.institutions ?? [],
+      adj?.template?.conflicts ?? [],
+      adj?.template?.institutions ?? []
+    )
+  )
 }
 
 function adjudicatorConflicts(adj: any) {
   if (!adj) return []
   const detail = detailForRound(adj.details, round.value)
   return ([] as any[]).concat(detail.conflict_teams ?? [], adj?.template?.conflict_teams ?? []).map((id: any) => String(id))
+}
+
+function normalizeJudgeClass(value: unknown): '' | 'A' | 'B' | 'C' {
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim().toUpperCase()
+  return JUDGE_CLASS_VALUES.includes(normalized as (typeof JUDGE_CLASS_VALUES)[number])
+    ? (normalized as 'A' | 'B' | 'C')
+    : ''
+}
+
+function judgeClassLabel(value: '' | 'A' | 'B' | 'C') {
+  if (!value) return t('未設定')
+  return t(JUDGE_CLASS_LABELS[value])
+}
+
+function adjudicatorJudgeClassLabel(
+  entity: { userDefinedData?: Record<string, any> } | null | undefined
+) {
+  return judgeClassLabel(normalizeJudgeClass(entity?.userDefinedData?.judge_class))
 }
 
 const compiledTeamMap = computed(() => {
@@ -3737,6 +3958,27 @@ const compiledAdjMap = computed(() => {
   })
   return map
 })
+
+function teamPastOpponentIds(teamId: string) {
+  const result = compiledTeamMap.value.get(String(teamId))
+  return Array.isArray(result?.past_opponents)
+    ? result.past_opponents.map((id: any) => String(id)).filter(Boolean)
+    : []
+}
+
+function teamPastSideHistory(teamId: string) {
+  const result = compiledTeamMap.value.get(String(teamId))
+  return Array.isArray(result?.past_sides)
+    ? result.past_sides.map((side: any) => String(side)).filter(Boolean)
+    : []
+}
+
+function adjudicatorJudgedTeamIds(adjudicatorId: string) {
+  const result = compiledAdjMap.value.get(String(adjudicatorId))
+  return Array.isArray(result?.judged_teams)
+    ? result.judged_teams.map((id: any) => String(id)).filter(Boolean)
+    : []
+}
 
 function adjudicatorListLabel(ids: string[]) {
   if (!ids || ids.length === 0) return '—'
@@ -3927,7 +4169,8 @@ function speakerNameById(id: string) {
 }
 
 function institutionNameById(id: string) {
-  return institutions.institutions.find((inst) => inst._id === id)?.name ?? id
+  const token = normalizeInstitutionToken(id)
+  return resolveInstitutionRecord(token)?.name ?? token
 }
 
 function teamSpeakerNames(team: any) {
@@ -3944,8 +4187,9 @@ function teamSpeakerIds(team: any) {
   return detailSpeakerIds
 }
 
-type DragKind = 'team' | 'adjudicator' | 'venue'
+type DragKind = AllocationDragKind
 const dragPayload = ref<{ kind: DragKind; id: string } | null>(null)
+const hoverPayload = ref<{ kind: DragKind; id: string } | null>(null)
 const dragKind = computed(() => dragPayload.value?.kind ?? null)
 const rowDragSourceIndex = ref<number | null>(null)
 const rowDragTargetIndex = ref<number | null>(null)
@@ -4073,6 +4317,21 @@ function clearDetail() {
   selectedDetail.value = null
 }
 
+function onEntityHover(kind: DragKind, id?: string | null) {
+  if (dragPayload.value) return
+  const normalizedId = String(id ?? '').trim()
+  if (!normalizedId) return
+  hoverPayload.value = { kind, id: normalizedId }
+}
+
+function onEntityHoverEnd(kind: DragKind, id?: string | null) {
+  const normalizedId = String(id ?? '').trim()
+  if (!normalizedId) return
+  if (hoverPayload.value?.kind === kind && hoverPayload.value.id === normalizedId) {
+    hoverPayload.value = null
+  }
+}
+
 const displayDetail = computed<{
   type: 'team' | 'adjudicator' | 'venue'
   id: string
@@ -4107,6 +4366,50 @@ const detailTitle = computed(() => {
   }
   return t('会場: {name}', { name: venueName(displayDetail.value.id) })
 })
+
+const activeHighlightPayload = computed(() => dragPayload.value ?? hoverPayload.value)
+
+const dragHighlightIndex = computed(() =>
+  buildAllocationDragHighlightIndex({
+    drag: activeHighlightPayload.value,
+    teamIds: teams.teams.map((team) => String(team._id ?? '')),
+    adjudicatorIds: adjudicators.adjudicators.map((adj) => String(adj._id ?? '')),
+    teamInstitutions: (teamId) => {
+      const team = teams.teams.find((item) => item._id === teamId)
+      return team ? teamInstitutions(team) : []
+    },
+    adjudicatorInstitutions: (adjudicatorId) => {
+      const adj = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+      return adj ? adjudicatorInstitutions(adj) : []
+    },
+    adjudicatorConflicts: (adjudicatorId) => {
+      const adj = adjudicators.adjudicators.find((item) => item._id === adjudicatorId)
+      return adj ? adjudicatorConflicts(adj) : []
+    },
+    teamPastOpponents: teamPastOpponentIds,
+    adjudicatorJudgedTeams: adjudicatorJudgedTeamIds,
+  })
+)
+
+function dragHighlightTone(
+  kind: 'team' | 'adjudicator' | 'venue',
+  ids: Array<string | null | undefined>
+): AllocationDragHighlightTone | null {
+  return allocationDragHighlightToneForIds(
+    dragHighlightIndex.value,
+    kind,
+    ids.map((id) => String(id ?? '').trim()).filter(Boolean)
+  )
+}
+
+function dropZoneClasses(
+  kind: 'team' | 'adjudicator' | 'venue',
+  ids: Array<string | null | undefined>
+) {
+  const classes: string[] = []
+  if (dragKind.value === kind) classes.push('active')
+  return classes
+}
 
 type DetailRow = {
   label: string
@@ -4163,9 +4466,7 @@ const detailRows = computed<DetailRow[]>(() => {
     const normalizedTeamId = String(id).trim()
     const institutionIds = team ? teamInstitutions(team) : []
     const institutionsList = institutionIds.map((inst) => institutionNameById(inst))
-    const pastOpponentIds = uniqueEntityIds(
-      Array.isArray(result?.past_opponents) ? result.past_opponents : []
-    )
+    const pastOpponentIds = uniqueEntityIds(teamPastOpponentIds(normalizedTeamId))
     const pastAdjudicatorIds = uniqueEntityIds(
       Array.from(compiledAdjMap.value.values())
         .filter(
@@ -4225,6 +4526,7 @@ const detailRows = computed<DetailRow[]>(() => {
     return [
       { label: t('順位'), value: result?.ranking ?? '—' },
       { label: t('平均'), value: averageBadge || '—' },
+      { label: t('ジャッジクラス'), value: adjudicatorJudgeClassLabel(adj) },
       {
         label: t('利用可'),
         value: adjudicatorAvailableInRound(String(id)) ? t('はい') : t('いいえ'),
@@ -4246,8 +4548,9 @@ const detailRows = computed<DetailRow[]>(() => {
           : '—',
         highlightEntityKeys: buildTeamEntityKeys(judgedTeamIds),
       },
-      { label: t('担当数'), value: result?.num_experienced ?? result?.active_num ?? '—' },
-      { label: t('チェア担当'), value: result?.num_experienced_chair ?? '—' },
+      { label: t('チェア担当回数'), value: result?.num_experienced_chair ?? '—' },
+      { label: t('パネル担当回数'), value: result?.num_experienced_panel ?? '—' },
+      { label: t('トレイニー担当回数'), value: result?.num_experienced_trainee ?? '—' },
       { label: t('ID'), value: id },
     ]
   }
@@ -4312,22 +4615,13 @@ const rowWarningStates = computed<RowWarningState[]>(() =>
       return Number.isFinite(win) ? win : undefined
     },
     teamPastOpponents: (teamId) => {
-      const result = compiledTeamMap.value.get(String(teamId))
-      return Array.isArray(result?.past_opponents)
-        ? result.past_opponents.map((id: any) => String(id)).filter(Boolean)
-        : []
+      return teamPastOpponentIds(teamId)
     },
     teamPastSides: (teamId) => {
-      const result = compiledTeamMap.value.get(String(teamId))
-      return Array.isArray(result?.past_sides)
-        ? result.past_sides.map((side: any) => String(side)).filter(Boolean)
-        : []
+      return teamPastSideHistory(teamId)
     },
     adjudicatorJudgedTeams: (adjudicatorId) => {
-      const result = compiledAdjMap.value.get(String(adjudicatorId))
-      return Array.isArray(result?.judged_teams)
-        ? result.judged_teams.map((id: any) => String(id)).filter(Boolean)
-        : []
+      return adjudicatorJudgedTeamIds(adjudicatorId)
     },
   })
 )
@@ -4594,6 +4888,15 @@ function entityPillClasses(kind: 'team' | 'adjudicator' | 'venue', id?: string) 
   const warningMeta = entityWarningIndex.value.get(key)
   if (warningMeta) {
     classes.push(`pill-severity--${warningMeta.maxSeverity}`)
+  }
+  const dragTone = dragHighlightTone(kind, [normalized])
+  if (dragTone) {
+    classes.push('pill-drag-related', `pill-drag-related--${dragTone}`)
+  }
+  if (dragPayload.value?.kind === kind && dragPayload.value.id === normalized) {
+    classes.push('pill-drag-source')
+  } else if (hoverPayload.value?.kind === kind && hoverPayload.value.id === normalized) {
+    classes.push('pill-hover-source')
   }
   if (focusedEntityKeys.value.has(key) || focusedDetailEntityKeys.value.has(key)) {
     classes.push('pill-focused')
@@ -5096,11 +5399,13 @@ function onDragStart(kind: DragKind, id: string) {
   const normalizedId = String(id ?? '').trim()
   if (!normalizedId) return
   if (!isEntityAvailableInRound(kind, normalizedId)) return
+  hoverPayload.value = null
   dragPayload.value = { kind, id: normalizedId }
 }
 
 function onDragEnd() {
   dragPayload.value = null
+  hoverPayload.value = null
 }
 
 function removeTeamFromAllocation(id: string) {
@@ -6238,7 +6543,9 @@ watch(
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
-    background-color 0.15s ease;
+    background-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .pill-team-eliminated {
@@ -6280,6 +6587,32 @@ watch(
   background: #eff6ff;
 }
 
+.pill-drag-source {
+  opacity: 0.58;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.16);
+}
+
+.pill-hover-source {
+  box-shadow:
+    0 0 0 2px rgba(37, 99, 235, 0.18),
+    0 1px 1px rgba(15, 23, 42, 0.06);
+  border-color: #60a5fa;
+}
+
+.pill-drag-related--conflict,
+.pill-drag-related--conflict.draggable:hover {
+  color: #9f1239;
+  border-color: #fda4af;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+}
+
+.pill-drag-related--history,
+.pill-drag-related--history.draggable:hover {
+  color: #9a3412;
+  border-color: #fdba74;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+}
+
 .truncate-pill {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6297,6 +6630,10 @@ watch(
   align-items: center;
   background: #f1f5f9;
   position: relative;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .drop-zone.list {

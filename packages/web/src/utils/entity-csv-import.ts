@@ -88,6 +88,7 @@ const knownStaticHeaders = new Set([
   'priority',
   'speakers',
   'preev',
+  'judge_class',
   'available',
   'availability',
   'conflict',
@@ -288,6 +289,34 @@ function toPriority(value: string, fallback = 1): number {
   return parsed
 }
 
+const judgeClassAliases: Record<string, 'A' | 'B' | 'C'> = {
+  chair: 'A',
+  chair_preferred: 'A',
+  chairpreferred: 'A',
+  chair_priority: 'A',
+  chairpriority: 'A',
+  chair_or_panel: 'B',
+  chairorpanel: 'B',
+  chair_panel: 'B',
+  chairpanel: 'B',
+  'chair/panel': 'B',
+  panel_or_trainee: 'C',
+  panelortrainee: 'C',
+  panel_trainee: 'C',
+  paneltrainee: 'C',
+  'panel/trainee': 'C',
+}
+
+function parseJudgeClass(value: string): '' | 'A' | 'B' | 'C' | null {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/[\s-]+/g, '_')
+  if (normalized.length === 0) return ''
+  return judgeClassAliases[normalized] ?? null
+}
+
 function normalizeRoundNumbers(roundNumbers: number[]): number[] {
   return Array.from(
     new Set(
@@ -476,6 +505,13 @@ export function buildEntityImportPayload(
       if (!name) continue
 
       const preev = toFiniteNumber(reader.read(row, ['preev'], 1), 0)
+      const judgeClass = parseJudgeClass(reader.read(row, ['judge_class'], 2))
+      if (judgeClass === null) {
+        errors.push(
+          `CSV ${line}行目: judge_class は chair_preferred / chair_or_panel / panel_or_trainee で指定してください。`
+        )
+        continue
+      }
 
       const institutionResult = resolveNamedEntityIds(
         reader.read(row, ['conflicts', 'conflict', 'institutions', 'institution']),
@@ -549,6 +585,13 @@ export function buildEntityImportPayload(
           conflict_teams: baseConflictTeams,
         },
         details,
+        ...(judgeClass
+          ? {
+              userDefinedData: {
+                judge_class: judgeClass,
+              },
+            }
+          : {}),
       }
       payloadEntries.push({ line, payload: adjudicatorPayload })
       payload.push(adjudicatorPayload)

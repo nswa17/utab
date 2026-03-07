@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { standard as teamStandard, strict as teamStrict } from '../src/allocations/teams.js'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  standard as teamStandard,
+  strict as teamStrict,
+  random as teamRandom,
+} from '../src/allocations/teams.js'
 import {
   standard as adjudicatorStandard,
   traditional as adjudicatorTraditional,
+  class_based as adjudicatorClassBased,
+  random as adjudicatorRandom,
 } from '../src/allocations/adjudicators.js'
 
 const teams = [
@@ -95,6 +101,24 @@ describe('allocations option handling', () => {
     })
   })
 
+  it('supports random team allocation with a runtime timestamp seed', () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000)
+    try {
+      const first = teamRandom.get(1, teams, compiledTeamResults, {}, config)
+      const second = teamRandom.get(1, teams, compiledTeamResults, {}, config)
+
+      expect(nowSpy).toHaveBeenCalledTimes(2)
+      expect(first.allocation).toEqual(second.allocation)
+      expect(first.allocation).toHaveLength(2)
+      expect(allocationTeamIds(first)).toEqual([1, 2, 3, 4])
+      first.allocation.forEach((square: any) => {
+        expect(square.teams).toHaveLength(2)
+      })
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
   it('supports adjudicator standard and traditional option paths', () => {
     const baseDraw = teamStandard.get(
       1,
@@ -143,6 +167,84 @@ describe('allocations option handling', () => {
         expect(Array.isArray(square.chairs)).toBe(true)
         expect(Array.isArray(square.panels)).toBe(true)
       })
+    }
+
+    const classBasedAllocated = adjudicatorClassBased.get(
+      1,
+      baseDraw,
+      adjudicators,
+      teams,
+      compiledTeamResults,
+      compiledAdjudicatorResults,
+      { chairs: 2, panels: 0, trainees: 0 },
+      config,
+      { filters: ['by_strength'] }
+    )
+    expect(classBasedAllocated.allocation).toHaveLength(2)
+    classBasedAllocated.allocation.forEach((square: any) => {
+      expect(square.chairs).toHaveLength(2)
+    })
+  })
+
+  it('supports random adjudicator allocation in chair-panel-trainee order on existing matches', () => {
+    const baseDraw = teamStandard.get(
+      1,
+      teams,
+      compiledTeamResults,
+      { method: 'straight', filters: ['by_strength'] },
+      config
+    )
+    const adjudicatorsForRandom = [
+      ...adjudicators,
+      { id: 14, preev: 50, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+      { id: 15, preev: 40, details: [{ r: 1, available: true, conflicts: [], conflicts: [] }] },
+    ]
+    const adjudicatorResultsForRandom = [
+      ...compiledAdjudicatorResults,
+      { id: 14, average: 7.1, score: 7.1, active_num: 1, judged_teams: [], details: [{ score: 7.1 }] },
+      { id: 15, average: 6.8, score: 6.8, active_num: 1, judged_teams: [], details: [{ score: 6.8 }] },
+    ]
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1700000000000)
+    try {
+      const first = adjudicatorRandom.get(
+        1,
+        baseDraw,
+        adjudicatorsForRandom,
+        teams,
+        compiledTeamResults,
+        adjudicatorResultsForRandom,
+        { chairs: 1, panels: 1, trainees: 1 },
+        config,
+        {}
+      )
+      const second = adjudicatorRandom.get(
+        1,
+        baseDraw,
+        adjudicatorsForRandom,
+        teams,
+        compiledTeamResults,
+        adjudicatorResultsForRandom,
+        { chairs: 1, panels: 1, trainees: 1 },
+        config,
+        {}
+      )
+
+      expect(nowSpy).toHaveBeenCalledTimes(2)
+      expect(first.allocation).toEqual(second.allocation)
+      first.allocation.forEach((square: any) => {
+        expect(square.chairs).toHaveLength(1)
+        expect(square.panels).toHaveLength(1)
+        expect(square.trainees).toHaveLength(1)
+      })
+      const assignedIds = first.allocation.flatMap((square: any) => [
+        ...(square.chairs ?? []),
+        ...(square.panels ?? []),
+        ...(square.trainees ?? []),
+      ])
+      expect(new Set(assignedIds).size).toBe(6)
+    } finally {
+      nowSpy.mockRestore()
     }
   })
 })

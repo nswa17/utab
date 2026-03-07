@@ -69,7 +69,9 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('groupedAdjudicatorInstitutionOptions')
     expect(source).toContain('buildInstitutionOptionGroups')
     expect(source).toContain('relation-subgroup')
-    expect(source).toContain("institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']")
+    expect(source).toContain(
+      "institutionCategoryOrder: InstitutionCategory[] = ['institution', 'region', 'league']"
+    )
   })
 
   it('supports per-round detail editing for team/adjudicator/venue', () => {
@@ -104,5 +106,35 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('@file-change="handleEntityImportFile"')
     expect(source).toContain('entityImportText.value = await file.text()')
     expect(source).not.toContain("input.value = ''")
+  })
+
+  it('supports bulk deleting filtered entity search results', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('removeAllTeams')
+    expect(source).toContain('removeAllAdjudicators')
+    expect(source).toContain('removeAllVenues')
+    expect(source).toContain('removeAllSpeakers')
+    expect(source).toContain('removeAllInstitutions')
+    expect(source).toContain("deleteEntityModal.value?.mode === 'bulk'")
+    expect(source).toContain('現在の検索結果に含まれる{label} {count}件を一括削除しますか？')
+    expect(source).toContain("{{ $t('一括削除') }}")
+  })
+
+  it('uses the same enabled switch treatment for venue creation as round rows', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('<form class="grid aligned-field-grid" @submit.prevent="handleCreateVenue">')
+    expect(source).toContain('<label class="row small round-detail-switch">')
+    expect(source).toContain(":aria-label=\"$t('会場を有効化')\"")
+    expect(source).toContain("{{ $t('有効') }}")
+    expect(source).not.toContain("{{ $t('使用可能（デフォルト値）') }}")
+  })
+
+  it('keeps adjudicator judge class inline editor on one line with a wider control', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('inline-control inline-control--judge-class')
+    expect(source).toContain('.inline-control--judge-class {')
+    expect(source).toContain('min-width: 320px;')
+    expect(source).toContain('.inline-control--judge-class select {')
+    expect(source).toContain('white-space: nowrap;')
   })
 })

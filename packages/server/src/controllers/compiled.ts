@@ -310,6 +310,51 @@ function remapCompiledAdjudicatorResults(
   }))
 }
 
+type AdjudicatorAllocationStats = {
+  num_experienced: number
+  num_experienced_chair: number
+  num_experienced_panel: number
+  num_experienced_trainee: number
+}
+
+function buildAdjudicatorAllocationStats(
+  draws: any[],
+  selectedRoundSet: Set<number>
+): Map<string, AdjudicatorAllocationStats> {
+  const adjudicatorStats = new Map<string, AdjudicatorAllocationStats>()
+
+  function updateStats(ids: string[], role: 'chair' | 'panel' | 'trainee') {
+    ids.forEach((adjId) => {
+      const stats = adjudicatorStats.get(adjId) ?? {
+        num_experienced: 0,
+        num_experienced_chair: 0,
+        num_experienced_panel: 0,
+        num_experienced_trainee: 0,
+      }
+      stats.num_experienced += 1
+      if (role === 'chair') stats.num_experienced_chair += 1
+      if (role === 'panel') stats.num_experienced_panel += 1
+      if (role === 'trainee') stats.num_experienced_trainee += 1
+      adjudicatorStats.set(adjId, stats)
+    })
+  }
+
+  draws.forEach((draw: any) => {
+    const drawRound = Number(draw.round)
+    if (!Number.isFinite(drawRound) || !selectedRoundSet.has(drawRound)) return
+    draw.allocation?.forEach((row: any) => {
+      const chairs = (row?.chairs ?? []).map((id: any) => String(id))
+      const panels = (row?.panels ?? []).map((id: any) => String(id))
+      const trainees = (row?.trainees ?? []).map((id: any) => String(id))
+      updateStats(chairs, 'chair')
+      updateStats(panels, 'panel')
+      updateStats(trainees, 'trainee')
+    })
+  })
+
+  return adjudicatorStats
+}
+
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 }
@@ -499,7 +544,14 @@ function applyIncludeLabels(
 
 const TEAM_DIFF_KEYS = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
 const SPEAKER_DIFF_KEYS = ['average', 'sum', 'sd']
-const ADJUDICATOR_DIFF_KEYS = ['average', 'sd', 'num_experienced', 'num_experienced_chair']
+const ADJUDICATOR_DIFF_KEYS = [
+  'average',
+  'sd',
+  'num_experienced',
+  'num_experienced_chair',
+  'num_experienced_panel',
+  'num_experienced_trainee',
+]
 
 function buildDefaultDiffMeta(compileOptions: CompileOptions): CompileDiffMeta {
   return {
@@ -1181,23 +1233,7 @@ async function buildCompiledPayloadFromRaw(
     adjudicatorMeta.set(String(adj._id), { institutions: Array.from(institutions) })
   })
 
-  const adjudicatorStats = new Map<string, { num_experienced: number; num_experienced_chair: number }>()
-  filteredDraws.forEach((draw: any) => {
-    const drawRound = Number(draw.round)
-    if (!Number.isFinite(drawRound) || !selectedRoundSet.has(drawRound)) return
-    draw.allocation?.forEach((row: any) => {
-      const chairs = (row?.chairs ?? []).map((id: any) => String(id))
-      const panels = (row?.panels ?? []).map((id: any) => String(id))
-      const trainees = (row?.trainees ?? []).map((id: any) => String(id))
-      const all = ([] as string[]).concat(chairs, panels, trainees)
-      all.forEach((adjId) => {
-        const stats = adjudicatorStats.get(adjId) ?? { num_experienced: 0, num_experienced_chair: 0 }
-        stats.num_experienced += 1
-        if (chairs.includes(adjId)) stats.num_experienced_chair += 1
-        adjudicatorStats.set(adjId, stats)
-      })
-    })
-  })
+  const adjudicatorStats = buildAdjudicatorAllocationStats(filteredDraws, selectedRoundSet)
 
   const compiled: CompiledPayload = {
     tournamentId,
@@ -1223,6 +1259,8 @@ async function buildCompiledPayloadFromRaw(
         institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
         num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
         num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
+        num_experienced_panel: adjudicatorStats.get(result.id)?.num_experienced_panel ?? 0,
+        num_experienced_trainee: adjudicatorStats.get(result.id)?.num_experienced_trainee ?? 0,
       })),
       compileOptions
     ),
@@ -1839,23 +1877,7 @@ async function buildCompiledPayloadFromSubmissions(
     adjudicatorMeta.set(String(adj._id), { institutions: Array.from(institutions) })
   })
 
-  const adjudicatorStats = new Map<string, { num_experienced: number; num_experienced_chair: number }>()
-  filteredDraws.forEach((draw: any) => {
-    const drawRound = Number(draw.round)
-    if (!Number.isFinite(drawRound) || !selectedRoundSet.has(drawRound)) return
-    draw.allocation?.forEach((row: any) => {
-      const chairs = (row?.chairs ?? []).map((id: any) => String(id))
-      const panels = (row?.panels ?? []).map((id: any) => String(id))
-      const trainees = (row?.trainees ?? []).map((id: any) => String(id))
-      const all = ([] as string[]).concat(chairs, panels, trainees)
-      all.forEach((adjId) => {
-        const stats = adjudicatorStats.get(adjId) ?? { num_experienced: 0, num_experienced_chair: 0 }
-        stats.num_experienced += 1
-        if (chairs.includes(adjId)) stats.num_experienced_chair += 1
-        adjudicatorStats.set(adjId, stats)
-      })
-    })
-  })
+  const adjudicatorStats = buildAdjudicatorAllocationStats(filteredDraws, selectedRoundSet)
 
   const compiled: CompiledPayload = {
     tournamentId,
@@ -1881,6 +1903,8 @@ async function buildCompiledPayloadFromSubmissions(
         institutions: adjudicatorMeta.get(result.id)?.institutions ?? [],
         num_experienced: adjudicatorStats.get(result.id)?.num_experienced ?? result.active_num ?? 0,
         num_experienced_chair: adjudicatorStats.get(result.id)?.num_experienced_chair ?? 0,
+        num_experienced_panel: adjudicatorStats.get(result.id)?.num_experienced_panel ?? 0,
+        num_experienced_trainee: adjudicatorStats.get(result.id)?.num_experienced_trainee ?? 0,
       })),
       compileOptions
     ),

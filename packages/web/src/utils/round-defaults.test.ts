@@ -30,6 +30,7 @@ describe('round defaults', () => {
         source_rounds: [3, 2, 2, 1, -1],
         options: {
           winner_policy: 'score_only',
+          tie_points: 0.25,
           missing_data_policy: 'exclude',
           include_labels: ['teams', 'speakers'],
         },
@@ -45,6 +46,7 @@ describe('round defaults', () => {
     expect(normalized.compile.source).toBe('raw')
     expect(normalized.compile.source_rounds).toEqual([1, 2, 3])
     expect(normalized.compile.options.winner_policy).toBe('score_only')
+    expect(normalized.compile.options.tie_points).toBe(0.5)
     expect(normalized.compile.options.missing_data_policy).toBe('exclude')
     expect(normalized.compile.options.include_labels).toEqual(['teams', 'speakers'])
   })
@@ -105,6 +107,7 @@ describe('round defaults', () => {
     expect(payload.compile.source).toBe('raw')
     expect(payload.compile.source_rounds).toEqual([1])
     expect(payload.compile.options.winner_policy).toBe('score_only')
+    expect(payload.compile.options.tie_points).toBe(0.5)
     expect(payload.compile.options.include_labels).toEqual(['teams', 'speakers'])
   })
 

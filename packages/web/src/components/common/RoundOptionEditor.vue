@@ -71,27 +71,11 @@
           <HelpTip
             :text="
               lockAllowLowTieWin
-                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。')
-                : $t('引き分け入力と低勝ち・同点勝ちを許可します。')
+                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。引き分け時の勝敗点は0.5-0.5固定です。')
+                : $t('引き分け入力と低勝ち・同点勝ちを許可します。引き分け時の勝敗点は0.5-0.5固定です。')
             "
           />
         </label>
-        <Field :label="$t('引き分け時ポイント')">
-          <template #default="{ id, describedBy }">
-            <input
-              v-model.number="tiePoints"
-              :id="id"
-              :aria-describedby="describedBy"
-              type="number"
-              min="0"
-              step="0.5"
-              :disabled="disabled"
-            />
-          </template>
-          <template #label-suffix>
-            <HelpTip :text="$t('引き分けを許可する設定のときに、各チームへ与える勝敗点です。')" />
-          </template>
-        </Field>
       </div>
       <slot name="after-team-settings" />
     </section>
@@ -121,7 +105,6 @@ const evaluatorInTeam = defineModel<'team' | 'speaker'>('evaluatorInTeam', { req
 const noSpeakerScore = defineModel<boolean>('noSpeakerScore', { required: true })
 const allowLowTieWin = defineModel<boolean>('allowLowTieWin', { required: true })
 const scoreByMatterManner = defineModel<boolean>('scoreByMatterManner', { required: true })
-const tiePoints = defineModel<number>('tiePoints', { required: true })
 const poi = defineModel<boolean>('poi', { required: true })
 const best = defineModel<boolean>('best', { required: true })
 </script>

@@ -2,6 +2,7 @@ import request from 'supertest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { AuditLogModel } from '../src/models/audit-log.js'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
 import { UserModel } from '../src/models/user.js'
@@ -41,6 +42,22 @@ async function waitForResult<T>(
     return lastValue
   }
   throw (lastError ?? new Error('waitForResult timed out without a successful response'))
+}
+
+function parseBinaryResponse(
+  res: NodeJS.ReadableStream,
+  callback: (error: Error | null, data?: Buffer) => void
+) {
+  const chunks: Buffer[] = []
+  res.on('data', (chunk) => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  })
+  res.on('end', () => {
+    callback(null, Buffer.concat(chunks))
+  })
+  res.on('error', (error) => {
+    callback(error)
+  })
 }
 
 beforeAll(async () => {
@@ -715,8 +732,8 @@ describe('Server integration', () => {
     expect(team2.details[0]?.acc).toBe(2)
     expect(team1.vote).toBe(0)
     expect(team2.vote).toBe(0)
-    expect(team1.win).toBe(0)
-    expect(team2.win).toBe(0)
+    expect(team1.win).toBe(0.5)
+    expect(team2.win).toBe(0.5)
   })
 
   it('keeps adjudicator ballots distinct when merge policy is latest', async () => {
@@ -839,8 +856,8 @@ describe('Server integration', () => {
     expect(team2.details[0]?.acc).toBe(2)
     expect(team1.vote).toBe(0)
     expect(team2.vote).toBe(0)
-    expect(team1.win).toBe(0)
-    expect(team2.win).toBe(0)
+    expect(team1.win).toBe(0.5)
+    expect(team2.win).toBe(0.5)
   })
 
   it('averages conflicting duplicate ballots from the same actor', async () => {
@@ -1013,6 +1030,106 @@ describe('Server integration', () => {
     expect(decodedName).toContain('日本語大会')
     expect(decodedName).toContain(`${tournamentId}-`)
     expect(decodedName.endsWith('.zip')).toBe(true)
+  })
+
+  it('restores a tournament from an exported backup zip', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'bundle-import-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'bundle-import-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Restore Source Open',
+      style: 1,
+      options: { style: { team_num: 2 } },
+      total_round_num: 2,
+      current_round_num: 1,
+      user_defined_data: { hidden: true },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const [{ getTournamentConnection }, { getTeamModel }, { getRoundModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/team.js'),
+      import('../src/models/round.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+    const RoundModel = getRoundModel(connection)
+
+    const createdTeam = await TeamModel.create({
+      tournamentId,
+      name: 'Team Restore A',
+      template: { speakers: ['sp1', 'sp2'] },
+      details: [{ r: 1, available: true, conflicts: [], speakers: ['sp1', 'sp2'] }],
+    })
+    await RoundModel.create({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      motions: ['This House would restore from backups.'],
+    })
+    const originalAuditLog = await AuditLogModel.create({
+      tournamentId,
+      action: 'team.create',
+      actorUserId: String(loginRes.body.data.userId),
+      actorRole: 'organizer',
+      targetType: 'team',
+      targetId: String(createdTeam._id),
+      metadata: { source: 'integration-test' },
+    })
+
+    const exportRes = await agent
+      .get(`/api/tournaments/${tournamentId}/export`)
+      .buffer(true)
+      .parse(parseBinaryResponse)
+      .send()
+    expect(exportRes.status).toBe(200)
+    expect(Buffer.isBuffer(exportRes.body)).toBe(true)
+
+    const importRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(exportRes.body as Buffer)
+    expect(importRes.status).toBe(201)
+
+    const restoredTournament = importRes.body.data.tournament as { _id: string; name: string }
+    expect(restoredTournament.name).toBe('Restore Source Open')
+    expect(restoredTournament._id).not.toBe(tournamentId)
+    expect(importRes.body.data.importedAuditLogs).toBe(2)
+    expect(importRes.body.data.importedDocuments).toBe(2)
+
+    const restoredTournamentId = String(restoredTournament._id)
+    const restoredConnection = await getTournamentConnection(restoredTournamentId)
+    const RestoredTeamModel = getTeamModel(restoredConnection)
+    const RestoredRoundModel = getRoundModel(restoredConnection)
+
+    const restoredTeams = await RestoredTeamModel.find({ tournamentId: restoredTournamentId }).lean().exec()
+    expect(restoredTeams).toHaveLength(1)
+    expect(restoredTeams[0]?.name).toBe('Team Restore A')
+    expect(String(restoredTeams[0]?.tournamentId)).toBe(restoredTournamentId)
+
+    const restoredRounds = await RestoredRoundModel.find({ tournamentId: restoredTournamentId }).lean().exec()
+    expect(restoredRounds).toHaveLength(1)
+    expect(restoredRounds[0]?.name).toBe('Round 1')
+    expect(String(restoredRounds[0]?.tournamentId)).toBe(restoredTournamentId)
+
+    const restoredLogs = await AuditLogModel.find({ tournamentId: restoredTournamentId }).lean().exec()
+    expect(restoredLogs).toHaveLength(2)
+    expect(restoredLogs.some((item) => item.action === 'team.create')).toBe(true)
+    expect(restoredLogs.some((item) => String(item._id) === String(originalAuditLog._id))).toBe(false)
+
+    const meRes = await agent.get('/api/auth/me').send()
+    expect(meRes.status).toBe(200)
+    expect(meRes.body.data.tournaments).toContain(restoredTournamentId)
   })
 
   it('adds and removes tournament users', async () => {

@@ -99,6 +99,40 @@ afterAll(async () => {
 })
 
 describe('Server integration', () => {
+  it('allows same-host origin headers while rejecting foreign origins', async () => {
+    const organizer = request.agent(app)
+
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'csrf-origin-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'csrf-origin-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const address = app.address()
+    expect(address && typeof address !== 'string').toBe(true)
+    if (!address || typeof address === 'string') {
+      throw new Error('Server address is not available')
+    }
+
+    const sameHostOrigin = `http://${address.address}:${address.port}`
+    const sameHostCreate = await organizer
+      .post('/api/tournaments')
+      .set('Origin', sameHostOrigin)
+      .send({ name: 'Same Host Origin Open', style: 1, options: {} })
+    expect(sameHostCreate.status).toBe(201)
+
+    const foreignOriginCreate = await organizer
+      .post('/api/tournaments')
+      .set('Origin', 'http://evil.example')
+      .send({ name: 'Foreign Origin Open', style: 1, options: {} })
+    expect(foreignOriginCreate.status).toBe(403)
+    expect(foreignOriginCreate.body.errors?.[0]?.message).toBe('Origin/Referer is not allowed')
+  })
+
   it('enforces organizer access and participant auth settings', async () => {
     const organizer = request.agent(app)
 

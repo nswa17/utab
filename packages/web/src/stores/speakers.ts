@@ -87,5 +87,38 @@ export const useSpeakersStore = defineStore('speakers', () => {
     }
   }
 
-  return { speakers, loading, error, fetchSpeakers, createSpeaker, updateSpeaker, deleteSpeaker }
+  async function bulkDeleteSpeakers(tournamentId: string, ids: string[]) {
+    const normalizedIds = Array.from(
+      new Set(ids.map((id) => String(id ?? '').trim()).filter((id) => id.length > 0))
+    )
+    if (normalizedIds.length === 0) return 0
+
+    loading.value = true
+    error.value = null
+    try {
+      const res = await api.delete('/speakers', {
+        params: { tournamentId, ids: normalizedIds.join(',') },
+      })
+      const deletedIds = new Set(normalizedIds)
+      speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
+      const deletedCount = Number(res.data?.data?.deletedCount)
+      return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
+    } catch (err: any) {
+      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speakers'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return {
+    speakers,
+    loading,
+    error,
+    fetchSpeakers,
+    createSpeaker,
+    updateSpeaker,
+    deleteSpeaker,
+    bulkDeleteSpeakers,
+  }
 })

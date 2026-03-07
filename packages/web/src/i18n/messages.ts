@@ -10,11 +10,15 @@ const en = {
   'CSV例: Institution A': 'CSV example: Institution A',
   'CSV例: Institution A,region,2': 'CSV example: Institution A,region,2',
   'バックアップ': 'Backup',
+  'バックアップから復元': 'Restore from Backup',
+  'バックアップの復元に失敗しました。': 'Failed to restore the backup.',
+  'バックアップを復元しました: {name}': 'Restored backup: {name}',
   '受賞者CSV': 'Awardees CSV',
   '参加者CSV': 'Participants CSV',
   'CSV取り込み': 'Import CSV',
   '大会データ一括DL': 'Download Tournament Bundle',
   '大会データの一括ダウンロードに失敗しました。': 'Failed to download the tournament data bundle.',
+  'ZIPファイルを選択してください。': 'Select a ZIP file.',
   'CSV取り込みに失敗しました': 'CSV import failed.',
   'CSV/TSVファイル': 'CSV/TSV file',
   'CSVテンプレートをダウンロード': 'Download CSV template',
@@ -701,8 +705,12 @@ const en = {
   '低勝ち/同点勝ち許可': 'Allow low/tie win',
   '引き分け許可': 'Allow draw',
   '引き分け入力と低勝ち・同点勝ちを許可します。': 'Allow draw input and low-win/tie-win decisions.',
+  '引き分け入力と低勝ち・同点勝ちを許可します。引き分け時の勝敗点は0.5-0.5固定です。':
+    'Allow draw input and low-win/tie-win decisions. Draws always award 0.5-0.5.',
   'ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。':
     'In break rounds, draw input and low-win/tie-win are always disabled.',
+  'ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。引き分け時の勝敗点は0.5-0.5固定です。':
+    'In break rounds, draw input and low-win/tie-win are always disabled. Draws always award 0.5-0.5.',
   '右へ移動': 'Move to right',
   '作成': 'Create',
   '作成者: {name}': 'Created by: {name}',
@@ -1521,8 +1529,8 @@ const en = {
   'CSV例: name,preev,active,available,conflicts,available_r1':
     'CSV example: name,preev,active,available,conflicts,available_r1',
   'one-up-one-down': 'one-up-one-down',
-  '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケットを使います。':
-    'Stable matching is preference-based; tournament standard/extended use win brackets.',
+  '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケット、ランダムは単純シャッフルです。':
+    'Stable matching is preference-based; tournament standard/extended use win brackets, and random is a simple shuffle.',
   '安定マッチングで使用する並び替え方式です。': 'Ordering strategy used by stable matching.',
   '1マッチあたりのチェア人数です。': 'Number of chairs per match.',
   '1マッチあたりのトレーニー人数です。': 'Number of trainees per match.',
@@ -1560,6 +1568,8 @@ const en = {
     'Choose whether to generate all, teams, adjudicators, or venues.',
   '安定割当または大会運用を選択します。': 'Select stable allocation or tournament operation.',
   '安定マッチングまたは大会標準を選択します。': 'Select stable matching or tournament standard.',
+  '標準 / クラスベース / 大会標準 / ランダムから選択します。':
+    'Select standard, class-based, tournament standard, or random.',
   '大会運用の割り当て戦略です。': 'Assignment strategy for tournament operation.',
   '伝統的アルゴリズムの割り当て戦略です。': 'Assignment strategy for the traditional algorithm.',
   '標準は簡易、厳密は制約を強めて生成します。':
@@ -1578,10 +1588,31 @@ const en = {
     'Teams are paired within win brackets; odd brackets are resolved by pulling teams up from lower brackets.',
   'ブレイク参加者シードを使い、1位対最下位の順で対戦を作ります。':
     'Use break seeds to create pairings in 1-vs-last order.',
+  'シャッフルしたチームをそのまま順に組み合わせます。':
+    'Shuffle teams and pair them in order as-is.',
   '対戦とジャッジの双方の希望順を作り、安定マッチングでチェア→パネル→トレーニーの順に割り当てます。':
     'Build preferences for debates and judges, then assign chair, panel, and trainee in order using stable matching.',
+  'judge_class の優先ロールを反映し、chair_preferred は chair、chair_or_panel は chair / panel、panel_or_trainee は panel / trainee を優先します。':
+    'Reflect judge_class role priorities: chair_preferred favors chair, chair_or_panel favors chair or panel, and panel_or_trainee favors panel or trainee.',
   '部屋とジャッジを並べて上から割り当てる方式です。割当戦略と分散オプションで配り方を変えます。':
     'Align rooms and judges and allocate top-down; assignment strategy and scatter options change the distribution.',
+  'シャッフルしたジャッジを、既存の対戦カードに対してチェア→パネル→トレーニーの順で埋めます。':
+    'Fill shuffled adjudicators onto the existing matchups in chair, panel, then trainee order.',
+  'class_based では panel_or_trainee を chair に置きません。':
+    'class_based never places panel_or_trainee as chair.',
+  'judge_class が全員未設定なら standard に戻り、一部未設定は chair_preferred として扱います。':
+    'If every judge_class is unset, fall back to standard; if only some are unset, treat them as chair_preferred.',
+  'クラスベース': 'Class-based',
+  'ジャッジクラス': 'Judge class',
+  'class_based では未設定は chair_preferred 扱い、全員未設定なら standard に戻ります。':
+    'In class_based mode, unset values are treated as chair_preferred; if everyone is unset it falls back to standard.',
+  'chair_preferred': 'chair_preferred',
+  'chair_or_panel': 'chair_or_panel',
+  'panel_or_trainee': 'panel_or_trainee',
+  '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。推奨範囲は 0〜10 です。':
+    'Pre-evaluation is a reference score before the tournament and is used to calculate auto-allocation priority. The recommended range is 0 to 10.',
+  'chair_preferred は主に Chair、chair_or_panel は Chair または panel、panel_or_trainee は Chair にせず主に panel / trainee に回します。':
+    'chair_preferred is mainly used as chair, chair_or_panel can be chair or panel, and panel_or_trainee is not used as chair and is mainly assigned to panel or trainee.',
   '参照集計結果が未選択のため、過去ラウンドの結果を参照せず対戦表を作成します。':
     'No reference snapshot is selected, so the draw will be generated without past-round results.',
   '同系統のジャッジが偏らないように分散させます。':

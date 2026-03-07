@@ -1156,6 +1156,10 @@ async function buildAllocationContext(
     id: adjudicatorMaps.map.get(String(adj._id))!,
     name: adj.name,
     preev: (adj as any).preev ?? 0,
+    user_defined_data:
+      (adj as any).userDefinedData && typeof (adj as any).userDefinedData === 'object'
+        ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<string, unknown>)
+        : {},
     details: buildDetailsForRounds(
       (adj as any).details,
       roundsNeeded,
@@ -1397,6 +1401,14 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
               teamAlgorithmOptions,
               context.config
             )
+          : teamAlgorithm === 'random'
+            ? allocations.teams.random.get(
+                round,
+                context.teamInstances,
+                context.compiledTeamResults,
+                teamAlgorithmOptions,
+                context.config
+              )
           : allocations.teams.standard.get(
               round,
               context.teamInstances,
@@ -1573,17 +1585,41 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
             context.config,
             adjudicatorOptions
           )
-        : allocations.adjudicators.standard.get(
-            round,
-            baseDraw,
-            context.adjudicatorInstances,
-            context.teamInstances,
-            context.compiledTeamResults,
-            context.compiledAdjudicatorResults,
-            numbersOfAdjudicators,
-            context.config,
-            adjudicatorOptions
-          )
+        : adjudicatorAlgorithm === 'class_based'
+          ? allocations.adjudicators.class_based.get(
+              round,
+              baseDraw,
+              context.adjudicatorInstances,
+              context.teamInstances,
+              context.compiledTeamResults,
+              context.compiledAdjudicatorResults,
+              numbersOfAdjudicators,
+              context.config,
+              adjudicatorOptions
+            )
+          : adjudicatorAlgorithm === 'random'
+            ? allocations.adjudicators.random.get(
+                round,
+                baseDraw,
+                context.adjudicatorInstances,
+                context.teamInstances,
+                context.compiledTeamResults,
+                context.compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                context.config,
+                adjudicatorOptions
+              )
+          : allocations.adjudicators.standard.get(
+              round,
+              baseDraw,
+              context.adjudicatorInstances,
+              context.teamInstances,
+              context.compiledTeamResults,
+              context.compiledAdjudicatorResults,
+              numbersOfAdjudicators,
+              context.config,
+              adjudicatorOptions
+            )
 
     const mappedAllocation = mapAllocationOut(
       adjudicatorDraw.allocation || [],
@@ -1748,6 +1784,14 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
               teamAlgorithmOptions,
               teamContext.config
             )
+          : teamAlgorithm === 'random'
+            ? allocations.teams.random.get(
+                round,
+                teamContext.teamInstances,
+                teamContext.compiledTeamResults,
+                teamAlgorithmOptions,
+                teamContext.config
+              )
           : allocations.teams.standard.get(
               round,
               teamContext.teamInstances,
@@ -1783,17 +1827,41 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
               adjudicatorContext.config,
               adjudicatorOptions
             )
-          : allocations.adjudicators.standard.get(
-              round,
-              draw,
-              adjudicatorContext.adjudicatorInstances,
-              adjudicatorContext.teamInstances,
-              adjudicatorContext.compiledTeamResults,
-              adjudicatorContext.compiledAdjudicatorResults,
-              numbersOfAdjudicators,
-              adjudicatorContext.config,
-              adjudicatorOptions
-            )
+          : adjudicatorAlgorithm === 'class_based'
+            ? allocations.adjudicators.class_based.get(
+                round,
+                draw,
+                adjudicatorContext.adjudicatorInstances,
+                adjudicatorContext.teamInstances,
+                adjudicatorContext.compiledTeamResults,
+                adjudicatorContext.compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                adjudicatorContext.config,
+                adjudicatorOptions
+              )
+            : adjudicatorAlgorithm === 'random'
+              ? allocations.adjudicators.random.get(
+                  round,
+                  draw,
+                  adjudicatorContext.adjudicatorInstances,
+                  adjudicatorContext.teamInstances,
+                  adjudicatorContext.compiledTeamResults,
+                  adjudicatorContext.compiledAdjudicatorResults,
+                  numbersOfAdjudicators,
+                  adjudicatorContext.config,
+                  adjudicatorOptions
+                )
+            : allocations.adjudicators.standard.get(
+                round,
+                draw,
+                adjudicatorContext.adjudicatorInstances,
+                adjudicatorContext.teamInstances,
+                adjudicatorContext.compiledTeamResults,
+                adjudicatorContext.compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                adjudicatorContext.config,
+                adjudicatorOptions
+              )
     }
 
     const venueOptions = validatedOptions.venue_allocation_algorithm_options

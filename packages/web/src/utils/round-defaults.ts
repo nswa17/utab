@@ -77,6 +77,17 @@ function normalizeBreakSeeding(value: unknown, fallback: BreakSeeding): BreakSee
   return fallback
 }
 
+export function normalizeRoundCompileOptions(
+  input?: CompileOptionsInput,
+  fallback: CompileOptions = DEFAULT_COMPILE_OPTIONS
+): CompileOptions {
+  const normalized = normalizeCompileOptions(input, fallback)
+  return {
+    ...normalized,
+    tie_points: DEFAULT_COMPILE_OPTIONS.tie_points,
+  }
+}
+
 export function defaultRoundDefaults(): RoundDefaults {
   return {
     userDefinedData: {
@@ -99,7 +110,7 @@ export function defaultRoundDefaults(): RoundDefaults {
     compile: {
       source: 'submissions',
       source_rounds: [],
-      options: normalizeCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
+      options: normalizeRoundCompileOptions(undefined, DEFAULT_COMPILE_OPTIONS),
     },
   }
 }
@@ -159,7 +170,7 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
     compile: {
       source: compileSource.source === 'raw' ? 'raw' : fallback.compile.source,
       source_rounds: asRoundList(compileSource.source_rounds),
-      options: normalizeCompileOptions(compileOptionsSource, fallback.compile.options),
+      options: normalizeRoundCompileOptions(compileOptionsSource, fallback.compile.options),
     },
   }
 }
@@ -184,7 +195,7 @@ export function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults) {
     compile: {
       source: normalized.compile.source,
       source_rounds: [...normalized.compile.source_rounds],
-      options: normalizeCompileOptions(normalized.compile.options, normalized.compile.options),
+      options: normalizeRoundCompileOptions(normalized.compile.options, normalized.compile.options),
     },
   }
 }
