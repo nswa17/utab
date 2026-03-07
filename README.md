@@ -36,7 +36,7 @@ cp .env.example .env
 - `MONGODB_URI`
 - `SESSION_SECRET`（16文字以上）
 - `CORS_ORIGIN`（例: `http://localhost:8080`）
-- `VITE_API_URL`（ローカル開発は `/api` 推奨）
+- `VITE_API_URL`（ローカル開発は `/api/v1` 推奨。旧 `/api` も互換あり）
 
 ## 開発
 
@@ -49,7 +49,7 @@ pnpm dev:server
 pnpm dev:web
 ```
 
-- API health: `http://localhost:3000/api/health`
+- API health: `http://localhost:3000/api/v1/health`
 - Web (Vite): `http://localhost:5173`
 
 ## テスト / チェック

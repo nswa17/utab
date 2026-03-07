@@ -6,18 +6,18 @@
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --watch --import tsx src/server.ts",
     "build": "tsc -b",
     "start": "node dist/server.js",
-    "test": "node ../../scripts/ensure-node.cjs && vitest run",
+    "test": "node ../../scripts/ensure-node.cjs && pnpm -C ../core build && vitest run",
     "lint": "eslint src --ext .ts",
-    "migrate-break-compat-cleanup": "tsx src/scripts/legacy/migrate-break-compat-cleanup.ts",
-    "migrate-break-stage-metadata": "tsx src/scripts/legacy/migrate-break-stage-metadata.ts",
-    "migrate-entity-template-v2": "tsx src/scripts/legacy/migrate-entity-template-v2.ts",
-    "reset-styles": "tsx src/scripts/reset-styles.ts",
-    "seed-mock-two-matches": "tsx src/scripts/seed-mock-two-matches.ts",
-    "seed-organizer-demo": "tsx src/scripts/seed-organizer-demo.ts",
-    "create-superuser": "tsx src/scripts/create-superuser.ts"
+    "migrate-break-compat-cleanup": "node --import tsx src/scripts/legacy/migrate-break-compat-cleanup.ts",
+    "migrate-break-stage-metadata": "node --import tsx src/scripts/legacy/migrate-break-stage-metadata.ts",
+    "migrate-entity-template-v2": "node --import tsx src/scripts/legacy/migrate-entity-template-v2.ts",
+    "reset-styles": "node --import tsx src/scripts/reset-styles.ts",
+    "seed-mock-two-matches": "node --import tsx src/scripts/seed-mock-two-matches.ts",
+    "seed-organizer-demo": "node --import tsx src/scripts/seed-organizer-demo.ts",
+    "create-superuser": "node --import tsx src/scripts/create-superuser.ts"
   },
   "dependencies": {
     "@utab/core": "workspace:*",
