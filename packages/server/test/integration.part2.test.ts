@@ -1,4 +1,5 @@
 import request from 'supertest'
+import { Types } from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
@@ -499,6 +500,71 @@ describe('Server integration', () => {
         allocationOpened: true,
       })
     ).rejects.toMatchObject({ code: 11000 })
+  })
+
+  it('deduplicates legacy duplicate draws before recreating the unique round index', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'draw-dedupe-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'draw-dedupe-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Draw Dedupe Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const [{ getTournamentConnection, closeTournamentConnections }, { getDrawModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/draw.js'),
+    ])
+
+    const connection = await getTournamentConnection(tournamentId)
+    const DrawModel = getDrawModel(connection)
+    await DrawModel.collection.dropIndexes()
+
+    const tournamentObjectId = new Types.ObjectId(tournamentId)
+    await DrawModel.collection.insertMany([
+      {
+        tournamentId: tournamentObjectId,
+        round: 2,
+        allocation: [],
+        drawOpened: false,
+        allocationOpened: false,
+        createdAt: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      },
+      {
+        tournamentId: tournamentObjectId,
+        round: 2,
+        allocation: [{ teams: { gov: 'team-a', opp: 'team-b' }, chairs: [], panels: [], trainees: [] }],
+        drawOpened: true,
+        allocationOpened: true,
+        createdAt: new Date('2024-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+      },
+    ])
+
+    await closeTournamentConnections()
+
+    const reconnected = await getTournamentConnection(tournamentId)
+    const ReconnectedDrawModel = getDrawModel(reconnected)
+    const remaining = await ReconnectedDrawModel.find({ tournamentId, round: 2 }).lean().exec()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].drawOpened).toBe(true)
+    expect(remaining[0].allocationOpened).toBe(true)
+    expect(remaining[0].allocation).toHaveLength(1)
+
+    const indexes = await ReconnectedDrawModel.collection.indexes()
+    const uniqueRoundIndex = indexes.find((index) => index.name === 'tournamentId_1_round_1')
+    expect(uniqueRoundIndex?.unique).toBe(true)
   })
 
   it('maps style update conflicts to 409 and rejects invalid style ids with 400', async () => {

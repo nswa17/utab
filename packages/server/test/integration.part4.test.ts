@@ -503,6 +503,18 @@ describe('Server integration', () => {
     })
     expect(organizerBallot.status).toBe(201)
 
+    const organizerBallotUpdate = await organizer
+      .patch(`/api/submissions/${organizerBallot.body.data._id}`)
+      .send({
+        tournamentId,
+        payload: {
+          ...organizerBallot.body.data.payload,
+          comment: 'updated while hidden',
+        },
+      })
+    expect(organizerBallotUpdate.status).toBe(200)
+    expect(organizerBallotUpdate.body.data.payload.comment).toBe('updated while hidden')
+
     const organizerFeedback = await organizer.post('/api/submissions/feedback').send({
       tournamentId,
       round: 2,
@@ -511,6 +523,20 @@ describe('Server integration', () => {
       submittedEntityId: 'team-a',
     })
     expect(organizerFeedback.status).toBe(201)
+
+    const organizerFeedbackUpdate = await organizer
+      .patch(`/api/submissions/${organizerFeedback.body.data._id}`)
+      .send({
+        tournamentId,
+        payload: {
+          ...organizerFeedback.body.data.payload,
+          comment: 'feedback updated while hidden',
+        },
+      })
+    expect(organizerFeedbackUpdate.status).toBe(200)
+    expect(organizerFeedbackUpdate.body.data.payload.comment).toBe(
+      'feedback updated while hidden'
+    )
   })
 
   it('does not leak team, round, or result records across tournament boundaries', async () => {

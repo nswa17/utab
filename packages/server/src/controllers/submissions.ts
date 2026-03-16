@@ -1108,6 +1108,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
+    const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const existing = await SubmissionModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!existing) {
       notFound(res, 'Submission not found')
@@ -1127,7 +1128,8 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         connection,
         tournamentId,
         nextRound,
-        nextPayload
+        nextPayload,
+        { allowHiddenRound: isAdmin }
       )
       if (!normalizedBallot.ok) {
         badRequest(res, normalizedBallot.message)
@@ -1139,7 +1141,8 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         connection,
         tournamentId,
         nextRound,
-        nextPayload
+        nextPayload,
+        { allowHiddenRound: isAdmin }
       )
       if (!normalizedFeedback.ok) {
         badRequest(res, normalizedFeedback.message)
