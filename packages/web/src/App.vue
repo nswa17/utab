@@ -33,14 +33,13 @@ const route = useRoute()
 const auth = useAuthStore()
 const devToolsOpen = ref(false)
 const isEmbeddedRoute = computed(() => route.path.startsWith('/admin-embed/'))
-const isAdminRole = computed(() => auth.role === 'organizer' || auth.role === 'superuser')
 const hasAdminTournamentContext = computed(() => {
   if (!route.path.startsWith('/admin/')) return false
   const tournamentId = String(route.params.tournamentId ?? '').trim()
   return tournamentId.length > 0
 })
 const showDevToolsDock = computed(
-  () => !isEmbeddedRoute.value && isAdminRole.value && hasAdminTournamentContext.value
+  () => !isEmbeddedRoute.value && auth.canAccessAdmin && hasAdminTournamentContext.value
 )
 
 watch(

@@ -60,4 +60,19 @@ describe('router guards', () => {
 
     expect(router.currentRoute.value.path).toBe('/admin')
   })
+
+  it('allows membership-based organizers to access admin routes', async () => {
+    const { router, auth } = createRouterWithAuth()
+    auth.initialized = true
+    auth.userId = 'user-3'
+    auth.username = 'speaker-admin'
+    auth.role = 'speaker'
+    auth.tournaments = ['tournament-1']
+    auth.organizerTournaments = ['tournament-1']
+
+    await router.push('/admin')
+    await router.isReady()
+
+    expect(router.currentRoute.value.path).toBe('/admin')
+  })
 })

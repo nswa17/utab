@@ -1,8 +1,80 @@
 import mongoose from 'mongoose'
 import { env } from '../config/environment.js'
 import { logger } from '../middleware/logging.js'
+import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { getCompiledModel } from '../models/compiled.js'
+import { getDrawModel } from '../models/draw.js'
+import { getInstitutionModel } from '../models/institution.js'
+import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
+import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
+import { getRawTeamResultModel } from '../models/raw-team-result.js'
+import { getResultModel } from '../models/result.js'
+import { getRoundModel } from '../models/round.js'
+import { getSpeakerModel } from '../models/speaker.js'
+import { getSubmissionModel } from '../models/submission.js'
+import { getTeamModel } from '../models/team.js'
+import { getVenueModel } from '../models/venue.js'
 
 const connections = new Map<string, Promise<mongoose.Connection>>()
+
+type DuplicateDrawGroup = {
+  _id: { tournamentId?: mongoose.Types.ObjectId; round?: number }
+  ids: mongoose.Types.ObjectId[]
+  count: number
+}
+
+async function dedupeLegacyDraws(connection: mongoose.Connection): Promise<void> {
+  const DrawModel = getDrawModel(connection)
+  const duplicateGroups = await DrawModel.aggregate<DuplicateDrawGroup>([
+    { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+    {
+      $group: {
+        _id: { tournamentId: '$tournamentId', round: '$round' },
+        ids: { $push: '$_id' },
+        count: { $sum: 1 },
+      },
+    },
+    { $match: { count: { $gt: 1 } } },
+  ]).exec()
+
+  if (duplicateGroups.length === 0) return
+
+  const idsToDelete = duplicateGroups.flatMap((group) => group.ids.slice(1))
+  await DrawModel.deleteMany({ _id: { $in: idsToDelete } }).exec()
+
+  logger.warn(
+    {
+      dbName: connection.name,
+      deletedCount: idsToDelete.length,
+      duplicateGroups: duplicateGroups.map((group) => ({
+        tournamentId: String(group._id?.tournamentId ?? ''),
+        round: Number(group._id?.round ?? 0),
+        keptId: String(group.ids[0] ?? ''),
+        removedIds: group.ids.slice(1).map((id) => String(id)),
+      })),
+    },
+    'deduplicated legacy duplicate draws before creating indexes'
+  )
+}
+
+async function ensureTournamentIndexes(connection: mongoose.Connection): Promise<void> {
+  await dedupeLegacyDraws(connection)
+  await Promise.all([
+    getTeamModel(connection).createIndexes(),
+    getSpeakerModel(connection).createIndexes(),
+    getAdjudicatorModel(connection).createIndexes(),
+    getVenueModel(connection).createIndexes(),
+    getInstitutionModel(connection).createIndexes(),
+    getRoundModel(connection).createIndexes(),
+    getDrawModel(connection).createIndexes(),
+    getSubmissionModel(connection).createIndexes(),
+    getRawTeamResultModel(connection).createIndexes(),
+    getRawSpeakerResultModel(connection).createIndexes(),
+    getRawAdjudicatorResultModel(connection).createIndexes(),
+    getCompiledModel(connection).createIndexes(),
+    getResultModel(connection).createIndexes(),
+  ])
+}
 
 export async function getTournamentConnection(tournamentId: string): Promise<mongoose.Connection> {
   const existing = connections.get(tournamentId)
@@ -28,7 +100,10 @@ export async function getTournamentConnection(tournamentId: string): Promise<mon
 
   connectPromise = connection
     .asPromise()
-    .then(() => connection)
+    .then(async () => {
+      await ensureTournamentIndexes(connection)
+      return connection
+    })
     .catch(async (err) => {
       try {
         await connection.close()

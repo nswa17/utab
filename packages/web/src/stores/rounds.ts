@@ -28,9 +28,27 @@ export const useRoundsStore = defineStore('rounds', () => {
   const rounds = ref<Round[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchRounds(tournamentId: string, options?: { forcePublic?: boolean }) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/rounds', {
@@ -39,13 +57,19 @@ export const useRoundsStore = defineStore('rounds', () => {
           public: options?.forcePublic ? '1' : undefined,
         },
       })
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       rounds.value = res.data?.data ?? []
       return rounds.value
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load rounds'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -60,12 +84,13 @@ export const useRoundsStore = defineStore('rounds', () => {
     weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/rounds', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         rounds.value = [...rounds.value, created].sort((a, b) => a.round - b.round)
       }
       return created
@@ -73,7 +98,7 @@ export const useRoundsStore = defineStore('rounds', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create round'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -89,12 +114,13 @@ export const useRoundsStore = defineStore('rounds', () => {
     weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/rounds/${payload.roundId}`, payload)
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         rounds.value = rounds.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -102,7 +128,7 @@ export const useRoundsStore = defineStore('rounds', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update round'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -120,12 +146,13 @@ export const useRoundsStore = defineStore('rounds', () => {
       userDefinedData?: Record<string, any>
     }>
   ) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch('/rounds', payload)
       const updatedList = Array.isArray(res.data?.data) ? (res.data.data as Round[]) : []
       if (updatedList.length > 0) {
+        advanceFetchSequence()
         const updatedById = new Map(updatedList.map((item) => [String(item._id), item]))
         rounds.value = rounds.value
           .map((item) => updatedById.get(String(item._id)) ?? item)
@@ -136,22 +163,23 @@ export const useRoundsStore = defineStore('rounds', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update rounds'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteRound(tournamentId: string, roundId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/rounds/${roundId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       rounds.value = rounds.value.filter((item) => item._id !== roundId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete round'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -162,7 +190,7 @@ export const useRoundsStore = defineStore('rounds', () => {
     sourceRounds?: number[]
     size?: number
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post(`/rounds/${payload.roundId}/break/candidates`, {
@@ -176,7 +204,7 @@ export const useRoundsStore = defineStore('rounds', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load break candidates'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -186,7 +214,7 @@ export const useRoundsStore = defineStore('rounds', () => {
     breakConfig: RoundBreakConfig
     syncTeamAvailability?: boolean
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/rounds/${payload.roundId}/break`, {
@@ -196,6 +224,7 @@ export const useRoundsStore = defineStore('rounds', () => {
       })
       const updatedRound = res.data?.data?.round as Round | undefined
       if (updatedRound?._id) {
+        advanceFetchSequence()
         rounds.value = rounds.value.map((item) => (item._id === updatedRound._id ? updatedRound : item))
       }
       return res.data?.data ?? null
@@ -203,7 +232,7 @@ export const useRoundsStore = defineStore('rounds', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save break settings'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

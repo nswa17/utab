@@ -441,6 +441,10 @@
                           "
                           v-model:poi="setupRoundEditForm.userDefinedData.poi"
                           v-model:best="setupRoundEditForm.userDefinedData.best"
+                          v-model:best-min-count="setupRoundEditForm.userDefinedData.best_min_count"
+                          v-model:best-max-count="setupRoundEditForm.userDefinedData.best_max_count"
+                          v-model:poi-min-count="setupRoundEditForm.userDefinedData.poi_min_count"
+                          v-model:poi-max-count="setupRoundEditForm.userDefinedData.poi_max_count"
                           :lock-allow-low-tie-win="setupRoundEditForm.breakEnabled"
                           :disabled="isLoading"
                         />
@@ -1660,6 +1664,10 @@
             "
             v-model:poi="roundDefaultsForm.userDefinedData.poi"
             v-model:best="roundDefaultsForm.userDefinedData.best"
+            v-model:best-min-count="roundDefaultsForm.userDefinedData.best_min_count"
+            v-model:best-max-count="roundDefaultsForm.userDefinedData.best_max_count"
+            v-model:poi-min-count="roundDefaultsForm.userDefinedData.poi_min_count"
+            v-model:poi-max-count="roundDefaultsForm.userDefinedData.poi_max_count"
             :disabled="isLoading"
           />
         </section>
@@ -1816,6 +1824,10 @@ import { useSubmissionsStore } from '@/stores/submissions'
 import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
 import {
+  readTournamentAccessState,
+  resolveTournamentAccessForm,
+} from '@/utils/tournament-access'
+import {
   buildEntityImportPayload,
   type DuplicateNameWarning,
   type MissingEntityWarning,
@@ -1858,6 +1870,7 @@ import CompileOptionsEditor from '@/components/common/CompileOptionsEditor.vue'
 import RoundOptionEditor from '@/components/common/RoundOptionEditor.vue'
 import BreakPolicyEditor from '@/components/common/BreakPolicyEditor.vue'
 import RankingPriorityEditor from '@/components/common/RankingPriorityEditor.vue'
+import { createLatestRequestGate } from '@/utils/latest-request'
 
 const route = useRoute()
 const tournamentStore = useTournamentStore()
@@ -1881,6 +1894,8 @@ const activeSection = computed(() =>
 )
 const sectionLoading = ref(true)
 const isSectionLoading = computed(() => sectionLoading.value)
+const refreshGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 
 const isLoading = computed(
   () =>
@@ -2428,7 +2443,7 @@ const importTeamRows: string[][] = [
   [
     'Team 08',
     'Delta Academy|West Block|North League',
-    'Speaker 08A|Speaker 08B|Speaker 08C',
+    'Speaker 08A|Speaker 08B|Speaker 08C|Speaker 08D',
     'true',
     'true',
     'true',
@@ -2493,8 +2508,9 @@ const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRo
     {
       header: 'speakers',
       required: true,
-      description: '所属スピーカー名。3 speakers/team を想定し、| または ; 区切り。',
-      example: 'Speaker 01A|Speaker 01B|Speaker 01C',
+      description:
+        '所属スピーカー名。4人以上でも可。| / ; 区切りに加え、quoted CSV ではカンマ区切りも可。speaker1, speaker2... の個別列も利用できます。',
+      example: 'Speaker 01A|Speaker 01B|Speaker 01C|Speaker 01D',
     },
     {
       header: 'available',
@@ -3028,19 +3044,13 @@ async function copyParticipantUrl() {
   }
 }
 
-function applyAccessForm(authValue: unknown) {
-  const auth = authValue && typeof authValue === 'object' ? (authValue as Record<string, any>) : {}
-  const access =
-    auth.access && typeof auth.access === 'object' ? (auth.access as Record<string, any>) : {}
-  const required = access.required === true
-  const hasPassword = access.hasPassword === true
-  const savedAccessPassword = typeof access.password === 'string' ? String(access.password) : ''
-  tournamentForm.accessRequired = required
-  if (savedAccessPassword.length > 0) {
-    tournamentForm.accessPassword = savedAccessPassword
-  } else if (!hasPassword) {
-    tournamentForm.accessPassword = ''
-  }
+function applyAccessForm(
+  authValue: unknown,
+  options: { preserveExistingPassword?: boolean } = {}
+) {
+  const next = resolveTournamentAccessForm(authValue, tournamentForm.accessPassword, options)
+  tournamentForm.accessRequired = next.required
+  tournamentForm.accessPassword = next.password
 }
 
 function applyTournamentForm() {
@@ -3090,24 +3100,35 @@ function applyRoundDefaultsForm() {
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  foregroundRefreshCount += 1
   sectionLoading.value = true
+  if (!currentTournamentId) {
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
+    return
+  }
   try {
     await Promise.all([
       tournamentStore.fetchTournaments(),
       styles.fetchStyles(),
-      rounds.fetchRounds(tournamentId.value),
-      draws.fetchDraws(tournamentId.value),
-      teams.fetchTeams(tournamentId.value),
-      adjudicators.fetchAdjudicators(tournamentId.value),
-      venues.fetchVenues(tournamentId.value),
-      speakers.fetchSpeakers(tournamentId.value),
-      institutions.fetchInstitutions(tournamentId.value),
-      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+      rounds.fetchRounds(currentTournamentId),
+      draws.fetchDraws(currentTournamentId),
+      teams.fetchTeams(currentTournamentId),
+      adjudicators.fetchAdjudicators(currentTournamentId),
+      venues.fetchVenues(currentTournamentId),
+      speakers.fetchSpeakers(currentTournamentId),
+      institutions.fetchInstitutions(currentTournamentId),
+      submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
     ])
+    if (!refreshGate.isCurrent(token)) return
     applyTournamentForm()
   } finally {
-    sectionLoading.value = false
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
   }
 }
 
@@ -3129,13 +3150,8 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
   const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
-  const currentAccess =
-    tournament.value.auth?.access && typeof tournament.value.auth.access === 'object'
-      ? (tournament.value.auth.access as Record<string, any>)
-      : {}
-  const currentHasPassword =
-    currentAccess.hasPassword === true ||
-    (typeof currentAccess.password === 'string' && currentAccess.password.length > 0)
+  const currentAccess = readTournamentAccessState(tournament.value.auth)
+  const currentHasPassword = currentAccess.hasPassword
   const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const currentInfo =
@@ -3178,7 +3194,7 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   })
   if (updated) {
     isApplyingTournamentForm.value = true
-    applyAccessForm(updated.auth)
+    applyAccessForm(updated.auth, { preserveExistingPassword: true })
     void nextTick(() => {
       isApplyingTournamentForm.value = false
     })

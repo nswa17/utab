@@ -21,6 +21,7 @@ import {
   type BreakCutoffTiePolicy,
   type BreakSeeding,
 } from './shared/break-config.js'
+import { buildAwardSelectionUserDefinedData } from './shared/award-selection.js'
 import { isRoundBreakEnabled, withRoundBreakEnabled } from './shared/round-break.js'
 import {
   annotateBreakCandidatesForPreview,
@@ -40,6 +41,10 @@ type RoundDefaults = {
     score_by_matter_manner: boolean
     poi: boolean
     best: boolean
+    best_min_count: number
+    best_max_count: number
+    poi_min_count: number
+    poi_max_count: number
     allow_low_tie_win: boolean
   }
   break: {
@@ -58,6 +63,12 @@ type RoundDefaults = {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function isRoundHidden(round: unknown): boolean {
+  const source = asRecord(round)
+  const userDefinedData = asRecord(source.userDefinedData)
+  return userDefinedData.hidden === true
 }
 
 function asRoundList(value: unknown): number[] {
@@ -116,6 +127,7 @@ function sanitizeRoundBreakConfig(value: unknown): Record<string, unknown> {
 }
 
 function defaultRoundDefaults(): RoundDefaults {
+  const awardSelection = buildAwardSelectionUserDefinedData(undefined)
   return {
     userDefinedData: {
       evaluate_from_adjudicators: true,
@@ -126,6 +138,7 @@ function defaultRoundDefaults(): RoundDefaults {
       score_by_matter_manner: true,
       poi: true,
       best: true,
+      ...awardSelection,
       allow_low_tie_win: true,
     },
     break: {
@@ -148,6 +161,7 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
   const userDefinedSource = asRecord(source.userDefinedData)
   const breakSource = asRecord(source.break)
   const compileSource = asRecord(source.compile)
+  const awardSelection = buildAwardSelectionUserDefinedData(userDefinedSource)
   const compileOptionsSource =
     compileSource.options && typeof compileSource.options === 'object'
       ? compileSource.options
@@ -177,6 +191,7 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
           : fallback.userDefinedData.score_by_matter_manner,
       poi: typeof userDefinedSource.poi === 'boolean' ? userDefinedSource.poi : fallback.userDefinedData.poi,
       best: typeof userDefinedSource.best === 'boolean' ? userDefinedSource.best : fallback.userDefinedData.best,
+      ...awardSelection,
       allow_low_tie_win:
         typeof userDefinedSource.allow_low_tie_win === 'boolean'
           ? userDefinedSource.allow_low_tie_win
@@ -213,6 +228,7 @@ function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unkno
     ...defaults.userDefinedData,
     ...current,
   }
+  Object.assign(merged, buildAwardSelectionUserDefinedData(merged))
   const breakRoundEnabled = merged.break_round === true
   merged.break_round = breakRoundEnabled
   if (!Object.prototype.hasOwnProperty.call(merged, 'hidden')) {
@@ -573,7 +589,10 @@ export const listRounds: RequestHandler = async (req, res, next) => {
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const forcePublic =
       publicParam === '1' || publicParam === 'true' || publicParam === 'yes' || publicParam === 'public'
-    const data = isAdmin && !forcePublic ? rounds : rounds.map((round) => sanitizeRoundForPublic(round))
+    const data =
+      isAdmin && !forcePublic
+        ? rounds
+        : rounds.filter((round) => !isRoundHidden(round)).map((round) => sanitizeRoundForPublic(round))
     res.json({ data, errors: [] })
   } catch (err) {
     next(err)
@@ -599,6 +618,10 @@ export const getRound: RequestHandler = async (req, res, next) => {
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const forcePublic =
       publicParam === '1' || publicParam === 'true' || publicParam === 'yes' || publicParam === 'public'
+    if ((!isAdmin || forcePublic) && isRoundHidden(round)) {
+      notFound(res, 'Round not found')
+      return
+    }
     res.json({ data: isAdmin && !forcePublic ? round : sanitizeRoundForPublic(round), errors: [] })
   } catch (err) {
     next(err)
@@ -797,6 +820,12 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
     }
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+      return
+    }
     next(err)
   }
 }
@@ -806,11 +835,21 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
     if (!ensureTournamentId(res, tournamentId)) return
     const idList =
-      typeof ids === 'string' && ids.length > 0 ? ids.split(',').filter((id) => id.length > 0) : []
-    const filter: Record<string, unknown> = { tournamentId }
-    if (idList.length > 0) {
-      filter._id = { $in: idList }
+      typeof ids === 'string'
+        ? ids
+            .split(',')
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : []
+    if (idList.length === 0) {
+      badRequest(res, 'Bulk delete ids are required')
+      return
     }
+    if (idList.some((id) => !isValidObjectId(id))) {
+      badRequest(res, 'Invalid round id')
+      return
+    }
+    const filter: Record<string, unknown> = { tournamentId, _id: { $in: idList } }
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const targets = await RoundModel.find(filter).select({ _id: 1, round: 1 }).lean().exec()
@@ -890,6 +929,12 @@ export const updateRound: RequestHandler = async (req, res, next) => {
     }
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+      return
+    }
     next(err)
   }
 }

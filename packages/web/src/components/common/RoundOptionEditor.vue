@@ -80,6 +80,65 @@
       <slot name="after-team-settings" />
     </section>
 
+    <section class="stack option-group">
+      <div class="row option-group-head">
+        <h6 class="option-group-title">{{ $t('表彰人数設定') }}</h6>
+        <HelpTip :text="$t('提出時に選択できるベストディベーターとPOIの人数範囲を設定します。')" />
+      </div>
+      <div class="grid option-grid">
+        <Field :label="$t('ベストディベーター最小人数')">
+          <template #default="{ id, describedBy }">
+            <input
+              v-model.number="bestMinCount"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              min="0"
+              :max="bestMaxCount"
+              :disabled="disabled || !best"
+            />
+          </template>
+        </Field>
+        <Field :label="$t('ベストディベーター最大人数')">
+          <template #default="{ id, describedBy }">
+            <input
+              v-model.number="bestMaxCount"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              :min="bestMinCount"
+              :disabled="disabled || !best"
+            />
+          </template>
+        </Field>
+        <Field :label="$t('POI最小人数')">
+          <template #default="{ id, describedBy }">
+            <input
+              v-model.number="poiMinCount"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              min="0"
+              :max="poiMaxCount"
+              :disabled="disabled || !poi"
+            />
+          </template>
+        </Field>
+        <Field :label="$t('POI最大人数')">
+          <template #default="{ id, describedBy }">
+            <input
+              v-model.number="poiMaxCount"
+              :id="id"
+              :aria-describedby="describedBy"
+              type="number"
+              :min="poiMinCount"
+              :disabled="disabled || !poi"
+            />
+          </template>
+        </Field>
+      </div>
+    </section>
+
   </div>
 </template>
 
@@ -107,6 +166,10 @@ const allowLowTieWin = defineModel<boolean>('allowLowTieWin', { required: true }
 const scoreByMatterManner = defineModel<boolean>('scoreByMatterManner', { required: true })
 const poi = defineModel<boolean>('poi', { required: true })
 const best = defineModel<boolean>('best', { required: true })
+const bestMinCount = defineModel<number>('bestMinCount', { required: true })
+const bestMaxCount = defineModel<number>('bestMaxCount', { required: true })
+const poiMinCount = defineModel<number>('poiMinCount', { required: true })
+const poiMaxCount = defineModel<number>('poiMaxCount', { required: true })
 </script>
 
 <style scoped>

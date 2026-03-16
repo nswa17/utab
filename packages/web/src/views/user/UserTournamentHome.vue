@@ -37,6 +37,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/utils/api'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import { useTournamentStore } from '@/stores/tournament'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Field from '@/components/common/Field.vue'
@@ -57,23 +58,31 @@ const needsPassword = ref(false)
 const hasAccess = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
+const accessStateGate = createLatestRequestGate()
+const submitGate = createLatestRequestGate()
 
 async function ensureTournamentAccess() {
+  const currentTournamentId = tournamentId.value
+  const token = accessStateGate.begin()
   checkingAccess.value = true
   needsPassword.value = false
   hasAccess.value = false
   errorMessage.value = ''
-  if (!tournamentId.value) {
-    errorMessage.value = t('大会情報が見つかりません。')
-    checkingAccess.value = false
-    return
-  }
 
   try {
-    await api.get(`/tournaments/${tournamentId.value}`)
+    if (!currentTournamentId) {
+      if (accessStateGate.isCurrent(token)) {
+        errorMessage.value = t('大会情報が見つかりません。')
+      }
+      return
+    }
+
+    await api.get(`/tournaments/${currentTournamentId}`)
+    if (!accessStateGate.isCurrent(token)) return
     hasAccess.value = true
     await tournamentStore.fetchTournaments()
   } catch (err: any) {
+    if (!accessStateGate.isCurrent(token)) return
     const status = err?.response?.status
     if (status === 401) {
       needsPassword.value = true
@@ -85,12 +94,16 @@ async function ensureTournamentAccess() {
     }
     errorMessage.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
   } finally {
-    checkingAccess.value = false
+    const completion = accessStateGate.complete(token)
+    if (completion.isCurrent) {
+      checkingAccess.value = false
+    }
   }
 }
 
 async function enterTournament() {
-  if (!tournamentId.value) {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) {
     errorMessage.value = t('大会情報が見つかりません。')
     return
   }
@@ -98,21 +111,30 @@ async function enterTournament() {
     errorMessage.value = t('パスワードを入力してください。')
     return
   }
+  const submitToken = submitGate.begin()
+  const stateToken = accessStateGate.begin()
   submitting.value = true
   errorMessage.value = ''
   try {
-    await api.post(`/tournaments/${tournamentId.value}/access`, {
+    await api.post(`/tournaments/${currentTournamentId}/access`, {
       action: 'enter',
       password: password.value,
     })
+    if (!accessStateGate.isCurrent(stateToken)) return
     await tournamentStore.fetchTournaments()
+    if (!accessStateGate.isCurrent(stateToken)) return
     needsPassword.value = false
     hasAccess.value = true
     password.value = ''
   } catch (err: any) {
+    if (!accessStateGate.isCurrent(stateToken)) return
     errorMessage.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
   } finally {
-    submitting.value = false
+    accessStateGate.complete(stateToken)
+    const completion = submitGate.complete(submitToken)
+    if (completion.isCurrent) {
+      submitting.value = false
+    }
   }
 }
 

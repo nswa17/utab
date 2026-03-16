@@ -89,6 +89,13 @@ type TeamDrawGetOptions =
       by?: number[]
       simple?: boolean
       force?: boolean
+      algorithm: 'min_warnings'
+      algorithm_options?: TeamDrawAlgorithmOptions
+    }
+  | {
+      by?: number[]
+      simple?: boolean
+      force?: boolean
       algorithm: 'strict'
       algorithm_options?: TeamDrawAlgorithmOptions
     }
@@ -150,6 +157,7 @@ type VenueDrawGetOptions = {
 
 type DrawPipelineOptions =
   | ({ team_allocation_algorithm?: 'standard' } & DrawGetOptions)
+  | ({ team_allocation_algorithm: 'min_warnings' } & DrawGetOptions)
   | ({ team_allocation_algorithm: 'strict' } & DrawGetOptions)
   | ({ team_allocation_algorithm: 'powerpair' } & DrawGetOptions)
   | ({ team_allocation_algorithm: 'random' } & DrawGetOptions)
@@ -338,7 +346,15 @@ export class TournamentHandler {
           allocations.teams.precheck(teams, institutions, config.style, _for)
         }
         const newDraw =
-          algorithm === 'strict'
+          algorithm === 'min_warnings'
+            ? allocations.teams.min_warnings.get(
+                _for,
+                teams,
+                compiledTeamResults,
+                algorithm_options,
+                configWithInstitutionPriority
+              )
+            : algorithm === 'strict'
             ? allocations.teams.strict.get(
                 _for,
                 teams,

@@ -12,6 +12,8 @@ const baseInstitutions = [{ _id: 'inst-a', name: 'Institution A' }]
 const baseSpeakers = [
   { _id: 'speaker-a', name: 'Alice' },
   { _id: 'speaker-b', name: 'Bob' },
+  { _id: 'speaker-c', name: 'Carol' },
+  { _id: 'speaker-d', name: 'Dave' },
 ]
 
 function build(options: {
@@ -140,6 +142,45 @@ describe('entity csv import', () => {
       { r: 1, available: true, conflicts: ['inst-a'], speakers: ['speaker-a', 'speaker-b'] },
       { r: 2, available: false, conflicts: ['inst-a'], speakers: ['speaker-a', 'speaker-b'] },
     ])
+  })
+
+  it('supports four-person team speaker lists in quoted csv cells', () => {
+    const result = build({
+      type: 'teams',
+      text: ['name,institution,speakers', 'Team New,Institution A,"Alice,Bob,Carol,Dave"'].join(
+        '\n'
+      ),
+      roundNumbers: [1],
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.payload).toHaveLength(1)
+    const team = result.payload[0] as any
+    expect(team.template).toEqual({
+      available: true,
+      conflicts: ['inst-a'],
+      speakers: ['speaker-a', 'speaker-b', 'speaker-c', 'speaker-d'],
+    })
+  })
+
+  it('supports speaker1..speaker4 team columns', () => {
+    const result = build({
+      type: 'teams',
+      text: [
+        'name,institution,speaker1,speaker2,speaker3,speaker4',
+        'Team New,Institution A,Alice,Bob,Carol,Dave',
+      ].join('\n'),
+      roundNumbers: [1],
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.payload).toHaveLength(1)
+    const team = result.payload[0] as any
+    expect(team.template).toEqual({
+      available: true,
+      conflicts: ['inst-a'],
+      speakers: ['speaker-a', 'speaker-b', 'speaker-c', 'speaker-d'],
+    })
   })
 
   it('returns an error when base availability headers are ambiguous', () => {

@@ -52,16 +52,12 @@ export function subset<T>(list0: T[], list1: T[]): boolean {
   return true
 }
 
-function rand(seed?: string): number {
-  const rng = seedrandom(seed)
-  return rng()
-}
-
 export function shuffle<T>(list: T[], seed?: string): T[] {
   const array = [...list]
+  const rng = seedrandom(seed)
   let n = array.length
   while (n) {
-    const i = Math.floor(rand(seed) * n--)
+    const i = Math.floor(rng() * n--)
     const t = array[n]
     array[n] = array[i]
     array[i] = t

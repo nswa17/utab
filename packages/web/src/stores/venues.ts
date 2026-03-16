@@ -7,19 +7,43 @@ export const useVenuesStore = defineStore('venues', () => {
   const venues = ref<Venue[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchVenues(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/venues', { params: { tournamentId } })
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       venues.value = res.data?.data ?? []
       return venues.value
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load venues'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -30,12 +54,13 @@ export const useVenuesStore = defineStore('venues', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/venues', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         venues.value = [created, ...venues.value]
       }
       return created
@@ -43,7 +68,7 @@ export const useVenuesStore = defineStore('venues', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create venue'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -55,7 +80,7 @@ export const useVenuesStore = defineStore('venues', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/venues/${payload.venueId}`, {
@@ -67,6 +92,7 @@ export const useVenuesStore = defineStore('venues', () => {
       })
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         venues.value = venues.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -74,22 +100,23 @@ export const useVenuesStore = defineStore('venues', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update venue'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteVenue(tournamentId: string, venueId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/venues/${venueId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       venues.value = venues.value.filter((item) => item._id !== venueId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete venue'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

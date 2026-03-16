@@ -117,13 +117,14 @@ function remapCompiledAdjudicatorResults(
 type PlainRecord = Record<string, unknown>
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
+type RawResultCrudDocument = {
+  set: (update: PlainRecord) => void
+  save: () => Promise<unknown>
+}
+
 type RawResultCrudModel = {
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<unknown[]>
-  findOneAndUpdate: (
-    filter: PlainRecord,
-    update: PlainRecord,
-    options: { new: boolean }
-  ) => { lean: () => { exec: () => Promise<unknown | null> } }
+  findOne: (filter: PlainRecord) => { exec: () => Promise<RawResultCrudDocument | null> }
   findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<unknown | null> } }
   deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
 }
@@ -172,19 +173,22 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const updated = await Model.findOneAndUpdate(
-        { _id: docId, tournamentId },
-        { $set: rest },
-        { new: true }
-      )
-        .lean()
-        .exec()
-      if (!updated) {
+      const existing = await Model.findOne({ _id: docId, tournamentId }).exec()
+      if (!existing) {
         notFound(res, options.notFoundMessage)
         return
       }
+      existing.set(rest)
+      const updated = await existing.save()
       res.json({ data: updated, errors: [] })
     } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }

@@ -18,6 +18,10 @@ describe('round defaults', () => {
         evaluate_from_adjudicators: false,
         evaluator_in_team: 'speaker',
         score_by_matter_manner: false,
+        best_min_count: 2,
+        best_max_count: 3,
+        poi_min_count: 1,
+        poi_max_count: 4,
       },
       break: {
         source: 'raw',
@@ -39,6 +43,10 @@ describe('round defaults', () => {
     expect(normalized.userDefinedData.evaluate_from_adjudicators).toBe(false)
     expect(normalized.userDefinedData.evaluator_in_team).toBe('speaker')
     expect(normalized.userDefinedData.score_by_matter_manner).toBe(false)
+    expect(normalized.userDefinedData.best_min_count).toBe(2)
+    expect(normalized.userDefinedData.best_max_count).toBe(3)
+    expect(normalized.userDefinedData.poi_min_count).toBe(1)
+    expect(normalized.userDefinedData.poi_max_count).toBe(4)
     expect(normalized.break.source).toBe('raw')
     expect(normalized.break.size).toBe(16)
     expect(normalized.break.cutoff_tie_policy).toBe('include_all')
@@ -71,6 +79,10 @@ describe('round defaults', () => {
         score_by_matter_manner: false,
         poi: false,
         best: true,
+        best_min_count: 1,
+        best_max_count: 2,
+        poi_min_count: 0,
+        poi_max_count: 2,
         allow_low_tie_win: true,
       },
       break: {
@@ -102,6 +114,10 @@ describe('round defaults', () => {
     })
     expect(payload.evaluate_from_teams).toBe(false)
     expect(payload.no_speaker_score).toBe(true)
+    expect(payload.best_min_count).toBe(1)
+    expect(payload.best_max_count).toBe(2)
+    expect(payload.poi_min_count).toBe(0)
+    expect(payload.poi_max_count).toBe(2)
     expect(payload.break.size).toBe(12)
     expect(payload.break.cutoff_tie_policy).toBe('strict')
     expect(payload.compile.source).toBe('raw')
@@ -122,6 +138,10 @@ describe('round defaults', () => {
         score_by_matter_manner: true,
         poi: true,
         best: true,
+        best_min_count: 1,
+        best_max_count: 2,
+        poi_min_count: 0,
+        poi_max_count: 2,
         allow_low_tie_win: true,
       },
       break: {

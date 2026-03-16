@@ -1184,8 +1184,13 @@ import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import Table from '@/components/common/Table.vue'
 import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
+import {
+  resolveRoundAwardSelectionValidationRules,
+  validateAwardSelectionCounts,
+} from '@/utils/award-selection'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
+import { createLatestRequestGate } from '@/utils/latest-request'
 
 const route = useRoute()
 const submissions = useSubmissionsStore()
@@ -1299,6 +1304,8 @@ const naturalSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
 })
+const refreshGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 
 const isLoading = computed(
   () =>
@@ -2220,7 +2227,21 @@ function roundScoreSettings(roundNumber: number) {
     scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
     allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false,
     allowWinnerScoreMismatch: roundAllowsWinnerScoreMismatch(found?.userDefinedData),
+    awardSelectionRules: resolveRoundAwardSelectionValidationRules(found?.userDefinedData),
   }
+}
+
+function awardSelectionValidationMessage(violation: { kind: 'best' | 'poi'; min: number; max: number }) {
+  if (violation.kind === 'best') {
+    return t('ベストディベーターは{min}〜{max}人選択してください。', {
+      min: violation.min,
+      max: violation.max,
+    })
+  }
+  return t('POIは{min}〜{max}人選択してください。', {
+    min: violation.min,
+    max: violation.max,
+  })
 }
 
 function normalizeEditingBallotWinnerSelection(preferredWinnerId?: string) {
@@ -2561,6 +2582,18 @@ function buildBallotPayloadFromTable(): Record<string, unknown> | null {
   if (!sideA.ok) return fail(sideA.message)
   const sideB = parseSideRows(editingBallotRowsB.value, teamName(teamBId))
   if (!sideB.ok) return fail(sideB.message)
+  const awardSelectionViolation = validateAwardSelectionCounts(
+    {
+      bestA: sideA.best,
+      bestB: sideB.best,
+      poiA: sideA.poi,
+      poiB: sideB.poi,
+    },
+    settings.awardSelectionRules
+  )
+  if (awardSelectionViolation) {
+    return fail(awardSelectionValidationMessage(awardSelectionViolation))
+  }
   const totalA = sideA.scores.reduce((sum, value) => sum + value, 0)
   const totalB = sideB.scores.reduce((sum, value) => sum + value, 0)
   const winnerDecisionMessage = validateWinnerDecision(totalA, totalB, true)
@@ -2704,23 +2737,35 @@ async function deleteCurrentSubmission(item: Submission) {
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  foregroundRefreshCount += 1
   sectionLoading.value = true
   submissionsLoadError.value = null
+  if (!currentTournamentId) {
+    const completion = refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
+    if (completion.isCurrent) submissionsLoadError.value = null
+    return
+  }
   try {
     await Promise.all([
-      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
-      rounds.fetchRounds(tournamentId.value),
-      draws.fetchDraws(tournamentId.value),
-      teams.fetchTeams(tournamentId.value),
-      speakers.fetchSpeakers(tournamentId.value),
-      adjudicators.fetchAdjudicators(tournamentId.value),
+      submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
+      rounds.fetchRounds(currentTournamentId),
+      draws.fetchDraws(currentTournamentId),
+      teams.fetchTeams(currentTournamentId),
+      speakers.fetchSpeakers(currentTournamentId),
+      adjudicators.fetchAdjudicators(currentTournamentId),
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
     ])
+    if (!refreshGate.isCurrent(token)) return
     submissionsLoadError.value = submissions.error ?? null
   } finally {
-    sectionLoading.value = false
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
   }
 }
 

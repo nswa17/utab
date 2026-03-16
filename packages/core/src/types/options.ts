@@ -32,7 +32,7 @@ export interface VenueDrawAlgorithmOptions {
 }
 
 export interface DrawGetOptions {
-  team_allocation_algorithm?: 'standard' | 'strict' | 'powerpair' | 'random'
+  team_allocation_algorithm?: 'standard' | 'min_warnings' | 'strict' | 'powerpair' | 'random'
   team_allocation_algorithm_options?: TeamDrawAlgorithmOptions
   adjudicator_allocation_algorithm?: 'standard' | 'traditional' | 'class_based' | 'random'
   adjudicator_allocation_algorithm_options?: AdjudicatorDrawAlgorithmOptions

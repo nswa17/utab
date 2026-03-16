@@ -7,19 +7,43 @@ export const useSpeakersStore = defineStore('speakers', () => {
   const speakers = ref<Speaker[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchSpeakers(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/speakers', { params: { tournamentId } })
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       speakers.value = res.data?.data ?? []
       return speakers.value
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load speakers'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -28,12 +52,13 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name: string
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/speakers', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         speakers.value = [created, ...speakers.value]
       }
       return created
@@ -41,7 +66,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create speaker'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -51,7 +76,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name?: string
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/speakers/${payload.speakerId}`, {
@@ -61,6 +86,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
       })
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         speakers.value = speakers.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -68,22 +94,23 @@ export const useSpeakersStore = defineStore('speakers', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update speaker'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteSpeaker(tournamentId: string, speakerId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       speakers.value = speakers.value.filter((item) => item._id !== speakerId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speaker'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

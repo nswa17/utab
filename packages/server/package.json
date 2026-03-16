@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "scripts": {
-    "dev": "node --watch --import tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "tsc -b",
     "start": "node dist/server.js",
     "test": "node ../../scripts/ensure-node.cjs && pnpm -C ../core build && vitest run",
@@ -14,6 +14,7 @@
     "migrate-break-compat-cleanup": "node --import tsx src/scripts/legacy/migrate-break-compat-cleanup.ts",
     "migrate-break-stage-metadata": "node --import tsx src/scripts/legacy/migrate-break-stage-metadata.ts",
     "migrate-entity-template-v2": "node --import tsx src/scripts/legacy/migrate-entity-template-v2.ts",
+    "migrate-style-pda-reply-labels": "node --import tsx src/scripts/migrate-style-pda-reply-labels.ts",
     "reset-styles": "node --import tsx src/scripts/reset-styles.ts",
     "seed-mock-two-matches": "node --import tsx src/scripts/seed-mock-two-matches.ts",
     "seed-organizer-demo": "node --import tsx src/scripts/seed-organizer-demo.ts",

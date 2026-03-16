@@ -60,6 +60,13 @@
           <div class="row board-head reference-round-confirm-head">
             <div class="stack tight">
               <h4>{{ $t('参照ラウンド選択') }}</h4>
+              <p class="muted small">
+                {{
+                  $t(
+                    '確定後は、その時点の参照集計を固定で使います。前ラウンド結果を後から修正しても自動更新されないため、必要なら「参照ラウンドを変更・再確定」してください。'
+                  )
+                }}
+              </p>
             </div>
           </div>
           <template v-if="!referenceSelectionConfirmed">
@@ -178,7 +185,7 @@
               :disabled="isLoading || referenceConfirming"
               @click="reopenReferenceSelection"
             >
-              {{ $t('参照ラウンドを変更') }}
+              {{ $t('参照ラウンドを変更・再確定') }}
             </Button>
           </div>
         </section>
@@ -1142,6 +1149,9 @@
               </span>
               <select v-model="autoOptions.teamAlgorithm">
                 <option value="standard">{{ $t('安定マッチング') }}</option>
+                <option value="min_warnings" :disabled="!isTwoTeamStyle">
+                  {{ isTwoTeamStyle ? $t('最小警告') : $t('最小警告（2チーム戦のみ）') }}
+                </option>
                 <option value="powerpair">{{ $t('大会標準') }}</option>
                 <option value="strict">{{ $t('大会拡張') }}</option>
                 <option value="break" :disabled="!isBreakRound">
@@ -1156,10 +1166,16 @@
             </label>
             <div
               class="stack auto-algorithm-editor"
-              v-if="autoOptions.teamAlgorithm === 'standard'"
+              v-if="
+                autoOptions.teamAlgorithm === 'standard' ||
+                autoOptions.teamAlgorithm === 'min_warnings'
+              "
             >
               <div class="grid auto-detail-grid">
-                <label class="stack auto-standard-method-field">
+                <label
+                  v-if="autoOptions.teamAlgorithm === 'standard'"
+                  class="stack auto-standard-method-field"
+                >
                   <span class="option-title">
                     {{ $t('チーム方式') }}
                     <HelpTip :text="$t('安定マッチングで使用する並び替え方式です。')" />
@@ -1189,7 +1205,7 @@
                   </p>
                   <PriorityDragSelector
                     v-model="autoOptions.teamFilters"
-                    :options="teamFilterOptions"
+                    :options="displayedTeamFilterOptions"
                     :disabled="locked"
                     layout="single"
                     :active-title="$t('使用する基準')"
@@ -1197,6 +1213,47 @@
                     :inactive-empty-text="$t('不使用の指標はありません。')"
                     :active-action-label="$t('除外')"
                   />
+                  <div class="stack auto-team-baseline" v-if="teamWarningBaselineVisible">
+                    <div class="row auto-team-baseline-head">
+                      <strong>{{ $t('推定最小警告') }}</strong>
+                      <span class="auto-team-baseline-badge">
+                        {{
+                          teamWarningBaseline.status === 'ready' &&
+                          teamWarningBaseline.mode === 'exact'
+                            ? $t('厳密')
+                            : $t('推定')
+                        }}
+                      </span>
+                    </div>
+                    <p class="muted tiny option-help-text">
+                      {{ $t('選択中の順位基準だけを警告数として集計します。') }}
+                    </p>
+                    <div
+                      v-if="teamWarningBaseline.status === 'ready'"
+                      class="auto-team-baseline-grid"
+                    >
+                      <div
+                        v-for="entry in teamWarningBaseline.entries"
+                        :key="entry.filter"
+                        class="auto-team-baseline-item"
+                      >
+                        <span class="muted">{{ teamBaselineEntryLabel(entry.filter) }}</span>
+                        <strong>{{ entry.count }}</strong>
+                      </div>
+                    </div>
+                    <p v-else class="muted tiny option-help-text">
+                      {{ teamWarningBaselineUnavailableText }}
+                    </p>
+                    <p v-if="teamWarningBaselineUnpairedText" class="muted tiny option-help-text">
+                      {{ teamWarningBaselineUnpairedText }}
+                    </p>
+                    <p
+                      v-if="teamWarningBaselineIgnoredFiltersText"
+                      class="muted tiny option-help-text"
+                    >
+                      {{ teamWarningBaselineIgnoredFiltersText }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1477,6 +1534,48 @@
                     :inactive-empty-text="$t('不使用の指標はありません。')"
                     :active-action-label="$t('除外')"
                   />
+                  <div class="stack auto-team-baseline" v-if="adjudicatorWarningBaselineVisible">
+                    <div class="row auto-team-baseline-head">
+                      <strong>{{ $t('推定最小警告') }}</strong>
+                      <span class="auto-team-baseline-badge">
+                        {{
+                          adjudicatorWarningBaseline.status === 'ready' &&
+                          adjudicatorWarningBaseline.mode === 'exact'
+                            ? $t('厳密')
+                            : $t('推定')
+                        }}
+                      </span>
+                    </div>
+                    <p class="muted tiny option-help-text">
+                      {{
+                        $t(
+                          '現在の対戦カードに対して、選択中の順位基準だけを警告数として集計します。'
+                        )
+                      }}
+                    </p>
+                    <div
+                      v-if="adjudicatorWarningBaseline.status === 'ready'"
+                      class="auto-team-baseline-grid"
+                    >
+                      <div
+                        v-for="entry in adjudicatorWarningBaseline.entries"
+                        :key="entry.filter"
+                        class="auto-team-baseline-item"
+                      >
+                        <span class="muted">{{ adjudicatorBaselineEntryLabel(entry.filter) }}</span>
+                        <strong>{{ entry.count }}</strong>
+                      </div>
+                    </div>
+                    <p v-else class="muted tiny option-help-text">
+                      {{ adjudicatorWarningBaselineUnavailableText }}
+                    </p>
+                    <p
+                      v-if="adjudicatorWarningBaselineIgnoredFiltersText"
+                      class="muted tiny option-help-text"
+                    >
+                      {{ adjudicatorWarningBaselineIgnoredFiltersText }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1747,6 +1846,18 @@ import {
   type AllocationDragHighlightTone,
   type AllocationDragKind,
 } from '@/utils/allocation-drag-highlights'
+import { formatAllocationRequestError } from '@/utils/allocation-request-errors'
+import { createLatestRequestGate } from '@/utils/latest-request'
+import {
+  estimateTeamWarningBaseline,
+  type TeamBaselineSupportedFilter,
+  type TeamWarningBaselineResult,
+} from '@/utils/team-warning-baseline'
+import {
+  estimateAdjudicatorWarningBaseline,
+  type AdjudicatorBaselineSupportedFilter,
+  type AdjudicatorWarningBaselineResult,
+} from '@/utils/adjudicator-warning-baseline'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -1986,6 +2097,9 @@ const allocationSortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
 })
+const refreshGate = createLatestRequestGate()
+const compiledHistoryGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 
 function openNotice(message: string) {
   noticeMessage.value = message
@@ -2147,6 +2261,23 @@ const teamFilterOptions = computed(() => [
   },
 ])
 
+const displayedTeamFilterOptions = computed(() =>
+  autoOptions.value.teamAlgorithm === 'min_warnings'
+    ? teamFilterOptions.value.filter(
+        (option) =>
+          option.value !== 'by_random' && option.value !== TEAM_STANDARD_SIDE_SPREAD_FILTER
+      )
+    : teamFilterOptions.value
+)
+
+const teamBaselineLabelByFilter = computed<Record<TeamBaselineSupportedFilter, string>>(() => ({
+  by_strength: t('異勝数'),
+  by_side: t('サイド偏り'),
+  by_past_opponent: t('過去対戦'),
+  by_conflict_group: t('同一機関'),
+  by_sibling_past_opponent_school: t('同校別チームの過去対戦校'),
+}))
+
 const teamMethodOptions = computed(() => [
   {
     value: 'straight',
@@ -2303,6 +2434,14 @@ const adjudicatorFilterOptions = computed(() => [
   },
 ])
 
+const adjudicatorBaselineLabelByFilter = computed<
+  Record<AdjudicatorBaselineSupportedFilter, string>
+>(() => ({
+  by_conflict_team: t('個別衝突'),
+  by_conflict_group: t('同一機関'),
+  by_past: t('過去担当'),
+}))
+
 const adjudicatorAssignOptions = computed(() => [
   {
     value: 'high_to_high',
@@ -2384,6 +2523,7 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const isTwoTeamStyle = computed(() => Number(style.value?.team_num ?? 2) === 2)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const priorRounds = computed(() =>
@@ -2784,6 +2924,9 @@ function resolveSnapshotIdForScope(scope: RequestScope, useOverrides = true): st
 
 const teamAlgorithmDescriptions = computed<Record<string, string>>(() => ({
   standard: t('各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。'),
+  min_warnings: t(
+    '選択した warning 系基準を辞書順で最小化する組み合わせを探します。少人数は厳密、大人数は近似です。'
+  ),
   strict: t(
     '勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。'
   ),
@@ -3139,38 +3282,62 @@ function syncFromDraw(
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const token = refreshGate.begin()
+  foregroundRefreshCount += 1
   sectionLoading.value = true
+  compiledHistoryGate.invalidate()
+  if (!currentTournamentId) {
+    const completion = refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
+    if (completion.isCurrent) compiledHistory.value = []
+    return
+  }
   try {
     await Promise.all([
-      teams.fetchTeams(tournamentId.value),
-      adjudicators.fetchAdjudicators(tournamentId.value),
-      draws.fetchDraws(tournamentId.value),
-      venues.fetchVenues(tournamentId.value),
-      roundsStore.fetchRounds(tournamentId.value),
-      compiledStore.fetchLatest(tournamentId.value),
-      refreshCompiledHistory(),
-      institutions.fetchInstitutions(tournamentId.value),
-      speakersStore.fetchSpeakers(tournamentId.value),
+      teams.fetchTeams(currentTournamentId),
+      adjudicators.fetchAdjudicators(currentTournamentId),
+      draws.fetchDraws(currentTournamentId),
+      venues.fetchVenues(currentTournamentId),
+      roundsStore.fetchRounds(currentTournamentId),
+      compiledStore.fetchLatest(currentTournamentId),
+      refreshCompiledHistory(currentTournamentId),
+      institutions.fetchInstitutions(currentTournamentId),
+      speakersStore.fetchSpeakers(currentTournamentId),
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
       submissionsStore.fetchSubmissions({
-        tournamentId: tournamentId.value,
-        round: round.value,
+        tournamentId: currentTournamentId,
+        round: currentRound,
       }),
     ])
   } finally {
-    sectionLoading.value = false
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
   }
 }
 
-async function refreshCompiledHistory() {
-  if (!tournamentId.value) return
+async function refreshCompiledHistory(currentTournamentId = tournamentId.value) {
+  const token = compiledHistoryGate.begin()
+  if (!currentTournamentId) {
+    if (compiledHistoryGate.isCurrent(token)) {
+      compiledHistory.value = []
+    }
+    compiledHistoryGate.complete(token)
+    return
+  }
   try {
-    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = []
+  } finally {
+    compiledHistoryGate.complete(token)
   }
 }
 
@@ -3490,7 +3657,14 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
   })
 }
 
-const TEAM_ALGORITHM_VALUES = ['standard', 'powerpair', 'strict', 'break', 'random'] as const
+const TEAM_ALGORITHM_VALUES = [
+  'standard',
+  'min_warnings',
+  'powerpair',
+  'strict',
+  'break',
+  'random',
+] as const
 const TEAM_STANDARD_METHOD_VALUES = ['original', 'straight', 'weighted', 'custom'] as const
 const TEAM_STANDARD_SIDE_SPREAD_FILTER = 'spread_sides_by_school' as const
 const TEAM_STANDARD_FILTER_VALUES = [
@@ -3501,6 +3675,13 @@ const TEAM_STANDARD_FILTER_VALUES = [
   'by_random',
   'by_sibling_past_opponent_school',
   TEAM_STANDARD_SIDE_SPREAD_FILTER,
+] as const
+const TEAM_WARNING_FILTER_VALUES = [
+  'by_strength',
+  'by_side',
+  'by_past_opponent',
+  'by_conflict_group',
+  'by_sibling_past_opponent_school',
 ] as const
 const TEAM_STANDARD_FILTER_DEFAULTS = [
   'by_strength',
@@ -3568,6 +3749,32 @@ function normalizeNonNegativeInteger(value: unknown, fallback: number): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
 }
 
+function validAllocationRowCount(rows: DrawAllocationRow[] = allocation.value) {
+  return rows.filter((row) => row.teams.gov && row.teams.opp).length
+}
+
+function normalizedRequestedAdjudicatorCounts() {
+  return {
+    chairs: normalizeNonNegativeInteger(autoOptions.value.chairs, 1),
+    panels: normalizeNonNegativeInteger(autoOptions.value.panels, 0),
+    trainees: normalizeNonNegativeInteger(autoOptions.value.trainees, 0),
+  }
+}
+
+function estimatedAllocationSquareCountForRequest() {
+  if (requestScope.value === 'adjudicators' || requestScope.value === 'venues') {
+    return validAllocationRowCount()
+  }
+  const teamNum = Math.max(1, Number(style.value?.team_num ?? 2))
+  return Math.floor(availableTeams.value.length / teamNum)
+}
+
+function estimatedRequiredAdjudicatorCountForRequest() {
+  const counts = normalizedRequestedAdjudicatorCounts()
+  const adjudicatorsPerSquare = counts.chairs + counts.panels + counts.trainees
+  return estimatedAllocationSquareCountForRequest() * adjudicatorsPerSquare
+}
+
 async function requestAllocation() {
   requestError.value = null
   if (locked.value) {
@@ -3607,6 +3814,9 @@ async function requestAllocation() {
     const standardTeamFilters = normalizedStandardTeamFilters.filter(
       (value) => value !== TEAM_STANDARD_SIDE_SPREAD_FILTER
     )
+    const minWarningTeamFilters = standardTeamFilters.filter((value) =>
+      TEAM_WARNING_FILTER_VALUES.includes(value as (typeof TEAM_WARNING_FILTER_VALUES)[number])
+    )
 
     const teamOptions =
       effectiveTeamAlgorithm === 'strict'
@@ -3642,6 +3852,10 @@ async function requestAllocation() {
               'adjusted'
             ),
           }
+        : effectiveTeamAlgorithm === 'min_warnings'
+          ? {
+              filters: minWarningTeamFilters,
+            }
         : effectiveTeamAlgorithm === 'powerpair'
           ? {
               odd_bracket: normalizeEnumValue(
@@ -3791,7 +4005,24 @@ async function requestAllocation() {
       closeAutoGenerateModal()
     }
   } catch (err: any) {
-    requestError.value = err?.response?.data?.errors?.[0]?.message ?? t('自動生成に失敗しました')
+    const responseError = err?.response?.data?.errors?.[0]
+    requestError.value =
+      formatAllocationRequestError({
+        locale: locale.value,
+        errorName: responseError?.name,
+        message: responseError?.message,
+        availableCountByRole: {
+          team: availableTeams.value.length,
+          adjudicator: availableAdjudicators.value.length,
+          venue: availableVenues.value.length,
+        },
+        requiredCountByRole: {
+          adjudicator: estimatedRequiredAdjudicatorCountForRequest(),
+          venue: estimatedAllocationSquareCountForRequest(),
+        },
+      }) ??
+      responseError?.message ??
+      t('自動生成に失敗しました')
   } finally {
     requestLoading.value = false
   }
@@ -4908,6 +5139,90 @@ const availableTeams = computed(() =>
   teams.teams.filter((team) => detailAvailable(team.details, round.value))
 )
 
+const teamRecordById = computed(() => {
+  const map = new Map<string, any>()
+  teams.teams.forEach((team) => {
+    map.set(String(team?._id ?? ''), team)
+  })
+  return map
+})
+
+const normalizedTeamBaselineFilters = computed(() =>
+  normalizeUniqueStringList(
+    autoOptions.value.teamFilters,
+    TEAM_STANDARD_FILTER_VALUES,
+    TEAM_STANDARD_FILTER_DEFAULTS
+  )
+)
+
+const teamWarningBaselineVisible = computed(
+  () =>
+    showAutoGenerateModal.value &&
+    scopeIncludesTeams.value &&
+    (autoOptions.value.teamAlgorithm === 'standard' ||
+      autoOptions.value.teamAlgorithm === 'min_warnings')
+)
+
+const teamWarningBaseline = computed<TeamWarningBaselineResult>(() => {
+  if (!teamWarningBaselineVisible.value) {
+    return {
+      status: 'unavailable',
+      reason: 'no_supported_filters',
+      ignoredFilters: [],
+      pairedTeamCount: 0,
+      unpairedTeamCount: 0,
+    }
+  }
+
+  return estimateTeamWarningBaseline({
+    teamIds: availableTeams.value.map((team) => String(team?._id ?? '')),
+    teamNum: Math.max(1, Number(style.value?.team_num ?? 2)),
+    filterOrder: normalizedTeamBaselineFilters.value,
+    teamWin: (teamId) => {
+      const result = compiledTeamMap.value.get(String(teamId))
+      const win = Number(result?.win)
+      return Number.isFinite(win) ? win : undefined
+    },
+    teamPastOpponents: (teamId) => teamPastOpponentIds(teamId),
+    teamPastSides: (teamId) => teamPastSideHistory(teamId),
+    teamInstitutions: (teamId) => {
+      const team = teamRecordById.value.get(String(teamId))
+      return team ? teamInstitutions(team) : []
+    },
+    institutionCategory: (institutionId) => institutionCategoryById(institutionId),
+  })
+})
+
+function teamBaselineEntryLabel(filter: TeamBaselineSupportedFilter) {
+  return teamBaselineLabelByFilter.value[filter] ?? filter
+}
+
+const teamWarningBaselineUnavailableText = computed(() => {
+  if (teamWarningBaseline.value.status === 'ready') return ''
+  if (teamWarningBaseline.value.reason === 'requires_two_team_style') {
+    return t('この baseline は 2チーム戦でのみ表示できます。')
+  }
+  if (teamWarningBaseline.value.reason === 'not_enough_teams') {
+    return t('baseline を出すには 2 チーム以上が必要です。')
+  }
+  return t('警告として集計できる順位基準が選ばれていません。')
+})
+
+const teamWarningBaselineUnpairedText = computed(() => {
+  if (teamWarningBaseline.value.unpairedTeamCount <= 0) return ''
+  return t('使用可能チームが奇数のため、{count} チームは未組みとして計算しています。', {
+    count: teamWarningBaseline.value.unpairedTeamCount,
+  })
+})
+
+const teamWarningBaselineIgnoredFiltersText = computed(() => {
+  if (teamWarningBaseline.value.ignoredFilters.length === 0) return ''
+  const labels = teamWarningBaseline.value.ignoredFilters
+    .map((filter) => teamFilterOptions.value.find((option) => option.value === filter)?.label ?? filter)
+    .join(' / ')
+  return t('次の基準は baseline 集計対象外です: {labels}', { labels })
+})
+
 const availableVenues = computed(() =>
   venues.venues.filter((venue) => detailAvailable(venue.details, round.value))
 )
@@ -4915,6 +5230,92 @@ const availableVenues = computed(() =>
 const availableAdjudicators = computed(() =>
   adjudicators.adjudicators.filter((adj) => detailAvailable(adj.details, round.value))
 )
+
+const adjudicatorRecordById = computed(() => {
+  const map = new Map<string, any>()
+  adjudicators.adjudicators.forEach((adjudicator) => {
+    map.set(String(adjudicator?._id ?? ''), adjudicator)
+  })
+  return map
+})
+
+const normalizedAdjudicatorBaselineFilters = computed(() =>
+  normalizeUniqueStringList(
+    autoOptions.value.adjudicatorFilters,
+    ADJUDICATOR_STANDARD_FILTER_VALUES,
+    ADJUDICATOR_STANDARD_FILTER_VALUES
+  )
+)
+
+const adjudicatorWarningBaselineVisible = computed(
+  () =>
+    showAutoGenerateModal.value &&
+    scopeIncludesAdjudicators.value &&
+    autoOptions.value.adjudicatorAlgorithm === 'standard'
+)
+
+const adjudicatorWarningBaseline = computed<AdjudicatorWarningBaselineResult>(() => {
+  if (!adjudicatorWarningBaselineVisible.value) {
+    return {
+      status: 'unavailable',
+      reason: 'no_supported_filters',
+      ignoredFilters: [],
+      slotCount: 0,
+      availableAdjudicatorCount: 0,
+    }
+  }
+
+  return estimateAdjudicatorWarningBaseline({
+    rows: allocation.value
+      .map((row) => ({
+        teamIds: [String(row.teams?.gov ?? ''), String(row.teams?.opp ?? '')],
+        slotCount: requestedAdjudicatorsPerMatch.value,
+      }))
+      .filter((row) => row.teamIds.every((teamId) => teamId.length > 0) && row.slotCount > 0),
+    adjudicatorIds: availableAdjudicators.value.map((adjudicator) => String(adjudicator?._id ?? '')),
+    filterOrder: normalizedAdjudicatorBaselineFilters.value,
+    teamInstitutions: (teamId) => {
+      const team = teamRecordById.value.get(String(teamId))
+      return team ? teamInstitutions(team) : []
+    },
+    adjudicatorInstitutions: (adjudicatorId) => {
+      const adjudicator = adjudicatorRecordById.value.get(String(adjudicatorId))
+      return adjudicator ? adjudicatorInstitutions(adjudicator) : []
+    },
+    adjudicatorConflicts: (adjudicatorId) => {
+      const adjudicator = adjudicatorRecordById.value.get(String(adjudicatorId))
+      return adjudicator ? adjudicatorConflicts(adjudicator) : []
+    },
+    adjudicatorJudgedTeams: (adjudicatorId) => adjudicatorJudgedTeamIds(adjudicatorId),
+    institutionCategory: (institutionId) => institutionCategoryById(institutionId),
+  })
+})
+
+function adjudicatorBaselineEntryLabel(filter: AdjudicatorBaselineSupportedFilter) {
+  return adjudicatorBaselineLabelByFilter.value[filter] ?? filter
+}
+
+const adjudicatorWarningBaselineUnavailableText = computed(() => {
+  if (adjudicatorWarningBaseline.value.status === 'ready') return ''
+  if (adjudicatorWarningBaseline.value.reason === 'not_enough_rows') {
+    return t('baseline を出すには現在の対戦カードが必要です。')
+  }
+  if (adjudicatorWarningBaseline.value.reason === 'not_enough_adjudicators') {
+    return t('baseline を出すには必要人数分の使用可能ジャッジが必要です。')
+  }
+  return t('警告として集計できるジャッジ基準が選ばれていません。')
+})
+
+const adjudicatorWarningBaselineIgnoredFiltersText = computed(() => {
+  if (adjudicatorWarningBaseline.value.ignoredFilters.length === 0) return ''
+  const labels = adjudicatorWarningBaseline.value.ignoredFilters
+    .map(
+      (filter) =>
+        adjudicatorFilterOptions.value.find((option) => option.value === filter)?.label ?? filter
+    )
+    .join(' / ')
+  return t('次の基準は baseline 集計対象外です: {labels}', { labels })
+})
 
 const unassignedTeams = computed(() => {
   const assigned = new Set<string>()
@@ -5803,6 +6204,22 @@ watch(
   () => autoOptions.value.teamAlgorithm,
   (next) => {
     if (next === 'break' && scopeIncludesTeams.value) hydrateAutoBreakPolicyFromRound()
+    if (next !== 'min_warnings') return
+    const sanitizedFilters = normalizeUniqueStringList(
+      autoOptions.value.teamFilters,
+      TEAM_WARNING_FILTER_VALUES,
+      TEAM_STANDARD_FILTER_DEFAULTS
+    )
+    const currentFilters = Array.isArray(autoOptions.value.teamFilters)
+      ? autoOptions.value.teamFilters
+      : []
+    if (
+      sanitizedFilters.length === currentFilters.length &&
+      sanitizedFilters.every((value, index) => value === currentFilters[index])
+    ) {
+      return
+    }
+    autoOptions.value.teamFilters = [...sanitizedFilters]
   }
 )
 
@@ -5816,6 +6233,16 @@ watch(
   isBreakRound,
   (enabled) => {
     if (!enabled && autoOptions.value.teamAlgorithm === 'break') {
+      autoOptions.value.teamAlgorithm = 'standard'
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  isTwoTeamStyle,
+  (enabled) => {
+    if (!enabled && autoOptions.value.teamAlgorithm === 'min_warnings') {
       autoOptions.value.teamAlgorithm = 'standard'
     }
   },
@@ -6056,6 +6483,47 @@ watch(
   font-size: 0.84rem;
   font-weight: 700;
   color: var(--color-muted);
+}
+
+.auto-team-baseline {
+  border: 1px solid #dbe2ea;
+  border-radius: var(--radius-sm);
+  background: #f8fbff;
+  padding: 10px 12px;
+}
+
+.auto-team-baseline-head {
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-team-baseline-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 2px 8px;
+}
+
+.auto-team-baseline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.auto-team-baseline-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  padding: 8px 10px;
 }
 
 .auto-toggle-field {

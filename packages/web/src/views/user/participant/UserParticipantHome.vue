@@ -1354,6 +1354,7 @@ watch(
 watch(
   [tournamentId, participantMode],
   () => {
+    hasLoaded.value = false
     refresh()
   },
   { immediate: true }

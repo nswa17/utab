@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { messages } from '@/i18n/messages'
 
 function load(path: string) {
   return readFileSync(resolve(process.cwd(), path), 'utf8')
@@ -31,6 +32,10 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain(':disabled="submitButtonDisabled"')
     expect(source).toContain('<p v-if="validationError" class="error">{{ validationError }}</p>')
     expect(source).toContain('const validationError = computed(() => {')
+    expect(source).toContain('const awardSelectionError = computed(() => {')
+    expect(source).toContain('validateAwardSelectionCounts(')
+    expect(source).toContain("t('ベストディベーターは{min}〜{max}人選択してください。'")
+    expect(source).toContain("t('POIは{min}〜{max}人選択してください。'")
     expect(source).toContain(
       'const submitButtonDisabled = computed(() => submissions.loading || !canSubmit.value)'
     )
@@ -65,6 +70,7 @@ describe('UserRoundBallotEntry winner selection rules', () => {
   it('supports role-by-role controls with steppers and switches', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain('const roleSequenceProgressText = computed(() => {')
+    expect(source).toContain('buildSpeakerRoleSequence(style.value?.speaker_sequence')
     expect(source).toContain('function goToNextRole() {')
     expect(source).toContain('function goToPreviousRole() {')
     expect(source).toContain("t('前のロール')")
@@ -72,5 +78,23 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("adjustCurrentRoleNumeric('score', 1)")
     expect(source).toContain('<ToggleSwitch v-model="activeRoleBest"')
     expect(source).toContain('<ToggleSwitch v-model="activeRolePoi"')
+  })
+
+  it('shows per-speaker scores and awards in the confirmation modal', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain("{{ $t('スピーカー別内訳') }}")
+    expect(source).toContain('const confirmSpeakerTeams = computed(() => [')
+    expect(source).toContain('function buildConfirmSpeakerRows(')
+    expect(source).toContain("t('マター {matter} / マナー {manner}',")
+    expect(source).toContain("$t('付与なし')")
+    expect(source).not.toContain('bestDebaterSummaryItems')
+    expect(source).not.toContain('poiSummaryItems')
+  })
+
+  it('defines interpolation messages used by the confirmation modal', () => {
+    expect(messages.en['マター {matter} / マナー {manner}']).toBe('Matter {matter} / Manner {manner}')
+    expect(messages.en['{score}点']).toBe('{score} pts')
+    expect(messages.en['合計 {score}点']).toBe('Total {score} pts')
+    expect(messages.en['付与なし']).toBe('No award')
   })
 })

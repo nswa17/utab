@@ -43,7 +43,7 @@ export function findAndAccessDetail<T extends IdentifiableWithDetails>(
 }
 
 export function filterAvailable<T extends IdentifiableWithDetails>(list: T[], r: number): T[] {
-  return list.filter((entity) => accessDetail(entity, r).available)
+  return list.filter((entity) => accessDetail(entity, r).available !== false)
 }
 
 export function checkDetail<T extends IdentifiableWithDetails>(entities: T[], r: number): void {

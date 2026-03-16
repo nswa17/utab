@@ -70,6 +70,11 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     loading.value = pendingRequests.value > 0
   }
 
+  function invalidateFetchSequences() {
+    adminFetchSequence.value += 1
+    participantFetchSequence.value += 1
+  }
+
   async function postWithTimeout(path: string, payload: unknown, timeoutMs = SUBMISSION_TIMEOUT_MS) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -144,6 +149,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   function clearSubmissions() {
+    invalidateFetchSequences()
     submissions.value = []
     error.value = null
   }
@@ -189,6 +195,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       })
       const updated = res.data?.data ?? null
       if (updated?._id) {
+        invalidateFetchSequences()
         submissions.value = submissions.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -209,6 +216,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       })
       const deleted = res.data?.data ?? null
       if (deleted?._id) {
+        invalidateFetchSequences()
         submissions.value = submissions.value.filter((item) => item._id !== deleted._id)
       }
       return deleted

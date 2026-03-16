@@ -7,8 +7,19 @@ const submissionSchema = new Schema(
     type: { type: String, enum: ['ballot', 'feedback'], required: true },
     payload: { type: Schema.Types.Mixed, required: true },
     submittedBy: { type: String },
+    dedupeKey: { type: String },
   },
   { timestamps: true }
+)
+
+submissionSchema.index(
+  { tournamentId: 1, round: 1, type: 1, dedupeKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      dedupeKey: { $exists: true, $type: 'string' },
+    },
+  }
 )
 
 export type Submission = InferSchemaType<typeof submissionSchema>

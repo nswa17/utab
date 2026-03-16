@@ -223,4 +223,59 @@ describe('submissions store', () => {
     ])
     expect(store.error).toBeNull()
   })
+
+  it('does not let a stale admin fetch overwrite an updated submission', async () => {
+    const store = useSubmissionsStore()
+    store.submissions = [
+      { _id: 'submission-1', type: 'ballot', round: 1, payload: { comment: 'old' } } as any,
+    ]
+
+    let resolveFetch: (value: any) => void = () => {}
+    mockedApi.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+    )
+    mockedApi.patch.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'submission-1',
+          type: 'ballot',
+          round: 1,
+          payload: { comment: 'new' },
+        },
+      },
+    })
+
+    const fetchPromise = store.fetchSubmissions({ tournamentId: 'tournament-1' })
+    await store.updateSubmission({
+      tournamentId: 'tournament-1',
+      submissionId: 'submission-1',
+      payload: { comment: 'new' },
+    })
+
+    resolveFetch({
+      data: {
+        data: [
+          {
+            _id: 'submission-1',
+            type: 'ballot',
+            round: 1,
+            payload: { comment: 'stale' },
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-1',
+        type: 'ballot',
+        round: 1,
+        payload: { comment: 'new' },
+      },
+    ])
+  })
 })

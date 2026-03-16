@@ -237,6 +237,10 @@
                   "
                   v-model:poi="roundDraft(round).userDefined.poi"
                   v-model:best="roundDraft(round).userDefined.best"
+                  v-model:best-min-count="roundDraft(round).userDefined.best_min_count"
+                  v-model:best-max-count="roundDraft(round).userDefined.best_max_count"
+                  v-model:poi-min-count="roundDraft(round).userDefined.poi_min_count"
+                  v-model:poi-max-count="roundDraft(round).userDefined.poi_max_count"
                   :lock-allow-low-tie-win="roundDraft(round).breakEnabled"
                   :disabled="isLoading"
                 >
@@ -404,7 +408,11 @@ import { useTournamentStore } from '@/stores/tournament'
 import { useTeamsStore } from '@/stores/teams'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useAdjudicatorsStore } from '@/stores/adjudicators'
-import { defaultRoundDefaults, normalizeRoundCompileOptions } from '@/utils/round-defaults'
+import {
+  defaultRoundDefaults,
+  normalizeRoundCompileOptions,
+  normalizeRoundDefaults,
+} from '@/utils/round-defaults'
 import {
   isRoundBreakEnabled as readRoundBreakEnabled,
   withRoundBreakEnabled,
@@ -412,8 +420,8 @@ import {
 import {
   compileAdjudicatorRankingMetrics,
   type CompileAdjudicatorRankingMetric,
-  type CompileOptions,
 } from '@/types/compiled'
+import { createLatestRequestGate } from '@/utils/latest-request'
 
 const route = useRoute()
 const router = useRouter()
@@ -465,6 +473,8 @@ const roundDeleteModalId = ref<string | null>(null)
 const roundsLoadError = ref('')
 const roundDeleteError = ref('')
 const sectionLoading = ref(true)
+const refreshGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 const isLoading = computed(
   () =>
     roundsStore.loading ||
@@ -522,10 +532,10 @@ function createRoundDraft(round: any): RoundSettingsDraft {
   const motions = Array.isArray(round.motions) ? round.motions : []
   const userDefined = round.userDefinedData ?? {}
   const compileSource = (userDefined.compile ?? {}) as Record<string, any>
-  const compileOptionsSource =
-    compileSource.options && typeof compileSource.options === 'object'
-      ? (compileSource.options as CompileOptions)
-      : (compileSource as CompileOptions)
+  const normalized = normalizeRoundDefaults({
+    userDefinedData: userDefined,
+    compile: compileSource,
+  })
   const roundBreakEnabled = readRoundBreakEnabled(userDefined)
   const { break: _ignoredBreak, ...plainUserDefined } = userDefined
   void _ignoredBreak
@@ -539,14 +549,15 @@ function createRoundDraft(round: any): RoundSettingsDraft {
     },
     userDefined: {
       ...defaultRoundUserDefined(),
+      ...normalized.userDefinedData,
       ...plainUserDefined,
       hidden: false,
       evaluator_in_team: plainUserDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
     },
     compile: {
-      source: compileSource.source === 'raw' ? 'raw' : defaultRoundCompile().source,
-      source_rounds: normalizeSourceRounds(roundNumber, compileSource.source_rounds),
-      options: normalizeRoundCompileOptions(compileOptionsSource),
+      source: normalized.compile.source,
+      source_rounds: normalizeSourceRounds(roundNumber, normalized.compile.source_rounds),
+      options: normalizeRoundCompileOptions(normalized.compile.options, normalized.compile.options),
     },
     breakEnabled: roundBreakEnabled,
   }
@@ -855,22 +866,33 @@ function compileSourceRoundSelectOptions(
 }
 
 async function refresh() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  foregroundRefreshCount += 1
   sectionLoading.value = true
   roundsLoadError.value = ''
+  if (!currentTournamentId) {
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
+    return
+  }
   try {
     await Promise.all([
       tournamentStore.fetchTournaments(),
-      roundsStore.fetchRounds(tournamentId.value),
-      drawsStore.fetchDraws(tournamentId.value),
-      submissionsStore.fetchSubmissions({ tournamentId: tournamentId.value }),
-      teamsStore.fetchTeams(tournamentId.value),
-      speakersStore.fetchSpeakers(tournamentId.value),
-      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
+      roundsStore.fetchRounds(currentTournamentId),
+      drawsStore.fetchDraws(currentTournamentId),
+      submissionsStore.fetchSubmissions({ tournamentId: currentTournamentId }),
+      teamsStore.fetchTeams(currentTournamentId),
+      speakersStore.fetchSpeakers(currentTournamentId),
+      adjudicatorsStore.fetchAdjudicators(currentTournamentId),
     ])
+    if (!refreshGate.isCurrent(token)) return
     roundsLoadError.value = roundsStore.error ?? ''
   } finally {
-    sectionLoading.value = false
+    refreshGate.complete(token)
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
   }
 }
 

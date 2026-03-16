@@ -31,103 +31,64 @@ const listSchema = {
   }),
 }
 
-const createTeamSchema = {
-  body: z
-    .object({
-      tournamentId: z.string().min(1),
-      id: z.string().min(1),
-      from_id: z.string().min(1),
-      r: z.number().int().min(1),
-      weight: z.number().optional(),
-      win: z.number(),
-      opponents: z.array(z.string().min(1)),
-      side: z.string(),
-      user_defined_data: z.any().optional(),
-    })
-    .or(
-      z.array(
-        z.object({
-          tournamentId: z.string().min(1),
-          id: z.string().min(1),
-          from_id: z.string().min(1),
-          r: z.number().int().min(1),
-          weight: z.number().optional(),
-          win: z.number(),
-          opponents: z.array(z.string().min(1)),
-          side: z.string(),
-          user_defined_data: z.any().optional(),
-        })
-      )
-    ),
+const rawTeamBodySchema = z.object({
+  tournamentId: z.string().min(1),
+  id: z.string().min(1),
+  from_id: z.string().min(1),
+  r: z.number().int().min(1),
+  weight: z.number().optional(),
+  win: z.number(),
+  opponents: z.array(z.string().min(1)),
+  side: z.string(),
+  user_defined_data: z.any().optional(),
+})
+
+const rawSpeakerBodySchema = z.object({
+  tournamentId: z.string().min(1),
+  id: z.string().min(1),
+  from_id: z.string().min(1),
+  r: z.number().int().min(1),
+  weight: z.number().optional(),
+  scores: z.array(z.number()),
+  user_defined_data: z.any().optional(),
+})
+
+const rawAdjudicatorBodySchema = z.object({
+  tournamentId: z.string().min(1),
+  id: z.string().min(1),
+  from_id: z.string().min(1),
+  r: z.number().int().min(1),
+  weight: z.number().optional(),
+  score: z.number(),
+  judged_teams: z.array(z.string().min(1)),
+  comment: z.string().optional(),
+  user_defined_data: z.any().optional(),
+})
+
+function buildCreateSchema<T extends z.ZodRawShape>(body: z.ZodObject<T>) {
+  return {
+    body: body.or(z.array(body)),
+  }
 }
 
-const createSpeakerSchema = {
-  body: z
-    .object({
-      tournamentId: z.string().min(1),
-      id: z.string().min(1),
-      from_id: z.string().min(1),
-      r: z.number().int().min(1),
-      weight: z.number().optional(),
-      scores: z.array(z.number()),
-      user_defined_data: z.any().optional(),
-    })
-    .or(
-      z.array(
-        z.object({
-          tournamentId: z.string().min(1),
-          id: z.string().min(1),
-          from_id: z.string().min(1),
-          r: z.number().int().min(1),
-          weight: z.number().optional(),
-          scores: z.array(z.number()),
-          user_defined_data: z.any().optional(),
-        })
-      )
-    ),
+function buildUpdateSchema<T extends z.ZodRawShape>(body: z.ZodObject<T>) {
+  return {
+    params: z.object({ id: z.string() }),
+    body: body
+      .partial()
+      .extend({ tournamentId: z.string().min(1) })
+      .refine((data) => Object.keys(data).some((key) => key !== 'tournamentId'), {
+        message: 'update payload is required',
+      }),
+  }
 }
 
-const createAdjudicatorSchema = {
-  body: z
-    .object({
-      tournamentId: z.string().min(1),
-      id: z.string().min(1),
-      from_id: z.string().min(1),
-      r: z.number().int().min(1),
-      weight: z.number().optional(),
-      score: z.number(),
-      judged_teams: z.array(z.string().min(1)),
-      comment: z.string().optional(),
-      user_defined_data: z.any().optional(),
-    })
-    .or(
-      z.array(
-        z.object({
-          tournamentId: z.string().min(1),
-          id: z.string().min(1),
-          from_id: z.string().min(1),
-          r: z.number().int().min(1),
-          weight: z.number().optional(),
-          score: z.number(),
-          judged_teams: z.array(z.string().min(1)),
-          comment: z.string().optional(),
-          user_defined_data: z.any().optional(),
-        })
-      )
-    ),
-}
-
-const updateSchema = {
-  params: z.object({ id: z.string() }),
-  body: z
-    .record(z.any())
-    .refine((data) => Object.keys(data).length > 0, {
-      message: 'update payload is required',
-    })
-    .refine((data) => typeof data.tournamentId === 'string' && data.tournamentId.length > 0, {
-      message: 'tournamentId is required',
-    }),
-}
+const createTeamSchema = buildCreateSchema(rawTeamBodySchema)
+const createSpeakerSchema = buildCreateSchema(rawSpeakerBodySchema)
+const createAdjudicatorSchema = buildCreateSchema(rawAdjudicatorBodySchema)
+const updateTeamSchema = buildUpdateSchema(rawTeamBodySchema)
+const updateSpeakerSchema = buildUpdateSchema(rawSpeakerBodySchema)
+const updateAdjudicatorSchema = buildUpdateSchema(rawAdjudicatorBodySchema)
 
 const deleteSchema = {
   params: z.object({ id: z.string() }),
@@ -150,7 +111,7 @@ router.get(
   listRawTeamResults
 )
 router.post('/teams', requireTournamentAdmin(), validateRequest(createTeamSchema), createRawTeamResult)
-router.patch('/teams/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateRawTeamResult)
+router.patch('/teams/:id', requireTournamentAdmin(), validateRequest(updateTeamSchema), updateRawTeamResult)
 router.delete('/teams', requireTournamentAdmin(), validateRequest(deleteManySchema), deleteRawTeamResults)
 router.delete('/teams/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteRawTeamResult)
 
@@ -169,7 +130,7 @@ router.post(
 router.patch(
   '/speakers/:id',
   requireTournamentAdmin(),
-  validateRequest(updateSchema),
+  validateRequest(updateSpeakerSchema),
   updateRawSpeakerResult
 )
 router.delete(
@@ -200,7 +161,7 @@ router.post(
 router.patch(
   '/adjudicators/:id',
   requireTournamentAdmin(),
-  validateRequest(updateSchema),
+  validateRequest(updateAdjudicatorSchema),
   updateRawAdjudicatorResult
 )
 router.delete(

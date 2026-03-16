@@ -16,6 +16,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/utils/api'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 
@@ -30,21 +31,27 @@ const listPath = computed(() => '/user')
 const checking = ref(true)
 const blocked = ref(false)
 const blockReason = ref('')
+const accessGate = createLatestRequestGate()
 
 async function evaluateAccess() {
+  const currentTournamentId = tournamentId.value
+  const token = accessGate.begin()
   checking.value = true
   blocked.value = false
   blockReason.value = ''
-  if (!tournamentId.value) {
-    blocked.value = true
-    blockReason.value = t('大会情報が見つかりません。')
-    checking.value = false
-    return
-  }
 
   try {
-    await api.get(`/tournaments/${tournamentId.value}`)
+    if (!currentTournamentId) {
+      if (accessGate.isCurrent(token)) {
+        blocked.value = true
+        blockReason.value = t('大会情報が見つかりません。')
+      }
+      return
+    }
+
+    await api.get(`/tournaments/${currentTournamentId}`)
   } catch (err: any) {
+    if (!accessGate.isCurrent(token)) return
     const status = err?.response?.status
     blocked.value = true
     if (status === 401) {
@@ -55,7 +62,10 @@ async function evaluateAccess() {
       blockReason.value = err?.response?.data?.errors?.[0]?.message ?? t('アクセス確認に失敗しました。')
     }
   } finally {
-    checking.value = false
+    const completion = accessGate.complete(token)
+    if (completion.isCurrent) {
+      checking.value = false
+    }
   }
 }
 

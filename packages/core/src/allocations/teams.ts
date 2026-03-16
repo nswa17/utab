@@ -4,6 +4,7 @@ import { shuffle } from '../general/math.js'
 import { mGaleShapley } from './teams/matchings.js'
 import { strictMatching } from './teams/strict_matchings.js'
 import { getTeamDrawPowerpair } from './teams/powerpair.js'
+import { getTeamDrawMinWarnings } from './teams/min_warnings.js'
 import { decidePositions } from './sys.js'
 import { accessDetail, filterAvailable } from '../general/tools.js'
 import { sillyLogger } from '../general/loggers.js'
@@ -427,10 +428,11 @@ const filterMethods: Record<string, RankFilter> = {
 }
 
 const standard = { get: getTeamDraw }
+const min_warnings = { get: getTeamDrawMinWarnings }
 const strict = { get: getTeamDrawStrict }
 const powerpair = { get: getTeamDrawPowerpair }
 const random = { get: getTeamDrawRandom }
 const precheck = teamAllocationPrecheck
 
-export { standard, strict, powerpair, random, precheck }
-export default { standard, strict, powerpair, random, precheck }
+export { standard, min_warnings, strict, powerpair, random, precheck }
+export default { standard, min_warnings, strict, powerpair, random, precheck }

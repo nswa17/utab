@@ -7,6 +7,23 @@ export const useStylesStore = defineStore('styles', () => {
   const styles = ref<Style[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
 
   function sortStylesForDisplay(list: Style[]): Style[] {
     return list
@@ -27,17 +44,24 @@ export const useStylesStore = defineStore('styles', () => {
   }
 
   async function fetchStyles() {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/styles')
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       styles.value = sortStylesForDisplay(res.data?.data ?? [])
       return styles.value
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load styles'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { standard } from '../src/allocations/teams.js'
+import { standard, min_warnings } from '../src/allocations/teams.js'
 import { filterByConflictGroup } from '../src/allocations/teams/filters.js'
 
 describe('allocations/teams', () => {
@@ -115,5 +115,74 @@ describe('allocations/teams', () => {
 
     expect(withoutGov).toBe(2)
     expect(withGov).toBe(1)
+  })
+
+  it('minimizes selected warning counts for two-team pairings', () => {
+    const teams = [
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [4], speakers: [] }] },
+    ]
+    const compiledTeamResults = [
+      { id: 1, win: 1, sum: 20, past_sides: ['gov'], past_opponents: [2] },
+      { id: 2, win: 1, sum: 19, past_sides: ['opp'], past_opponents: [1] },
+      { id: 3, win: 0, sum: 15, past_sides: ['gov'], past_opponents: [] },
+      { id: 4, win: 0, sum: 14, past_sides: ['opp'], past_opponents: [] },
+    ]
+    const config = { style: { team_num: 2 } }
+
+    const draw = min_warnings.get(
+      1,
+      teams,
+      compiledTeamResults,
+      { filters: ['by_past_opponent', 'by_strength'] },
+      config
+    )
+
+    expect(draw.allocation).toHaveLength(2)
+    expect(draw.allocation.some((row) => row.teams.includes(1) && row.teams.includes(2))).toBe(false)
+  })
+
+  it('rejects min_warnings for non-two-team styles', () => {
+    expect(() =>
+      min_warnings.get(
+        1,
+        [
+          { id: 1, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+          { id: 2, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+          { id: 3, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+          { id: 4, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+        ],
+        [
+          { id: 1, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+          { id: 2, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+          { id: 3, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+          { id: 4, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+        ],
+        { filters: ['by_strength'] },
+        { style: { team_num: 4 } }
+      )
+    ).toThrow('min_warnings supports only 2-team formats')
+  })
+
+  it('rejects min_warnings when the available team count is odd', () => {
+    expect(() =>
+      min_warnings.get(
+        1,
+        [
+          { id: 1, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+          { id: 2, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+          { id: 3, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+        ],
+        [
+          { id: 1, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+          { id: 2, win: 1, sum: 10, past_sides: [], past_opponents: [] },
+          { id: 3, win: 0, sum: 10, past_sides: [], past_opponents: [] },
+        ],
+        { filters: ['by_strength'] },
+        { style: { team_num: 2 } }
+      )
+    ).toThrow('min_warnings requires an even number of available teams')
   })
 })

@@ -157,9 +157,9 @@ const isSuperuser = computed(() => auth.role === 'superuser')
 
 const visibleTournaments = computed(() => {
   if (auth.role === 'superuser') return tournament.tournaments
-  if (auth.role === 'organizer') {
-    if (auth.tournaments.length === 0) return []
-    return tournament.tournaments.filter((item) => auth.tournaments.includes(item._id))
+  if (auth.canAccessAdmin) {
+    if (auth.organizerTournaments.length === 0) return []
+    return tournament.tournaments.filter((item) => auth.organizerTournaments.includes(item._id))
   }
   return []
 })

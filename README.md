@@ -82,10 +82,17 @@ docker compose up -d --build
 - Web: `http://localhost:8080`
 - API: `http://localhost:3000/api/health`
 
-## データ移行（v2 -> v3）
+## データ移行 / style 更新
 
 - 起動時にセキュリティ移行（大会アクセス設定補正、パスワードハッシュ化、`TournamentMember` バックフィル）を自動実行
-- 既存 `Style` を更新したい場合のみ、必要に応じて再 seed
+- `PDA3` / `PDA4` の reply 表記を `GR` / `OR` から `PMR` / `LOR` に更新する場合は、既存 DB に対して次を一度だけ実行
+
+```bash
+pnpm -C packages/server migrate-style-pda-reply-labels
+```
+
+- built-in `Style` を完全に入れ直したい場合のみ、必要に応じて再 seed
+- `reset-styles` は `styles` コレクションを全削除して再投入するため、カスタム style がある環境では使わないこと
 
 ```bash
 pnpm -C packages/server reset-styles

@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../../middleware/auth.js'
 import { getTournamentConnection } from '../../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../../services/mongo-error.service.js'
-import { badRequest, notFound } from './http-errors.js'
+import { badRequest, isValidObjectId, notFound } from './http-errors.js'
 import { ensureObjectId, ensureTournamentId, requireSingleTournamentPayload } from './request-validators.js'
 
 type PlainRecord = Record<string, unknown>
@@ -42,13 +42,12 @@ function pickKnownFields(source: PlainRecord, keys: readonly string[]): PlainRec
   return out
 }
 
-function buildDeleteFilter(tournamentId: string, ids?: string): PlainRecord {
-  const filter: PlainRecord = { tournamentId }
-  const idList = typeof ids === 'string' && ids.length > 0 ? ids.split(',').filter((id) => id.length > 0) : []
-  if (idList.length > 0) {
-    filter._id = { $in: idList }
-  }
-  return filter
+function parseBulkIdList(ids: unknown): string[] {
+  if (typeof ids !== 'string') return []
+  return ids
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
 }
 
 function buildCreateDoc(payload: PlainRecord, tournamentId: string, fields: readonly string[]): PlainRecord {
@@ -83,7 +82,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         data: isAdmin ? records : records.map((record) => options.sanitizeForPublic(record)),
         errors: [],
       })
-    } catch (err) {
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }
@@ -103,7 +109,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       }
       const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
       res.json({ data: isAdmin ? record : options.sanitizeForPublic(record), errors: [] })
-    } catch (err) {
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }
@@ -155,6 +168,10 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const payload = req.body as Array<{ id: string; tournamentId?: unknown } & PlainRecord>
       const tournamentId = requireSingleTournamentPayload(res, payload)
       if (!tournamentId) return
+      if (payload.some((item) => !isValidObjectId(item.id))) {
+        badRequest(res, options.invalidEntityIdMessage)
+        return
+      }
 
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
@@ -169,7 +186,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const ids = payload.map((item) => item.id)
       const updated = await Model.find({ _id: { $in: ids }, tournamentId }).lean().exec()
       res.json({ data: updated, errors: [] })
-    } catch (err) {
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }
@@ -178,11 +202,27 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
     try {
       const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
       if (!ensureTournamentId(res, tournamentId)) return
+      const idList = parseBulkIdList(ids)
+      if (idList.length === 0) {
+        badRequest(res, 'Bulk delete ids are required')
+        return
+      }
+      if (idList.some((id) => !isValidObjectId(id))) {
+        badRequest(res, options.invalidEntityIdMessage)
+        return
+      }
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const result = await Model.deleteMany(buildDeleteFilter(tournamentId, ids)).exec()
+      const result = await Model.deleteMany({ tournamentId, _id: { $in: idList } }).exec()
       res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
-    } catch (err) {
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }
@@ -210,7 +250,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         return
       }
       res.json({ data: updated, errors: [] })
-    } catch (err) {
+    } catch (err: any) {
+      if (isDuplicateKeyError(err)) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+        })
+        return
+      }
       next(err)
     }
   }

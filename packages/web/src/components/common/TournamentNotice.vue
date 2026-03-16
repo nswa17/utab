@@ -14,6 +14,7 @@
 import { computed, ref, watch } from 'vue'
 import { useTournamentStore } from '@/stores/tournament'
 import { api } from '@/utils/api'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{
@@ -23,6 +24,7 @@ const props = defineProps<{
 const tournamentStore = useTournamentStore()
 const loading = ref(false)
 const fallbackTournament = ref<Record<string, any> | null>(null)
+const requestGate = createLatestRequestGate()
 
 const tournament = computed(
   () =>
@@ -42,17 +44,29 @@ const infoTime = computed(() => {
 const infoHtml = computed(() => renderMarkdown(infoText.value))
 
 async function ensureTournament() {
-  if (tournamentStore.tournaments.some((item) => item._id === props.tournamentId)) {
+  const currentTournamentId = props.tournamentId
+  const token = requestGate.begin()
+  if (tournamentStore.tournaments.some((item) => item._id === currentTournamentId)) {
+    const completion = requestGate.complete(token)
+    if (completion.isCurrent) {
+      fallbackTournament.value = null
+      loading.value = false
+    }
     return
   }
   loading.value = true
   try {
-    const res = await api.get(`/tournaments/${props.tournamentId}`)
+    const res = await api.get(`/tournaments/${currentTournamentId}`)
+    if (!requestGate.isCurrent(token)) return
     fallbackTournament.value = res.data?.data ?? null
   } catch {
+    if (!requestGate.isCurrent(token)) return
     fallbackTournament.value = null
   } finally {
-    loading.value = false
+    const completion = requestGate.complete(token)
+    if (completion.isCurrent) {
+      loading.value = false
+    }
   }
 }
 

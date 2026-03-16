@@ -7,17 +7,41 @@ export const useResultsStore = defineStore('results', () => {
   const results = ref<Result[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchResults(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/results', { params: { tournamentId } })
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       results.value = res.data?.data ?? []
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load results'
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -26,12 +50,13 @@ export const useResultsStore = defineStore('results', () => {
     round: number
     payload: Record<string, unknown>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/results', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         results.value = [created, ...results.value]
       }
       return created
@@ -39,7 +64,7 @@ export const useResultsStore = defineStore('results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create result'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -49,7 +74,7 @@ export const useResultsStore = defineStore('results', () => {
     round?: number
     payload?: Record<string, unknown>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/results/${payload.resultId}`, {
@@ -59,6 +84,7 @@ export const useResultsStore = defineStore('results', () => {
       })
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         results.value = results.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -66,22 +92,23 @@ export const useResultsStore = defineStore('results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update result'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteResult(tournamentId: string, resultId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/results/${resultId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       results.value = results.value.filter((item) => item._id !== resultId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete result'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

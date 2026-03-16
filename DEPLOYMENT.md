@@ -72,7 +72,8 @@ DNS 反映後に、両方のドメインで HTTPS が有効化されているこ
 - VPS ではホスト側 Nginx が `80` / `443` を持ち、コンテナは `127.0.0.1:8080` で待ち受ける
 - IP 証明書を使う場合、Let’s Encrypt の短命証明書になるため、ホスト側で更新失敗を監視する
 - `certbot --standalone` のままだと、Nginx が `80` 番を使用中のため自動更新に失敗する
-- VPS では `webroot` 認証に切り替え、更新後に Nginx を reload する構成にする
+- ドメイン運用なら `webroot` へ切り替えて無停止更新にできる
+- bare IP 運用では、Certbot 5.3.x 時点で `webroot` による IP 証明書更新は未対応なので、`standalone` と Nginx の停止・起動 hook を使う
 
 手順:
 
@@ -95,25 +96,48 @@ docker compose -f docker-compose.vps.yml up -d --build
    - `docker/nginx.vps-ip.conf.example` を `/etc/nginx/sites-available/utab.conf` にコピー
    - `YOUR_VPS_IP` を実IPに置換
    - `/etc/nginx/sites-enabled/` にリンクして `nginx -t && systemctl reload nginx`
-6. ACME challenge 用ディレクトリを作成
+6. ドメイン運用で `webroot` を使う場合のみ、ACME challenge 用ディレクトリを作成
 
 ```bash
 sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
 sudo chown -R www-data:www-data /var/www/certbot
 ```
 
-7. 初回証明書取得は `webroot` を使う
+7. 証明書取得
+
+ドメイン運用:
 
 ```bash
-sudo snap run certbot certonly --webroot -w /var/www/certbot -d YOUR_VPS_IP
+sudo snap run certbot certonly --webroot -w /var/www/certbot -d tab.example.com
 ```
 
-8. 更新後に Nginx を reload する hook を置く
+bare IP 運用:
+
+```bash
+sudo systemctl stop nginx
+sudo snap run certbot certonly --standalone --ip-address YOUR_VPS_IP --preferred-profile shortlived --cert-name YOUR_VPS_IP
+sudo systemctl start nginx
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+8. 自動更新 hook を置く
+
+ドメイン運用:
 
 ```bash
 sudo install -d /etc/letsencrypt/renewal-hooks/deploy
 printf '%s\n' '#!/bin/sh' 'systemctl reload nginx' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh >/dev/null
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+```
+
+bare IP 運用:
+
+```bash
+sudo install -d /etc/letsencrypt/renewal-hooks/pre /etc/letsencrypt/renewal-hooks/post
+printf '%s\n' '#!/bin/sh' 'systemctl stop nginx' | sudo tee /etc/letsencrypt/renewal-hooks/pre/stop-nginx.sh >/dev/null
+printf '%s\n' '#!/bin/sh' 'nginx -t && systemctl start nginx' | sudo tee /etc/letsencrypt/renewal-hooks/post/start-nginx.sh >/dev/null
+sudo chmod +x /etc/letsencrypt/renewal-hooks/pre/stop-nginx.sh
+sudo chmod +x /etc/letsencrypt/renewal-hooks/post/start-nginx.sh
 ```
 
 9. 動作確認

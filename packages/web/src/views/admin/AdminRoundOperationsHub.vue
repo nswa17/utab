@@ -456,6 +456,7 @@ import {
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { createLatestRequestGate } from '@/utils/latest-request'
 
 const route = useRoute()
 const router = useRouter()
@@ -541,6 +542,11 @@ const submissionEditorSubmissionId = ref('')
 let previousBodyOverflow: string | null = null
 let previousHtmlOverflow: string | null = null
 const sortCollator = new Intl.Collator(['ja', 'en'], { numeric: true, sensitivity: 'base' })
+const refreshGate = createLatestRequestGate()
+const hubSubmissionsGate = createLatestRequestGate()
+const autoCompilePreviewGate = createLatestRequestGate()
+const compiledHistoryGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 
 const isLoading = computed(
   () =>
@@ -2648,40 +2654,65 @@ const filteredSubmissionPreviewRows = computed<DrawPreviewRow[]>(() => {
   )
 })
 
-async function refreshHubSubmissions() {
-  if (!tournamentId.value) {
-    hubSubmissions.value = []
-    submissionsLoadError.value = ''
+async function refreshHubSubmissions(currentTournamentId = tournamentId.value) {
+  const token = hubSubmissionsGate.begin()
+  if (!currentTournamentId) {
+    if (hubSubmissionsGate.isCurrent(token)) {
+      hubSubmissions.value = []
+      submissionsLoadError.value = ''
+    }
+    hubSubmissionsGate.complete(token)
     return
   }
   try {
-    const res = await api.get('/submissions', { params: { tournamentId: tournamentId.value } })
+    const res = await api.get('/submissions', { params: { tournamentId: currentTournamentId } })
+    if (!hubSubmissionsGate.isCurrent(token)) return
     hubSubmissions.value = Array.isArray(res.data?.data) ? (res.data.data as Submission[]) : []
     submissionsLoadError.value = ''
   } catch (err: any) {
+    if (!hubSubmissionsGate.isCurrent(token)) return
     hubSubmissions.value = []
     submissionsLoadError.value =
       err?.response?.data?.errors?.[0]?.message ?? t('読み込みに失敗しました。')
+  } finally {
+    hubSubmissionsGate.complete(token)
   }
 }
 
-async function runAutoCompilePreview() {
-  autoCompilePreviewPayload.value = null
-  compileAutoError.value = ''
-  compileMessage.value = ''
-  if (!tournamentId.value || selectedRound.value === null) return
-  if (effectiveCompileTargetRounds.value.length === 0) return
-  const scope: CompileScope = shouldTrackAdjudicatorCompile.value ? 'all' : 'teams'
+async function runAutoCompilePreview(
+  input: {
+    tournamentId?: string
+    roundNumber?: number | null
+    targetRounds?: number[]
+    scope?: CompileScope
+  } = {}
+) {
+  const token = autoCompilePreviewGate.begin()
+  const currentTournamentId = input.tournamentId ?? tournamentId.value
+  const currentRound = input.roundNumber ?? selectedRound.value
+  const targetRounds = input.targetRounds ?? [...effectiveCompileTargetRounds.value]
+  const scope: CompileScope =
+    input.scope ?? (shouldTrackAdjudicatorCompile.value ? 'all' : 'teams')
+  if (autoCompilePreviewGate.isCurrent(token)) {
+    autoCompilePreviewPayload.value = null
+    compileAutoError.value = ''
+    compileMessage.value = ''
+  }
+  if (!currentTournamentId || currentRound === null || targetRounds.length === 0) {
+    autoCompilePreviewGate.complete(token)
+    return
+  }
   compileScope.value = scope
   manualCompileScope.value = scope
   manualCompileSource.value = 'submissions'
   try {
     const res = await api.post('/compiled/preview', {
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       source: 'submissions',
-      rounds: effectiveCompileTargetRounds.value,
+      rounds: targetRounds,
       options: buildCompileOptions({ missing_data_policy: 'exclude' }, scope),
     })
+    if (!autoCompilePreviewGate.isCurrent(token)) return
     const payload = normalizeCompiledDoc(res.data?.data?.preview)
     if (!payload) {
       compileAutoError.value = t(
@@ -2691,39 +2722,52 @@ async function runAutoCompilePreview() {
     }
     autoCompilePreviewPayload.value = payload
   } catch (err: any) {
+    if (!autoCompilePreviewGate.isCurrent(token)) return
     compileAutoError.value =
       err?.response?.data?.errors?.[0]?.message ??
       t('集計結果を再計算できませんでした。提出データを確認して再読み込みしてください。')
+  } finally {
+    autoCompilePreviewGate.complete(token)
   }
 }
 
 async function refresh() {
-  if (!tournamentId.value) {
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  foregroundRefreshCount += 1
+  sectionLoading.value = true
+  actionError.value = ''
+  submissionsLoadError.value = ''
+  hubSubmissionsGate.invalidate()
+  compiledHistoryGate.invalidate()
+  autoCompilePreviewGate.invalidate()
+  if (!currentTournamentId) {
     hubSubmissions.value = []
     submissionsLoadError.value = ''
     autoCompilePreviewPayload.value = null
     compileAutoError.value = ''
     compileMessage.value = ''
-    hasLoaded.value = true
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
     return
   }
-  sectionLoading.value = true
-  actionError.value = ''
-  submissionsLoadError.value = ''
   try {
     await Promise.all([
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
-      roundsStore.fetchRounds(tournamentId.value),
-      drawsStore.fetchDraws(tournamentId.value),
-      refreshHubSubmissions(),
-      teamsStore.fetchTeams(tournamentId.value),
-      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
-      speakersStore.fetchSpeakers(tournamentId.value),
-      venuesStore.fetchVenues(tournamentId.value),
-      compiledStore.fetchLatest(tournamentId.value),
-      refreshCompiledHistory(),
+      roundsStore.fetchRounds(currentTournamentId),
+      drawsStore.fetchDraws(currentTournamentId),
+      refreshHubSubmissions(currentTournamentId),
+      teamsStore.fetchTeams(currentTournamentId),
+      adjudicatorsStore.fetchAdjudicators(currentTournamentId),
+      speakersStore.fetchSpeakers(currentTournamentId),
+      venuesStore.fetchVenues(currentTournamentId),
+      compiledStore.fetchLatest(currentTournamentId),
+      refreshCompiledHistory(currentTournamentId),
     ])
+    if (!refreshGate.isCurrent(token)) return
     const queryRound = Number(route.query.round)
     const hasQueryRound = Number.isInteger(queryRound) && queryRound >= 1
     if (hasQueryRound && sortedRounds.value.some((item) => item.round === queryRound)) {
@@ -2748,12 +2792,20 @@ async function refresh() {
     } else {
       activeTask.value = 'draw'
     }
-    await runAutoCompilePreview()
+    await runAutoCompilePreview({
+      tournamentId: currentTournamentId,
+      roundNumber: selectedRound.value,
+      targetRounds: [...effectiveCompileTargetRounds.value],
+      scope: shouldTrackAdjudicatorCompile.value ? 'all' : 'teams',
+    })
   } catch (err: any) {
+    if (!refreshGate.isCurrent(token)) return
     actionError.value = err?.response?.data?.errors?.[0]?.message ?? t('読み込みに失敗しました。')
   } finally {
-    hasLoaded.value = true
-    sectionLoading.value = false
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
+    foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+    sectionLoading.value = foregroundRefreshCount > 0
   }
 }
 
@@ -3019,13 +3071,24 @@ async function saveCompiledSnapshot() {
   await refreshCompiledHistory()
 }
 
-async function refreshCompiledHistory() {
-  if (!tournamentId.value) return
+async function refreshCompiledHistory(currentTournamentId = tournamentId.value) {
+  const token = compiledHistoryGate.begin()
+  if (!currentTournamentId) {
+    if (compiledHistoryGate.isCurrent(token)) {
+      compiledHistory.value = []
+    }
+    compiledHistoryGate.complete(token)
+    return
+  }
   try {
-    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = []
+  } finally {
+    compiledHistoryGate.complete(token)
   }
 }
 
@@ -3304,6 +3367,7 @@ onBeforeUnmount(() => {
 watch(
   tournamentId,
   () => {
+    hasLoaded.value = false
     selectedRound.value = null
     roundTaskSelection.value = {}
     compileScope.value = 'all'

@@ -91,10 +91,12 @@ const en = {
   'Matter': 'Matter',
   'マナー': 'Manner',
   'マター': 'Matter',
+  'マター {matter} / マナー {manner}': 'Matter {matter} / Manner {manner}',
   'Matter/Manner採点': 'Matter/Manner scoring',
   'ベスト': 'Best',
   'ベストディベーター': 'Best Debater',
   'POI': 'POI',
+  '付与なし': 'No award',
   'POI合計': 'Total POI',
   'POI賞': 'POI Award',
   'Power Pair': 'Power Pair',
@@ -945,6 +947,8 @@ const en = {
     'When enabled, Team.details[r].available is synchronized when participants are finalized.',
   '参照ラウンド確定': 'Finalize source rounds',
   '参照ラウンド選択': 'Select source rounds',
+  '確定後は、その時点の参照集計を固定で使います。前ラウンド結果を後から修正しても自動更新されないため、必要なら「参照ラウンドを変更・再確定」してください。':
+    'After finalization, the current reference compile is used as a fixed snapshot. Later edits to previous-round results are not applied automatically, so use Change source rounds and re-finalize when needed.',
   'チーム・ジャッジごとに参照するラウンドを選択し、「確定」で参照集計を自動で確定します。確定後に配置を編集できます。':
     'Select source rounds for teams and adjudicators, then finalize to auto-save reference compile results. Placement editing is available after finalization.',
   '参照ラウンドは確定済みです。必要な場合のみ変更してください。':
@@ -967,7 +971,7 @@ const en = {
   '複数選択可（Ctrl/Cmd + クリック）': 'Multi-select (Ctrl/Cmd + click)',
   '複数選択可（チェックで選択）': 'Select multiple with checkboxes',
   '選択中: {rounds}': 'Selected: {rounds}',
-  '参照ラウンドを変更': 'Change source rounds',
+  '参照ラウンドを変更・再確定': 'Change source rounds / re-finalize',
   'チーム参照: {team}': 'Team source: {team}',
   'チーム参照: {team} / ジャッジ参照: {adjudicators}':
     'Team source: {team} / Adjudicator source: {adjudicators}',
@@ -1124,6 +1128,16 @@ const en = {
   'Matter/Manner の個別入力を有効にします。': 'Enable separate Matter/Manner scoring.',
   'POI賞の入力を有効にします。': 'Enable POI award input.',
   'ベストスピーカー賞の入力を有効にします。': 'Enable Best Speaker award input.',
+  '表彰人数設定': 'Award selection limits',
+  '提出時に選択できるベストディベーターとPOIの人数範囲を設定します。':
+    'Set the allowed number of Best Debater and POI selections on submission.',
+  'ベストディベーター最小人数': 'Best Debater minimum',
+  'ベストディベーター最大人数': 'Best Debater maximum',
+  'POI最小人数': 'POI minimum',
+  'POI最大人数': 'POI maximum',
+  'ベストディベーターは{min}〜{max}人選択してください。':
+    'Select between {min} and {max} Best Debaters.',
+  'POIは{min}〜{max}人選択してください。': 'Select between {min} and {max} POI recipients.',
   'スピーカースコア入力を無効にします。': 'Disable speaker score input.',
   '評価未提出（{label}）': 'Missing feedback ({label})',
   '評価未提出（{label}）: {names}': 'Missing feedback ({label}): {names}',
@@ -1531,7 +1545,36 @@ const en = {
   'one-up-one-down': 'one-up-one-down',
   '安定マッチングは選好ベース、大会標準/大会拡張は勝ち数ブラケット、ランダムは単純シャッフルです。':
     'Stable matching is preference-based; tournament standard/extended use win brackets, and random is a simple shuffle.',
+  '最小警告': 'Minimum warnings',
+  '最小警告（2チーム戦のみ）': 'Minimum warnings (two-team only)',
   '安定マッチングで使用する並び替え方式です。': 'Ordering strategy used by stable matching.',
+  '推定最小警告': 'Estimated minimum warnings',
+  '推定': 'Estimated',
+  '選択中の順位基準だけを警告数として集計します。':
+    'Counts warnings only for the currently selected ranking criteria.',
+  '現在の対戦カードに対して、選択中の順位基準だけを警告数として集計します。':
+    'Counts warnings only for the currently selected ranking criteria against the current draw.',
+  'この baseline は 2チーム戦でのみ表示できます。':
+    'This baseline is available only for two-team formats.',
+  'baseline を出すには 2 チーム以上が必要です。':
+    'At least two teams are required to show the baseline.',
+  'baseline を出すには現在の対戦カードが必要です。':
+    'A current draw is required to show the baseline.',
+  'baseline を出すには必要人数分の使用可能ジャッジが必要です。':
+    'Enough available adjudicators are required to show the baseline.',
+  '警告として集計できる順位基準が選ばれていません。':
+    'No ranking criteria that map to warnings are selected.',
+  '警告として集計できるジャッジ基準が選ばれていません。':
+    'No adjudicator criteria that map to warnings are selected.',
+  '使用可能チームが奇数のため、{count} チームは未組みとして計算しています。':
+    'Because the available team count is odd, {count} team(s) are treated as unpaired in the estimate.',
+  '次の基準は baseline 集計対象外です: {labels}':
+    'These criteria are excluded from the baseline count: {labels}',
+  '異勝数': 'Different wins',
+  '個別衝突': 'Personal conflict',
+  '同一機関': 'Same institution',
+  '同校別チームの過去対戦校': 'Past-opponent school overlap',
+  '過去担当': 'Past judged',
   '1マッチあたりのチェア人数です。': 'Number of chairs per match.',
   '1マッチあたりのトレーニー人数です。': 'Number of trainees per match.',
   '1マッチあたりのパネル人数です。': 'Number of panels per match.',
@@ -1582,6 +1625,8 @@ const en = {
   '適用する制約を複数選択できます。': 'You can select multiple constraints.',
   '各チームが候補を順位付けし、安定マッチング（Gale-Shapley）で対戦を作ります。':
     'Each team ranks candidates, then pairings are built with stable matching (Gale-Shapley).',
+  '選択した warning 系基準を辞書順で最小化する組み合わせを探します。少人数は厳密、大人数は近似です。':
+    'Searches for pairings that lexicographically minimize the selected warning-based criteria. Small fields are exact; larger fields use approximation.',
   '勝ち数の層ごとに組み、繰り上げ・ペアリング・サイド決定の順で調整し、必要なら衝突を減らすスワップを行います。':
     'Teams are grouped by wins, then adjusted through pull-ups, pairing, side assignment, and optional conflict-reducing swaps.',
   '勝ち数ブラケット内で組みます。人数が奇数のブラケットは下位ブラケットから繰り上げて調整します。':
@@ -1669,8 +1714,10 @@ const en = {
   'チーム成績（勝利数）': 'Team performance (wins)',
   'チーム成績（得点）': 'Team performance (points)',
   '得点': 'Points',
+  '{score}点': '{score} pts',
   'スコアヒストグラム（{round}）': 'Score histogram ({round})',
   'チームスコア分布（{round}）': 'Team score distribution ({round})',
+  '合計 {score}点': 'Total {score} pts',
   '{value} 点': '{value} pts',
   '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。':
     'Submission timed out. Check your connection and try again.',
