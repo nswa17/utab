@@ -11,6 +11,22 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   const adjudicatorResults = ref<RawAdjudicatorResult[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref<Record<RawLabel, number>>({
+    teams: 0,
+    speakers: 0,
+    adjudicators: 0,
+  })
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
 
   function setResults(label: RawLabel, results: any[]) {
     if (label === 'teams') teamResults.value = results
@@ -23,25 +39,33 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     label: RawLabel
     round?: number
   }) {
-    loading.value = true
+    latestFetchSequence.value[params.label] += 1
+    const sequence = latestFetchSequence.value[params.label]
+    beginRequest()
     error.value = null
     try {
       const res = await api.get(`/raw-results/${params.label}`, {
         params: { tournamentId: params.tournamentId, round: params.round },
       })
+      if (sequence !== latestFetchSequence.value[params.label]) {
+        return []
+      }
       const data = res.data?.data ?? []
       setResults(params.label, data)
       return data
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value[params.label]) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load raw results'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function createRawResults(label: RawLabel, payload: any | any[]) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post(`/raw-results/${label}`, payload)
@@ -51,12 +75,12 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create raw results'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function updateRawResult(label: RawLabel, rawId: string, payload: Record<string, any>) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/raw-results/${label}/${rawId}`, payload)
@@ -65,12 +89,12 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update raw result'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteRawResult(label: RawLabel, rawId: string, tournamentId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete(`/raw-results/${label}/${rawId}`, {
@@ -81,12 +105,12 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw result'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteRawResults(label: RawLabel, params: Record<string, any>) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete(`/raw-results/${label}`, { params })
@@ -95,7 +119,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw results'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

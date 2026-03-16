@@ -373,29 +373,54 @@
             <span class="muted small">{{ $t('合計') }}</span>
             <strong>{{ govLabel }} {{ totalScoreA }} / {{ oppLabel }} {{ totalScoreB }}</strong>
           </div>
-          <div v-if="bestEnabled && !noSpeakerScore" class="confirm-card stack full">
-            <span class="muted small">{{ $t('ベストディベーター') }}</span>
-            <div v-if="bestDebaterSummaryItems.length > 0" class="confirm-marker-inline">
-              <span
-                v-for="item in bestDebaterSummaryItems"
-                :key="item.key"
-                class="confirm-marker-token"
+          <div v-if="!noSpeakerScore" class="confirm-card stack full">
+            <span class="muted small">{{ $t('スピーカー別内訳') }}</span>
+            <div class="confirm-speaker-columns">
+              <section
+                v-for="team in confirmSpeakerTeams"
+                :key="team.key"
+                class="stack confirm-speaker-team"
+                :class="team.panelClass"
               >
-                <span class="confirm-marker-name">{{ item.name }}</span>
-                <span class="side-chip" :class="item.sideClass">{{ item.sideLabel }}</span>
-              </span>
+                <div class="row confirm-speaker-team-header">
+                  <div class="row confirm-speaker-team-heading">
+                    <span class="side-chip" :class="team.sideClass">{{ team.sideLabel }}</span>
+                    <strong>{{ team.teamName }}</strong>
+                  </div>
+                  <span class="confirm-speaker-team-total">{{ team.totalLabel }}</span>
+                </div>
+                <div class="stack confirm-speaker-list">
+                  <div
+                    v-for="row in team.rows"
+                    :key="row.key"
+                    class="row confirm-speaker-row"
+                  >
+                    <div class="stack confirm-speaker-main">
+                      <div class="row confirm-speaker-row-head">
+                        <span class="confirm-role-token">{{ row.roleToken }}</span>
+                        <strong class="confirm-speaker-row-name">{{ row.speakerName }}</strong>
+                      </div>
+                      <span class="muted tiny">{{ row.roleDescription }}</span>
+                      <span v-if="row.scoreBreakdown" class="muted tiny">{{ row.scoreBreakdown }}</span>
+                    </div>
+                    <div class="stack confirm-speaker-meta">
+                      <strong class="confirm-speaker-score">{{ row.scoreLabel }}</strong>
+                      <div class="confirm-speaker-awards">
+                        <span v-if="row.best" class="confirm-award-chip confirm-award-chip--best">{{
+                          $t('ベストディベーター')
+                        }}</span>
+                        <span v-if="row.poi" class="confirm-award-chip confirm-award-chip--poi">{{
+                          $t('POI')
+                        }}</span>
+                        <span v-if="!row.best && !row.poi" class="confirm-award-empty">{{
+                          $t('付与なし')
+                        }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-            <strong v-else class="confirm-marker-list">{{ $t('なし') }}</strong>
-          </div>
-          <div v-if="poiEnabled && !noSpeakerScore" class="confirm-card stack full">
-            <span class="muted small">{{ $t('POI') }}</span>
-            <div v-if="poiSummaryItems.length > 0" class="confirm-marker-inline">
-              <span v-for="item in poiSummaryItems" :key="item.key" class="confirm-marker-token">
-                <span class="confirm-marker-name">{{ item.name }}</span>
-                <span class="side-chip" :class="item.sideClass">{{ item.sideLabel }}</span>
-              </span>
-            </div>
-            <strong v-else class="confirm-marker-list">{{ $t('なし') }}</strong>
           </div>
           <div class="confirm-card stack full">
             <span class="muted small">{{ $t('コメント') }}</span>
@@ -448,8 +473,13 @@ import { useParticipantMode, appendParticipantMode } from '@/composables/usePart
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import {
+  resolveRoundAwardSelectionValidationRules,
+  validateAwardSelectionCounts,
+} from '@/utils/award-selection'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { defaultSpeakerRange, getRangeForIndex, normalizeScoreRanges } from '@/utils/score'
+import { buildSpeakerRoleSequence } from '@/utils/style-speaker-sequence'
 import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 
 const route = useRoute()
@@ -697,6 +727,7 @@ const submitterStepError = computed(() => {
 })
 const winnerStepError = computed(() => {
   if (winnerDecisionError.value) return winnerDecisionError.value
+  if (awardSelectionError.value) return awardSelectionError.value
   return ''
 })
 
@@ -704,6 +735,7 @@ const canSubmit = computed(() => {
   if (!scoreInputReady.value) return false
   if (!selectedTeamA.value || !selectedTeamB.value) return false
   if (winnerDecisionError.value) return false
+  if (awardSelectionError.value) return false
   if (!scoresValid.value || !speakerSelectionValid.value) return false
   if (!identityReady.value) return false
   return true
@@ -809,25 +841,6 @@ const teamAName = computed(() => selectedTeamA.value?.name ?? '')
 const teamBName = computed(() => selectedTeamB.value?.name ?? '')
 type SpeakerEntry = { id: string; name: string }
 type RoleDefinition = { order: number; abbr?: string; long?: string }
-
-function collectMarkedSpeakers(
-  flags: boolean[],
-  roles: RoleDefinition[],
-  speakerIds: string[],
-  entries: SpeakerEntry[]
-) {
-  return roles
-    .map((role, index) => {
-      if (!flags[index]) return ''
-      const selectedId = String(speakerIds[index] ?? '').trim()
-      if (selectedId) {
-        const name = entries.find((entry) => entry.id === selectedId)?.name
-        if (name) return name
-      }
-      return role.abbr ?? `#${role.order}`
-    })
-    .filter(Boolean)
-}
 
 function selectedSpeakerLabel(
   entries: SpeakerEntry[],
@@ -1089,16 +1102,15 @@ const teamBSpeakerEntries = computed(() => {
 
 const roundConfig = computed(() => rounds.rounds.find((item) => item.round === Number(round.value)))
 const noSpeakerScore = computed(() => roundConfig.value?.userDefinedData?.no_speaker_score === true)
+const awardSelectionRules = computed(() =>
+  resolveRoundAwardSelectionValidationRules(roundConfig.value?.userDefinedData)
+)
 const useMatterManner = computed(
   () =>
     !noSpeakerScore.value && roundConfig.value?.userDefinedData?.score_by_matter_manner !== false
 )
-const bestEnabled = computed(
-  () => !noSpeakerScore.value && roundConfig.value?.userDefinedData?.best !== false
-)
-const poiEnabled = computed(
-  () => !noSpeakerScore.value && roundConfig.value?.userDefinedData?.poi !== false
-)
+const bestEnabled = computed(() => awardSelectionRules.value.best.enabled)
+const poiEnabled = computed(() => awardSelectionRules.value.poi.enabled)
 
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
@@ -1134,35 +1146,24 @@ type RoleSequenceEntry = {
 }
 
 const roleInputSequence = computed<RoleSequenceEntry[]>(() => {
-  const sequence: RoleSequenceEntry[] = []
-  const maxLength = Math.max(rolesA.value.length, rolesB.value.length)
-  for (let index = 0; index < maxLength; index += 1) {
-    const roleGov = rolesA.value[index]
-    if (roleGov) {
-      sequence.push({
-        key: `gov-${roleGov.order}-${index}`,
-        side: 'gov',
-        index,
-        role: roleGov,
-        teamName: teamAName.value,
-        sideLabel: govLabel.value,
-        sideClass: 'gov-chip',
-      })
-    }
-    const roleOpp = rolesB.value[index]
-    if (roleOpp) {
-      sequence.push({
-        key: `opp-${roleOpp.order}-${index}`,
-        side: 'opp',
-        index,
-        role: roleOpp,
-        teamName: teamBName.value,
-        sideLabel: oppLabel.value,
-        sideClass: 'opp-chip',
-      })
-    }
-  }
-  return sequence
+  return buildSpeakerRoleSequence(style.value?.speaker_sequence, {
+    gov: rolesA.value.length,
+    opp: rolesB.value.length,
+  })
+    .map((entry, sequenceIndex) => {
+      const role = entry.side === 'gov' ? rolesA.value[entry.index] : rolesB.value[entry.index]
+      if (!role) return null
+      return {
+        key: `${entry.side}-${role.order}-${entry.index}-${sequenceIndex}`,
+        side: entry.side,
+        index: entry.index,
+        role,
+        teamName: entry.side === 'gov' ? teamAName.value : teamBName.value,
+        sideLabel: entry.side === 'gov' ? govLabel.value : oppLabel.value,
+        sideClass: entry.side === 'gov' ? 'gov-chip' : 'opp-chip',
+      } satisfies RoleSequenceEntry
+    })
+    .filter((entry): entry is RoleSequenceEntry => entry !== null)
 })
 
 function normalizeRoleCursor(index: number) {
@@ -1192,61 +1193,153 @@ const activeRoleSpeakerEntries = computed(() => {
     : teamBSpeakerEntries.value
 })
 
-const bestDebaterSummary = computed(() => ({
-  gov: collectMarkedSpeakers(
-    bestA.value,
-    rolesA.value,
-    speakerIdsA.value,
-    teamASpeakerEntries.value
-  ),
-  opp: collectMarkedSpeakers(
-    bestB.value,
-    rolesB.value,
-    speakerIdsB.value,
-    teamBSpeakerEntries.value
-  ),
-}))
-const poiSummary = computed(() => ({
-  gov: collectMarkedSpeakers(
-    poiA.value,
-    rolesA.value,
-    speakerIdsA.value,
-    teamASpeakerEntries.value
-  ),
-  opp: collectMarkedSpeakers(
-    poiB.value,
-    rolesB.value,
-    speakerIdsB.value,
-    teamBSpeakerEntries.value
-  ),
-}))
-
-type MarkerSummaryItem = {
+type ConfirmSpeakerRow = {
   key: string
-  name: string
+  roleToken: string
+  roleDescription: string
+  speakerName: string
+  scoreLabel: string
+  scoreBreakdown: string
+  best: boolean
+  poi: boolean
+}
+
+type ConfirmSpeakerTeam = {
+  key: string
+  teamName: string
   sideLabel: string
   sideClass: 'gov-chip' | 'opp-chip'
+  panelClass: 'confirm-speaker-team--gov' | 'confirm-speaker-team--opp'
+  totalLabel: string
+  rows: ConfirmSpeakerRow[]
 }
 
-function toMarkerSummaryItems(values: { gov: string[]; opp: string[] }): MarkerSummaryItem[] {
-  return [
-    ...values.gov.map((name, index) => ({
-      key: `gov-${index}-${name}`,
-      name,
-      sideLabel: govLabel.value,
-      sideClass: 'gov-chip' as const,
-    })),
-    ...values.opp.map((name, index) => ({
-      key: `opp-${index}-${name}`,
-      name,
-      sideLabel: oppLabel.value,
-      sideClass: 'opp-chip' as const,
-    })),
-  ]
+function formatScoreValue(value: number, index: number) {
+  return String(normalizeDisplayValue(Number(value ?? 0), index))
 }
 
-const bestDebaterSummaryItems = computed(() => toMarkerSummaryItems(bestDebaterSummary.value))
-const poiSummaryItems = computed(() => toMarkerSummaryItems(poiSummary.value))
+function formatRoleDescription(role: RoleDefinition) {
+  return role.long?.trim() || t('スピーカー {index}', { index: role.order })
+}
+
+function buildConfirmSpeakerRows(
+  side: RoleSide,
+  roles: RoleDefinition[],
+  speakerIds: string[],
+  entries: SpeakerEntry[],
+  scores: number[],
+  matter: number[],
+  manner: number[],
+  bestFlags: boolean[],
+  poiFlags: boolean[]
+) {
+  return roles.map((role, index) => {
+    const scoreValue = useMatterManner.value
+      ? speakerTotal(matter[index], manner[index])
+      : Number(scores[index] ?? 0)
+    const scoreBreakdown = useMatterManner.value
+      ? t('マター {matter} / マナー {manner}', {
+          matter: formatScoreValue(matter[index] ?? 0, index),
+          manner: formatScoreValue(manner[index] ?? 0, index),
+        })
+      : ''
+
+    return {
+      key: `${side}-${role.order}-${index}`,
+      roleToken: role.abbr ?? `#${role.order}`,
+      roleDescription: formatRoleDescription(role),
+      speakerName: selectedSpeakerLabel(entries, speakerIds, role, index),
+      scoreLabel: t('{score}点', { score: formatScoreValue(scoreValue, index) }),
+      scoreBreakdown,
+      best: Boolean(bestFlags[index]),
+      poi: Boolean(poiFlags[index]),
+    } satisfies ConfirmSpeakerRow
+  })
+}
+
+function buildConfirmSpeakerTeam(
+  side: RoleSide,
+  teamName: string,
+  roles: RoleDefinition[],
+  speakerIds: string[],
+  entries: SpeakerEntry[],
+  scores: number[],
+  matter: number[],
+  manner: number[],
+  bestFlags: boolean[],
+  poiFlags: boolean[]
+) {
+  const total = side === 'gov' ? totalScoreA.value : totalScoreB.value
+  return {
+    key: `${side}-${teamName}`,
+    teamName,
+    sideLabel: side === 'gov' ? govLabel.value : oppLabel.value,
+    sideClass: side === 'gov' ? 'gov-chip' : 'opp-chip',
+    panelClass: side === 'gov' ? 'confirm-speaker-team--gov' : 'confirm-speaker-team--opp',
+    totalLabel: t('合計 {score}点', { score: formatScoreValue(total, 0) }),
+    rows: buildConfirmSpeakerRows(
+      side,
+      roles,
+      speakerIds,
+      entries,
+      scores,
+      matter,
+      manner,
+      bestFlags,
+      poiFlags
+    ),
+  } satisfies ConfirmSpeakerTeam
+}
+
+const confirmSpeakerTeams = computed(() => [
+  buildConfirmSpeakerTeam(
+    'gov',
+    teamAName.value,
+    rolesA.value,
+    speakerIdsA.value,
+    teamASpeakerEntries.value,
+    effectiveScoresA.value,
+    matterA.value,
+    mannerA.value,
+    bestA.value,
+    poiA.value
+  ),
+  buildConfirmSpeakerTeam(
+    'opp',
+    teamBName.value,
+    rolesB.value,
+    speakerIdsB.value,
+    teamBSpeakerEntries.value,
+    effectiveScoresB.value,
+    matterB.value,
+    mannerB.value,
+    bestB.value,
+    poiB.value
+  ),
+])
+
+const awardSelectionError = computed(() => {
+  const violation = validateAwardSelectionCounts(
+    {
+      bestA: bestA.value,
+      bestB: bestB.value,
+      poiA: poiA.value,
+      poiB: poiB.value,
+    },
+    awardSelectionRules.value
+  )
+  if (!violation) return ''
+  if (violation.kind === 'best') {
+    return t('ベストディベーターは{min}〜{max}人選択してください。', {
+      min: violation.min,
+      max: violation.max,
+    })
+  }
+  return t('POIは{min}〜{max}人選択してください。', {
+    min: violation.min,
+    max: violation.max,
+  })
+})
 
 const effectiveScoresA = computed(() =>
   useMatterManner.value
@@ -2126,7 +2219,7 @@ onUnmounted(() => {
 .role-token {
   color: var(--color-text);
   font-weight: 700;
-  font-size: clamp(2rem, 6.2vw, 2.5rem);
+  font-size: clamp(1.5rem, 4.8vw, 1.95rem);
   line-height: 1;
 }
 
@@ -2343,29 +2436,159 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.confirm-marker-inline {
-  display: flex;
+.confirm-speaker-columns {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.confirm-speaker-team {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--color-surface) 92%, white);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.confirm-speaker-team--gov {
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #f7fbff 0%, #ffffff 26%);
+}
+
+.confirm-speaker-team--opp {
+  border-color: #fcd34d;
+  background: linear-gradient(180deg, #fffdf3 0%, #ffffff 26%);
+}
+
+.confirm-speaker-team-header {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.confirm-speaker-team-heading {
+  align-items: center;
   gap: 8px;
 }
 
-.confirm-marker-token {
+.confirm-speaker-team-total {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-border);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, white);
   border-radius: 999px;
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.9);
+  color: color-mix(in srgb, var(--color-text) 82%, white);
   padding: 4px 10px;
-  font-size: 13px;
-}
-
-.confirm-marker-name {
+  font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
-.confirm-marker-list {
-  line-height: 1.35;
+.confirm-speaker-list {
+  gap: 10px;
+}
+
+.confirm-speaker-row {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 84%, white);
+}
+
+.confirm-speaker-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.confirm-speaker-row:last-child {
+  padding-bottom: 0;
+}
+
+.confirm-speaker-main {
+  min-width: 0;
+  gap: 4px;
+}
+
+.confirm-speaker-row-head {
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirm-role-token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #1f2937;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.confirm-speaker-row-name {
+  line-height: 1.3;
+}
+
+.confirm-speaker-meta {
+  align-items: flex-end;
+  gap: 6px;
+  min-width: fit-content;
+}
+
+.confirm-speaker-score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #1e293b;
+  padding: 4px 10px;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.confirm-speaker-awards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.confirm-award-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.confirm-award-chip--best {
+  border: 1px solid #f59e0b;
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.confirm-award-chip--poi {
+  border: 1px solid #14b8a6;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.confirm-award-empty {
+  color: color-mix(in srgb, var(--color-text) 58%, white);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .confirm-grid .full {
@@ -2392,6 +2615,19 @@ onUnmounted(() => {
 
   .optional-back-action {
     display: none;
+  }
+
+  .confirm-speaker-row {
+    flex-direction: column;
+  }
+
+  .confirm-speaker-meta {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .confirm-speaker-awards {
+    justify-content: flex-start;
   }
 }
 </style>

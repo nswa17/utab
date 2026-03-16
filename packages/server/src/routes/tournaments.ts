@@ -21,23 +21,25 @@ import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
 
+const tournamentBodySchema = z.object({
+  name: z.string().min(1),
+  style: z.number(),
+  options: z.record(z.any()).optional(),
+  total_round_num: z.number().int().optional(),
+  current_round_num: z.number().int().optional(),
+  preev_weights: z.array(z.number()).optional(),
+  auth: z.record(z.any()).optional(),
+  user_defined_data: z.record(z.any()).optional(),
+})
+
 const createSchema = {
-  body: z.object({
-    name: z.string().min(1),
-    style: z.number(),
-    options: z.record(z.any()).optional(),
-    total_round_num: z.number().int().optional(),
-    current_round_num: z.number().int().optional(),
-    preev_weights: z.array(z.number()).optional(),
-    auth: z.record(z.any()).optional(),
-    user_defined_data: z.record(z.any()).optional(),
-  }),
+  body: tournamentBodySchema,
 }
 
 const idParamSchema = { params: z.object({ id: z.string() }) }
 const updateSchema = {
   params: z.object({ id: z.string() }),
-  body: z.record(z.any()).refine((data) => Object.keys(data).length > 0, {
+  body: tournamentBodySchema.partial().refine((data) => Object.keys(data).length > 0, {
     message: 'update payload is required',
   }),
 }

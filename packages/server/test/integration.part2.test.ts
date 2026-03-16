@@ -161,6 +161,436 @@ describe('Server integration', () => {
     expect(deleteRawRes.body.data.deletedCount).toBeGreaterThan(0)
   })
 
+  it('rejects invalid or empty bulk entity ids without mutating teams', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'bulk-guard-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'bulk-guard-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Bulk Guard Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const bulkTeamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Guard Team 1' },
+      { tournamentId, name: 'Guard Team 2' },
+    ])
+    expect(bulkTeamsRes.status).toBe(201)
+
+    const invalidUpdateRes = await agent.patch('/api/teams').send([
+      { id: 'not-an-object-id', tournamentId, name: 'Should Fail' },
+    ])
+    expect(invalidUpdateRes.status).toBe(400)
+    expect(invalidUpdateRes.body.errors[0].message).toBe('Invalid team id')
+
+    const emptyDeleteRes = await agent.delete(`/api/teams?tournamentId=${tournamentId}&ids=`)
+    expect(emptyDeleteRes.status).toBe(400)
+    expect(emptyDeleteRes.body.errors[0].message).toBe('Bulk delete ids are required')
+
+    const invalidDeleteRes = await agent.delete(
+      `/api/teams?tournamentId=${tournamentId}&ids=not-an-object-id`
+    )
+    expect(invalidDeleteRes.status).toBe(400)
+    expect(invalidDeleteRes.body.errors[0].message).toBe('Invalid team id')
+
+    const listRes = await agent.get(`/api/teams?tournamentId=${tournamentId}`)
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toHaveLength(2)
+  })
+
+  it('rejects empty or invalid bulk round ids without deleting rounds', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'round-bulk-guard-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'round-bulk-guard-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Round Bulk Guard Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+
+    const emptyDeleteRes = await agent.delete(`/api/rounds?tournamentId=${tournamentId}&ids=`)
+    expect(emptyDeleteRes.status).toBe(400)
+    expect(emptyDeleteRes.body.errors[0].message).toBe('Bulk delete ids are required')
+
+    const invalidDeleteRes = await agent.delete(
+      `/api/rounds?tournamentId=${tournamentId}&ids=not-an-object-id`
+    )
+    expect(invalidDeleteRes.status).toBe(400)
+    expect(invalidDeleteRes.body.errors[0].message).toBe('Invalid round id')
+
+    const roundsRes = await agent.get(`/api/rounds?tournamentId=${tournamentId}`)
+    expect(roundsRes.status).toBe(200)
+    expect(roundsRes.body.data).toHaveLength(2)
+  })
+
+  it('maps duplicate entity rename conflicts to 409 for update and bulk update', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'duplicate-update-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'duplicate-update-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Duplicate Update Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const teamARes = await agent.post('/api/teams').send({ tournamentId, name: 'Conflict Team A' })
+    const teamBRes = await agent.post('/api/teams').send({ tournamentId, name: 'Conflict Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+
+    const singleUpdateRes = await agent.patch(`/api/teams/${teamBRes.body.data._id}`).send({
+      tournamentId,
+      name: 'Conflict Team A',
+    })
+    expect(singleUpdateRes.status).toBe(409)
+    expect(singleUpdateRes.body.errors[0].message).toBe('Team name already exists')
+
+    const bulkUpdateRes = await agent.patch('/api/teams').send([
+      {
+        id: teamBRes.body.data._id,
+        tournamentId,
+        name: 'Conflict Team A',
+      },
+    ])
+    expect(bulkUpdateRes.status).toBe(409)
+    expect(bulkUpdateRes.body.errors[0].message).toBe('Team name already exists')
+  })
+
+  it('maps duplicate round renumber conflicts to 409 for update and bulk update', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'duplicate-round-update-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'duplicate-round-update-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Duplicate Round Update Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
+    const round2Res = await agent.post('/api/rounds').send({ tournamentId, round: 2, name: 'R2' })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+
+    const singleUpdateRes = await agent.patch(`/api/rounds/${round2Res.body.data._id}`).send({
+      tournamentId,
+      round: 1,
+    })
+    expect(singleUpdateRes.status).toBe(409)
+    expect(singleUpdateRes.body.errors[0].message).toBe('Round already exists')
+
+    const bulkUpdateRes = await agent.patch('/api/rounds').send([
+      {
+        id: round2Res.body.data._id,
+        tournamentId,
+        round: 1,
+      },
+    ])
+    expect(bulkUpdateRes.status).toBe(409)
+    expect(bulkUpdateRes.body.errors[0].message).toBe('Round already exists')
+
+    const roundsRes = await agent.get(`/api/rounds?tournamentId=${tournamentId}`)
+    expect(roundsRes.status).toBe(200)
+    expect(roundsRes.body.data.map((round: any) => round.round)).toEqual([1, 2])
+  })
+
+  it('maps duplicate raw result update conflicts to 409 without mutating existing rows', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'duplicate-raw-update-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'duplicate-raw-update-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Duplicate Raw Update Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const teamARes = await agent.post('/api/teams').send({ tournamentId, name: 'Raw Conflict Team A' })
+    const teamBRes = await agent.post('/api/teams').send({ tournamentId, name: 'Raw Conflict Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+
+    const rawCreateRes = await agent.post('/api/v1/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamARes.body.data._id,
+        from_id: 'judge-1',
+        r: 1,
+        weight: 1,
+        win: 1,
+        side: 'gov',
+        opponents: [teamBRes.body.data._id],
+      },
+      {
+        tournamentId,
+        id: teamARes.body.data._id,
+        from_id: 'judge-2',
+        r: 1,
+        weight: 1,
+        win: 1,
+        side: 'gov',
+        opponents: [teamBRes.body.data._id],
+      },
+    ])
+    expect(rawCreateRes.status).toBe(201)
+
+    const secondRawId = rawCreateRes.body.data[1]._id as string
+    const updateRes = await agent.patch(`/api/v1/raw-results/teams/${secondRawId}`).send({
+      tournamentId,
+      from_id: 'judge-1',
+    })
+    expect(updateRes.status).toBe(409)
+    expect(updateRes.body.errors[0].message).toBe('Raw team result already exists')
+
+    const listRes = await agent
+      .get(`/api/v1/raw-results/teams?tournamentId=${tournamentId}&id=${teamARes.body.data._id}`)
+      .send()
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toHaveLength(2)
+    expect(listRes.body.data.map((row: any) => row.from_id).sort()).toEqual(['judge-1', 'judge-2'])
+  })
+
+  it('rejects malformed raw result updates before they can corrupt round data', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'raw-update-validation-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'raw-update-validation-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Raw Update Validation Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const speakerRes = await agent.post('/api/v1/speakers').send({
+      tournamentId,
+      name: 'Validation Speaker',
+    })
+    expect(speakerRes.status).toBe(201)
+
+    const rawCreateRes = await agent.post('/api/v1/raw-results/speakers').send({
+      tournamentId,
+      id: speakerRes.body.data._id,
+      from_id: 'judge-validation',
+      r: 1,
+      scores: [75, 76],
+    })
+    expect(rawCreateRes.status).toBe(201)
+    const rawId = rawCreateRes.body.data._id as string
+
+    const invalidRoundRes = await agent.patch(`/api/v1/raw-results/speakers/${rawId}`).send({
+      tournamentId,
+      r: 0,
+    })
+    expect(invalidRoundRes.status).toBe(400)
+    expect(invalidRoundRes.body.errors.some((issue: any) => issue.path === 'r')).toBe(true)
+
+    const invalidScoresRes = await agent.patch(`/api/v1/raw-results/speakers/${rawId}`).send({
+      tournamentId,
+      scores: ['bad-score'],
+    })
+    expect(invalidScoresRes.status).toBe(400)
+    expect(invalidScoresRes.body.errors.some((issue: any) => issue.path === 'scores.0')).toBe(true)
+
+    const listRes = await agent
+      .get(`/api/v1/raw-results/speakers?tournamentId=${tournamentId}&id=${speakerRes.body.data._id}`)
+      .send()
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toHaveLength(1)
+    expect(listRes.body.data[0].r).toBe(1)
+    expect(listRes.body.data[0].scores).toEqual([75, 76])
+  })
+
+  it('enforces a unique draw per round at the model layer', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'draw-unique-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'draw-unique-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Draw Unique Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const [{ getTournamentConnection }, { getDrawModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/draw.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const DrawModel = getDrawModel(connection)
+    const created = await DrawModel.create({
+      tournamentId,
+      round: 1,
+      allocation: [],
+      drawOpened: false,
+      allocationOpened: false,
+    })
+    expect(created.round).toBe(1)
+
+    await expect(
+      DrawModel.create({
+        tournamentId,
+        round: 1,
+        allocation: [],
+        drawOpened: true,
+        allocationOpened: true,
+      })
+    ).rejects.toMatchObject({ code: 11000 })
+  })
+
+  it('maps style update conflicts to 409 and rejects invalid style ids with 400', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'style-conflict-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'style-conflict-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const baseStyle = {
+      team_num: 2,
+      score_weights: [1],
+      speaker_sequence: ['gov', 'opp'],
+      adjudicator_range: [1, 100],
+      roles: ['speaker'],
+    }
+
+    const styleARes = await agent.post('/api/styles').send({
+      id: 9101,
+      name: 'Conflict Style A',
+      ...baseStyle,
+    })
+    const styleBRes = await agent.post('/api/styles').send({
+      id: 9102,
+      name: 'Conflict Style B',
+      ...baseStyle,
+    })
+    expect(styleARes.status).toBe(201)
+    expect(styleBRes.status).toBe(201)
+
+    const duplicateUpdateRes = await agent.patch('/api/styles/9102').send({
+      id: 9101,
+    })
+    expect(duplicateUpdateRes.status).toBe(409)
+    expect(duplicateUpdateRes.body.errors[0].message).toBe('Style id already exists')
+
+    const invalidUpdateRes = await agent.patch('/api/styles/not-a-number').send({
+      name: 'Nope',
+    })
+    expect(invalidUpdateRes.status).toBe(400)
+    expect(invalidUpdateRes.body.errors[0].message).toBe('Invalid style id')
+
+    const invalidDeleteRes = await agent.delete('/api/styles/not-a-number')
+    expect(invalidDeleteRes.status).toBe(400)
+    expect(invalidDeleteRes.body.errors[0].message).toBe('Invalid style id')
+  })
+
+  it('rejects malformed style updates before partial numeric values can be stored', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'style-validation-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'style-validation-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const createStyleRes = await agent.post('/api/styles').send({
+      id: 901,
+      name: 'Validation Style',
+      team_num: 2,
+      score_weights: [1, 1],
+      side_labels: { gov: 'Gov', opp: 'Opp' },
+      side_labels_short: { gov: 'G', opp: 'O' },
+      speaker_sequence: [1, 2],
+      range: [],
+      adjudicator_range: [1, 10],
+      roles: ['speaker'],
+    })
+    expect(createStyleRes.status).toBe(201)
+
+    const invalidUpdateRes = await agent.patch('/api/styles/901').send({
+      team_num: 0.5,
+    })
+    expect(invalidUpdateRes.status).toBe(400)
+    expect(invalidUpdateRes.body.errors.some((issue: any) => issue.path === 'team_num')).toBe(true)
+
+    const styleListRes = await agent.get('/api/styles')
+    expect(styleListRes.status).toBe(200)
+    const updatedStyle = styleListRes.body.data.find((style: any) => style.id === 901)
+    expect(updatedStyle.team_num).toBe(2)
+  })
+
   it('stores submissions with entity ids and compiles from submissions', async () => {
     const agent = request.agent(app)
 
@@ -1542,6 +1972,82 @@ describe('Server integration', () => {
       submittedEntityId: 'judge-a',
     })
     expect(flagMismatch.status).toBe(400)
+  })
+
+  it('rejects ballots when best or poi selections are outside the configured range', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'award-count-range-check', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'award-count-range-check', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Award Count Range Check Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        best: true,
+        poi: true,
+        best_min_count: 1,
+        best_max_count: 2,
+        poi_min_count: 0,
+        poi_max_count: 2,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const bestCountRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76, 75],
+      scoresB: [74, 73],
+      bestA: [false, false],
+      bestB: [false, false],
+      poiA: [false, false],
+      poiB: [false, false],
+      submittedEntityId: 'judge-a',
+    })
+    expect(bestCountRes.status).toBe(400)
+    expect(String(bestCountRes.body.errors?.[0]?.message ?? '')).toContain(
+      'best selection count must be between 1 and 2'
+    )
+
+    const poiCountRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [76, 75],
+      scoresB: [74, 73],
+      bestA: [true, false],
+      bestB: [false, false],
+      poiA: [true, true],
+      poiB: [true, false],
+      submittedEntityId: 'judge-b',
+    })
+    expect(poiCountRes.status).toBe(400)
+    expect(String(poiCountRes.body.errors?.[0]?.message ?? '')).toContain(
+      'poi selection count must be between 0 and 2'
+    )
   })
 
   it('rejects ballots with blank speaker ids even when score lengths match', async () => {

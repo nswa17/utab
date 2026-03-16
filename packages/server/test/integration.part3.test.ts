@@ -1032,6 +1032,116 @@ describe('Server integration', () => {
     expect(decodedName.endsWith('.zip')).toBe(true)
   })
 
+  it('counts repeated speaker slots for PDA4 short teams in compiled team sums', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'pda4-short-team-sum', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'pda4-short-team-sum', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'PDA4 Short Team Compile Open',
+      style: 5,
+      options: {},
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    async function createSpeaker(name: string) {
+      const res = await agent.post('/api/speakers').send({ tournamentId, name })
+      expect(res.status).toBe(201)
+      return String(res.body.data._id)
+    }
+
+    const speakerA1 = await createSpeaker('Speaker A1')
+    const speakerA2 = await createSpeaker('Speaker A2')
+    const speakerA3 = await createSpeaker('Speaker A3')
+    const speakerB1 = await createSpeaker('Speaker B1')
+    const speakerB2 = await createSpeaker('Speaker B2')
+    const speakerB3 = await createSpeaker('Speaker B3')
+    const speakerB4 = await createSpeaker('Speaker B4')
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team A',
+      details: [{ r: 1, speakers: [speakerA1, speakerA2, speakerA3] }],
+    })
+    expect(teamARes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+      details: [{ r: 1, speakers: [speakerB1, speakerB2, speakerB3, speakerB4] }],
+    })
+    expect(teamBRes.status).toBe(201)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamAId,
+      teamBId: teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerA1, speakerA2, speakerA3, speakerA1],
+      speakerIdsB: [speakerB1, speakerB2, speakerB3, speakerB4],
+      scoresA: [11, 10, 12, 10],
+      scoresB: [10, 10, 10, 13],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      options: {
+        missing_data_policy: 'warn',
+        include_labels: ['teams'],
+      },
+    })
+    expect(compileRes.status).toBe(201)
+
+    const teamResults = compileRes.body.data.payload.compiled_team_results as any[]
+    const teamA = teamResults.find((row) => row.id === teamAId)
+    const teamB = teamResults.find((row) => row.id === teamBId)
+
+    expect(teamA?.details?.[0]?.sum).toBe(43)
+    expect(teamB?.details?.[0]?.sum).toBe(43)
+    expect(teamA?.sum).toBe(43)
+    expect(teamB?.sum).toBe(43)
+  })
+
   it('restores a tournament from an exported backup zip', async () => {
     const agent = request.agent(app)
 
@@ -1103,8 +1213,9 @@ describe('Server integration', () => {
     const metadata = JSON.parse(metadataEntry?.content.toString('utf8') ?? '{}') as {
       collectionFiles?: Array<{ path: string; collectionName: string }>
     }
-    expect(metadata.collectionFiles).toHaveLength(2)
-    expect(metadata.collectionFiles).toEqual(
+    const collectionFiles = metadata.collectionFiles ?? []
+    expect(collectionFiles.length).toBeGreaterThanOrEqual(2)
+    expect(collectionFiles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ collectionName: 'rounds' }),
         expect.objectContaining({ collectionName: 'teams' }),
@@ -1114,7 +1225,10 @@ describe('Server integration', () => {
     const collectionJsonEntries = extractedEntries.filter(
       (entry) => entry.path.startsWith('json/collections/') && entry.path.endsWith('.json')
     )
-    expect(collectionJsonEntries).toHaveLength(2)
+    expect(collectionJsonEntries).toHaveLength(collectionFiles.length)
+    expect(collectionJsonEntries.map((entry) => entry.path).sort()).toEqual(
+      collectionFiles.map((entry) => entry.path).sort()
+    )
     const reorderedBundle = buildZip(
       [
         ...extractedEntries.filter(
@@ -1208,6 +1322,105 @@ describe('Server integration', () => {
     expect('passwordHash' in removeUserRes.body.data).toBe(false)
   })
 
+  it('does not overwrite an existing users global role or password when adding tournament membership', async () => {
+    const owner = request.agent(app)
+
+    const ownerRegisterRes = await owner
+      .post('/api/v1/auth/register')
+      .send({ username: 'user-owner-preserve', password: 'password123', role: 'organizer' })
+    expect(ownerRegisterRes.status).toBe(201)
+
+    const ownerLoginRes = await owner
+      .post('/api/v1/auth/login')
+      .send({ username: 'user-owner-preserve', password: 'password123' })
+    expect(ownerLoginRes.status).toBe(200)
+
+    const existingRegisterRes = await request(app).post('/api/v1/auth/register').send({
+      username: 'existing-organizer-preserve',
+      password: 'original-password',
+      role: 'organizer',
+    })
+    expect(existingRegisterRes.status).toBe(201)
+    const existingUserId = existingRegisterRes.body.data.userId as string
+
+    const tournamentRes = await owner
+      .post('/api/v1/tournaments')
+      .send({ name: 'Preserve Existing User Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const addUserRes = await owner.post(`/api/v1/tournaments/${tournamentId}/users`).send({
+      username: 'existing-organizer-preserve',
+      password: 'replacement-password',
+      role: 'speaker',
+    })
+    expect(addUserRes.status).toBe(200)
+    expect(addUserRes.body.data.userId).toBe(existingUserId)
+    expect(addUserRes.body.data.role).toBe('speaker')
+    expect(addUserRes.body.data.tournaments).toContain(tournamentId)
+
+    const membership = await TournamentMemberModel.findOne({
+      tournamentId,
+      userId: existingUserId,
+    })
+      .lean()
+      .exec()
+    expect(membership?.role).toBe('speaker')
+
+    const existingUser = await UserModel.findById(existingUserId).lean().exec()
+    expect(existingUser?.role).toBe('organizer')
+    expect(await verifyPassword('original-password', String(existingUser?.passwordHash))).toBe(true)
+    expect(await verifyPassword('replacement-password', String(existingUser?.passwordHash))).toBe(
+      false
+    )
+
+    const existingOrganizer = request.agent(app)
+    const originalPasswordLogin = await existingOrganizer.post('/api/v1/auth/login').send({
+      username: 'existing-organizer-preserve',
+      password: 'original-password',
+    })
+    expect(originalPasswordLogin.status).toBe(200)
+    expect(originalPasswordLogin.body.data.role).toBe('organizer')
+
+    const changedPasswordLogin = await request(app).post('/api/v1/auth/login').send({
+      username: 'existing-organizer-preserve',
+      password: 'replacement-password',
+    })
+    expect(changedPasswordLogin.status).toBe(401)
+
+    const createTournamentRes = await existingOrganizer
+      .post('/api/v1/tournaments')
+      .send({ name: 'Still Organizer Open', style: 1, options: {} })
+    expect(createTournamentRes.status).toBe(201)
+  })
+
+  it('returns bad request when tournament user removal receives an invalid user id', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'user-remove-invalid-id', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/v1/auth/login')
+      .send({ username: 'user-remove-invalid-id', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/v1/tournaments')
+      .send({ name: 'Invalid User Delete Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    const removeUserRes = await agent.delete(
+      `/api/v1/tournaments/${tournamentId}/users?userId=not-an-object-id`
+    )
+
+    expect(removeUserRes.status).toBe(400)
+    expect(removeUserRes.body.errors[0].message).toBe('Invalid user id')
+  })
+
   it('limits tournament payloads for non-admin viewers', async () => {
     const organizer = request.agent(app)
 
@@ -1284,6 +1497,80 @@ describe('Server integration', () => {
     expect(adminProtectedGet.status).toBe(200)
     expect(adminProtectedGet.body.data.options.privateFlag).toBe('protected-secret')
     expect(adminProtectedGet.body.data.user_defined_data.ownerMemo).toBe('protected-only')
+  })
+
+  it('sanitizes tournament access secrets from organizer-facing responses', async () => {
+    const organizer = request.agent(app)
+
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'tournament-auth-sanitizer', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'tournament-auth-sanitizer', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const createRes = await organizer.post('/api/tournaments').send({
+      name: 'Sanitized Tournament Access',
+      style: 1,
+      auth: { access: { required: true, password: 'initial-secret' } },
+    })
+    expect(createRes.status).toBe(201)
+    const tournamentId = String(createRes.body.data._id)
+
+    expect(createRes.body.data.auth.access.required).toBe(true)
+    expect(createRes.body.data.auth.access.hasPassword).toBe(true)
+    expect(createRes.body.data.auth.access.password).toBeUndefined()
+    expect(createRes.body.data.auth.access.passwordHash).toBeUndefined()
+
+    await TournamentModel.updateOne(
+      { _id: tournamentId },
+      {
+        $set: {
+          auth: {
+            access: {
+              required: true,
+              passwordHash: await hashPassword('hashed-secret'),
+              version: 7,
+            },
+          },
+        },
+      }
+    ).exec()
+
+    const getRes = await organizer.get(`/api/tournaments/${tournamentId}`)
+    expect(getRes.status).toBe(200)
+    expect(getRes.body.data.auth.access.required).toBe(true)
+    expect(getRes.body.data.auth.access.hasPassword).toBe(true)
+    expect(getRes.body.data.auth.access.version).toBe(7)
+    expect(getRes.body.data.auth.access.password).toBeUndefined()
+    expect(getRes.body.data.auth.access.passwordHash).toBeUndefined()
+
+    const listRes = await organizer.get('/api/tournaments')
+    expect(listRes.status).toBe(200)
+    const listed = listRes.body.data.find((item: any) => item._id === tournamentId)
+    expect(listed).toBeTruthy()
+    expect(listed.auth.access.required).toBe(true)
+    expect(listed.auth.access.hasPassword).toBe(true)
+    expect(listed.auth.access.version).toBe(7)
+    expect(listed.auth.access.password).toBeUndefined()
+    expect(listed.auth.access.passwordHash).toBeUndefined()
+
+    const updateRes = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
+      auth: {
+        access: {
+          required: true,
+          password: 'rotated-secret',
+        },
+      },
+    })
+    expect(updateRes.status).toBe(200)
+    expect(updateRes.body.data.auth.access.required).toBe(true)
+    expect(updateRes.body.data.auth.access.hasPassword).toBe(true)
+    expect(updateRes.body.data.auth.access.password).toBeUndefined()
+    expect(updateRes.body.data.auth.access.passwordHash).toBeUndefined()
   })
 
 })

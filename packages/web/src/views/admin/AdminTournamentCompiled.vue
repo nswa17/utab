@@ -979,6 +979,7 @@ import { useReportSlideSettings } from '@/composables/useReportSlideSettings'
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 import { buildRoundSubmissionCoverage } from '@/utils/submission-expectations'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import {
   buildSubPrizeResultsFromCompiled,
   DEFAULT_SLIDE_SETTINGS,
@@ -1007,6 +1008,8 @@ const reportUxV3Enabled = isAdminReportsUxV3Enabled()
 const showCommentSheetCsvDownloadButton = false
 const compileManualSaveEnabled = true
 const compileWorkflow = useCompileWorkflow('submissions')
+const refreshGate = createLatestRequestGate()
+const compiledHistoryGate = createLatestRequestGate()
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const currentTournament = computed(
@@ -3576,30 +3579,37 @@ function downloadCsv() {
 }
 
 async function refresh() {
-  if (!tournamentId.value) {
-    hasLoaded.value = true
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  compiledLoadError.value = ''
+  compiledHistoryGate.invalidate()
+  if (!currentTournamentId) {
+    compiledHistory.value = []
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
     return
   }
-  compiledLoadError.value = ''
   try {
     await Promise.all([
-      compiledStore.fetchLatest(tournamentId.value),
+      compiledStore.fetchLatest(currentTournamentId),
       tournamentStore.fetchTournaments(),
-      teams.fetchTeams(tournamentId.value),
+      teams.fetchTeams(currentTournamentId),
       styles.fetchStyles(),
-      adjudicators.fetchAdjudicators(tournamentId.value),
-      rounds.fetchRounds(tournamentId.value),
-      speakers.fetchSpeakers(tournamentId.value),
-      institutions.fetchInstitutions(tournamentId.value),
-      draws.fetchDraws(tournamentId.value),
-      submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+      adjudicators.fetchAdjudicators(currentTournamentId),
+      rounds.fetchRounds(currentTournamentId),
+      speakers.fetchSpeakers(currentTournamentId),
+      institutions.fetchInstitutions(currentTournamentId),
+      draws.fetchDraws(currentTournamentId),
+      submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
     ])
+    if (!refreshGate.isCurrent(token)) return
     compiledLoadError.value = compiledStore.error ?? ''
     if (!compileDefaultsHydrated.value) {
       applyCompileDefaultsFromTournament()
       compileDefaultsHydrated.value = true
     }
-    await refreshCompiledHistory()
+    await refreshCompiledHistory(currentTournamentId)
+    if (!refreshGate.isCurrent(token)) return
     const currentCompiledId = String(compiledStore.compiled?._id ?? '').trim()
     if (currentCompiledId) {
       selectedCompiledId.value = currentCompiledId
@@ -3612,7 +3622,8 @@ async function refresh() {
     compileExecuted.value = Boolean(compiled.value)
     applyDefaultDiffBaselineSelection(selectedCompiledId.value)
   } finally {
-    hasLoaded.value = true
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
   }
 }
 
@@ -3823,13 +3834,24 @@ async function confirmForcedCompile() {
   closeForceCompileModal()
 }
 
-async function refreshCompiledHistory() {
-  if (!tournamentId.value) return
+async function refreshCompiledHistory(currentTournamentId = tournamentId.value) {
+  const token = compiledHistoryGate.begin()
+  if (!currentTournamentId) {
+    if (compiledHistoryGate.isCurrent(token)) {
+      compiledHistory.value = []
+    }
+    compiledHistoryGate.complete(token)
+    return
+  }
   try {
-    const res = await api.get('/compiled', { params: { tournamentId: tournamentId.value } })
+    const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
+    if (!compiledHistoryGate.isCurrent(token)) return
     compiledHistory.value = []
+  } finally {
+    compiledHistoryGate.complete(token)
   }
 }
 
@@ -4009,6 +4031,7 @@ watch(
 )
 
 watch(tournamentId, () => {
+  hasLoaded.value = false
   compileExecuted.value = false
   compileDefaultsHydrated.value = false
   manualCompileSource.value = 'submissions'

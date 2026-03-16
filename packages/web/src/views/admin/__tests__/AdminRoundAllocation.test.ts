@@ -25,6 +25,10 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('チーム・ジャッジで参照ラウンドを個別に設定する')
     expect(source).toContain('チーム結果参照ラウンド')
     expect(source).toContain('ジャッジ結果参照ラウンド')
+    expect(source).toContain(
+      '確定後は、その時点の参照集計を固定で使います。前ラウンド結果を後から修正しても自動更新されないため、必要なら「参照ラウンドを変更・再確定」してください。'
+    )
+    expect(source).toContain('参照ラウンドを変更・再確定')
     expect(source).not.toContain('openReferenceCompileSettingsModal')
     expect(source).not.toContain('referenceCompileSettingsModalOpen')
     expect(source).not.toContain('CompileOptionsEditor')
@@ -120,5 +124,15 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('pill-hover-source')
     expect(source).not.toContain('drop-zone--drag-related--conflict')
     expect(source).not.toContain('drop-zone--drag-related--history')
+  })
+
+  it('invalidates stale refresh and compiled-history requests while route context changes', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('createLatestRequestGate')
+    expect(source).toContain('const refreshGate = createLatestRequestGate()')
+    expect(source).toContain('const compiledHistoryGate = createLatestRequestGate()')
+    expect(source).toContain('compiledHistoryGate.invalidate()')
+    expect(source).toContain('if (!compiledHistoryGate.isCurrent(token)) return')
+    expect(source).toContain('sectionLoading.value = foregroundRefreshCount > 0')
   })
 })

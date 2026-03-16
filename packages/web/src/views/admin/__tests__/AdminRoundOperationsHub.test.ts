@@ -161,8 +161,24 @@ describe('AdminRoundOperationsHub', () => {
     const source = load('src/views/admin/AdminRoundOperationsHub.vue')
     expect(source).toContain('const hubSubmissions = ref<Submission[]>([])')
     expect(source).toContain('refreshHubSubmissions')
-    expect(source).toContain("api.get('/submissions', { params: { tournamentId: tournamentId.value } })")
+    expect(source).toContain("api.get('/submissions', { params: { tournamentId: currentTournamentId } })")
     expect(source).not.toContain('submissionsStore.submissions.forEach')
+  })
+
+  it('invalidates stale refresh, submission, preview, and compiled-history requests', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('createLatestRequestGate')
+    expect(source).toContain('const refreshGate = createLatestRequestGate()')
+    expect(source).toContain('const hubSubmissionsGate = createLatestRequestGate()')
+    expect(source).toContain('const autoCompilePreviewGate = createLatestRequestGate()')
+    expect(source).toContain('const compiledHistoryGate = createLatestRequestGate()')
+    expect(source).toContain('hubSubmissionsGate.invalidate()')
+    expect(source).toContain('compiledHistoryGate.invalidate()')
+    expect(source).toContain('autoCompilePreviewGate.invalidate()')
+    expect(source).toContain('if (!refreshGate.isCurrent(token)) return')
+    expect(source).toContain('if (!hubSubmissionsGate.isCurrent(token)) return')
+    expect(source).toContain('if (!autoCompilePreviewGate.isCurrent(token)) return')
+    expect(source).toContain('if (!compiledHistoryGate.isCurrent(token)) return')
   })
 
   it('reads compiled rounds using r-or-round fallback for status chips', () => {

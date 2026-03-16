@@ -93,6 +93,7 @@ import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import { useTournamentStore } from '@/stores/tournament'
 import { api } from '@/utils/api'
+import { createLatestRequestGate } from '@/utils/latest-request'
 
 const route = useRoute()
 const router = useRouter()
@@ -110,6 +111,8 @@ const duplicateFeedbackCount = ref(0)
 const hasDuplicateSubmissions = computed(
   () => duplicateBallotCount.value > 0 || duplicateFeedbackCount.value > 0
 )
+const refreshGate = createLatestRequestGate()
+let foregroundRefreshCount = 0
 
 const basePath = computed(() => `/admin/${tournamentId.value}`)
 const setupPath = computed(() => `${basePath.value}/setup`)
@@ -184,33 +187,53 @@ function countDuplicateSubmissions(items: any[]) {
     0
   )
 
-  duplicateBallotCount.value = ballotDuplicates
-  duplicateFeedbackCount.value = feedbackDuplicates
+  return {
+    ballotDuplicates,
+    feedbackDuplicates,
+  }
 }
 
 async function refreshDuplicateWarnings() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) {
+    return {
+      ballotDuplicates: 0,
+      feedbackDuplicates: 0,
+    }
+  }
   try {
-    const res = await api.get('/submissions', { params: { tournamentId: tournamentId.value } })
+    const res = await api.get('/submissions', { params: { tournamentId: currentTournamentId } })
     const items = Array.isArray(res.data?.data) ? res.data.data : []
-    countDuplicateSubmissions(items)
+    return countDuplicateSubmissions(items)
   } catch {
-    duplicateBallotCount.value = 0
-    duplicateFeedbackCount.value = 0
+    return {
+      ballotDuplicates: 0,
+      feedbackDuplicates: 0,
+    }
   }
 }
 
 async function refreshSection(options: { showLoading?: boolean } = {}) {
   const showLoading = options.showLoading !== false
+  const token = refreshGate.begin()
   if (showLoading) {
+    foregroundRefreshCount += 1
     sectionLoading.value = true
   }
   try {
-    await Promise.all([tournamentStore.fetchTournaments(), refreshDuplicateWarnings()])
+    const [, duplicateCounts] = await Promise.all([
+      tournamentStore.fetchTournaments(),
+      refreshDuplicateWarnings(),
+    ])
+    if (!refreshGate.isCurrent(token)) return
+    duplicateBallotCount.value = duplicateCounts.ballotDuplicates
+    duplicateFeedbackCount.value = duplicateCounts.feedbackDuplicates
     lastRefreshedAt.value = new Date().toISOString()
   } finally {
+    refreshGate.complete(token)
     if (showLoading) {
-      sectionLoading.value = false
+      foregroundRefreshCount = Math.max(0, foregroundRefreshCount - 1)
+      sectionLoading.value = foregroundRefreshCount > 0
     }
   }
 }

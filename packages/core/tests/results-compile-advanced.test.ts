@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compileTeamResults } from '../src/results/results.js'
+import { compileTeamResults, integrateTeamAndSpeakerResults } from '../src/results/results.js'
 
 describe('results/compileTeamResults (advanced)', () => {
   it('compiles team results with speaker integration', () => {
@@ -66,5 +66,42 @@ describe('results/compileTeamResults (advanced)', () => {
 
     expect(team1?.win).toBe(0.5)
     expect(team2?.win).toBe(0.5)
+  })
+
+  it('keeps bye rounds without opponents from producing infinite margins', () => {
+    const integrated = integrateTeamAndSpeakerResults(
+      [{ id: 't1', details: [{ r: 1, speakers: ['s1'] }] }] as any,
+      [
+        {
+          r: 1,
+          id: 't1',
+          win: 1,
+          opponents: [],
+          side: 'gov',
+          sum: null,
+          opponent_average: null,
+          vote: 1,
+          vote_rate: 1,
+          acc: 1,
+          margin: null,
+          user_defined_data_collection: [],
+        },
+      ] as any,
+      [
+        {
+          r: 1,
+          id: 's1',
+          scores: [75],
+          average: 75,
+          sum: 75,
+          user_defined_data_collection: [],
+        },
+      ] as any,
+      1
+    )
+
+    expect(integrated[0].sum).toBe(75)
+    expect(integrated[0].margin).toBeNull()
+    expect(integrated[0].opponent_average).toBeNull()
   })
 })

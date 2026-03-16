@@ -98,13 +98,59 @@ const knownStaticHeaders = new Set([
 ])
 
 function detectDelimiter(line: string): ',' | '\t' {
-  const commaCount = line.split(',').length - 1
-  const tabCount = line.split('\t').length - 1
+  const commaCount = countDelimiterOutsideQuotes(line, ',')
+  const tabCount = countDelimiterOutsideQuotes(line, '\t')
   return tabCount > commaCount ? '\t' : ','
 }
 
 function splitCells(line: string, delimiter: ',' | '\t'): string[] {
-  return line.split(delimiter).map((cell) => cell.trim())
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"'
+        index += 1
+        continue
+      }
+      inQuotes = !inQuotes
+      continue
+    }
+    if (!inQuotes && char === delimiter) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+    current += char
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function countDelimiterOutsideQuotes(line: string, delimiter: ',' | '\t'): number {
+  let count = 0
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        index += 1
+        continue
+      }
+      inQuotes = !inQuotes
+      continue
+    }
+    if (!inQuotes && char === delimiter) {
+      count += 1
+    }
+  }
+
+  return count
 }
 
 function normalizeHeader(value: string): string {
@@ -137,8 +183,7 @@ function isKnownHeader(value: string): boolean {
 function parseEntityCsv(text: string): ParsedEntityCsv {
   const lines = text
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+    .filter((line) => line.trim().length > 0)
 
   if (lines.length === 0) return { hasHeader: false, headers: [], rows: [] }
 
@@ -270,6 +315,13 @@ function splitList(value: string): string[] {
     .filter(Boolean)
 }
 
+function splitCommaList(value: string): string[] {
+  return value
+    .split(/[,、，]/)
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+}
+
 function toBooleanCell(value: string, defaultValue: boolean): boolean {
   const normalized = String(value ?? '').trim().toLowerCase()
   if (!normalized) return defaultValue
@@ -333,24 +385,93 @@ type NamedEntityResolveResult = {
 }
 
 function resolveNamedEntityIds(values: string, lookup: Map<string, string>): NamedEntityResolveResult {
-  const ids = new Set<string>()
-  const unknownTokens = new Set<string>()
+  const ids: string[] = []
+  const unknownTokens: string[] = []
+  const seenIds = new Set<string>()
+  const seenUnknownTokens = new Set<string>()
+
+  const pushId = (id: string) => {
+    if (seenIds.has(id)) return
+    seenIds.add(id)
+    ids.push(id)
+  }
+
+  const pushUnknownToken = (token: string) => {
+    if (seenUnknownTokens.has(token)) return
+    seenUnknownTokens.add(token)
+    unknownTokens.push(token)
+  }
+
+  const resolveToken = (token: string): boolean => {
+    const normalized = token.trim()
+    if (!normalized) return true
+    const id = lookup.get(normalized) ?? lookup.get(normalized.toLowerCase())
+    if (!id) return false
+    pushId(id)
+    return true
+  }
 
   splitList(values).forEach((token) => {
     const normalized = token.trim()
     if (!normalized) return
-    const id = lookup.get(normalized) ?? lookup.get(normalized.toLowerCase())
-    if (id) {
-      ids.add(id)
+    if (resolveToken(normalized)) {
       return
     }
-    unknownTokens.add(normalized)
+
+    const commaTokens = splitCommaList(normalized)
+    if (commaTokens.length > 1) {
+      commaTokens.forEach((commaToken) => {
+        if (!resolveToken(commaToken)) {
+          pushUnknownToken(commaToken)
+        }
+      })
+      return
+    }
+
+    pushUnknownToken(normalized)
   })
 
   return {
-    ids: Array.from(ids),
-    unknownTokens: Array.from(unknownTokens),
+    ids,
+    unknownTokens,
   }
+}
+
+function mergeNamedEntityResolveResults(
+  results: NamedEntityResolveResult[]
+): NamedEntityResolveResult {
+  const ids: string[] = []
+  const unknownTokens: string[] = []
+  const seenIds = new Set<string>()
+  const seenUnknownTokens = new Set<string>()
+
+  results.forEach((result) => {
+    result.ids.forEach((id) => {
+      if (seenIds.has(id)) return
+      seenIds.add(id)
+      ids.push(id)
+    })
+    result.unknownTokens.forEach((token) => {
+      if (seenUnknownTokens.has(token)) return
+      seenUnknownTokens.add(token)
+      unknownTokens.push(token)
+    })
+  })
+
+  return { ids, unknownTokens }
+}
+
+function readTeamSpeakerCells(row: string[], reader: CsvColumnReader): string[] {
+  const cells = [reader.read(row, ['speakers'], 2)]
+
+  for (let slot = 1; slot <= 8; slot += 1) {
+    const value = reader.read(row, [`speaker${slot}`, `speaker_${slot}`])
+    if (value) {
+      cells.push(value)
+    }
+  }
+
+  return cells.filter((cell) => cell.trim().length > 0)
 }
 
 function createNamedEntityLookup(items: NamedEntity[]): Map<string, string> {
@@ -457,8 +578,9 @@ export function buildEntityImportPayload(
       const name = reader.read(row, ['name'], 0)
       if (!name) continue
       const institutionCell = reader.read(row, ['institution'], 1)
-      const speakersCell = reader.read(row, ['speakers'], 2)
-      const speakerResult = resolveNamedEntityIds(speakersCell, speakerLookup)
+      const speakerResult = mergeNamedEntityResolveResults(
+        readTeamSpeakerCells(row, reader).map((cell) => resolveNamedEntityIds(cell, speakerLookup))
+      )
 
       const defaultAvailable = toBooleanCell(
         reader.read(row, ['available', 'availability'], 3),

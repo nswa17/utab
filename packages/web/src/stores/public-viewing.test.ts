@@ -20,6 +20,16 @@ type MockedApi = {
 
 const mockedApi = api as unknown as MockedApi
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('public viewing stores', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -38,6 +48,57 @@ describe('public viewing stores', () => {
         public: '1',
       },
     })
+  })
+
+  it('keeps only the latest rounds response when fetches resolve out of order', async () => {
+    const store = useRoundsStore()
+    const first = createDeferred<any>()
+    const second = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const staleRequest = store.fetchRounds('tournament-1')
+    const latestRequest = store.fetchRounds('tournament-2')
+
+    const latestRounds = [{ _id: 'round-2', tournamentId: 'tournament-2', round: 1 }]
+    second.resolve({ data: { data: latestRounds } })
+    await latestRequest
+
+    first.resolve({
+      data: {
+        data: [{ _id: 'round-1', tournamentId: 'tournament-1', round: 1 }],
+      },
+    })
+    const staleResult = await staleRequest
+
+    expect(staleResult).toEqual([])
+    expect(store.rounds).toEqual(latestRounds as any)
+    expect(store.loading).toBe(false)
+  })
+
+  it('keeps rounds loading true until concurrent fetches finish', async () => {
+    const store = useRoundsStore()
+    const first = createDeferred<any>()
+    const second = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const firstRequest = store.fetchRounds('tournament-1')
+    const secondRequest = store.fetchRounds('tournament-2')
+
+    expect(store.loading).toBe(true)
+
+    second.resolve({ data: { data: [] } })
+    await secondRequest
+    expect(store.loading).toBe(true)
+
+    first.resolve({ data: { data: [] } })
+    await firstRequest
+    expect(store.loading).toBe(false)
   })
 
   it('requests public draws when forcePublic is enabled', async () => {

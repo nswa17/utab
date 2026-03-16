@@ -97,6 +97,17 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('?task=submissions')
   })
 
+  it('invalidates stale page and compiled-history refreshes across tournament switches', () => {
+    const source = load('src/views/admin/AdminTournamentCompiled.vue')
+    expect(source).toContain('createLatestRequestGate')
+    expect(source).toContain('const refreshGate = createLatestRequestGate()')
+    expect(source).toContain('const compiledHistoryGate = createLatestRequestGate()')
+    expect(source).toContain('compiledHistoryGate.invalidate()')
+    expect(source).toContain('if (!refreshGate.isCurrent(token)) return')
+    expect(source).toContain('if (!compiledHistoryGate.isCurrent(token)) return')
+    expect(source).toContain('hasLoaded.value = false')
+  })
+
   it('keeps rankings focused and removes operation-risk frame content', () => {
     const source = load('src/views/admin/AdminTournamentCompiled.vue')
     expect(source).toContain('operations-results')

@@ -7,17 +7,41 @@ export const useTeamsStore = defineStore('teams', () => {
   const teams = ref<Team[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchTeams(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/teams', { params: { tournamentId } })
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       teams.value = res.data?.data ?? []
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load teams'
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -28,12 +52,13 @@ export const useTeamsStore = defineStore('teams', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/teams', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         teams.value = [created, ...teams.value]
       }
       return created
@@ -41,7 +66,7 @@ export const useTeamsStore = defineStore('teams', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create team'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -53,7 +78,7 @@ export const useTeamsStore = defineStore('teams', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/teams/${payload.teamId}`, {
@@ -65,6 +90,7 @@ export const useTeamsStore = defineStore('teams', () => {
       })
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         teams.value = teams.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
@@ -72,22 +98,23 @@ export const useTeamsStore = defineStore('teams', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update team'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteTeam(tournamentId: string, teamId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/teams/${teamId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       teams.value = teams.value.filter((item) => item._id !== teamId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete team'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

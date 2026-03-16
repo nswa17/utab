@@ -141,8 +141,7 @@ export function setupRouterGuards(router: Router, pinia: Pinia): void {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
     if (to.path.startsWith('/admin')) {
-      const role = auth.role
-      if (role !== 'superuser' && role !== 'organizer') {
+      if (!auth.canAccessAdmin) {
         return { path: '/user' }
       }
     }

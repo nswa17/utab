@@ -1,6 +1,13 @@
 import type { RequestHandler } from 'express'
 import { StyleModel } from '../models/style.js'
-import { notFound } from './shared/http-errors.js'
+import { isDuplicateKeyError } from '../services/mongo-error.service.js'
+import { badRequest, notFound } from './shared/http-errors.js'
+
+function parseStyleId(raw: unknown): number | null {
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed)) return null
+  return parsed
+}
 
 export const listStyles: RequestHandler = async (_req, res, next) => {
   try {
@@ -27,8 +34,17 @@ export const createStyle: RequestHandler = async (req, res, next) => {
 export const updateStyle: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
+    const styleId = parseStyleId(id)
+    if (styleId === null) {
+      badRequest(res, 'Invalid style id')
+      return
+    }
     const update = req.body as Record<string, unknown>
-    const updated = await StyleModel.findOneAndUpdate({ id: Number(id) }, { $set: update }, { new: true })
+    const updated = await StyleModel.findOneAndUpdate(
+      { id: styleId },
+      { $set: update },
+      { new: true, runValidators: true }
+    )
       .lean()
       .exec()
     if (!updated) {
@@ -37,6 +53,10 @@ export const updateStyle: RequestHandler = async (req, res, next) => {
     }
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      res.status(409).json({ data: null, errors: [{ name: 'Conflict', message: 'Style id already exists' }] })
+      return
+    }
     next(err)
   }
 }
@@ -44,7 +64,12 @@ export const updateStyle: RequestHandler = async (req, res, next) => {
 export const deleteStyle: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
-    const deleted = await StyleModel.findOneAndDelete({ id: Number(id) }).lean().exec()
+    const styleId = parseStyleId(id)
+    if (styleId === null) {
+      badRequest(res, 'Invalid style id')
+      return
+    }
+    const deleted = await StyleModel.findOneAndDelete({ id: styleId }).lean().exec()
     if (!deleted) {
       notFound(res, 'Style not found')
       return

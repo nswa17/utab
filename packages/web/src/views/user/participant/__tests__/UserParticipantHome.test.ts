@@ -26,4 +26,11 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).toContain("if (key === 'panel') return adjudicatorNames(row.panels ?? [])")
     expect(source).toContain("if (key === 'trainee') return adjudicatorNames(row.trainees ?? [])")
   })
+
+  it('resets the initial loading gate when tournament or participant mode changes', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain('[tournamentId, participantMode]')
+    expect(source).toContain('hasLoaded.value = false')
+    expect(source).toContain('refresh()')
+  })
 })

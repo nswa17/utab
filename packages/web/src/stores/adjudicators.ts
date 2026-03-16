@@ -7,17 +7,41 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   const adjudicators = ref<Adjudicator[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
 
   async function fetchAdjudicators(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/adjudicators', { params: { tournamentId } })
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       adjudicators.value = res.data?.data ?? []
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load adjudicators'
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -29,12 +53,13 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/adjudicators', payload)
       const created = res.data?.data
       if (created) {
+        advanceFetchSequence()
         adjudicators.value = [created, ...adjudicators.value]
       }
       return created
@@ -42,7 +67,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create adjudicator'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -55,7 +80,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.patch(`/adjudicators/${payload.adjudicatorId}`, {
@@ -68,6 +93,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       })
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         adjudicators.value = adjudicators.value.map((item) =>
           item._id === updated._id ? updated : item
         )
@@ -77,22 +103,23 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update adjudicator'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteAdjudicator(tournamentId: string, adjudicatorId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       await api.delete(`/adjudicators/${adjudicatorId}`, { params: { tournamentId } })
+      advanceFetchSequence()
       adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
       return true
     } catch (err: any) {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicator'
       return false
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

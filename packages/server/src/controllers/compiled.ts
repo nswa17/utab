@@ -735,6 +735,115 @@ function toBooleanArray(value: unknown): boolean[] {
   return value.map((item) => Boolean(item))
 }
 
+type AggregatedSubmissionSpeakerResult = {
+  scores: number[]
+  best: Array<{ order: number; value: boolean }>
+  poi: Array<{ order: number; value: boolean }>
+  matter: Array<{ order: number; value: number }>
+  manner: Array<{ order: number; value: number }>
+}
+
+function appendSubmissionSpeakerResults(params: {
+  rawSpeakerResults: any[]
+  speakerIds: string[]
+  scores: number[]
+  matter: number[]
+  manner: number[]
+  best: boolean[]
+  poi: boolean[]
+  round: number
+  submissionId?: string
+  missingSpeakerMessage: string
+  registerMissingIssue: (
+    issue: Omit<MissingDataIssue, 'round' | 'submissionId'> & {
+      round?: number
+      submissionId?: string
+    }
+  ) => void
+  speakerIdsWithScores: Set<string>
+}) {
+  const {
+    rawSpeakerResults,
+    speakerIds,
+    scores,
+    matter,
+    manner,
+    best,
+    poi,
+    round,
+    submissionId,
+    missingSpeakerMessage,
+    registerMissingIssue,
+    speakerIdsWithScores,
+  } = params
+
+  const slotCount = Math.max(
+    speakerIds.length,
+    scores.length,
+    matter.length,
+    manner.length,
+    best.length,
+    poi.length
+  )
+  const aggregated = new Map<string, AggregatedSubmissionSpeakerResult>()
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const score = scores[index]
+    if (!Number.isFinite(score)) continue
+
+    const speakerId = String(speakerIds[index] ?? '').trim()
+    if (!speakerId) {
+      registerMissingIssue({
+        code: 'missing_speaker',
+        message: missingSpeakerMessage,
+        round,
+        submissionId,
+      })
+      continue
+    }
+
+    const current = aggregated.get(speakerId) ?? {
+      scores: Array.from({ length: slotCount }, () => 0),
+      best: [],
+      poi: [],
+      matter: [],
+      manner: [],
+    }
+
+    current.scores[index] = score
+    current.best.push({ order: index + 1, value: Boolean(best[index]) })
+    current.poi.push({ order: index + 1, value: Boolean(poi[index]) })
+
+    const matterValue = matter[index]
+    if (typeof matterValue === 'number' && Number.isFinite(matterValue)) {
+      current.matter.push({ order: index + 1, value: matterValue })
+    }
+
+    const mannerValue = manner[index]
+    if (typeof mannerValue === 'number' && Number.isFinite(mannerValue)) {
+      current.manner.push({ order: index + 1, value: mannerValue })
+    }
+
+    aggregated.set(speakerId, current)
+  }
+
+  aggregated.forEach((result, speakerId) => {
+    rawSpeakerResults.push({
+      id: speakerId,
+      r: round,
+      scores: result.scores,
+      from_id: submissionId,
+      user_defined_data: {
+        best: result.best,
+        poi: result.poi,
+        matter: result.matter.length > 0 ? result.matter : undefined,
+        manner: result.manner.length > 0 ? result.manner : undefined,
+      },
+    })
+    speakerIdsWithScores.add(speakerId)
+  })
+}
+
 function averageFiniteNumbers(values: number[]): number | null {
   const finite = values.filter((value) => Number.isFinite(value))
   if (finite.length === 0) return null
@@ -1579,73 +1688,33 @@ async function buildCompiledPayloadFromSubmissions(
       ? ((submission.payload as any).mannerB as number[])
       : []
 
-    scoresA.forEach((score, index) => {
-      const speakerId = speakersA[index]
-      if (!Number.isFinite(score)) return
-      if (!speakerId) {
-        registerMissingIssue({
-          code: 'missing_speaker',
-          message: 'speakerId is missing for a scored speaker on teamA',
-          round,
-          submissionId,
-        })
-        return
-      }
-      const matterValue = matterA[index]
-      const mannerValue = mannerA[index]
-      rawSpeakerResults.push({
-        id: speakerId,
-        r: round,
-        scores: [score],
-        from_id: submissionId,
-        user_defined_data: {
-          best: [{ order: index + 1, value: Boolean(bestA[index]) }],
-          poi: [{ order: index + 1, value: Boolean(poiA[index]) }],
-          matter:
-            typeof matterValue === 'number' && Number.isFinite(matterValue)
-              ? [{ order: index + 1, value: matterValue }]
-              : undefined,
-          manner:
-            typeof mannerValue === 'number' && Number.isFinite(mannerValue)
-              ? [{ order: index + 1, value: mannerValue }]
-              : undefined,
-        },
-      })
-      speakerIdsWithScores.add(speakerId)
+    appendSubmissionSpeakerResults({
+      rawSpeakerResults,
+      speakerIds: speakersA,
+      scores: scoresA,
+      matter: matterA,
+      manner: mannerA,
+      best: bestA,
+      poi: poiA,
+      round,
+      submissionId,
+      missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamA',
+      registerMissingIssue,
+      speakerIdsWithScores,
     })
-    scoresB.forEach((score, index) => {
-      const speakerId = speakersB[index]
-      if (!Number.isFinite(score)) return
-      if (!speakerId) {
-        registerMissingIssue({
-          code: 'missing_speaker',
-          message: 'speakerId is missing for a scored speaker on teamB',
-          round,
-          submissionId,
-        })
-        return
-      }
-      const matterValue = matterB[index]
-      const mannerValue = mannerB[index]
-      rawSpeakerResults.push({
-        id: speakerId,
-        r: round,
-        scores: [score],
-        from_id: submissionId,
-        user_defined_data: {
-          best: [{ order: index + 1, value: Boolean(bestB[index]) }],
-          poi: [{ order: index + 1, value: Boolean(poiB[index]) }],
-          matter:
-            typeof matterValue === 'number' && Number.isFinite(matterValue)
-              ? [{ order: index + 1, value: matterValue }]
-              : undefined,
-          manner:
-            typeof mannerValue === 'number' && Number.isFinite(mannerValue)
-              ? [{ order: index + 1, value: mannerValue }]
-              : undefined,
-        },
-      })
-      speakerIdsWithScores.add(speakerId)
+    appendSubmissionSpeakerResults({
+      rawSpeakerResults,
+      speakerIds: speakersB,
+      scores: scoresB,
+      matter: matterB,
+      manner: mannerB,
+      best: bestB,
+      poi: poiB,
+      round,
+      submissionId,
+      missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamB',
+      registerMissingIssue,
+      speakerIdsWithScores,
     })
   })
 

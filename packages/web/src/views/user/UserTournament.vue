@@ -41,6 +41,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import { useTournamentStore } from '@/stores/tournament'
 import TournamentNotice from '@/components/common/TournamentNotice.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -102,6 +103,7 @@ let qrGenerationId = 0
 const copyStatus = ref<'idle' | 'copied' | 'error'>('idle')
 const copyError = ref('')
 let copyTimeout: number | null = null
+const sectionGate = createLatestRequestGate()
 
 async function generateQrCode(url: string) {
   const generationId = ++qrGenerationId
@@ -147,15 +149,17 @@ async function copyParticipantUrl() {
 watch(
   tournamentId,
   async () => {
-    if (!tournamentId.value) {
-      sectionLoading.value = false
-      return
-    }
+    const currentTournamentId = tournamentId.value
+    const token = sectionGate.begin()
     sectionLoading.value = true
     try {
+      if (!currentTournamentId) return
       await tournamentStore.fetchTournaments()
     } finally {
-      sectionLoading.value = false
+      const completion = sectionGate.complete(token)
+      if (completion.isCurrent) {
+        sectionLoading.value = false
+      }
     }
   },
   { immediate: true }

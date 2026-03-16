@@ -44,4 +44,15 @@ describe('validateAllocationOptions', () => {
     expect(validated.adjudicator_allocation_algorithm).toBe('random')
     expect(validated.adjudicator_allocation_algorithm_options).toEqual({})
   })
+
+  it('rejects non-warning team filters for min_warnings', () => {
+    expect(() =>
+      validateAllocationOptions({
+        team_allocation_algorithm: 'min_warnings',
+        team_allocation_algorithm_options: {
+          filters: ['by_random'],
+        },
+      })
+    ).toThrow('Invalid team min_warnings options')
+  })
 })

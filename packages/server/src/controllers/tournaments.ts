@@ -9,18 +9,35 @@ import {
   getTournamentAccessConfig,
   mergeTournamentAuth,
 } from '../services/tournament-access.service.js'
-import { sanitizeTournamentForPublic } from '../services/response-sanitizer.js'
+import {
+  sanitizeTournamentForAdmin,
+  sanitizeTournamentForPublic,
+} from '../services/response-sanitizer.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
-function hasTournamentMembership(req: any, tournamentId: string): boolean {
-  const normalizedTournamentId = String(tournamentId)
-  const sessionTournaments = (req.session?.tournaments ?? []).map((id: unknown) => String(id))
-  if (sessionTournaments.includes(normalizedTournamentId)) return true
-
+async function resolveTournamentOrganizerIds(req: any): Promise<Set<string> | '*'> {
   const serviceTournamentIds = req.serviceAccount?.tournamentIds
-  if (!serviceTournamentIds) return false
-  if (serviceTournamentIds === '*') return true
-  return serviceTournamentIds.map((id: unknown) => String(id)).includes(normalizedTournamentId)
+  const actorRole = getAuthenticatedActorRole(req)
+  if (actorRole === 'superuser' && serviceTournamentIds === '*') return '*'
+  if (actorRole === 'organizer' && serviceTournamentIds === '*') return '*'
+  if (actorRole === 'organizer' && Array.isArray(serviceTournamentIds)) {
+    return new Set(serviceTournamentIds.map((id: unknown) => String(id)))
+  }
+
+  const userId = normalizeId(getAuthenticatedActorId(req))
+  if (!userId) return new Set<string>()
+
+  const memberships = await TournamentMemberModel.find({ userId })
+    .select({ tournamentId: 1, role: 1, _id: 0 })
+    .lean<Array<{ tournamentId?: unknown; role?: unknown }>>()
+    .exec()
+
+  return new Set(
+    memberships
+      .filter((membership) => membership.role === 'organizer')
+      .map((membership) => normalizeId(membership.tournamentId))
+      .filter((tournamentId) => tournamentId.length > 0)
+  )
 }
 
 function ensureTournamentId(res: Parameters<RequestHandler>[1], tournamentId: string): boolean {
@@ -71,16 +88,25 @@ async function resolveTournamentCreatorNameMap(
   return creatorNameMap
 }
 
-function hasTournamentOrganizerAccess(req: any, tournament: any): boolean {
+function hasTournamentOrganizerAccess(
+  req: any,
+  tournament: any,
+  organizerIds: Set<string> | '*' = new Set<string>()
+): boolean {
   const role = getAuthenticatedActorRole(req)
   if (role === 'superuser') return true
 
   const tournamentId = String(tournament?._id)
-  return role === 'organizer' && hasTournamentMembership(req, tournamentId)
+  if (organizerIds === '*') return true
+  return organizerIds.has(tournamentId)
 }
 
-function canViewTournament(req: any, tournament: any): boolean {
-  if (hasTournamentOrganizerAccess(req, tournament)) return true
+function canViewTournament(
+  req: any,
+  tournament: any,
+  organizerIds: Set<string> | '*' = new Set<string>()
+): boolean {
+  if (hasTournamentOrganizerAccess(req, tournament, organizerIds)) return true
 
   const userDefinedData = asRecord(tournament?.user_defined_data)
   if (userDefinedData.hidden === true) return false
@@ -89,16 +115,19 @@ function canViewTournament(req: any, tournament: any): boolean {
 
 export const listTournaments: RequestHandler = async (req, res, next) => {
   try {
+    const organizerIds = await resolveTournamentOrganizerIds(req)
     const tournaments = await TournamentModel.find().lean().exec()
-    const visibleTournaments = tournaments.filter((tournament) => canViewTournament(req, tournament))
+    const visibleTournaments = tournaments.filter((tournament) =>
+      canViewTournament(req, tournament, organizerIds)
+    )
     const isSuperuser = getAuthenticatedActorRole(req) === 'superuser'
     const creatorNameMap = isSuperuser
       ? await resolveTournamentCreatorNameMap(visibleTournaments as Array<Record<string, unknown>>)
       : null
 
     const data = visibleTournaments.map((tournament) => {
-      const payload = hasTournamentOrganizerAccess(req, tournament)
-        ? tournament
+      const payload = hasTournamentOrganizerAccess(req, tournament, organizerIds)
+        ? sanitizeTournamentForAdmin(tournament)
         : sanitizeTournamentForPublic(tournament)
       if (!isSuperuser || !creatorNameMap) return payload
       const creatorId = normalizeId((tournament as any)?.createdBy)
@@ -117,13 +146,14 @@ export const getTournament: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     if (!ensureTournamentId(res, id)) return
+    const organizerIds = await resolveTournamentOrganizerIds(req)
     const tournament = await TournamentModel.findById(id).lean().exec()
     if (!tournament) {
       notFound(res, 'Tournament not found')
       return
     }
-    const data = hasTournamentOrganizerAccess(req, tournament)
-      ? tournament
+    const data = hasTournamentOrganizerAccess(req, tournament, organizerIds)
+      ? sanitizeTournamentForAdmin(tournament)
       : sanitizeTournamentForPublic(tournament)
     res.json({ data, errors: [] })
   } catch (err) {
@@ -184,7 +214,7 @@ export const createTournament: RequestHandler = async (req, res, next) => {
         req.session.tournaments = [...current, tournamentId]
       }
     }
-    res.status(201).json({ data: created.toJSON(), errors: [] })
+    res.status(201).json({ data: sanitizeTournamentForAdmin(created.toJSON()), errors: [] })
   } catch (err) {
     next(err)
   }
@@ -210,14 +240,18 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
       update.auth = mergedAuth.auth
     }
 
-    const updated = await TournamentModel.findOneAndUpdate({ _id: id }, { $set: update }, { new: true })
+    const updated = await TournamentModel.findOneAndUpdate(
+      { _id: id },
+      { $set: update },
+      { new: true, runValidators: true }
+    )
       .lean()
       .exec()
     if (!updated) {
       notFound(res, 'Tournament not found')
       return
     }
-    res.json({ data: updated, errors: [] })
+    res.json({ data: sanitizeTournamentForAdmin(updated), errors: [] })
   } catch (err) {
     next(err)
   }
@@ -241,7 +275,7 @@ export const deleteTournament: RequestHandler = async (req, res, next) => {
       req.session.tournaments = req.session.tournaments.filter((t) => String(t) !== deletedId)
     }
     await dropTournamentDatabase(deletedId)
-    res.json({ data: deleted, errors: [] })
+    res.json({ data: sanitizeTournamentForAdmin(deleted), errors: [] })
   } catch (err) {
     next(err)
   }
@@ -266,7 +300,7 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
     const access = getTournamentAccessConfig((tournament as any).auth)
     const sessionAccess = req.session.tournamentAccess ?? {}
 
-    if (!access.required || action === 'skip') {
+    if (!access.required) {
       const grantedAt = Date.now()
       const expiresAt = grantedAt + 24 * 60 * 60 * 1000
       const entry = {

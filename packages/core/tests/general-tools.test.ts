@@ -24,6 +24,14 @@ describe('general/tools', () => {
     expect(filterAvailable(entities, 1).map((e) => e.id)).toEqual([1])
   })
 
+  it('treats missing availability flags as available', () => {
+    const partiallySpecified = [
+      { id: 1, details: [{ r: 1 }] },
+      { id: 2, details: [{ r: 1, available: false }] },
+    ]
+    expect(filterAvailable(partiallySpecified, 1).map((e) => e.id)).toEqual([1])
+  })
+
   it('throws when detail missing', () => {
     expect(() => checkDetail(entities, 2)).toThrow(DetailNotDefined)
   })

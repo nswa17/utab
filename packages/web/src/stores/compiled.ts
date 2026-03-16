@@ -31,20 +31,50 @@ export const useCompiledStore = defineStore('compiled', () => {
   const previewState = ref<CompiledPreviewState | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const latestFetchSequence = ref(0)
+  const latestPreviewSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    latestFetchSequence.value += 1
+    return latestFetchSequence.value
+  }
+
+  function advancePreviewSequence() {
+    latestPreviewSequence.value += 1
+    return latestPreviewSequence.value
+  }
 
   async function fetchLatest(tournamentId: string) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/compiled', { params: { tournamentId, latest: '1' } })
+      if (sequence !== latestFetchSequence.value) {
+        return null
+      }
       compiled.value = extractPayload(res.data?.data)
       return compiled.value
     } catch (err: any) {
+      if (sequence !== latestFetchSequence.value) {
+        return null
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load compiled results'
       compiled.value = null
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -52,11 +82,15 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileRunRequest
   ) {
-    loading.value = true
+    const sequence = advancePreviewSequence()
+    beginRequest()
     error.value = null
     try {
       const source: CompileSource = options?.source === 'raw' ? 'raw' : 'submissions'
       const res = await api.post('/compiled/preview', { tournamentId, ...options })
+      if (sequence !== latestPreviewSequence.value) {
+        return null
+      }
       const previewPayload = extractPayload(res.data?.data?.preview)
       const previewSignature = String(res.data?.data?.preview_signature ?? '').trim()
       const revision = String(res.data?.data?.revision ?? '').trim()
@@ -73,11 +107,14 @@ export const useCompiledStore = defineStore('compiled', () => {
       }
       return previewPayload
     } catch (err: any) {
+      if (sequence !== latestPreviewSequence.value) {
+        return null
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to preview compile results'
       previewState.value = null
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -97,10 +134,12 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileSaveRequest
   ) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/compiled', toSavePayload(tournamentId, options))
+      advanceFetchSequence()
+      advancePreviewSequence()
       compiled.value = extractPayload(res.data?.data)
       previewState.value = null
       return compiled.value
@@ -108,7 +147,7 @@ export const useCompiledStore = defineStore('compiled', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save compiled results'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -117,7 +156,7 @@ export const useCompiledStore = defineStore('compiled', () => {
   }
 
   async function deleteCompiled(tournamentId: string, compiledId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const targetId = String(compiledId).trim()
@@ -127,6 +166,8 @@ export const useCompiledStore = defineStore('compiled', () => {
       }
       const res = await api.delete(`/compiled/${targetId}`, { params: { tournamentId } })
       const deletedPayload = extractPayload(res.data?.data)
+      advanceFetchSequence()
+      advancePreviewSequence()
       if (compiled.value && String(compiled.value._id ?? '').trim() === targetId) {
         compiled.value = null
       }
@@ -135,11 +176,12 @@ export const useCompiledStore = defineStore('compiled', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete compiled result'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   function clearPreview() {
+    advancePreviewSequence()
     previewState.value = null
   }
 

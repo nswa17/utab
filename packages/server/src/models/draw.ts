@@ -25,6 +25,8 @@ const drawSchema = new Schema(
   { timestamps: true }
 )
 
+drawSchema.index({ tournamentId: 1, round: 1 }, { unique: true })
+
 export type Draw = InferSchemaType<typeof drawSchema>
 
 export function getDrawModel(conn: Connection): Model<Draw> {

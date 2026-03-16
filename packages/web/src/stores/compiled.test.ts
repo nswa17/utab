@@ -22,6 +22,16 @@ type MockedApi = {
 
 const mockedApi = api as unknown as MockedApi
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('compiled store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -195,5 +205,192 @@ describe('compiled store', () => {
       compiled_team_results: [{ id: 'team-1' }],
     })
     expect(store.error).toBeNull()
+  })
+
+  it('keeps only the latest preview response when requests resolve out of order', async () => {
+    const store = useCompiledStore()
+    const first = createDeferred<any>()
+    const second = createDeferred<any>()
+
+    mockedApi.post
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const staleRequest = store.runPreview('tournament-1', {
+      source: 'submissions',
+      rounds: [1],
+    })
+    const latestRequest = store.runPreview('tournament-1', {
+      source: 'raw',
+      rounds: [2],
+    })
+
+    second.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'raw',
+            rounds: [{ r: 2, name: 'Round 2' }],
+            compiled_team_results: [{ id: 'team-2' }],
+          },
+          preview_signature: 'sig-latest',
+          revision: 'rev-latest',
+        },
+      },
+    })
+    await latestRequest
+
+    first.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            rounds: [{ r: 1, name: 'Round 1' }],
+            compiled_team_results: [{ id: 'team-1' }],
+          },
+          preview_signature: 'sig-stale',
+          revision: 'rev-stale',
+        },
+      },
+    })
+    const staleResult = await staleRequest
+
+    expect(staleResult).toBeNull()
+    expect(store.previewState).toEqual({
+      preview: {
+        compile_source: 'raw',
+        rounds: [{ r: 2, name: 'Round 2' }],
+        compiled_team_results: [{ id: 'team-2' }],
+      },
+      previewSignature: 'sig-latest',
+      revision: 'rev-latest',
+      source: 'raw',
+    })
+  })
+
+  it('keeps loading true until concurrent compiled requests finish', async () => {
+    const store = useCompiledStore()
+    const first = createDeferred<any>()
+    const second = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const firstRequest = store.fetchLatest('tournament-1')
+    const secondRequest = store.fetchLatest('tournament-1')
+
+    expect(store.loading).toBe(true)
+
+    second.resolve({
+      data: {
+        data: {
+          _id: 'compiled-2',
+          payload: {
+            compiled_team_results: [{ id: 'team-2' }],
+          },
+        },
+      },
+    })
+    await secondRequest
+
+    expect(store.loading).toBe(true)
+
+    first.resolve({
+      data: {
+        data: {
+          _id: 'compiled-1',
+          payload: {
+            compiled_team_results: [{ id: 'team-1' }],
+          },
+        },
+      },
+    })
+    const firstResult = await firstRequest
+
+    expect(firstResult).toBeNull()
+    expect(store.loading).toBe(false)
+    expect(store.compiled).toEqual({
+      _id: 'compiled-2',
+      compiled_team_results: [{ id: 'team-2' }],
+    })
+  })
+
+  it('does not let a stale fetchLatest overwrite a saved compiled snapshot', async () => {
+    const store = useCompiledStore()
+    const deferredFetch = createDeferred<any>()
+
+    mockedApi.get.mockImplementationOnce(() => deferredFetch.promise)
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'compiled-saved',
+          payload: {
+            compiled_team_results: [{ id: 'team-saved' }],
+          },
+        },
+      },
+    })
+
+    const fetchPromise = store.fetchLatest('tournament-1')
+    await store.saveCompiled('tournament-1')
+
+    deferredFetch.resolve({
+      data: {
+        data: {
+          _id: 'compiled-stale',
+          payload: {
+            compiled_team_results: [{ id: 'team-stale' }],
+          },
+        },
+      },
+    })
+    await fetchPromise
+
+    expect(store.compiled).toEqual({
+      _id: 'compiled-saved',
+      compiled_team_results: [{ id: 'team-saved' }],
+    })
+  })
+
+  it('does not let a stale preview repopulate previewState after save', async () => {
+    const store = useCompiledStore()
+    const deferredPreview = createDeferred<any>()
+
+    mockedApi.post
+      .mockImplementationOnce(() => deferredPreview.promise)
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            _id: 'compiled-saved',
+            payload: {
+              compiled_team_results: [{ id: 'team-saved' }],
+            },
+          },
+        },
+      })
+
+    const previewPromise = store.runPreview('tournament-1', { source: 'submissions' })
+    await store.saveCompiled('tournament-1')
+
+    deferredPreview.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'team-stale' }],
+          },
+          preview_signature: 'sig-stale',
+          revision: 'rev-stale',
+        },
+      },
+    })
+    await previewPromise
+
+    expect(store.compiled).toEqual({
+      _id: 'compiled-saved',
+      compiled_team_results: [{ id: 'team-saved' }],
+    })
+    expect(store.previewState).toBeNull()
   })
 })

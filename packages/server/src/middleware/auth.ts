@@ -1,9 +1,11 @@
 import type { Request, RequestHandler } from 'express'
 import { Types } from 'mongoose'
+import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { getTournamentAccessConfig } from '../services/tournament-access.service.js'
 
 type Role = 'superuser' | 'organizer' | 'adjudicator' | 'speaker' | 'audience'
+type TournamentMemberRole = Exclude<Role, 'superuser'>
 
 function respondUnauthorized(res: any, message = 'Please login first') {
   res.status(401).json({ data: null, errors: [{ name: 'Unauthorized', message }] })
@@ -54,15 +56,52 @@ function getTournamentId(req: Request, paramName = 'tournamentId'): string | nul
   return toStringValue(raw)
 }
 
-function hasTournamentMembership(req: Request, tournamentId: string): boolean {
+async function getTournamentMembershipRole(
+  req: Request,
+  tournamentId: string
+): Promise<TournamentMemberRole | null> {
   const normalizedTournamentId = String(tournamentId)
-  const sessionTournaments = (req.session?.tournaments ?? []).map((id) => String(id))
-  if (sessionTournaments.includes(normalizedTournamentId)) return true
 
   const serviceTournamentIds = req.serviceAccount?.tournamentIds
-  if (!serviceTournamentIds) return false
-  if (serviceTournamentIds === '*') return true
-  return serviceTournamentIds.map((id) => String(id)).includes(normalizedTournamentId)
+  if (serviceTournamentIds) {
+    const hasTournamentAccess =
+      serviceTournamentIds === '*' ||
+      serviceTournamentIds.map((id) => String(id)).includes(normalizedTournamentId)
+    if (!hasTournamentAccess) return null
+
+    const role = req.serviceAccount?.role
+    if (role === 'organizer') {
+      return role
+    }
+    return null
+  }
+
+  const userId = toStringValue(req.session?.userId)
+  if (!userId) return null
+
+  const membership = await TournamentMemberModel.findOne({
+    tournamentId: normalizedTournamentId,
+    userId,
+  })
+    .select({ role: 1, _id: 0 })
+    .lean()
+    .exec()
+  const role = membership?.role
+  if (role === 'organizer' || role === 'adjudicator' || role === 'speaker' || role === 'audience') {
+    return role
+  }
+  return null
+}
+
+async function hasTournamentMembership(
+  req: Request,
+  tournamentId: string,
+  roles?: TournamentMemberRole[]
+): Promise<boolean> {
+  const membershipRole = await getTournamentMembershipRole(req, tournamentId)
+  if (!membershipRole) return false
+  if (!roles || roles.length === 0) return true
+  return roles.includes(membershipRole)
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -109,7 +148,7 @@ export async function hasTournamentAdminAccess(req: Request, tournamentId: strin
   const role = getAuthenticatedActorRole(req)
   if (role === 'superuser') return true
 
-  if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+  if (await hasTournamentMembership(req, tournamentId, ['organizer'])) {
     return true
   }
   return false
@@ -156,13 +195,12 @@ export function requireTournamentAdmin(paramName = 'tournamentId'): RequestHandl
         return
       }
 
-      const role = getAuthenticatedActorRole(req)
-      if (role === 'superuser') {
+      if (getAuthenticatedActorRole(req) === 'superuser') {
         next()
         return
       }
 
-      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+      if (await hasTournamentMembership(req, tournamentId, ['organizer'])) {
         next()
         return
       }
@@ -211,23 +249,19 @@ export function requireTournamentRole(
       const authConfig = (tournament as any).auth
       const isPublic = isTournamentPublic(authConfig, publicRoles)
 
-      const role = getAuthenticatedActorRole(req)
-      if (role === 'superuser') {
+      if (getAuthenticatedActorRole(req) === 'superuser') {
         next()
         return
       }
 
-      if (role === 'organizer' && hasTournamentMembership(req, tournamentId)) {
+      const membershipRole = await getTournamentMembershipRole(req, tournamentId)
+
+      if (membershipRole === 'organizer') {
         next()
         return
       }
 
-      if (
-        role &&
-        sessionRoles.includes(role) &&
-        hasTournamentMembership(req, tournamentId) &&
-        isPublic
-      ) {
+      if (membershipRole && sessionRoles.includes(membershipRole) && isPublic) {
         next()
         return
       }

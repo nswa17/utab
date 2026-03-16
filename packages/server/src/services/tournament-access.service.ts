@@ -51,15 +51,22 @@ export async function mergeTournamentAuth(
 
   const existingAccess = getTournamentAccessConfig(existingObject)
   const incomingAccess = asRecord(incomingObject.access)
+  let accessPasswordUpdated = false
 
   let required = existingAccess.required
   if (hasOwn(incomingAccess, 'required')) {
+    if (typeof incomingAccess.required !== 'boolean') {
+      return {
+        auth: mergedAuth,
+        error: 'Invalid tournament access required flag',
+        accessPasswordUpdated,
+      }
+    }
     required = incomingAccess.required === true
   }
 
   let password = existingAccess.password
   let passwordHash = existingAccess.passwordHash
-  let accessPasswordUpdated = false
 
   if (hasOwn(incomingAccess, 'password')) {
     const nextPassword = incomingAccess.password
@@ -148,11 +155,7 @@ export function sanitizeTournamentAuth(auth: unknown): PlainObject {
     version: accessConfig.version,
     hasPassword: Boolean(accessConfig.password || accessConfig.passwordHash),
   }
-  if (accessConfig.password) {
-    sanitizedAccess.password = accessConfig.password
-  } else {
-    delete sanitizedAccess.password
-  }
+  delete sanitizedAccess.password
   delete sanitizedAccess.passwordHash
 
   return {

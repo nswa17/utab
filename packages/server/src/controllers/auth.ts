@@ -10,6 +10,10 @@ import { UserModel } from '../models/user.js'
 
 type RegisterRole = 'organizer' | 'adjudicator' | 'speaker' | 'audience'
 type MemberRole = RegisterRole
+type TournamentMembershipSummary = {
+  tournamentIds: string[]
+  organizerTournamentIds: string[]
+}
 
 function toMemberRole(role: string): MemberRole | null {
   if (role === 'organizer' || role === 'adjudicator' || role === 'speaker' || role === 'audience') {
@@ -83,13 +87,22 @@ async function ensureCreatorMemberships(user: { _id: unknown; role: string }): P
   )
 }
 
-async function loadTournamentIds(userId: string, legacyTournamentIds: string[] = []): Promise<string[]> {
+async function loadTournamentMembershipSummary(
+  userId: string,
+  legacyTournamentIds: string[] = []
+): Promise<TournamentMembershipSummary> {
   const memberships = await TournamentMemberModel.find({ userId })
-    .select({ tournamentId: 1, _id: 0 })
-    .lean()
+    .select({ tournamentId: 1, role: 1, _id: 0 })
+    .lean<Array<{ tournamentId?: unknown; role?: unknown }>>()
     .exec()
   const membershipTournamentIds = memberships.map((membership) => String(membership.tournamentId))
-  return uniqueIds([...legacyTournamentIds, ...membershipTournamentIds])
+  const organizerTournamentIds = memberships
+    .filter((membership) => membership.role === 'organizer')
+    .map((membership) => String(membership.tournamentId))
+  return {
+    tournamentIds: uniqueIds([...legacyTournamentIds, ...membershipTournamentIds]),
+    organizerTournamentIds: uniqueIds(organizerTournamentIds),
+  }
 }
 
 async function persistSession(req: Parameters<RequestHandler>[0]): Promise<void> {
@@ -120,8 +133,8 @@ export const login: RequestHandler = async (req, res, next) => {
     req.session.userId = user._id.toString()
     req.session.usertype = user.role
     const legacyTournamentIds = normalizeTournamentIds(user.tournaments)
-    const tournamentIds = await loadTournamentIds(req.session.userId, legacyTournamentIds)
-    req.session.tournaments = tournamentIds
+    const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
+    req.session.tournaments = memberships.tournamentIds
     await persistSession(req)
 
     res.json({
@@ -129,7 +142,8 @@ export const login: RequestHandler = async (req, res, next) => {
         userId: user._id,
         username: user.username,
         role: user.role,
-        tournaments: tournamentIds,
+        tournaments: memberships.tournamentIds,
+        organizerTournaments: memberships.organizerTournamentIds,
       },
       errors: [],
     })
@@ -185,14 +199,15 @@ export const me: RequestHandler = async (req, res, next) => {
     }
     await Promise.all([ensureLegacyMemberships(user), ensureCreatorMemberships(user)])
     const legacyTournamentIds = normalizeTournamentIds(user.tournaments)
-    const tournamentIds = await loadTournamentIds(req.session.userId, legacyTournamentIds)
-    req.session.tournaments = tournamentIds
+    const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
+    req.session.tournaments = memberships.tournamentIds
     res.json({
       data: {
         userId: user._id,
         username: user.username,
         role: user.role,
-        tournaments: tournamentIds,
+        tournaments: memberships.tournamentIds,
+        organizerTournaments: memberships.organizerTournamentIds,
       },
       errors: [],
     })

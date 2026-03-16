@@ -9,11 +9,11 @@ function sanitizeTournamentUserResponse(user: {
   username?: string
   role?: string
   tournaments?: unknown[]
-}) {
+}, membershipRole?: string) {
   return {
     userId: String(user._id),
     username: user.username,
-    role: user.role,
+    role: membershipRole ?? user.role,
     tournaments: Array.isArray(user.tournaments) ? user.tournaments.map((id) => String(id)) : [],
   }
 }
@@ -46,18 +46,12 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
         userId: String(created._id),
         role,
       })
-      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON()), errors: [] })
+      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON(), role), errors: [] })
       return
     }
 
     const tournaments = new Set<string>((existing.tournaments || []).map((t) => String(t)))
     tournaments.add(tournamentId)
-    if (password) {
-      existing.passwordHash = await hashPassword(password)
-    }
-    if (role) {
-      existing.role = role
-    }
     existing.tournaments = Array.from(tournaments)
     const saved = await existing.save()
     await TournamentMemberModel.updateOne(
@@ -65,7 +59,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       { $set: { role } },
       { upsert: true }
     ).exec()
-    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON()), errors: [] })
+    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON(), role), errors: [] })
   } catch (err) {
     next(err)
   }
@@ -85,6 +79,10 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       badRequest(res, 'username or userId is required')
       return
     }
+    if (userId && !isValidObjectId(userId)) {
+      badRequest(res, 'Invalid user id')
+      return
+    }
 
     const query = userId ? { _id: userId } : { username }
     const user = await UserModel.findOne(query).exec()
@@ -96,6 +94,13 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     const tournaments = (user.tournaments || []).filter((id) => String(id) !== tournamentId)
     user.tournaments = tournaments
     const saved = await user.save()
+    const membership = await TournamentMemberModel.findOne({
+      tournamentId,
+      userId: String(user._id),
+    })
+      .select({ role: 1, _id: 0 })
+      .lean()
+      .exec()
     await TournamentMemberModel.deleteOne({
       tournamentId,
       userId: String(user._id),
@@ -107,7 +112,10 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       )
     }
 
-    res.json({ data: sanitizeTournamentUserResponse(saved.toJSON()), errors: [] })
+    res.json({
+      data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role),
+      errors: [],
+    })
   } catch (err) {
     next(err)
   }

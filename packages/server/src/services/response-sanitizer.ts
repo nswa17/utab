@@ -1,3 +1,4 @@
+import { sanitizeTournamentAuth } from './tournament-access.service.js'
 import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
 
 type PlainRecord = Record<string, unknown>
@@ -261,5 +262,14 @@ export function sanitizeTournamentForPublic(tournament: unknown): PlainRecord {
         required: access.required === true,
       },
     },
+  }
+}
+
+export function sanitizeTournamentForAdmin(tournament: unknown): PlainRecord {
+  const source = asRecord(tournament)
+  if (!hasOwn(source, 'auth')) return source
+  return {
+    ...source,
+    auth: sanitizeTournamentAuth(source.auth),
   }
 }

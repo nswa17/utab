@@ -37,9 +37,7 @@ const brandName = BRAND_NAME
 const brandLogoUrl = BRAND_LOGO_URL
 const brandHomeAriaLabel = BRAND_HOME_ARIA_LABEL
 
-const showPrimaryNav = computed(
-  () => auth.isAuthenticated && (auth.role === 'superuser' || auth.role === 'organizer')
-)
+const showPrimaryNav = computed(() => auth.canAccessAdmin)
 
 async function handleLogout() {
   await auth.logout()

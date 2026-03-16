@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-type TeamAlgorithm = 'standard' | 'strict' | 'powerpair' | 'random' | 'break'
+type TeamAlgorithm = 'standard' | 'min_warnings' | 'strict' | 'powerpair' | 'random' | 'break'
 type AdjudicatorAlgorithm = 'standard' | 'traditional' | 'class_based' | 'random'
 type DetailEntityKind = 'team' | 'adjudicator' | 'venue'
 
@@ -11,6 +11,13 @@ const teamStandardFilters = [
   'by_sibling_past_opponent_school',
   'by_conflict_group',
   'by_random',
+] as const
+const teamWarningFilters = [
+  'by_strength',
+  'by_side',
+  'by_past_opponent',
+  'by_sibling_past_opponent_school',
+  'by_conflict_group',
 ] as const
 const adjudicatorStandardFilters = [
   'by_bubble',
@@ -65,6 +72,11 @@ const teamPowerpairOptionsSchema = z
 
 const teamBreakOptionsSchema = z.object({}).strict()
 const teamRandomOptionsSchema = z.object({}).strict()
+const teamMinWarningsOptionsSchema = z
+  .object({
+    filters: z.array(z.enum(teamWarningFilters)).optional(),
+  })
+  .strict()
 
 const adjudicatorStandardOptionsSchema = z
   .object({
@@ -112,7 +124,9 @@ const venueOptionsSchema = z
 
 const allocationOptionsEnvelopeSchema = z
   .object({
-    team_allocation_algorithm: z.enum(['standard', 'strict', 'powerpair', 'random', 'break']).optional(),
+    team_allocation_algorithm: z
+      .enum(['standard', 'min_warnings', 'strict', 'powerpair', 'random', 'break'])
+      .optional(),
     team_allocation_algorithm_options: z.unknown().optional(),
     adjudicator_allocation_algorithm: z.enum(['standard', 'traditional', 'class_based', 'random']).optional(),
     adjudicator_allocation_algorithm_options: z.unknown().optional(),
@@ -193,7 +207,13 @@ export function validateAllocationOptions(rawOptions: unknown): ValidatedAllocat
     'standard') as AdjudicatorAlgorithm
 
   const teamOptions =
-    teamAlgorithm === 'strict'
+    teamAlgorithm === 'min_warnings'
+      ? parseWithMessage(
+          teamMinWarningsOptionsSchema,
+          parsedEnvelope.team_allocation_algorithm_options ?? {},
+          'Invalid team min_warnings options'
+        )
+      : teamAlgorithm === 'strict'
       ? parseWithMessage(
           teamStrictOptionsSchema,
           parsedEnvelope.team_allocation_algorithm_options ?? {},

@@ -7,13 +7,31 @@ export const useDrawsStore = defineStore('draws', () => {
   const draws = ref<Draw[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const pendingRequests = ref(0)
+  const fetchSequence = ref(0)
+
+  function beginRequest() {
+    pendingRequests.value += 1
+    loading.value = true
+  }
+
+  function endRequest() {
+    pendingRequests.value = Math.max(0, pendingRequests.value - 1)
+    loading.value = pendingRequests.value > 0
+  }
+
+  function advanceFetchSequence() {
+    fetchSequence.value += 1
+    return fetchSequence.value
+  }
 
   async function fetchDraws(
     tournamentId: string,
     round?: number,
     options?: { forcePublic?: boolean }
   ) {
-    loading.value = true
+    const sequence = advanceFetchSequence()
+    beginRequest()
     error.value = null
     try {
       const res = await api.get('/draws', {
@@ -23,6 +41,9 @@ export const useDrawsStore = defineStore('draws', () => {
           public: options?.forcePublic ? '1' : undefined,
         },
       })
+      if (sequence !== fetchSequence.value) {
+        return []
+      }
       const fetched = Array.isArray(res.data?.data) ? res.data.data : []
       const normalizedRound = Number(round)
       const shouldMergeByRound = Number.isInteger(normalizedRound)
@@ -42,10 +63,13 @@ export const useDrawsStore = defineStore('draws', () => {
       draws.value = otherTournaments.concat(mergedTournamentDraws)
       return draws.value
     } catch (err: any) {
+      if (sequence !== fetchSequence.value) {
+        return []
+      }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load draws'
       return []
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
@@ -58,14 +82,18 @@ export const useDrawsStore = defineStore('draws', () => {
     allocationOpened?: boolean
     locked?: boolean
   }) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.post('/draws', payload)
       const updated = res.data?.data
       if (updated) {
+        advanceFetchSequence()
         const index = draws.value.findIndex(
-          (item) => item._id === updated._id || item.round === updated.round
+          (item) =>
+            item._id === updated._id ||
+            (String(item.tournamentId) === String(updated.tournamentId) &&
+              Number(item.round) === Number(updated.round))
         )
         if (index >= 0) {
           draws.value.splice(index, 1, updated)
@@ -78,17 +106,18 @@ export const useDrawsStore = defineStore('draws', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save draw'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
   async function deleteDraw(drawId: string, tournamentId: string) {
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete(`/draws/${drawId}`, { params: { tournamentId } })
       const deleted = res.data?.data
       if (deleted?._id) {
+        advanceFetchSequence()
         const index = draws.value.findIndex((item) => item._id === deleted._id)
         if (index >= 0) {
           draws.value.splice(index, 1)
@@ -99,7 +128,7 @@ export const useDrawsStore = defineStore('draws', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete draw'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

@@ -4,6 +4,7 @@ import {
   type CompileOptions,
   type CompileOptionsInput,
 } from '@/types/compiled'
+import { buildAwardSelectionUserDefinedData } from '@/utils/award-selection'
 
 type EvaluatorInTeam = 'team' | 'speaker'
 type BreakSource = 'submissions' | 'raw'
@@ -26,6 +27,10 @@ export type RoundDefaults = {
     score_by_matter_manner: boolean
     poi: boolean
     best: boolean
+    best_min_count: number
+    best_max_count: number
+    poi_min_count: number
+    poi_max_count: number
     allow_low_tie_win: boolean
   }
   break: {
@@ -89,6 +94,7 @@ export function normalizeRoundCompileOptions(
 }
 
 export function defaultRoundDefaults(): RoundDefaults {
+  const awardSelection = buildAwardSelectionUserDefinedData(undefined)
   return {
     userDefinedData: {
       evaluate_from_adjudicators: true,
@@ -99,6 +105,7 @@ export function defaultRoundDefaults(): RoundDefaults {
       score_by_matter_manner: true,
       poi: true,
       best: true,
+      ...awardSelection,
       allow_low_tie_win: true,
     },
     break: {
@@ -121,6 +128,7 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
   const userDefinedSource = asRecord(source.userDefinedData)
   const breakSource = asRecord(source.break)
   const compileSource = asRecord(source.compile)
+  const awardSelection = buildAwardSelectionUserDefinedData(userDefinedSource)
   const compileOptionsSource =
     compileSource.options && typeof compileSource.options === 'object'
       ? (compileSource.options as CompileOptionsInput)
@@ -153,6 +161,7 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
       ),
       poi: asBoolean(userDefinedSource.poi, fallback.userDefinedData.poi),
       best: asBoolean(userDefinedSource.best, fallback.userDefinedData.best),
+      ...awardSelection,
       allow_low_tie_win: asBoolean(
         userDefinedSource.allow_low_tie_win,
         fallback.userDefinedData.allow_low_tie_win

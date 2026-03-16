@@ -20,6 +20,8 @@ import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { sanitizeDrawForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { getRoundModel } from '../models/round.js'
+import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import {
   buildDetailsForRounds,
   buildIdMaps,
@@ -41,6 +43,48 @@ const allocations = {
   venues: venueAllocations,
 }
 
+async function saveDrawWithRetry(params: {
+  DrawModel: ReturnType<typeof getDrawModel>
+  tournamentId: string
+  round: number
+  allocation: unknown[]
+  userDefinedData?: Record<string, unknown>
+  drawOpened?: boolean
+  allocationOpened?: boolean
+  locked?: boolean
+  createdBy?: string
+}) {
+  const update = {
+    $set: {
+      allocation: params.allocation,
+      ...(params.userDefinedData !== undefined ? { userDefinedData: params.userDefinedData } : {}),
+      drawOpened: params.drawOpened ?? false,
+      allocationOpened: params.allocationOpened ?? false,
+      locked: params.locked ?? false,
+    },
+    $setOnInsert: { createdBy: params.createdBy },
+  }
+
+  try {
+    return await params.DrawModel.findOneAndUpdate(
+      { tournamentId: params.tournamentId, round: params.round },
+      update,
+      { new: true, upsert: true }
+    )
+      .lean()
+      .exec()
+  } catch (err) {
+    if (!isDuplicateKeyError(err)) throw err
+    return await params.DrawModel.findOneAndUpdate(
+      { tournamentId: params.tournamentId, round: params.round },
+      { $set: update.$set },
+      { new: true }
+    )
+      .lean()
+      .exec()
+  }
+}
+
 type AllocationEntityKind = 'team' | 'adjudicator' | 'venue'
 
 type AllocationEntityRef = {
@@ -51,6 +95,12 @@ type AllocationEntityRef = {
 function normalizeIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
+}
+
+function isRoundHidden(round: unknown): boolean {
+  if (!round || typeof round !== 'object' || Array.isArray(round)) return false
+  const userDefinedData = (round as { userDefinedData?: Record<string, unknown> }).userDefinedData
+  return !!userDefinedData && userDefinedData.hidden === true
 }
 
 function normalizeDrawTeamsForValidation(teams: unknown): { gov: string; opp: string } | null {
@@ -141,7 +191,22 @@ export const listDraws: RequestHandler = async (req, res, next) => {
       publicParam === 'true' ||
       publicParam === 'yes' ||
       publicParam === 'public'
-    const data = isAdmin && !forcePublic ? draws : draws.map((draw) => sanitizeDrawForPublic(draw))
+    if (isAdmin && !forcePublic) {
+      res.json({ data: draws, errors: [] })
+      return
+    }
+
+    const RoundModel = getRoundModel(connection)
+    const rounds = await RoundModel.find({ tournamentId })
+      .select({ round: 1, userDefinedData: 1, _id: 0 })
+      .lean()
+      .exec()
+    const hiddenRounds = new Set(
+      rounds.filter((roundDoc) => isRoundHidden(roundDoc)).map((roundDoc: any) => Number(roundDoc.round))
+    )
+    const data = draws
+      .filter((draw: any) => !hiddenRounds.has(Number(draw.round)))
+      .map((draw) => sanitizeDrawForPublic(draw))
     res.json({ data, errors: [] })
   } catch (err) {
     next(err)
@@ -209,22 +274,17 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
 
     const DrawModel = getDrawModel(connection)
 
-    const updated = await DrawModel.findOneAndUpdate(
-      { tournamentId, round },
-      {
-        $set: {
-          allocation,
-          ...(userDefinedData !== undefined ? { userDefinedData } : {}),
-          drawOpened: drawOpened ?? false,
-          allocationOpened: allocationOpened ?? false,
-          locked: locked ?? false,
-        },
-        $setOnInsert: { createdBy: req.session?.userId },
-      },
-      { new: true, upsert: true }
-    )
-      .lean()
-      .exec()
+    const updated = await saveDrawWithRetry({
+      DrawModel,
+      tournamentId,
+      round,
+      allocation,
+      userDefinedData,
+      drawOpened,
+      allocationOpened,
+      locked,
+      createdBy: req.session?.userId,
+    })
 
     res.status(201).json({ data: updated, errors: [] })
   } catch (err) {
@@ -474,7 +534,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const teamAlgorithm = validatedOptions.team_allocation_algorithm
     const teamAlgorithmOptions = validatedOptions.team_allocation_algorithm_options
     let draw =
-      teamAlgorithm === 'strict'
+      teamAlgorithm === 'min_warnings'
+        ? allocations.teams.min_warnings.get(
+            round,
+            teamInstances,
+            compiledTeamResults,
+            teamAlgorithmOptions,
+            config
+          )
+        : teamAlgorithm === 'strict'
         ? allocations.teams.strict.get(
             round,
             teamInstances,

@@ -1385,6 +1385,14 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
     let draw =
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, context)).draw
+        : teamAlgorithm === 'min_warnings'
+        ? allocations.teams.min_warnings.get(
+            round,
+            context.teamInstances,
+            context.compiledTeamResults,
+            teamAlgorithmOptions,
+            context.config
+          )
         : teamAlgorithm === 'strict'
         ? allocations.teams.strict.get(
             round,
@@ -1768,6 +1776,14 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
     let draw =
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, teamContext)).draw
+        : teamAlgorithm === 'min_warnings'
+        ? allocations.teams.min_warnings.get(
+            round,
+            teamContext.teamInstances,
+            teamContext.compiledTeamResults,
+            teamAlgorithmOptions,
+            teamContext.config
+          )
         : teamAlgorithm === 'strict'
         ? allocations.teams.strict.get(
             round,

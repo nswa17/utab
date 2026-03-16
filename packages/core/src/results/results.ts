@@ -254,6 +254,11 @@ export function integrateTeamAndSpeakerResults(
       result.opponent_average = null
       continue
     }
+    if (result.opponents.length === 0) {
+      result.margin = null
+      result.opponent_average = null
+      continue
+    }
     const opponentsSum = sum(
       result.opponents.map((opponentId) => Number(findResult(results, opponentId).sum ?? 0))
     )

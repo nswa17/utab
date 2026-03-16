@@ -1,5 +1,6 @@
 import type { Connection } from 'mongoose'
 import type { RequestHandler } from 'express'
+import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getSubmissionModel } from '../models/submission.js'
 import { getRoundModel } from '../models/round.js'
 import { getDrawModel } from '../models/draw.js'
@@ -8,6 +9,10 @@ import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
+import {
+  resolveRoundAwardSelectionRules,
+  validateBallotAwardSelectionCounts,
+} from './shared/award-selection.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: string) {
@@ -20,6 +25,36 @@ const DUPLICATE_BALLOT_MESSAGE =
   'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
 const DUPLICATE_FEEDBACK_MESSAGE =
   'すでにジャッジ評価が送信されています。運営に報告してください。'
+
+function buildBallotDedupeKey(
+  payload: Pick<NormalizedBallotPayload, 'teamAId' | 'teamBId' | 'submittedEntityId'>,
+  sessionUserId?: string
+): string | undefined {
+  const actor = resolveSubmissionActor(payload.submittedEntityId, sessionUserId)
+  const teamAId = String(payload.teamAId ?? '').trim()
+  const teamBId = String(payload.teamBId ?? '').trim()
+  if (!actor || !teamAId || !teamBId || teamAId === teamBId) return undefined
+  const [left, right] = [teamAId, teamBId].sort()
+  return `ballot:${actor}:${left}:${right}`
+}
+
+function buildFeedbackDedupeKey(
+  payload: Pick<NormalizedFeedbackPayload, 'adjudicatorId' | 'submittedEntityId'>,
+  sessionUserId?: string
+): string | undefined {
+  const actor = resolveSubmissionActor(payload.submittedEntityId, sessionUserId)
+  const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+  if (!actor || !adjudicatorId) return undefined
+  return `feedback:${actor}:${adjudicatorId}`
+}
+
+function duplicateMessageByType(type: 'ballot' | 'feedback'): string {
+  return type === 'ballot' ? DUPLICATE_BALLOT_MESSAGE : DUPLICATE_FEEDBACK_MESSAGE
+}
+
+function isDuplicateSubmissionKeyError(error: unknown): boolean {
+  return Boolean((error as { code?: unknown } | null)?.code === 11000)
+}
 
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
@@ -86,6 +121,13 @@ type NormalizedFeedbackPayload = {
 function toPayloadRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+function isRoundHidden(roundDoc: unknown): boolean {
+  const roundRecord = toPayloadRecord(roundDoc)
+  if (!roundRecord) return false
+  const userDefinedData = toPayloadRecord(roundRecord.userDefinedData)
+  return userDefinedData?.hidden === true
 }
 
 function parseOptionalFiniteNumberArray(
@@ -478,13 +520,18 @@ async function normalizeBallotPayload(
   connection: Connection,
   tournamentId: string,
   round: number,
-  rawPayload: unknown
+  rawPayload: unknown,
+  options?: { allowHiddenRound?: boolean }
 ): Promise<ValidationOutcome<NormalizedBallotPayload>> {
   const payload = toPayloadRecord(rawPayload)
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
   const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  if (!options?.allowHiddenRound && isRoundHidden(roundDoc)) {
+    return { ok: false, message: 'round is hidden from participants' }
+  }
   const { allowDraw, allowWinnerScoreMismatch } = resolveRoundBallotRules(roundDoc)
+  const awardSelectionRules = resolveRoundAwardSelectionRules((roundDoc as any)?.userDefinedData)
   const noSpeakerScore = (roundDoc as any)?.userDefinedData?.no_speaker_score === true
 
   const normalizedTeamAId = String(payload.teamAId ?? '').trim()
@@ -627,6 +674,22 @@ async function normalizeBallotPayload(
     return { ok: false, message: 'speaker/flag arrays must match score lengths' }
   }
 
+  const awardSelectionViolation = validateBallotAwardSelectionCounts(
+    {
+      bestA: bestAResult.value,
+      bestB: bestBResult.value,
+      poiA: poiAResult.value,
+      poiB: poiBResult.value,
+    },
+    awardSelectionRules
+  )
+  if (awardSelectionViolation) {
+    return {
+      ok: false,
+      message: `${awardSelectionViolation.kind} selection count must be between ${awardSelectionViolation.min} and ${awardSelectionViolation.max}`,
+    }
+  }
+
   const hasComparableScores = parsedScoresA.length > 0 && parsedScoresB.length > 0
   const totalA = sumScores(parsedScoresA)
   const totalB = sumScores(parsedScoresB)
@@ -688,10 +751,16 @@ async function normalizeFeedbackPayload(
   connection: Connection,
   tournamentId: string,
   round: number,
-  rawPayload: unknown
+  rawPayload: unknown,
+  options?: { allowHiddenRound?: boolean }
 ): Promise<ValidationOutcome<NormalizedFeedbackPayload>> {
   const payload = toPayloadRecord(rawPayload)
   if (!payload) return { ok: false, message: 'payload must be an object' }
+
+  const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  if (!options?.allowHiddenRound && isRoundHidden(roundDoc)) {
+    return { ok: false, message: 'round is hidden from participants' }
+  }
 
   const normalizedAdjudicatorId = String(payload.adjudicatorId ?? '').trim()
   if (!normalizedAdjudicatorId) {
@@ -866,6 +935,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
+    const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const normalized = await normalizeBallotPayload(connection, tournamentId, round, {
       teamAId,
       teamBId,
@@ -885,7 +955,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       mannerA,
       matterB,
       mannerB,
-    })
+    }, { allowHiddenRound: isAdmin })
     if (!normalized.ok) {
       badRequest(res, normalized.message)
       return
@@ -896,6 +966,7 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     const normalizedSubmittedEntityId = payload.submittedEntityId ?? ''
 
     const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
+    const dedupeKey = buildBallotDedupeKey(payload, req.session?.userId)
     if (actor) {
       const duplicate = await SubmissionModel.findOne({
         tournamentId,
@@ -927,9 +998,16 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       type: 'ballot',
       payload,
       submittedBy: req.session?.userId,
+      ...(dedupeKey ? { dedupeKey } : {}),
     })
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
+    if (isDuplicateSubmissionKeyError(err)) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_BALLOT_MESSAGE }] })
+      return
+    }
     next(err)
   }
 }
@@ -959,6 +1037,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
+    const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const normalized = await normalizeFeedbackPayload(connection, tournamentId, round, {
       adjudicatorId,
       score,
@@ -966,7 +1045,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       submittedEntityId,
       matter,
       manner,
-    })
+    }, { allowHiddenRound: isAdmin })
     if (!normalized.ok) {
       badRequest(res, normalized.message)
       return
@@ -975,6 +1054,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
 
     const SubmissionModel = getSubmissionModel(connection)
     const actor = resolveSubmissionActor(payload.submittedEntityId, req.session?.userId)
+    const dedupeKey = buildFeedbackDedupeKey(payload, req.session?.userId)
     if (actor) {
       const duplicate = await SubmissionModel.findOne({
         tournamentId,
@@ -999,14 +1079,22 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       type: 'feedback',
       payload,
       submittedBy: req.session?.userId,
+      ...(dedupeKey ? { dedupeKey } : {}),
     })
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
+    if (isDuplicateSubmissionKeyError(err)) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_FEEDBACK_MESSAGE }] })
+      return
+    }
     next(err)
   }
 }
 
 export const updateSubmission: RequestHandler = async (req, res, next) => {
+  let submissionType: 'ballot' | 'feedback' | null = null
   try {
     const { id } = req.params
     const { tournamentId, round, payload } = req.body as {
@@ -1025,6 +1113,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       notFound(res, 'Submission not found')
       return
     }
+    submissionType = existing.type === 'feedback' ? 'feedback' : 'ballot'
 
     const nextRound = round ?? Number(existing.round)
     if (!Number.isFinite(nextRound) || nextRound < 1) {
@@ -1059,14 +1148,38 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       nextPayload = normalizedFeedback.value
     }
 
+    const dedupeKey =
+      existing.type === 'ballot'
+        ? buildBallotDedupeKey(
+            nextPayload as NormalizedBallotPayload,
+            existing.submittedBy ?? undefined
+          )
+        : buildFeedbackDedupeKey(
+            nextPayload as NormalizedFeedbackPayload,
+            existing.submittedBy ?? undefined
+          )
+
+    const setPayload: Record<string, unknown> = {
+      round: nextRound,
+      payload: nextPayload,
+    }
+    const unsetPayload: Record<string, 1> = {}
+    if (dedupeKey) {
+      setPayload.dedupeKey = dedupeKey
+    } else {
+      unsetPayload.dedupeKey = 1
+    }
+
     const updated = await SubmissionModel.findOneAndUpdate(
       { _id: id, tournamentId },
-      {
-        $set: {
-          round: nextRound,
-          payload: nextPayload,
-        },
-      },
+      Object.keys(unsetPayload).length > 0
+        ? {
+            $set: setPayload,
+            $unset: unsetPayload,
+          }
+        : {
+            $set: setPayload,
+          },
       { new: true }
     )
       .lean()
@@ -1079,6 +1192,13 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
 
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (submissionType && isDuplicateSubmissionKeyError(err)) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: duplicateMessageByType(submissionType) }],
+      })
+      return
+    }
     next(err)
   }
 }

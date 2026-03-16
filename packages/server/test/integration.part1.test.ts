@@ -1573,6 +1573,10 @@ describe('Server integration', () => {
             score_by_matter_manner: false,
             poi: false,
             best: true,
+            best_min_count: 1,
+            best_max_count: 2,
+            poi_min_count: 0,
+            poi_max_count: 2,
             allow_low_tie_win: false,
           },
           compile: {
@@ -1598,6 +1602,10 @@ describe('Server integration', () => {
     expect(round1Res.body.data.userDefinedData.no_speaker_score).toBe(true)
     expect(round1Res.body.data.userDefinedData.score_by_matter_manner).toBe(false)
     expect(round1Res.body.data.userDefinedData.poi).toBe(false)
+    expect(round1Res.body.data.userDefinedData.best_min_count).toBe(1)
+    expect(round1Res.body.data.userDefinedData.best_max_count).toBe(2)
+    expect(round1Res.body.data.userDefinedData.poi_min_count).toBe(0)
+    expect(round1Res.body.data.userDefinedData.poi_max_count).toBe(2)
     expect(round1Res.body.data.userDefinedData.allow_low_tie_win).toBe(false)
     expect(round1Res.body.data.userDefinedData.break.size).toBe(16)
     expect(round1Res.body.data.userDefinedData.break.source).toBe('raw')
@@ -1623,6 +1631,10 @@ describe('Server integration', () => {
     expect(round2Res.status).toBe(201)
     expect(round2Res.body.data.userDefinedData.evaluate_from_adjudicators).toBe(false)
     expect(round2Res.body.data.userDefinedData.no_speaker_score).toBe(false)
+    expect(round2Res.body.data.userDefinedData.best_min_count).toBe(1)
+    expect(round2Res.body.data.userDefinedData.best_max_count).toBe(2)
+    expect(round2Res.body.data.userDefinedData.poi_min_count).toBe(0)
+    expect(round2Res.body.data.userDefinedData.poi_max_count).toBe(2)
     expect(round2Res.body.data.userDefinedData.break_round).toBe(false)
     expect(round2Res.body.data.userDefinedData.break.size).toBe(4)
     expect(round2Res.body.data.userDefinedData.break.cutoff_tie_policy).toBe('strict')
