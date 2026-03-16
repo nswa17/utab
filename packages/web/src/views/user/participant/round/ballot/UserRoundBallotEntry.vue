@@ -393,18 +393,14 @@
                   <div
                     v-for="row in team.rows"
                     :key="row.key"
-                    class="row confirm-speaker-row"
+                    class="confirm-speaker-row"
                   >
                     <div class="stack confirm-speaker-main">
-                      <div class="row confirm-speaker-row-head">
+                      <div class="confirm-speaker-row-head">
                         <span class="confirm-role-token">{{ row.roleToken }}</span>
                         <strong class="confirm-speaker-row-name">{{ row.speakerName }}</strong>
+                        <strong class="confirm-speaker-score">{{ row.scoreLabel }}</strong>
                       </div>
-                      <span class="muted tiny">{{ row.roleDescription }}</span>
-                      <span v-if="row.scoreBreakdown" class="muted tiny">{{ row.scoreBreakdown }}</span>
-                    </div>
-                    <div class="stack confirm-speaker-meta">
-                      <strong class="confirm-speaker-score">{{ row.scoreLabel }}</strong>
                       <div class="confirm-speaker-awards">
                         <span v-if="row.best" class="confirm-award-chip confirm-award-chip--best">{{
                           $t('ベストディベーター')
@@ -416,6 +412,8 @@
                           $t('付与なし')
                         }}</span>
                       </div>
+                      <span class="muted tiny">{{ row.roleDescription }}</span>
+                      <span v-if="row.scoreBreakdown" class="muted tiny">{{ row.scoreBreakdown }}</span>
                     </div>
                   </div>
                 </div>
@@ -2490,9 +2488,8 @@ onUnmounted(() => {
 }
 
 .confirm-speaker-row {
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 6px;
   padding: 10px 0;
   border-top: 1px solid color-mix(in srgb, var(--color-border) 84%, white);
 }
@@ -2512,9 +2509,10 @@ onUnmounted(() => {
 }
 
 .confirm-speaker-row-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .confirm-role-token {
@@ -2534,12 +2532,8 @@ onUnmounted(() => {
 
 .confirm-speaker-row-name {
   line-height: 1.3;
-}
-
-.confirm-speaker-meta {
-  align-items: flex-end;
-  gap: 6px;
-  min-width: fit-content;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .confirm-speaker-score {
@@ -2554,12 +2548,12 @@ onUnmounted(() => {
   white-space: nowrap;
   font-size: 0.95rem;
   font-weight: 800;
+  justify-self: end;
 }
 
 .confirm-speaker-awards {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -2617,17 +2611,13 @@ onUnmounted(() => {
     display: none;
   }
 
-  .confirm-speaker-row {
-    flex-direction: column;
+  .confirm-speaker-row-head {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .confirm-speaker-meta {
-    width: 100%;
-    align-items: flex-start;
-  }
-
-  .confirm-speaker-awards {
-    justify-content: flex-start;
+  .confirm-speaker-score {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 </style>
