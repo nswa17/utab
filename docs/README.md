@@ -5,6 +5,7 @@ UTab の設計資料・運用資料・履歴資料をまとめるディレクト
 ## 現行ドキュメント（優先参照）
 
 - [architecture-v2.md](architecture-v2.md): 現行アーキテクチャ（v3 系モノレポ）
+- [user-manual.md](user-manual.md): 運営者・参加者向け UTab 利用マニュアル
 - [security-roadmap.md](security-roadmap.md): セキュリティ/アクセス制御の設計と実装履歴
 - [ui/ui-map.md](ui/ui-map.md): UI 導線と画面マップ
 - [ui/ui-qa-checklist.md](ui/ui-qa-checklist.md): UI 回帰チェック観点

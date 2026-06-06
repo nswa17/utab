@@ -94,6 +94,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import { useTournamentStore } from '@/stores/tournament'
 import { api } from '@/utils/api'
 import { createLatestRequestGate } from '@/utils/latest-request'
+import { countDuplicateSubmissions } from '@/utils/submission-duplicates'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,50 +148,6 @@ const lastRefreshedLabel = computed(() => {
 
 function goBack() {
   router.push('/admin')
-}
-
-function submissionActorId(item: any) {
-  const payloadEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
-  if (payloadEntityId) return payloadEntityId
-  const submittedBy = String(item?.submittedBy ?? '').trim()
-  return submittedBy
-}
-
-function countDuplicateSubmissions(items: any[]) {
-  const ballotCountByKey = new Map<string, number>()
-  const feedbackCountByKey = new Map<string, number>()
-
-  items.forEach((item) => {
-    const round = Number(item?.round)
-    if (!Number.isFinite(round)) return
-    const actor = submissionActorId(item)
-    if (!actor) return
-    if (item?.type === 'ballot') {
-      const key = `${round}:${actor}`
-      ballotCountByKey.set(key, (ballotCountByKey.get(key) ?? 0) + 1)
-      return
-    }
-    if (item?.type === 'feedback') {
-      const adjudicatorId = String(item?.payload?.adjudicatorId ?? '').trim()
-      if (!adjudicatorId) return
-      const key = `${round}:${actor}:${adjudicatorId}`
-      feedbackCountByKey.set(key, (feedbackCountByKey.get(key) ?? 0) + 1)
-    }
-  })
-
-  const ballotDuplicates = Array.from(ballotCountByKey.values()).reduce(
-    (total, count) => total + (count > 1 ? count - 1 : 0),
-    0
-  )
-  const feedbackDuplicates = Array.from(feedbackCountByKey.values()).reduce(
-    (total, count) => total + (count > 1 ? count - 1 : 0),
-    0
-  )
-
-  return {
-    ballotDuplicates,
-    feedbackDuplicates,
-  }
 }
 
 async function refreshDuplicateWarnings() {

@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express'
+import type { RequestHandler, Response } from 'express'
 import {
   teams as teamAllocations,
   adjudicators as adjudicatorAllocations,
@@ -91,6 +91,29 @@ function toHttpError(status: number, message: string): Error & { status: number 
   const err = new Error(message) as Error & { status: number }
   err.status = status
   return err
+}
+
+function isCorePreconditionError(err: any): boolean {
+  if (Number(err?.code) === 412 || Number(err?.status) === 412) return true
+  const name = String(err?.name ?? '')
+  return name === 'DetailNotDefined' || /^NeedMore(Team|Adjudicator|Venue)$/i.test(name)
+}
+
+function preconditionFailed(res: Response, err: any): void {
+  res.status(412).json({
+    data: null,
+    errors: [
+      {
+        name: String(err?.name ?? 'PreconditionFailed'),
+        message: String(err?.message ?? 'Precondition failed'),
+      },
+    ],
+  })
+}
+
+function precheckTeamAllocation(context: AllocationContext, round: number, teamAlgorithm: string): void {
+  if (teamAlgorithm === 'break') return
+  allocations.teams.precheck(context.teamInstances, [], context.config.style, round)
 }
 
 type CanonicalBreakSeeding =
@@ -1367,10 +1390,6 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
     const teamAlgorithm = validatedOptions.team_allocation_algorithm
     const teamAlgorithmOptions = validatedOptions.team_allocation_algorithm_options
     const normalizedSnapshotId = typeof snapshotId === 'string' ? snapshotId.trim() : ''
-    if (teamAlgorithm !== 'break' && !normalizedSnapshotId) {
-      badRequest(res, 'Snapshot id is required')
-      return
-    }
 
     const context = await buildAllocationContext(
       tournamentId,
@@ -1382,6 +1401,7 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Break allocation only supports team_num=2')
       return
     }
+    precheckTeamAllocation(context, round, teamAlgorithm)
     let draw =
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, context)).draw
@@ -1440,6 +1460,10 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       errors: [],
     })
   } catch (err: any) {
+    if (isCorePreconditionError(err)) {
+      preconditionFailed(res, err)
+      return
+    }
     if (err?.status === 400) {
       badRequest(res, String(err?.message ?? 'Bad Request'))
       return
@@ -1773,6 +1797,7 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Break allocation only supports team_num=2')
       return
     }
+    precheckTeamAllocation(teamContext, round, teamAlgorithm)
     let draw =
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, teamContext)).draw
@@ -1905,6 +1930,10 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       errors: [],
     })
   } catch (err: any) {
+    if (isCorePreconditionError(err)) {
+      preconditionFailed(res, err)
+      return
+    }
     if (err?.status === 400) {
       badRequest(res, String(err?.message ?? 'Bad Request'))
       return

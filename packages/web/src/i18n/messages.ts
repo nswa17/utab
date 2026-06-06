@@ -131,7 +131,7 @@ const en = {
   '{count} 件': '{count} items',
   '{count}件': '{count} items',
   '{label} 結果': '{label} results',
-  '{category} / 優先度 {priority}': '{category} / Priority {priority}',
+  '{category} / 重み {weight}': '{category} / Weight {weight}',
   '{name} が{side}側に偏っています': 'Side imbalance for {name} ({side}-heavy)',
   '{name} が片側に偏っています': 'Side imbalance for {name}',
   '{name} は利用不可': '{name} is unavailable',
@@ -720,6 +720,10 @@ const en = {
   '保存に失敗しました': 'Failed to save.',
   '修正': 'Fix',
   '個別衝突 (チーム/ジャッジ)': 'Personal conflict (team/judge)',
+  '重み': 'Weight',
+  '衝突重み': 'Conflict weight',
+  '数値が大きいほど、そのコンフリクトを衝突回避で重く扱います。':
+    'Higher numbers make this conflict count more heavily during conflict avoidance.',
   '優先度': 'Priority',
   '元に戻す': 'Revert',
   '全体': 'All',
@@ -1562,6 +1566,8 @@ const en = {
     'A current draw is required to show the baseline.',
   'baseline を出すには必要人数分の使用可能ジャッジが必要です。':
     'Enough available adjudicators are required to show the baseline.',
+  '使用可能ジャッジが足りません。必要 {required} 人 / 使用可能 {available} 人です。人数設定か availability を見直してください。':
+    'Not enough available adjudicators. Required: {required}; available: {available}. Check adjudicator counts or availability.',
   '警告として集計できる順位基準が選ばれていません。':
     'No ranking criteria that map to warnings are selected.',
   '警告として集計できるジャッジ基準が選ばれていません。':

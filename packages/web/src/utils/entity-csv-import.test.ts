@@ -122,6 +122,23 @@ describe('entity csv import', () => {
     ])
   })
 
+  it('accepts weight as the institution conflict weight column', () => {
+    const result = build({
+      type: 'institutions',
+      text: ['name,category,weight', 'Region East,region,1.6'].join('\n'),
+      existingEntities: [],
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.payload).toHaveLength(1)
+    expect(result.payload[0]).toEqual({
+      tournamentId,
+      name: 'Region East',
+      category: 'region',
+      priority: 1.6,
+    })
+  })
+
   it('supports team round availability import', () => {
     const result = build({
       type: 'teams',
