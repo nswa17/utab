@@ -1213,6 +1213,7 @@ const props = withDefaults(
     autoOpenFocusSubmission?: boolean
     autoEditFocusSubmission?: boolean
     focusEditOnly?: boolean
+    closeOnSave?: boolean
   }>(),
   {
     embedded: false,
@@ -1224,8 +1225,13 @@ const props = withDefaults(
     autoOpenFocusSubmission: false,
     autoEditFocusSubmission: false,
     focusEditOnly: false,
+    closeOnSave: false,
   }
 )
+const emit = defineEmits<{
+  (event: 'saved', item: Submission): void
+  (event: 'deleted', item: Submission): void
+}>()
 
 function normalizeRoundValue(value: unknown): number | null {
   const parsed = Number(value)
@@ -2703,7 +2709,13 @@ async function saveEdit(item: Submission) {
       editError.value = submissions.error ?? t('提出データの更新に失敗しました。')
       return
     }
-    startEdit(updated as Submission)
+    const updatedSubmission = updated as Submission
+    if (props.closeOnSave) {
+      cancelEdit()
+    } else {
+      startEdit(updatedSubmission)
+    }
+    emit('saved', updatedSubmission)
   } finally {
     editingSaving.value = false
   }
@@ -2731,6 +2743,7 @@ async function deleteCurrentSubmission(item: Submission) {
     if (editingSubmissionId.value === submissionId) {
       cancelEdit()
     }
+    emit('deleted', deleted as Submission)
   } finally {
     editingSaving.value = false
   }

@@ -862,15 +862,15 @@ defineExpose({
 .preview-detail-toggle,
 .preview-detail-edit-button {
   appearance: none;
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text);
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   font-size: 12px;
   line-height: 1.2;
   cursor: pointer;
-  font-weight: 400;
+  font-weight: 700;
   min-height: auto;
   white-space: nowrap;
   writing-mode: horizontal-tb;
@@ -883,8 +883,17 @@ defineExpose({
   opacity: 0.45;
 }
 
+.preview-detail-toggle:hover:not(:disabled),
 .preview-detail-edit-button:hover:not(:disabled) {
-  background: var(--color-surface-muted);
+  background: #dbeafe;
+  border-color: #1e40af;
+  color: #1e40af;
+}
+
+.preview-detail-toggle:focus-visible,
+.preview-detail-edit-button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
 .draw-preview-detail-row td {

@@ -1481,15 +1481,24 @@
                   </select>
                 </template>
               </Field>
-              <Field :label="$t('優先度')" v-slot="{ id, describedBy }">
-                <input
-                  v-model.number="institutionForm.priority"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  :id="id"
-                  :aria-describedby="describedBy"
-                />
+              <Field :label="$t('衝突重み')">
+                <template #label-suffix>
+                  <HelpTip
+                    :text="
+                      $t('数値が大きいほど、そのコンフリクトを衝突回避で重く扱います。')
+                    "
+                  />
+                </template>
+                <template #default="{ id, describedBy }">
+                  <input
+                    v-model.number="institutionForm.priority"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :id="id"
+                    :aria-describedby="describedBy"
+                  />
+                </template>
               </Field>
               <div class="row entity-submit-row">
                 <Button type="submit" size="sm" :disabled="institutions.loading">{{
@@ -1540,9 +1549,9 @@
                 <strong>{{ inst.name }}</strong>
                 <span class="muted small entity-inline-meta">
                   {{
-                    $t('{category} / 優先度 {priority}', {
+                    $t('{category} / 重み {weight}', {
                       category: institutionCategoryLabel(inst.category),
-                      priority: institutionPriorityValue(inst.priority),
+                      weight: institutionPriorityValue(inst.priority),
                     })
                   }}
                 </span>
@@ -1581,7 +1590,7 @@
                     </select>
                   </label>
                   <label class="inline-control institution-priority-inline">
-                    <span class="inline-control-label">{{ $t('優先度') }}</span>
+                    <span class="inline-control-label">{{ $t('重み') }}</span>
                     <div class="number-stepper">
                       <Button
                         type="button"
@@ -1596,7 +1605,7 @@
                         type="number"
                         min="0"
                         step="0.1"
-                        :aria-label="$t('優先度')"
+                        :aria-label="$t('衝突重み')"
                       />
                       <Button
                         type="button"
@@ -2488,7 +2497,7 @@ const entityImportTemplateMap: Record<EntityTabKey, string> = {
     importVenueRows
   ),
   speakers: buildImportCsv(['name'], importSpeakerRows),
-  institutions: buildImportCsv(['name', 'category', 'priority'], importInstitutionRows),
+  institutions: buildImportCsv(['name', 'category', 'weight'], importInstitutionRows),
 }
 
 const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRow[]> = {
@@ -2621,9 +2630,9 @@ const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRo
       example: 'region',
     },
     {
-      header: 'priority',
+      header: 'weight',
       required: false,
-      description: '衝突優先度 (数値)。高いほど重視。',
+      description: '衝突重み (数値)。高いほど重視。既存の priority ヘッダーも取り込めます。',
       example: '1.6',
     },
   ],

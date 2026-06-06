@@ -216,9 +216,16 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('submissionPreviewRows')
     expect(source).toContain(':show-submission-columns="true"')
     expect(source).toContain(':focus-edit-only="true"')
+    expect(source).toContain(':close-on-save="true"')
+    expect(source).toContain('@saved="handleSubmissionEditorSaved"')
+    expect(source).toContain('@deleted="handleSubmissionEditorDeleted"')
     expect(source).toContain('openSubmissionEditorModal')
+    expect(source).not.toContain('watch(submissionEditorTarget')
     expect(submissionsView).toContain('splitActiveKey')
     expect(submissionsView).toContain('focusEditOnly')
+    expect(submissionsView).toContain('closeOnSave')
+    expect(submissionsView).toContain("emit('saved', updatedSubmission)")
+    expect(submissionsView).toContain("emit('deleted', deleted as Submission)")
   })
 
   it('uses round tie settings to control ballot winner options without an unselected option', () => {

@@ -85,6 +85,7 @@ const knownStaticHeaders = new Set([
   'category',
   'kind',
   'type',
+  'weight',
   'priority',
   'speakers',
   'preev',
@@ -770,7 +771,7 @@ export function buildEntityImportPayload(
       reader.read(row, ['category', 'kind', 'type'], 1) || undefined
     )
     const priority = options.institutionPriorityValue(
-      toFiniteNumber(reader.read(row, ['priority'], 2), 1)
+      toFiniteNumber(reader.read(row, ['weight', 'priority'], 2), 1)
     )
     const institutionPayload = {
       tournamentId: options.tournamentId,

@@ -1094,7 +1094,8 @@ describe('Server integration', () => {
       round: 1,
       options: { team_allocation_algorithm: 'standard' },
     })
-    expect(missingSnapshotRes.status).toBe(400)
+    expect(missingSnapshotRes.status).toBe(200)
+    expect(missingSnapshotRes.body.data.allocation.length).toBeGreaterThan(0)
 
     const otherTournamentRes = await agent.post('/api/tournaments').send({
       name: 'Legacy Open B',
@@ -1132,6 +1133,57 @@ describe('Server integration', () => {
     expect(powerpairDrawRes.status).toBe(200)
     expect(powerpairDrawRes.body.data.allocation.length).toBeGreaterThan(0)
     expect(powerpairDrawRes.body.data.userDefinedData?.team_allocation_algorithm).toBe('powerpair')
+  })
+
+  it('returns NeedMoreTeam before generating allocations with an odd team count', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'odd-team-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'odd-team-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const stylesRes = await agent.get('/api/styles')
+    expect(stylesRes.status).toBe(200)
+    const styleId = stylesRes.body.data[0].id ?? 1
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Odd Team Open',
+      style: styleId,
+      options: { style: { team_num: 2, score_weights: [1, 1, 1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id as string
+
+    for (const name of ['Team A', 'Team B', 'Team C']) {
+      const teamRes = await agent.post('/api/teams').send({ tournamentId, name })
+      expect(teamRes.status).toBe(201)
+    }
+
+    const teamOnlyRes = await agent.post('/api/allocations/teams').send({
+      tournamentId,
+      round: 1,
+      options: { team_allocation_algorithm: 'standard' },
+    })
+    expect(teamOnlyRes.status).toBe(412)
+    expect(teamOnlyRes.body.errors?.[0]?.name).toBe('NeedMoreTeam')
+    expect(teamOnlyRes.body.errors?.[0]?.message).toBe(
+      'At least 1 more available teams are needed'
+    )
+
+    const combinedRes = await agent.post('/api/allocations').send({
+      tournamentId,
+      round: 1,
+      options: { team_allocation_algorithm: 'standard' },
+    })
+    expect(combinedRes.status).toBe(412)
+    expect(combinedRes.body.errors?.[0]?.name).toBe('NeedMoreTeam')
   })
 
   it('supports class_based adjudicator allocation through the API', async () => {

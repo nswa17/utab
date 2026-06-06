@@ -378,6 +378,9 @@
           :focus-submission-id="submissionEditorSubmissionId"
           :auto-open-focus-submission="true"
           :auto-edit-focus-submission="true"
+          :close-on-save="true"
+          @saved="handleSubmissionEditorSaved"
+          @deleted="handleSubmissionEditorDeleted"
         />
       </div>
     </div>
@@ -2140,6 +2143,32 @@ function closeSubmissionEditorModal() {
   void refreshHubSubmissions()
 }
 
+function upsertHubSubmission(item: Submission) {
+  const id = String(item?._id ?? '').trim()
+  if (!id) return
+  const index = hubSubmissions.value.findIndex((entry) => String(entry?._id ?? '') === id)
+  if (index >= 0) {
+    const next = hubSubmissions.value.slice()
+    next.splice(index, 1, item)
+    hubSubmissions.value = next
+    return
+  }
+  hubSubmissions.value = [...hubSubmissions.value, item]
+}
+
+function handleSubmissionEditorSaved(item: Submission) {
+  upsertHubSubmission(item)
+  closeSubmissionEditorModal()
+}
+
+function handleSubmissionEditorDeleted(item: Submission) {
+  const id = String(item?._id ?? '').trim()
+  if (id) {
+    hubSubmissions.value = hubSubmissions.value.filter((entry) => String(entry?._id ?? '') !== id)
+  }
+  closeSubmissionEditorModal()
+}
+
 function setModalScrollLock(locked: boolean) {
   if (typeof document === 'undefined') return
   const body = document.body
@@ -3340,12 +3369,6 @@ watch(
   },
   { immediate: true }
 )
-
-watch(submissionEditorTarget, (target) => {
-  if (!submissionEditorModalOpen.value) return
-  if (target) return
-  closeSubmissionEditorModal()
-})
 
 watch(
   [
