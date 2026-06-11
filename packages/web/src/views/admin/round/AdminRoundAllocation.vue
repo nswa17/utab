@@ -2478,8 +2478,8 @@ const adjudicatorAssignOptions = computed(() => [
 const venueAllocationModeOptions = computed(() => [
   {
     value: 'win_priority',
-    label: t('優先度順（Win順）'),
-    description: t('会場優先度が高い順に、Win順が高いマッチから会場を割り当てます。'),
+    label: t('優先順（Win順）'),
+    description: t('会場優先順の番号が小さい順に、Win順が高いマッチから会場を割り当てます。'),
   },
   {
     value: 'shuffle',
@@ -4788,7 +4788,7 @@ const detailRows = computed<DetailRow[]>(() => {
   const venue = venues.venues.find((v) => v._id === id)
   const detail = venue ? detailForRound(venue.details, round.value) : {}
   return [
-    { label: t('優先度'), value: detail?.priority ?? '—' },
+    { label: t('優先順'), value: detail?.priority ?? '—' },
     { label: t('利用可'), value: venueAvailableInRound(String(id)) ? t('はい') : t('いいえ') },
     { label: t('ID'), value: id },
   ]

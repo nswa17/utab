@@ -94,8 +94,8 @@ CSV/TSV 取り込みを使う場合も、まず対象タブを選んでから取
 
 | 対象 | 主な列 | 説明 |
 | --- | --- | --- |
-| `コンフリクトグループ` | `name`, `category`, `priority` | 所属、地域、リーグなどを登録します。`category` は `institution` / `region` / `league`、`priority` は衝突の重みです。 |
-| `会場` | `name`, `priority`, `available`, `available_r1` | 会場名、優先度、全体/ラウンド別の利用可否を登録します。`priority` は小さい値ほど優先利用されます。 |
+| `コンフリクトグループ` | `name`, `category`, `priority` | 所属、地域、リーグなどを登録します。`category` は `institution` / `region` / `league`、`priority` は回避優先順です。小さい値ほど優先して回避されます。 |
+| `会場` | `name`, `priority`, `available`, `available_r1` | 会場名、優先順、全体/ラウンド別の利用可否を登録します。`priority` は小さい値ほど先に利用されます。 |
 | `スピーカー` | `name` | スピーカー名だけを登録します。チームCSVより先に取り込むと安全です。 |
 | `チーム` | `name`, `institution`, `speakers`, `available`, `available_r1` | チーム名、所属グループ、所属スピーカー、出場可否を登録します。`speakers` は複数名を区切って入力できます。 |
 | `ジャッジ` | `name`, `preev`, `judge_class`, `available`, `conflicts`, `conflict_teams`, `available_r1`, `conflicts_r1` | ジャッジ名、事前補正、役割クラス、参加可否、所属/チーム衝突を登録します。 |

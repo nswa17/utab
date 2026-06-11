@@ -131,7 +131,7 @@ const en = {
   '{count} 件': '{count} items',
   '{count}件': '{count} items',
   '{label} 結果': '{label} results',
-  '{category} / 重み {weight}': '{category} / Weight {weight}',
+  '{category} / 回避優先順 {priority}': '{category} / Avoidance order {priority}',
   '{name} が{side}側に偏っています': 'Side imbalance for {name} ({side}-heavy)',
   '{name} が片側に偏っています': 'Side imbalance for {name}',
   '{name} は利用不可': '{name} is unavailable',
@@ -722,9 +722,12 @@ const en = {
   '個別衝突 (チーム/ジャッジ)': 'Personal conflict (team/judge)',
   '重み': 'Weight',
   '衝突重み': 'Conflict weight',
-  '数値が大きいほど、そのコンフリクトを衝突回避で重く扱います。':
-    'Higher numbers make this conflict count more heavily during conflict avoidance.',
+  '回避優先順': 'Avoidance order',
+  '番号が小さいほど、そのコンフリクトを優先して避けます。1 が最優先です。':
+    'Smaller numbers are avoided first for this conflict. 1 is the highest priority.',
   '優先度': 'Priority',
+  '優先順': 'Priority order',
+  'ラウンド {round} の優先順': 'Priority order for round {round}',
   '元に戻す': 'Revert',
   '全体': 'All',
   '奇数ブラケット処理': 'Odd bracket handling',
@@ -1595,14 +1598,14 @@ const en = {
   'パワーペアで使う衝突回避方式です。': 'Conflict-avoidance mode used in power-pair draws.',
   '会場をランダムに割り当てる場合に有効にします。': 'Enable to randomize venue allocation.',
   '会場割当方式': 'Venue assignment mode',
-  '優先度順（Win順）': 'Priority order (Win order)',
+  '優先順（Win順）': 'Priority order (Win order)',
   '会場の割り当て方を選択します。': 'Choose how venues are assigned.',
-  '会場優先度は会場マスタの priority を参照します。':
-    'Venue priority is taken from the venue master priority field.',
-  '優先度順では会場優先度が高い会場を、Win順が高いマッチから順に割り当てます。':
-    'In priority mode, higher-priority venues are assigned first to higher-ranked matches by win order.',
-  '会場優先度が高い順に、Win順が高いマッチから会場を割り当てます。':
-    'Assign venues in descending venue priority to matches in descending win order.',
+  '会場優先順は会場マスタの priority を参照します。':
+    'Venue priority order is taken from the venue master priority field.',
+  '優先順では会場優先順の番号が小さい会場を、Win順が高いマッチから順に割り当てます。':
+    'In priority-order mode, venues with smaller priority-order numbers are assigned first to higher-ranked matches by win order.',
+  '会場優先順の番号が小さい順に、Win順が高いマッチから会場を割り当てます。':
+    'Assign venues with smaller priority numbers first to matches in descending win order.',
   '会場をランダム順で割り当てます。': 'Assign venues in random order.',
   '考慮対象にする過去ラウンドを個別に選択します。': 'Choose past rounds to consider individually.',
   '厳密アルゴリズムのチーム組み合わせ方式です。': 'Pairing method for strict team allocation.',
