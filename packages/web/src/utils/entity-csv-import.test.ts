@@ -122,7 +122,7 @@ describe('entity csv import', () => {
     ])
   })
 
-  it('accepts weight as the institution conflict weight column', () => {
+  it('accepts weight as a legacy institution priority-order column', () => {
     const result = build({
       type: 'institutions',
       text: ['name,category,weight', 'Region East,region,1.6'].join('\n'),
