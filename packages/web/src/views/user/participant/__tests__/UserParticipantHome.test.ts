@@ -33,4 +33,23 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).toContain('hasLoaded.value = false')
     expect(source).toContain('refresh()')
   })
+
+  it('uses the same Gov/Opp colour coding as the ballot entry screen', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain('class="side-chip gov-chip"')
+    expect(source).toContain('class="side-chip opp-chip"')
+    expect(source).toContain('background: var(--color-side-gov-card)')
+    expect(source).toContain('background: var(--color-side-opp-card)')
+    expect(source).toContain('class="table-side-heading table-side-heading--gov"')
+    expect(source).toContain('class="table-side-heading table-side-heading--opp"')
+  })
+
+  it('makes team and adjudicator evaluation actions visually distinct', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain('variant="primary"')
+    expect(source).toContain('variant="secondary"')
+    expect(source).toContain('class="draw-action-button draw-action-button--team"')
+    expect(source).toContain('class="draw-action-button draw-action-button--judge"')
+    expect(source).not.toContain('draw-action-arrow')
+  })
 })

@@ -1191,6 +1191,7 @@ import {
 import { getSideShortLabel } from '@/utils/side-labels'
 import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 import { createLatestRequestGate } from '@/utils/latest-request'
+import { numericInputText } from '@/utils/numeric-input'
 
 const route = useRoute()
 const submissions = useSubmissionsStore()
@@ -1595,9 +1596,9 @@ type SpeakerRow = {
 
 type EditableBallotRow = {
   speakerId: string
-  score: string
-  matter: string
-  manner: string
+  score: string | number | null
+  matter: string | number | null
+  manner: string | number | null
   best: boolean
   poi: boolean
 }
@@ -1655,8 +1656,8 @@ function formatNumberForInput(value: number | undefined): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
-function parseRequiredNumber(value: string, label: string): NumberParseResult {
-  const token = value.trim()
+function parseRequiredNumber(value: unknown, label: string): NumberParseResult {
+  const token = numericInputText(value)
   if (!token) {
     return { ok: false, message: t('{label} を入力してください。', { label }) }
   }
@@ -2002,8 +2003,8 @@ function speakerRowsFor(item: Submission): SpeakerRow[] {
 }
 
 function derivedScoreFromEntry(entry: EditableBallotRow): string {
-  const matter = Number(entry.matter)
-  const manner = Number(entry.manner)
+  const matter = Number(numericInputText(entry.matter))
+  const manner = Number(numericInputText(entry.manner))
   if (!Number.isFinite(matter) || !Number.isFinite(manner)) return '—'
   return formatNumber(matter + manner)
 }
@@ -2036,18 +2037,18 @@ function editingSpeakerRowsFor(item: Submission): EditableSpeakerRowView[] {
           ? '—'
           : editingBallotScoreMode.value === 'matter_manner'
             ? derivedScoreFromEntry(entry)
-            : entry.score.trim() || '—',
+            : numericInputText(entry.score) || '—',
       matter:
         editingBallotNoSpeakerScore.value
           ? '—'
           : editingBallotScoreMode.value === 'matter_manner'
-            ? entry.matter.trim() || '—'
+            ? numericInputText(entry.matter) || '—'
             : '—',
       manner:
         editingBallotNoSpeakerScore.value
           ? '—'
           : editingBallotScoreMode.value === 'matter_manner'
-            ? entry.manner.trim() || '—'
+            ? numericInputText(entry.manner) || '—'
             : '—',
       best: Boolean(entry.best),
       poi: Boolean(entry.poi),

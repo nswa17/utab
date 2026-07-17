@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const allowedDevHosts = (process.env.UTAB_VITE_ALLOWED_HOSTS ?? '')
+  .split(',')
+  .map((host) => host.trim())
+  .filter(Boolean)
 
 export default defineConfig({
   plugins: [
@@ -49,6 +53,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Tailscale Serve can opt in its HTTPS hostname without opening the dev
+    // server to arbitrary Host headers. Leave this empty for normal local work.
+    allowedHosts: allowedDevHosts.length > 0 ? allowedDevHosts : undefined,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

@@ -122,12 +122,12 @@
                 </div>
                 <div v-if="teamAllocationVisible(round.round)" class="match-sides">
                   <div class="side-card gov-card">
-                    <span class="side-chip">{{ govLabel }}</span>
+                    <span class="side-chip gov-chip">{{ govLabel }}</span>
                     <strong>{{ teamName(row.teams.gov) }}</strong>
                   </div>
                   <span class="vs-chip">{{ $t('vs') }}</span>
                   <div class="side-card opp-card">
-                    <span class="side-chip">{{ oppLabel }}</span>
+                    <span class="side-chip opp-chip">{{ oppLabel }}</span>
                     <strong>{{ teamName(row.teams.opp) }}</strong>
                   </div>
                 </div>
@@ -146,13 +146,19 @@
                   </div>
                 </div>
                 <div class="row draw-actions">
-                  <Button variant="ghost" size="sm" :to="teamEvaluationPath(round.round, row)">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    class="draw-action-button draw-action-button--team"
+                    :to="teamEvaluationPath(round.round, row)"
+                  >
                     {{ $t('チーム評価') }}
                   </Button>
                   <Button
                     v-if="judgeEvaluationEnabled(round.round)"
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
+                    class="draw-action-button draw-action-button--judge"
                     :to="judgeEvaluationPath(round.round, row)"
                   >
                     {{ $t('ジャッジ評価') }}
@@ -176,25 +182,25 @@
                         }}</span>
                       </button>
                     </th>
-                    <th v-if="teamAllocationVisible(round.round)">
+                    <th v-if="teamAllocationVisible(round.round)" class="side-column-heading side-column-heading--gov">
                       <button
                         type="button"
-                        class="table-sort"
+                        class="table-sort table-sort--gov"
                         @click="setAudienceTableSort(round.round, 'gov')"
                       >
-                        {{ govLabel }}
+                        <span class="table-side-heading table-side-heading--gov">{{ govLabel }}</span>
                         <span class="sort-indicator">{{
                           audienceSortIndicator(round.round, 'gov')
                         }}</span>
                       </button>
                     </th>
-                    <th v-if="teamAllocationVisible(round.round)">
+                    <th v-if="teamAllocationVisible(round.round)" class="side-column-heading side-column-heading--opp">
                       <button
                         type="button"
-                        class="table-sort"
+                        class="table-sort table-sort--opp"
                         @click="setAudienceTableSort(round.round, 'opp')"
                       >
-                        {{ oppLabel }}
+                        <span class="table-side-heading table-side-heading--opp">{{ oppLabel }}</span>
                         <span class="sort-indicator">{{
                           audienceSortIndicator(round.round, 'opp')
                         }}</span>
@@ -260,13 +266,19 @@
                     </td>
                     <td class="draw-actions-cell">
                       <div class="row draw-actions">
-                        <Button variant="ghost" size="sm" :to="teamEvaluationPath(round.round, row)">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          class="draw-action-button draw-action-button--team"
+                          :to="teamEvaluationPath(round.round, row)"
+                        >
                           {{ $t('チーム評価') }}
                         </Button>
                         <Button
                           v-if="judgeEvaluationEnabled(round.round)"
-                          variant="ghost"
+                          variant="secondary"
                           size="sm"
+                          class="draw-action-button draw-action-button--judge"
                           :to="judgeEvaluationPath(round.round, row)"
                         >
                           {{ $t('ジャッジ評価') }}
@@ -1541,6 +1553,33 @@ select {
   gap: 4px;
 }
 
+.table-sort--gov {
+  color: #075985;
+}
+
+.table-sort--opp {
+  color: #92400e;
+}
+
+.table-side-heading {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.table-side-heading--gov {
+  background: #e0f2fe;
+  border-color: #93c5fd;
+}
+
+.table-side-heading--opp {
+  background: #fef9c3;
+  border-color: #fcd34d;
+}
+
 .sort-indicator {
   font-size: 11px;
   color: var(--color-muted);
@@ -1619,6 +1658,19 @@ select {
   flex-wrap: wrap;
 }
 
+.draw-actions :deep(.draw-action-button) {
+  box-shadow: 0 1px 2px rgba(31, 41, 55, 0.1);
+}
+
+.draw-actions :deep(.draw-action-button--team) {
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.24);
+}
+
+.draw-actions :deep(.draw-action-button--judge) {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
 .draw-table .draw-actions {
   justify-content: flex-end;
   flex-wrap: nowrap;
@@ -1665,11 +1717,13 @@ select {
 }
 
 .gov-card {
-  background: var(--color-surface-muted);
+  background: var(--color-side-gov-card);
+  border-color: #bfdbfe;
 }
 
 .opp-card {
-  background: var(--color-surface-muted);
+  background: var(--color-side-opp-card);
+  border-color: #fde68a;
 }
 
 .side-chip {
@@ -1685,6 +1739,18 @@ select {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
+}
+
+.gov-chip {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #93c5fd;
+}
+
+.opp-chip {
+  background: #fef9c3;
+  color: #92400e;
+  border-color: #fcd34d;
 }
 
 .vs-chip {

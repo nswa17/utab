@@ -67,7 +67,7 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("if (!identityReady.value) return t('提出者ジャッジを選択してください。')")
   })
 
-  it('supports role-by-role controls with steppers and switches', () => {
+  it('supports role-by-role controls with steppers and large explicit award choices', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain('const roleSequenceProgressText = computed(() => {')
     expect(source).toContain('buildSpeakerRoleSequence(style.value?.speaker_sequence')
@@ -76,8 +76,12 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("t('前のロール')")
     expect(source).toContain("t('次のロール')")
     expect(source).toContain("adjustCurrentRoleNumeric('score', 1)")
-    expect(source).toContain('<ToggleSwitch v-model="activeRoleBest"')
-    expect(source).toContain('<ToggleSwitch v-model="activeRolePoi"')
+    expect(source).toContain('class="award-choice"')
+    expect(source).toContain('class="award-choice-option"')
+    expect(source).toContain(':aria-pressed="activeRoleBest"')
+    expect(source).toContain(':aria-pressed="activeRolePoi"')
+    expect(source).toContain('min-height: 44px;')
+    expect(source).toContain('touch-action: manipulation;')
   })
 
   it('shows per-speaker scores and awards in the confirmation modal', () => {
@@ -87,8 +91,10 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain('function buildConfirmSpeakerRows(')
     expect(source).toContain("t('マター {matter} / マナー {manner}',")
     expect(source).toContain("$t('付与なし')")
-    expect(source).not.toContain('bestDebaterSummaryItems')
-    expect(source).not.toContain('poiSummaryItems')
+    expect(source).toContain('@click="editConfirmSpeaker(row)"')
+    expect(source).toContain('function editConfirmSpeaker(row: ConfirmSpeakerRow)')
+    expect(source).toContain('preserveRoleCursorOnScoreStep')
+    expect(source).toContain('const selectedAwardSummaryRows = computed<SelectedAwardSummaryRow[]>(() =>')
   })
 
   it('defines interpolation messages used by the confirmation modal', () => {
@@ -96,5 +102,28 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(messages.en['{score}点']).toBe('{score} pts')
     expect(messages.en['合計 {score}点']).toBe('Total {score} pts')
     expect(messages.en['付与なし']).toBe('No award')
+  })
+
+  it('shows the submitted winner in the completion dialog', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain("{{ $t('あなたの投票') }}")
+    expect(source).toContain('<strong>{{ winnerName }}</strong>')
+    expect(source).toContain("{{ $t('選択した賞') }}")
+    expect(source).toContain('selectedAwardSummaryRows.length > 0')
+    expect(messages.en['あなたの投票']).toBe('Your decision')
+    expect(messages.en['選択した賞']).toBe('Selected awards')
+  })
+
+  it('defines English labels for every participant ballot step and status line', () => {
+    expect(messages.en['提出者入力']).toBe('Select submitter')
+    expect(messages.en['提出者ジャッジ']).toBe('Submitting adjudicator')
+    expect(messages.en['入力ステップ']).toBe('Entry steps')
+    expect(messages.en['評価タイプ']).toBe('Evaluation type')
+    expect(messages.en['確認へ']).toBe('Review')
+    expect(messages.en['次へ']).toBe('Next')
+    expect(messages.en['現在の合計: {gov} {govScore} / {opp} {oppScore}']).toBe(
+      'Current total: {gov} {govScore} / {opp} {oppScore}'
+    )
+    expect(messages.en['ロール {current} / {total}']).toBe('Role {current} / {total}')
   })
 })

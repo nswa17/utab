@@ -301,15 +301,68 @@
             :plain-value-formatter="rankingPlainValue"
           />
           <div class="stack section-download-stack">
-            <div class="row section-download-row">
-              <Button
-                variant="secondary"
-                class="section-download-button"
-                :disabled="activeResults.length === 0"
-                @click="downloadCsv"
+            <p class="section-download-heading">{{ $t('個別ダウンロード') }}</p>
+            <div class="individual-download-grid">
+              <article class="individual-download-card">
+                <div class="individual-download-card-content">
+                  <strong>{{ $t('順位表CSV') }}</strong>
+                  <p class="muted small">{{ $t('現在表示しているカテゴリの順位表をCSVで保存します。') }}</p>
+                  <span class="individual-export-meta">
+                    {{ $t('表示中: {category}', { category: labelDisplay(activeLabel) }) }}
+                  </span>
+                </div>
+                <Button
+                  variant="secondary"
+                  class="individual-download-button"
+                  :disabled="activeResults.length === 0"
+                  @click="downloadCsv"
+                >
+                  {{ $t('表示中の順位表CSVをダウンロード') }}
+                </Button>
+              </article>
+              <article v-if="detailedResultsExportRows.length > 0" class="individual-download-card">
+                <div class="individual-download-card-content">
+                  <strong>{{ $t('選択ラウンドの投票詳細') }}</strong>
+                  <p class="muted small">
+                    {{ $t('Matter/Manner・Best/POI・投票者を、選択した1ラウンド分だけ保存します。') }}
+                  </p>
+                  <label class="individual-export-select">
+                    <span class="muted tiny">{{ $t('対象ラウンド') }}</span>
+                    <select v-model="detailedResultsExportRound">
+                      <option v-for="round in detailedResultsExportRounds" :key="round.round" :value="String(round.round)">
+                        {{ round.name ?? $t('ラウンド {round}', { round: round.round }) }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <Button
+                  variant="secondary"
+                  class="individual-download-button"
+                  :disabled="selectedDetailedResultsExportRows.length === 0"
+                  @click="downloadDetailedResultsCsv('selected')"
+                >
+                  {{ $t('選択ラウンドの投票詳細CSV') }}
+                </Button>
+              </article>
+              <article
+                v-if="detailedResultsExportRows.length > 0"
+                class="individual-download-card individual-download-card--all-rounds"
               >
-                {{ $t('CSVダウンロード') }}
-              </Button>
+                <div class="individual-download-card-content">
+                  <strong>{{ $t('全ラウンドの投票詳細') }}</strong>
+                  <p class="muted small">
+                    {{ $t('同じ投票詳細を、全ラウンド分まとめて1つのCSVで保存します。') }}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  class="individual-download-button"
+                  :disabled="detailedResultsExportRows.length === 0"
+                  @click="downloadDetailedResultsCsv('all')"
+                >
+                  {{ $t('全ラウンドの投票詳細CSV') }}
+                </Button>
+              </article>
             </div>
             <template v-if="activeLabel === 'adjudicators'">
               <div
@@ -326,6 +379,20 @@
                 </Button>
               </div>
             </template>
+            <div v-if="bulkExportFiles.length > 0" class="bulk-download-card">
+              <div class="bulk-download-copy">
+                <strong>{{ $t('一括ダウンロード') }}</strong>
+                <p class="muted small">
+                  {{ $t('順位表・参加者一覧・全ラウンドの投票詳細をまとめてダウンロードします。') }}
+                </p>
+                <span class="muted tiny">
+                  {{ $t('ダウンロード内容: {count} ファイル', { count: bulkExportFiles.length }) }}
+                </span>
+              </div>
+              <Button variant="primary" class="bulk-download-button" @click="downloadBulkResultsZip">
+                {{ $t('結果一式をZIPでダウンロード') }}
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -961,6 +1028,11 @@ import {
   type CommentSheetCsvLabels,
 } from '@/utils/comment-sheet'
 import {
+  buildDetailedResultsExportCsv,
+  buildDetailedResultsExportRows,
+  type DetailedResultsExportLabels,
+} from '@/utils/detailed-results-export'
+import {
   buildJudgeStrictnessRows,
 } from '@/utils/insights'
 import {
@@ -969,6 +1041,8 @@ import {
   type AwardExportRowInput,
   type ParticipantExportRowInput,
 } from '@/utils/certificate-export'
+import { buildTournamentExportFilename } from '@/utils/export-filename'
+import { createZip, type ZipEntry } from '@/utils/zip'
 import {
   trackAdminReportMetric,
   type AdminReportMetric,
@@ -1010,11 +1084,14 @@ const compileManualSaveEnabled = true
 const compileWorkflow = useCompileWorkflow('submissions')
 const refreshGate = createLatestRequestGate()
 const compiledHistoryGate = createLatestRequestGate()
+const detailedResultsExportRound = ref('')
 
 const tournamentId = computed(() => route.params.tournamentId as string)
 const currentTournament = computed(
   () => tournamentStore.tournaments.find((item) => item._id === tournamentId.value) ?? null
 )
+const tournamentExportFilename = (suffix: string) =>
+  buildTournamentExportFilename(currentTournament.value?.name, tournamentId.value, suffix)
 const currentStyle = computed(() =>
   styles.styles.find((item) => item.id === currentTournament.value?.style)
 )
@@ -1189,6 +1266,11 @@ const compiledWithSubPrizes = computed<Record<string, any> | undefined>(() => {
 })
 type RoundSummary = { round: number; name?: string }
 type CompiledLabel = SlideLabel
+type CsvExportFile = {
+  filename: string
+  csv: string
+  rowCount: number
+}
 type ReportSectionKey = AdminReportSection
 type ReportResultPhase = 'overall' | 'prelim' | 'break'
 type BreakOutcomeKey =
@@ -3096,6 +3178,119 @@ const commentSheetRows = computed(() =>
   })
 )
 
+function resolveDetailedExportBallotSide(
+  roundNumber: number,
+  teamAId: string,
+  teamBId: string,
+  slot: 'A' | 'B'
+) {
+  const sideTeamId = slot === 'A' ? teamAId : teamBId
+  const draw = drawByRound.value.get(roundNumber)
+  const row = (draw?.allocation ?? []).find((item: any) => {
+    const gov = String(item?.teams?.gov ?? '').trim()
+    const opp = String(item?.teams?.opp ?? '').trim()
+    return (
+      (gov === teamAId && opp === teamBId) ||
+      (gov === teamBId && opp === teamAId)
+    )
+  })
+  if (String(row?.teams?.gov ?? '').trim() === sideTeamId) return govLabel.value
+  if (String(row?.teams?.opp ?? '').trim() === sideTeamId) return oppLabel.value
+  return slot
+}
+
+const detailedResultsExportRows = computed(() =>
+  buildDetailedResultsExportRows(submissions.submissions, {
+    resolveRoundName: (round) => roundName(round),
+    resolveTeamName: (id) => teamName(id),
+    resolveSpeakerName: (id) => speakerName(id),
+    resolveAdjudicatorName: (id) => adjudicatorName(id),
+    resolveEntityName: (id) => entityName(id),
+    resolveBallotSide: resolveDetailedExportBallotSide,
+  })
+)
+
+const detailedResultsExportRounds = computed(() => {
+  const availableRounds = new Set(detailedResultsExportRows.value.map((row) => row.round))
+  return sortedRounds.value.filter((round) => availableRounds.has(round.round))
+})
+
+const selectedDetailedResultsExportRows = computed(() => {
+  const selectedRound = Number(detailedResultsExportRound.value)
+  if (!Number.isInteger(selectedRound) || selectedRound < 1) return []
+  return detailedResultsExportRows.value.filter((row) => row.round === selectedRound)
+})
+
+const bulkExportFiles = computed<CsvExportFile[]>(() => {
+  const currentCompiled = compiled.value
+  if (!currentCompiled) return []
+
+  const files: CsvExportFile[] = []
+  enabledEntityLabels.value.forEach((label) => {
+    const source = resultSourceForLabel(currentCompiled, label, {
+      phase: effectiveReportPhase.value,
+      preferBreakOutcomes: true,
+    })
+    const exportFile = buildCompiledCsvExport(label, stripDiffFields(mapResultRows(source, label)))
+    if (exportFile) files.push(exportFile)
+  })
+
+  if (participantExportRows.value.length > 0) {
+    files.push({
+      filename: tournamentExportFilename('participants.csv'),
+      csv: buildParticipantExportCsv(participantExportRows.value),
+      rowCount: participantExportRows.value.length,
+    })
+  }
+
+  if (detailedResultsExportRows.value.length > 0) {
+    files.push({
+      filename: tournamentExportFilename('all_round_results.csv'),
+      csv: buildDetailedResultsExportCsv(detailedResultsExportRows.value, detailedResultsExportLabels()),
+      rowCount: detailedResultsExportRows.value.length,
+    })
+  }
+
+  return files
+})
+
+watch(
+  detailedResultsExportRounds,
+  (options) => {
+    if (options.some((round) => String(round.round) === detailedResultsExportRound.value)) return
+    detailedResultsExportRound.value = options.length > 0 ? String(options[0].round) : ''
+  },
+  { immediate: true }
+)
+
+function detailedResultsExportLabels(): DetailedResultsExportLabels {
+  return {
+    record_type: t('記録種別'),
+    round: t('ラウンド'),
+    round_name: t('ラウンド名'),
+    submission_id: t('提出ID'),
+    submitted_at: t('提出日時'),
+    voted_by_id: t('投票者ID'),
+    voted_by_name: t('投票者'),
+    matchup: t('対戦'),
+    team_a: t('チームA'),
+    team_b: t('チームB'),
+    side: t('サイド'),
+    winner: t('勝者'),
+    speaker_order: t('スピーカー順'),
+    speaker_id: t('スピーカーID'),
+    speaker_name: t('スピーカー'),
+    matter: t('マター'),
+    manner: t('マナー'),
+    score: t('スコア'),
+    best_debater: t('ベストディベーター'),
+    poi: t('POI'),
+    feedback_target_id: t('評価対象ジャッジID'),
+    feedback_target_name: t('評価対象ジャッジ'),
+    comment: t('コメント'),
+  }
+}
+
 function summarizeSubmissionCell(
   summary: RoundSubmissionSummary,
   kind: 'ballot' | 'feedback'
@@ -3446,12 +3641,37 @@ function downloadCommentSheetCsv() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'comment_sheet.csv'
+  link.download = tournamentExportFilename('comment_sheet.csv')
   link.click()
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', {
     exportType: 'comment_sheet_csv',
     rowCount: commentSheetRows.value.length,
+  })
+}
+
+function downloadDetailedResultsCsv(scope: 'selected' | 'all') {
+  const rows = scope === 'all' ? detailedResultsExportRows.value : selectedDetailedResultsExportRows.value
+  if (rows.length === 0) return
+
+  emitReportMetric('cta_click', { cta: 'download_detailed_results_csv', scope })
+  const csv = buildDetailedResultsExportCsv(rows, detailedResultsExportLabels())
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf])
+  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  const selectedRound = Number(detailedResultsExportRound.value)
+  link.download =
+    scope === 'selected' && Number.isInteger(selectedRound) && selectedRound >= 1
+      ? tournamentExportFilename(`round_${selectedRound}_detailed_votes.csv`)
+      : tournamentExportFilename('all_round_results.csv')
+  link.click()
+  URL.revokeObjectURL(url)
+  emitReportMetric('export_complete', {
+    exportType: 'detailed_results_csv',
+    scope,
+    rowCount: rows.length,
   })
 }
 
@@ -3464,7 +3684,7 @@ function downloadAwardCsv() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'awardees.csv'
+  link.download = tournamentExportFilename('awardees.csv')
   link.click()
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', { exportType: 'award_csv', rowCount: awardExportRows.value.length })
@@ -3479,7 +3699,7 @@ function downloadParticipantCsv() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'participants.csv'
+  link.download = tournamentExportFilename('participants.csv')
   link.click()
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', {
@@ -3488,10 +3708,8 @@ function downloadParticipantCsv() {
   })
 }
 
-function downloadCsv() {
-  if (activeResults.value.length === 0) return
-  emitReportMetric('cta_click', { cta: 'download_compiled_csv', label: activeLabel.value })
-  const label = activeLabel.value
+function buildCompiledCsvExport(label: CompiledLabel, sourceResults: any[]): CsvExportFile | null {
+  if (sourceResults.length === 0) return null
   let headerLabels: string[] = []
   let headerKeys: string[] = []
 
@@ -3534,11 +3752,10 @@ function downloadCsv() {
     ]
     headerKeys = ['ranking', 'place', 'name', 'team_name', label]
   } else {
-    headerLabels = tableColumns.value
-    headerKeys = tableColumns.value
+    return null
   }
 
-  const rows = activeResults.value
+  const rows = sourceResults
     .slice()
     .sort((a, b) => (a.ranking ?? 0) - (b.ranking ?? 0))
     .map((row) => {
@@ -3557,24 +3774,62 @@ function downloadCsv() {
     })
 
   const csv = [headerLabels.join(','), ...rows.map((row) => row.join(','))].join('\n')
+  const suffix =
+    label === 'teams' && effectiveReportPhase.value === 'break'
+      ? 'break_team_results.csv'
+      : label === 'teams'
+        ? 'team_results.csv'
+        : label === 'speakers'
+          ? 'speaker_results.csv'
+          : label === 'adjudicators'
+            ? 'adjudicator_results.csv'
+            : label === 'poi'
+              ? 'poi_results.csv'
+              : 'best_speaker_results.csv'
+
+  return { filename: tournamentExportFilename(suffix), csv, rowCount: rows.length }
+}
+
+function downloadCsv() {
+  const exportFile = buildCompiledCsvExport(activeLabel.value, activeResults.value)
+  if (!exportFile) return
+  emitReportMetric('cta_click', { cta: 'download_compiled_csv', label: activeLabel.value })
   const bom = new Uint8Array([0xef, 0xbb, 0xbf])
-  const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob([bom, exportFile.csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  if (label === 'teams' && effectiveReportPhase.value === 'break') link.download = 'break_team_results.csv'
-  else if (label === 'teams') link.download = 'team_results.csv'
-  else if (label === 'speakers') link.download = 'speaker_results.csv'
-  else if (label === 'adjudicators') link.download = 'adjudicator_results.csv'
-  else if (label === 'poi') link.download = 'poi_results.csv'
-  else if (label === 'best') link.download = 'best_speaker_results.csv'
-  else link.download = `compiled-${activeLabel.value}.csv`
+  link.download = exportFile.filename
   link.click()
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', {
     exportType: 'compiled_csv',
-    label,
-    rowCount: rows.length,
+    label: activeLabel.value,
+    rowCount: exportFile.rowCount,
+  })
+}
+
+function downloadBulkResultsZip() {
+  const files = bulkExportFiles.value
+  if (files.length === 0) return
+
+  emitReportMetric('cta_click', { cta: 'download_bulk_results_zip', fileCount: files.length })
+  const entries: ZipEntry[] = files.map((file) => ({
+    name: file.filename,
+    data: `\ufeff${file.csv}`,
+  }))
+  const archive = createZip(entries)
+  const blob = new Blob([archive], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = tournamentExportFilename('results.zip')
+  link.click()
+  URL.revokeObjectURL(url)
+  emitReportMetric('export_complete', {
+    exportType: 'bulk_results_zip',
+    fileCount: files.length,
+    rowCount: files.reduce((total, file) => total + file.rowCount, 0),
   })
 }
 
@@ -4849,9 +5104,132 @@ function buildSubPrizeResults(kind: 'poi' | 'best') {
   gap: var(--space-1);
 }
 
+.section-download-heading {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .section-download-button {
   width: 100%;
   justify-content: center;
+}
+
+.individual-download-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.individual-download-card {
+  display: grid;
+  align-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.individual-download-card--all-rounds {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.individual-download-card-content {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.individual-download-card-content p {
+  margin: 0;
+}
+
+.individual-export-meta {
+  width: fit-content;
+  padding: 2px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.individual-export-select {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.individual-export-select select {
+  width: 100%;
+  min-height: 40px;
+}
+
+.individual-download-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.individual-download-card--all-rounds .individual-download-button {
+  width: auto;
+  min-width: 260px;
+}
+
+.bulk-download-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  background: #f8fbff;
+}
+
+.bulk-download-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bulk-download-copy p {
+  margin: 0;
+}
+
+.bulk-download-button {
+  flex: 0 0 auto;
+  min-width: 240px;
+}
+
+@media (max-width: 720px) {
+  .individual-download-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .individual-download-card--all-rounds {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .individual-download-card--all-rounds .individual-download-button {
+    width: 100%;
+  }
+
+  .bulk-download-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bulk-download-button {
+    width: 100%;
+  }
 }
 
 .diff-legend {
