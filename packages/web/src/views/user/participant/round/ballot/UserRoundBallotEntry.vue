@@ -246,47 +246,49 @@
 
               <div v-if="bestEnabled" class="row toggle-field">
                 <span class="toggle-title">{{ $t('ベストディベーター') }}</span>
-                <span class="row toggle-control">
+                <div class="award-choice" role="group" :aria-label="$t('ベストディベーター')">
                   <button
                     type="button"
-                    class="toggle-label toggle-label-button"
-                    :class="{ 'toggle-label-active': !activeRoleBest }"
+                    class="award-choice-option"
+                    :class="{ 'award-choice-option-active': !activeRoleBest }"
+                    :aria-pressed="!activeRoleBest"
                     @click="activeRoleBest = false"
                   >
-                    No
+                    {{ $t('いいえ') }}
                   </button>
-                  <ToggleSwitch v-model="activeRoleBest" :aria-label="$t('ベストディベーター')" />
                   <button
                     type="button"
-                    class="toggle-label toggle-label-button"
-                    :class="{ 'toggle-label-active': activeRoleBest }"
+                    class="award-choice-option"
+                    :class="{ 'award-choice-option-active': activeRoleBest }"
+                    :aria-pressed="activeRoleBest"
                     @click="activeRoleBest = true"
                   >
-                    Yes
+                    {{ $t('はい') }}
                   </button>
-                </span>
+                </div>
               </div>
               <div v-if="poiEnabled" class="row toggle-field">
                 <span class="toggle-title">{{ $t('POI') }}</span>
-                <span class="row toggle-control">
+                <div class="award-choice" role="group" :aria-label="$t('POI')">
                   <button
                     type="button"
-                    class="toggle-label toggle-label-button"
-                    :class="{ 'toggle-label-active': !activeRolePoi }"
+                    class="award-choice-option"
+                    :class="{ 'award-choice-option-active': !activeRolePoi }"
+                    :aria-pressed="!activeRolePoi"
                     @click="activeRolePoi = false"
                   >
-                    No
+                    {{ $t('いいえ') }}
                   </button>
-                  <ToggleSwitch v-model="activeRolePoi" :aria-label="$t('POI')" />
                   <button
                     type="button"
-                    class="toggle-label toggle-label-button"
-                    :class="{ 'toggle-label-active': activeRolePoi }"
+                    class="award-choice-option"
+                    :class="{ 'award-choice-option-active': activeRolePoi }"
+                    :aria-pressed="activeRolePoi"
                     @click="activeRolePoi = true"
                   >
-                    Yes
+                    {{ $t('はい') }}
                   </button>
-                </span>
+                </div>
               </div>
             </div>
           </div>
@@ -415,6 +417,14 @@
                       <span class="muted tiny">{{ row.roleDescription }}</span>
                       <span v-if="row.scoreBreakdown" class="muted tiny">{{ row.scoreBreakdown }}</span>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="confirm-speaker-edit"
+                      @click="editConfirmSpeaker(row)"
+                    >
+                      {{ $t('編集') }}
+                    </Button>
                   </div>
                 </div>
               </section>
@@ -443,6 +453,29 @@
     <div v-if="successOpen" class="modal-backdrop" role="presentation">
       <div class="modal card stack success-modal" role="dialog" aria-modal="true">
         <h4>{{ $t('送信完了') }}</h4>
+        <p class="muted">{{ $t('送信しました。') }}</p>
+        <div class="success-vote-card stack" aria-live="polite">
+          <span class="muted small">{{ $t('あなたの投票') }}</span>
+          <div class="confirm-winner-inline">
+            <strong>{{ winnerName }}</strong>
+            <span v-if="winnerSideClass" class="side-chip" :class="winnerSideClass">{{
+              winnerSideLabel
+            }}</span>
+          </div>
+          <div v-if="selectedAwardSummaryRows.length > 0" class="stack success-award-summary">
+            <span class="muted small">{{ $t('選択した賞') }}</span>
+            <div v-for="row in selectedAwardSummaryRows" :key="row.key" class="success-award-row">
+              <span class="row success-award-speaker">
+                <span class="side-chip" :class="row.sideClass">{{ row.sideLabel }}</span>
+                <strong>{{ row.speakerName }}</strong>
+              </span>
+              <span v-if="row.best" class="confirm-award-chip confirm-award-chip--best">{{
+                $t('ベストディベーター')
+              }}</span>
+              <span v-if="row.poi" class="confirm-award-chip confirm-award-chip--poi">{{ $t('POI') }}</span>
+            </div>
+          </div>
+        </div>
         <div class="row success-actions">
           <Button variant="ghost" size="sm" class="optional-back-action" @click="goToDraw">{{
             $t('対戦表に戻る')
@@ -470,7 +503,6 @@ import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
 import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
-import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import {
   resolveRoundAwardSelectionValidationRules,
   validateAwardSelectionCounts,
@@ -547,6 +579,7 @@ const successOpen = ref(false)
 const confirmCountdown = ref(0)
 const activeStepIndex = ref(0)
 const activeRoleCursor = ref(0)
+const preserveRoleCursorOnScoreStep = ref(false)
 const prefillAppliedMatchKey = ref('')
 const LOCAL_BALLOT_PREFILL_STORAGE_PREFIX = 'utab:ballot-prefill'
 let countdownTimer: number | null = null
@@ -636,7 +669,13 @@ const totalScoreB = computed(() =>
   effectiveScoresB.value.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 )
 const currentTotalSummaryText = computed(
-  () => `現在の合計: ${govLabel.value} ${totalScoreA.value} / ${oppLabel.value} ${totalScoreB.value}`
+  () =>
+    t('現在の合計: {gov} {govScore} / {opp} {oppScore}', {
+      gov: govLabel.value,
+      govScore: totalScoreA.value,
+      opp: oppLabel.value,
+      oppScore: totalScoreB.value,
+    })
 )
 const winnerSelectionMade = computed(
   () => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value
@@ -1178,7 +1217,7 @@ const currentRoleDisplayIndex = computed(() =>
 const roleSequenceProgressText = computed(() => {
   const total = Math.max(1, roleInputSequence.value.length)
   const current = Math.min(currentRoleDisplayIndex.value, total)
-  return `ロール ${current} / ${total}`
+  return t('ロール {current} / {total}', { current, total })
 })
 const isFirstRoleCursor = computed(() => activeRoleCursor.value <= 0)
 const isLastRoleCursor = computed(
@@ -1193,6 +1232,8 @@ const activeRoleSpeakerEntries = computed(() => {
 
 type ConfirmSpeakerRow = {
   key: string
+  side: RoleSide
+  index: number
   roleToken: string
   roleDescription: string
   speakerName: string
@@ -1210,6 +1251,15 @@ type ConfirmSpeakerTeam = {
   panelClass: 'confirm-speaker-team--gov' | 'confirm-speaker-team--opp'
   totalLabel: string
   rows: ConfirmSpeakerRow[]
+}
+
+type SelectedAwardSummaryRow = {
+  key: string
+  speakerName: string
+  sideLabel: string
+  sideClass: 'gov-chip' | 'opp-chip'
+  best: boolean
+  poi: boolean
 }
 
 function formatScoreValue(value: number, index: number) {
@@ -1244,6 +1294,8 @@ function buildConfirmSpeakerRows(
 
     return {
       key: `${side}-${role.order}-${index}`,
+      side,
+      index,
       roleToken: role.abbr ?? `#${role.order}`,
       roleDescription: formatRoleDescription(role),
       speakerName: selectedSpeakerLabel(entries, speakerIds, role, index),
@@ -1315,6 +1367,21 @@ const confirmSpeakerTeams = computed(() => [
     poiB.value
   ),
 ])
+
+const selectedAwardSummaryRows = computed<SelectedAwardSummaryRow[]>(() =>
+  confirmSpeakerTeams.value.flatMap((team) =>
+    team.rows
+      .filter((row) => row.best || row.poi)
+      .map((row) => ({
+        key: `award-${row.key}`,
+        speakerName: row.speakerName,
+        sideLabel: team.sideLabel,
+        sideClass: team.sideClass,
+        best: row.best,
+        poi: row.poi,
+      }))
+  )
+)
 
 const awardSelectionError = computed(() => {
   const violation = validateAwardSelectionCounts(
@@ -1805,6 +1872,19 @@ function closeConfirm() {
   submissions.clearError()
 }
 
+function editConfirmSpeaker(row: ConfirmSpeakerRow) {
+  const roleCursor = roleInputSequence.value.findIndex(
+    (entry) => entry.side === row.side && entry.index === row.index
+  )
+  const scoreStepIndex = ballotSteps.value.findIndex((step) => step.id === 'score')
+  if (roleCursor === -1 || scoreStepIndex === -1) return
+
+  closeConfirm()
+  preserveRoleCursorOnScoreStep.value = true
+  activeRoleCursor.value = roleCursor
+  activeStepIndex.value = scoreStepIndex
+}
+
 function onGlobalKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (confirmOpen.value) {
@@ -1891,6 +1971,10 @@ watch(currentStepId, (nextStep, previousStep) => {
     return
   }
   if (nextStep === 'score') {
+    if (preserveRoleCursorOnScoreStep.value) {
+      preserveRoleCursorOnScoreStep.value = false
+      return
+    }
     if (previousStep === 'winner') {
       activeRoleCursor.value = normalizeRoleCursor(roleInputSequence.value.length - 1)
       return
@@ -2307,31 +2391,42 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.toggle-control {
-  align-items: center;
-  gap: 10px;
-}
-
 .toggle-title {
   color: color-mix(in srgb, var(--color-text) 88%, white);
   font-size: clamp(0.92rem, 3vw, 1.02rem);
   font-weight: 600;
 }
 
-.toggle-label {
-  color: color-mix(in srgb, var(--color-text) 60%, white);
-  font-size: clamp(0.9rem, 2.9vw, 0.98rem);
-  font-weight: 600;
+.award-choice {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(58px, 1fr));
+  min-height: 44px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  touch-action: manipulation;
 }
 
-.toggle-label-button {
+.award-choice-option {
+  min-width: 58px;
+  min-height: 44px;
   border: 0;
+  border-left: 1px solid var(--color-border);
   background: transparent;
-  padding: 0;
+  color: color-mix(in srgb, var(--color-text) 68%, white);
+  font-size: 0.95rem;
+  font-weight: 700;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
-.toggle-label-active {
+.award-choice-option:first-child {
+  border-left: 0;
+}
+
+.award-choice-option-active {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
   color: var(--color-primary);
 }
 
@@ -2404,10 +2499,37 @@ onUnmounted(() => {
   width: min(420px, 100%);
 }
 
+.success-vote-card {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  padding: var(--space-3);
+  gap: 6px;
+}
+
 .success-actions {
   justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.success-award-summary {
+  gap: 8px;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 86%, white);
+}
+
+.success-award-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.success-award-speaker {
+  align-items: center;
+  gap: 6px;
+  margin-right: 2px;
 }
 
 .confirm-grid {
@@ -2489,6 +2611,8 @@ onUnmounted(() => {
 
 .confirm-speaker-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 6px;
   padding: 10px 0;
   border-top: 1px solid color-mix(in srgb, var(--color-border) 84%, white);
@@ -2506,6 +2630,10 @@ onUnmounted(() => {
 .confirm-speaker-main {
   min-width: 0;
   gap: 4px;
+}
+
+.confirm-speaker-edit {
+  align-self: center;
 }
 
 .confirm-speaker-row-head {
@@ -2613,6 +2741,14 @@ onUnmounted(() => {
 
   .confirm-speaker-row-head {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .confirm-speaker-row {
+    align-items: start;
+  }
+
+  .confirm-speaker-edit {
+    align-self: start;
   }
 
   .confirm-speaker-score {

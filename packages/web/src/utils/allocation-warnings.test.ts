@@ -3,6 +3,7 @@ import {
   buildEntityWarningIndex,
   buildFocusedEntitySet,
   buildRowWarningStates,
+  warningDisplayTone,
   warningEntityKey,
   type DrawAllocationRowLike,
 } from './allocation-warnings'
@@ -115,6 +116,20 @@ describe('allocation warnings', () => {
     expect(warnings[0].counts.warn).toBeGreaterThan(0)
     expect(warnings[0].counts.info).toBeGreaterThan(0)
     expect(warnings[1].counts).toEqual({ critical: 1, warn: 0, info: 0 })
+  })
+
+  it('uses visual tones that make conflict priorities distinguishable', () => {
+    const find = (code: string, category?: string) =>
+      warnings[0].warnings.find(
+        (warning) =>
+          warning.code === code &&
+          (category === undefined || warning.params.groupCategory === category)
+      )!
+
+    expect(warningDisplayTone(find('team_same_institution', 'institution'))).toBe('critical')
+    expect(warningDisplayTone(find('team_same_institution', 'region'))).toBe('info')
+    expect(warningDisplayTone(find('team_past_match'))).toBe('history')
+    expect(warningDisplayTone(find('adjudicator_already_judged'))).toBe('caution')
   })
 
   it('does not count trainees for adjudicator even-count warnings', () => {

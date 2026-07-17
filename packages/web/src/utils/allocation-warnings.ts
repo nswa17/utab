@@ -1,4 +1,5 @@
 export type WarningSeverity = 'critical' | 'warn' | 'info'
+export type WarningDisplayTone = 'critical' | 'history' | 'caution' | 'info'
 export type WarningCategory = 'team' | 'adjudicator' | 'venue'
 export type ConflictGroupCategory = 'institution' | 'region' | 'league'
 
@@ -146,6 +147,51 @@ function createWarning(
   params: Record<string, string>
 ): AllocationWarning {
   return { code, severity, category, targets, params }
+}
+
+/**
+ * The severity keeps the allocation engine's operational meaning, while the
+ * display tone makes conflict priority immediately visible to operators.
+ */
+export function warningDisplayTone(warning: AllocationWarning): WarningDisplayTone {
+  const groupCategory = normalizeConflictGroupCategory(warning.params.groupCategory)
+
+  if (
+    warning.code === 'team_unavailable' ||
+    warning.code === 'venue_unavailable' ||
+    warning.code === 'adjudicator_unavailable' ||
+    warning.code === 'adjudicator_none' ||
+    warning.code === 'adjudicator_personal_conflict'
+  ) {
+    return 'critical'
+  }
+
+  if (
+    warning.code === 'team_same_institution' ||
+    warning.code === 'adjudicator_institution_conflict' ||
+    warning.code === 'adjudicator_same_institution'
+  ) {
+    if (groupCategory === 'institution') return 'critical'
+    if (groupCategory === 'region') return 'info'
+    return 'info'
+  }
+
+  if (
+    warning.code === 'team_past_match' ||
+    warning.code === 'team_past_match_same_institution'
+  ) {
+    return 'history'
+  }
+
+  if (
+    warning.code === 'adjudicator_already_judged' ||
+    warning.code === 'team_side_imbalance' ||
+    warning.code === 'adjudicator_even_count'
+  ) {
+    return 'caution'
+  }
+
+  return 'info'
 }
 
 export function warningSeverityCounts(warnings: AllocationWarning[]): WarningSeverityCounts {

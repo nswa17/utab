@@ -1039,13 +1039,13 @@
           :key="`${warning.code}-${warningIndex}`"
           tabindex="0"
           class="warning-item"
-          :class="`warning-item--${warning.severity}`"
+          :class="`warning-item--${warningDisplayTone(warning)}`"
           @mouseenter="setFocusedWarning(warning)"
           @mouseleave="clearFocusedWarning"
           @focusin="setFocusedWarning(warning)"
           @focusout="clearFocusedWarning"
         >
-          <span class="warning-severity" :class="`warning-severity--${warning.severity}`">
+          <span class="warning-severity" :class="`warning-severity--${warningDisplayTone(warning)}`">
             {{ warningSeverityIcon(warning.severity) }}
             {{ warningSeverityLabel(warning.severity) }}
           </span>
@@ -1831,6 +1831,7 @@ import {
   buildEntityWarningIndex,
   buildFocusedEntitySet,
   buildRowWarningStates,
+  warningDisplayTone,
   warningEntityKey,
   type AllocationWarning,
   type ConflictGroupCategory,
@@ -1840,6 +1841,14 @@ import {
   type WarningSeverity,
   type WarningSeverityCounts,
 } from '@/utils/allocation-warnings'
+import {
+  adjudicatorJudgedTeamIdsFromAllocation,
+  coAdjudicatorIdsFromAllocation,
+  pastOpponentIdsFromAllocation,
+  pastSidesFromAllocation,
+  priorAllocationRows,
+  teamAdjudicatorIdsFromAllocation,
+} from '@/utils/allocation-history'
 import {
   allocationDragHighlightToneForIds,
   buildAllocationDragHighlightIndex,
@@ -2190,7 +2199,13 @@ async function syncAutoBreakPolicyToRound() {
 const autoOptions = ref({
   teamAlgorithm: 'standard',
   teamMethod: 'original',
-  teamFilters: ['by_strength', 'by_side', 'by_past_opponent', 'by_conflict_group'],
+  teamFilters: [
+    'by_strength',
+    'by_side',
+    'by_past_opponent',
+    'by_conflict_group',
+    'spread_sides_by_school',
+  ],
   teamPowerpairOddBracket: 'pullup_top',
   teamPowerpairPairingMethod: 'fold',
   teamPowerpairAvoidConflicts: 'one_up_one_down',
@@ -3688,6 +3703,7 @@ const TEAM_STANDARD_FILTER_DEFAULTS = [
   'by_side',
   'by_past_opponent',
   'by_conflict_group',
+  TEAM_STANDARD_SIDE_SPREAD_FILTER,
 ] as const
 const TEAM_STRICT_PAIRING_VALUES = ['random', 'fold', 'slide', 'sort', 'adjusted'] as const
 const TEAM_STRICT_PULLUP_VALUES = ['fromtop', 'frombottom', 'random'] as const
@@ -4190,15 +4206,40 @@ const compiledAdjMap = computed(() => {
   return map
 })
 
+const historicalAllocationRows = computed(() =>
+  priorAllocationRows(draws.draws, tournamentId.value, Number(round.value))
+)
+
+function historicalTeamPastOpponentIds(teamId: string) {
+  return pastOpponentIdsFromAllocation(historicalAllocationRows.value, teamId)
+}
+
+function historicalTeamPastSideHistory(teamId: string) {
+  return pastSidesFromAllocation(historicalAllocationRows.value, teamId)
+}
+
+function historicalTeamAdjudicatorIds(teamId: string) {
+  return teamAdjudicatorIdsFromAllocation(historicalAllocationRows.value, teamId)
+}
+
+function historicalAdjudicatorJudgedTeamIds(adjudicatorId: string) {
+  return adjudicatorJudgedTeamIdsFromAllocation(historicalAllocationRows.value, adjudicatorId)
+}
+
+function adjudicatorCoJudgeIds(adjudicatorId: string) {
+  return coAdjudicatorIdsFromAllocation(historicalAllocationRows.value, adjudicatorId)
+}
+
 function teamPastOpponentIds(teamId: string) {
   const result = compiledTeamMap.value.get(String(teamId))
-  return Array.isArray(result?.past_opponents)
-    ? result.past_opponents.map((id: any) => String(id)).filter(Boolean)
-    : []
+  const compiledOpponentIds = Array.isArray(result?.past_opponents) ? result.past_opponents : []
+  return uniqueEntityIds([...compiledOpponentIds, ...historicalTeamPastOpponentIds(teamId)])
 }
 
 function teamPastSideHistory(teamId: string) {
   const result = compiledTeamMap.value.get(String(teamId))
+  const historicalSides = historicalTeamPastSideHistory(teamId)
+  if (historicalSides.length > 0) return historicalSides
   return Array.isArray(result?.past_sides)
     ? result.past_sides.map((side: any) => String(side)).filter(Boolean)
     : []
@@ -4206,9 +4247,8 @@ function teamPastSideHistory(teamId: string) {
 
 function adjudicatorJudgedTeamIds(adjudicatorId: string) {
   const result = compiledAdjMap.value.get(String(adjudicatorId))
-  return Array.isArray(result?.judged_teams)
-    ? result.judged_teams.map((id: any) => String(id)).filter(Boolean)
-    : []
+  const compiledJudgedTeamIds = Array.isArray(result?.judged_teams) ? result.judged_teams : []
+  return uniqueEntityIds([...compiledJudgedTeamIds, ...historicalAdjudicatorJudgedTeamIds(adjudicatorId)])
 }
 
 function adjudicatorListLabel(ids: string[]) {
@@ -4699,15 +4739,17 @@ const detailRows = computed<DetailRow[]>(() => {
     const institutionsList = institutionIds.map((inst) => institutionNameById(inst))
     const pastOpponentIds = uniqueEntityIds(teamPastOpponentIds(normalizedTeamId))
     const pastAdjudicatorIds = uniqueEntityIds(
-      Array.from(compiledAdjMap.value.values())
-        .filter(
-          (adjResult) =>
-            Array.isArray(adjResult?.judged_teams) &&
-            adjResult.judged_teams.some(
-              (teamId: any) => String(teamId ?? '').trim() === normalizedTeamId
-            )
-        )
-        .map((adjResult: any) => String(adjResult?.id ?? ''))
+      historicalTeamAdjudicatorIds(normalizedTeamId).concat(
+        Array.from(compiledAdjMap.value.values())
+          .filter(
+            (adjResult) =>
+              Array.isArray(adjResult?.judged_teams) &&
+              adjResult.judged_teams.some(
+                (teamId: any) => String(teamId ?? '').trim() === normalizedTeamId
+              )
+          )
+          .map((adjResult: any) => String(adjResult?.id ?? ''))
+      )
     )
     const speakersList = teamSpeakerNames(team)
     return [
@@ -4730,7 +4772,9 @@ const detailRows = computed<DetailRow[]>(() => {
       },
       {
         label: t('サイド'),
-        value: result?.past_sides?.length ? result.past_sides.join(', ') : '—',
+        value: teamPastSideHistory(normalizedTeamId).length
+          ? teamPastSideHistory(normalizedTeamId).join(', ')
+          : '—',
       },
       {
         label: t('過去に担当済み'),
@@ -4751,9 +4795,8 @@ const detailRows = computed<DetailRow[]>(() => {
     const institutionsList = institutionIds.map((inst) => institutionNameById(inst))
     const conflictTeamIds = uniqueEntityIds(adj ? adjudicatorConflicts(adj) : [])
     const conflictsList = conflictTeamIds.map((teamId) => teamNameById(teamId))
-    const judgedTeamIds = uniqueEntityIds(
-      Array.isArray(result?.judged_teams) ? result.judged_teams : []
-    )
+    const judgedTeamIds = uniqueEntityIds(adjudicatorJudgedTeamIds(id))
+    const coJudgeIds = adjudicatorCoJudgeIds(id)
     return [
       { label: t('順位'), value: result?.ranking ?? '—' },
       { label: t('平均'), value: averageBadge || '—' },
@@ -4778,6 +4821,11 @@ const detailRows = computed<DetailRow[]>(() => {
           ? judgedTeamIds.map((teamId) => teamNameById(teamId)).join(', ')
           : '—',
         highlightEntityKeys: buildTeamEntityKeys(judgedTeamIds),
+      },
+      {
+        label: t('共同担当ジャッジ'),
+        value: coJudgeIds.length ? coJudgeIds.map((adjId) => adjudicatorNameById(adjId)).join(', ') : '—',
+        highlightEntityKeys: buildAdjudicatorEntityKeys(coJudgeIds),
       },
       { label: t('チェア担当回数'), value: result?.num_experienced_chair ?? '—' },
       { label: t('パネル担当回数'), value: result?.num_experienced_panel ?? '—' },
@@ -7258,6 +7306,16 @@ ol.list.compact {
   background: #fff7ed;
 }
 
+.warning-severity--history {
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.warning-severity--caution {
+  color: #854d0e;
+  background: #fefce8;
+}
+
 .warning-severity--info {
   color: #1d4ed8;
   background: #eff6ff;
@@ -7269,6 +7327,14 @@ ol.list.compact {
 
 .warning-item--warn {
   color: #7c2d12;
+}
+
+.warning-item--history {
+  color: #7c2d12;
+}
+
+.warning-item--caution {
+  color: #713f12;
 }
 
 .warning-item--info {
