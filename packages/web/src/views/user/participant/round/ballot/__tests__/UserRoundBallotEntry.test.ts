@@ -52,6 +52,12 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("{{ $t('確認へ') }}")
     expect(source).toContain('function goToNextStep() {')
     expect(source).toContain('function goToPreviousStep() {')
+    expect(source).toContain('function goToStep(index: number) {')
+    expect(source).toContain('function canGoToStep(index: number) {')
+    expect(source).toContain(':disabled="!canGoToStep(index)"')
+    expect(source).toContain('return index <= activeStepIndex.value')
+    expect(source).toContain('@click="goToStep(index)"')
+    expect(source).toContain(":aria-current=\"index === activeStepIndex ? 'step' : undefined\"")
     expect(source).toContain('function goToNextAction() {')
     expect(source).toContain('function goToPreviousAction() {')
   })
@@ -94,6 +100,10 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain('@click="editConfirmSpeaker(row)"')
     expect(source).toContain('function editConfirmSpeaker(row: ConfirmSpeakerRow)')
     expect(source).toContain('preserveRoleCursorOnScoreStep')
+    expect(source).toContain('const returnToConfirmAfterEdit = ref(false)')
+    expect(source).toContain('v-if="returnToConfirmAfterEdit"')
+    expect(source).toContain('@click="returnToConfirmation"')
+    expect(source).toContain('function returnToConfirmation()')
     expect(source).toContain('const selectedAwardSummaryRows = computed<SelectedAwardSummaryRow[]>(() =>')
   })
 
@@ -120,6 +130,7 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(messages.en['入力ステップ']).toBe('Entry steps')
     expect(messages.en['評価タイプ']).toBe('Evaluation type')
     expect(messages.en['確認へ']).toBe('Review')
+    expect(messages.en['確認画面に戻る']).toBe('Back to review')
     expect(messages.en['次へ']).toBe('Next')
     expect(messages.en['現在の合計: {gov} {govScore} / {opp} {oppScore}']).toBe(
       'Current total: {gov} {govScore} / {opp} {oppScore}'

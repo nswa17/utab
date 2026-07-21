@@ -197,6 +197,25 @@
                 <h4>{{ isEmbeddedRoute ? $t('配置') : $t('対戦表作成') }}</h4>
                 <span v-if="isBreakRound" class="break-round-badge">{{ $t('ブレイク') }}</span>
               </div>
+              <div class="warning-color-legend" :aria-label="$t('警告色の凡例')">
+                <strong class="warning-color-legend-title">{{ $t('警告色の凡例') }}</strong>
+                <span class="warning-color-legend-item">
+                  <span class="warning-color-legend-dot warning-color-legend-dot--critical" aria-hidden="true" />
+                  {{ $t('赤: 同一機関・利用不可などの重大な競合') }}
+                </span>
+                <span class="warning-color-legend-item">
+                  <span class="warning-color-legend-dot warning-color-legend-dot--history" aria-hidden="true" />
+                  {{ $t('橙: 過去の対戦') }}
+                </span>
+                <span class="warning-color-legend-item">
+                  <span class="warning-color-legend-dot warning-color-legend-dot--caution" aria-hidden="true" />
+                  {{ $t('黄: 過去に担当済み・サイド偏りなど') }}
+                </span>
+                <span class="warning-color-legend-item">
+                  <span class="warning-color-legend-dot warning-color-legend-dot--info" aria-hidden="true" />
+                  {{ $t('青: 同地域・同リーグなどの参考情報') }}
+                </span>
+              </div>
             </div>
           <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
           <AllocationTableShell v-else>
@@ -510,16 +529,16 @@
                       >
                         <span class="warning-summary" tabindex="0">
                           <span
-                            v-for="item in warningSummaryItems(rowWarningState(index).counts)"
-                            :key="item.severity"
+                            v-for="item in warningSummaryItems(rowWarningState(index).warnings)"
+                            :key="item.tone"
                             :class="[
                               'warning-summary-item',
-                              `warning-summary-item--${item.severity}`,
+                              `warning-summary-item--${item.tone}`,
                             ]"
                             :title="`${item.label} ${item.count}`"
                           >
                             <span class="warning-summary-icon">{{
-                              warningSeverityIcon(item.severity)
+                              warningDisplayToneIcon(item.tone)
                             }}</span>
                             <span class="warning-summary-count">{{ item.count }}</span>
                           </span>
@@ -1046,8 +1065,8 @@
           @focusout="clearFocusedWarning"
         >
           <span class="warning-severity" :class="`warning-severity--${warningDisplayTone(warning)}`">
-            {{ warningSeverityIcon(warning.severity) }}
-            {{ warningSeverityLabel(warning.severity) }}
+            {{ warningDisplayToneIcon(warningDisplayTone(warning)) }}
+            {{ warningDisplayToneShortLabel(warningDisplayTone(warning)) }}
           </span>
           <span class="warning-kind">{{ warningLabel(warning.category) }}</span>
           <span>{{ warningMessage(warning) }}</span>
@@ -1838,7 +1857,7 @@ import {
   type RowWarningState,
   type WarningCategory,
   type WarningCode,
-  type WarningSeverity,
+  type WarningDisplayTone,
   type WarningSeverityCounts,
 } from '@/utils/allocation-warnings'
 import {
@@ -4922,18 +4941,6 @@ function warningLabel(category: WarningCategory) {
   return t('チーム')
 }
 
-function warningSeverityLabel(severity: WarningSeverity) {
-  if (severity === 'critical') return t('重大')
-  if (severity === 'warn') return t('注意')
-  return t('情報')
-}
-
-function warningSeverityIcon(severity: WarningSeverity) {
-  if (severity === 'critical') return '!'
-  if (severity === 'warn') return '△'
-  return 'i'
-}
-
 function warningConflictGroupLabel(value: unknown) {
   const category = normalizeInstitutionCategory(value)
   if (category === 'region') return t('地域')
@@ -5036,29 +5043,49 @@ function warningMessage(warning: AllocationWarning) {
 }
 
 type WarningSummaryItem = {
-  severity: WarningSeverity
+  tone: WarningDisplayTone
   label: string
   count: number
 }
 
-function warningSummaryItems(counts: WarningSeverityCounts): WarningSummaryItem[] {
-  const items: WarningSummaryItem[] = [
-    {
-      severity: 'critical',
-      label: warningSeverityLabel('critical'),
-      count: counts.critical,
-    },
-    {
-      severity: 'warn',
-      label: warningSeverityLabel('warn'),
-      count: counts.warn,
-    },
-    {
-      severity: 'info',
-      label: warningSeverityLabel('info'),
-      count: counts.info,
-    },
-  ]
+const warningSummaryToneOrder: WarningDisplayTone[] = ['critical', 'history', 'caution', 'info']
+
+function warningDisplayToneLabel(tone: WarningDisplayTone) {
+  if (tone === 'critical') return t('赤: 同一機関・利用不可などの重大な競合')
+  if (tone === 'history') return t('橙: 過去の対戦')
+  if (tone === 'caution') return t('黄: 過去に担当済み・サイド偏りなど')
+  return t('青: 同地域・同リーグなどの参考情報')
+}
+
+function warningDisplayToneShortLabel(tone: WarningDisplayTone) {
+  if (tone === 'critical') return t('重大')
+  if (tone === 'history') return t('過去の対戦')
+  if (tone === 'caution') return t('注意')
+  return t('情報')
+}
+
+function warningDisplayToneIcon(tone: WarningDisplayTone) {
+  if (tone === 'critical') return '!'
+  if (tone === 'history') return 'vs'
+  if (tone === 'caution') return '△'
+  return 'i'
+}
+
+function warningSummaryItems(warnings: AllocationWarning[]): WarningSummaryItem[] {
+  const counts: Record<WarningDisplayTone, number> = {
+    critical: 0,
+    history: 0,
+    caution: 0,
+    info: 0,
+  }
+  warnings.forEach((warning) => {
+    counts[warningDisplayTone(warning)] += 1
+  })
+  const items = warningSummaryToneOrder.map((tone) => ({
+    tone,
+    label: warningDisplayToneLabel(tone),
+    count: counts[tone],
+  }))
   return items.filter((item) => item.count > 0)
 }
 
@@ -6910,10 +6937,16 @@ watch(
   border: 1px solid #fca5a5;
 }
 
-.warning-summary-item--warn {
+.warning-summary-item--history {
   background: #fff7ed;
   color: #9a3412;
   border: 1px solid #fdba74;
+}
+
+.warning-summary-item--caution {
+  background: #fefce8;
+  color: #854d0e;
+  border: 1px solid #fde68a;
 }
 
 .warning-summary-item--info {
@@ -6939,6 +6972,53 @@ watch(
 .warning-popover--floating {
   position: fixed;
   z-index: 60;
+}
+
+.warning-color-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px var(--space-3);
+  margin-left: auto;
+  max-width: min(100%, 980px);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.warning-color-legend-title {
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.warning-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.warning-color-legend-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 3px;
+  border-radius: 999px;
+}
+
+.warning-color-legend-dot--critical {
+  background: #dc2626;
+}
+
+.warning-color-legend-dot--history {
+  background: #ea580c;
+}
+
+.warning-color-legend-dot--caution {
+  background: #ca8a04;
+}
+
+.warning-color-legend-dot--info {
+  background: #2563eb;
 }
 
 .pill-list {
@@ -7339,6 +7419,14 @@ ol.list.compact {
 
 .warning-item--info {
   color: #1e3a8a;
+}
+
+@media (max-width: 880px) {
+  .warning-color-legend {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
 }
 
 .waiting-area {

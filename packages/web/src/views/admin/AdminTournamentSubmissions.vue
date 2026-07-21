@@ -158,7 +158,7 @@
                   <input
                     v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'total'"
                     type="number"
-                    step="0.1"
+                    step="1"
                     v-model="row.entry.score"
                   />
                   <span v-else>{{ row.score }}</span>
@@ -167,7 +167,7 @@
                   <input
                     v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                     type="number"
-                    step="0.1"
+                    step="1"
                     v-model="row.entry.matter"
                   />
                   <span v-else>{{ row.matter }}</span>
@@ -176,7 +176,7 @@
                   <input
                     v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                     type="number"
-                    step="0.1"
+                    step="1"
                     v-model="row.entry.manner"
                   />
                   <span v-else>{{ row.manner }}</span>
@@ -223,7 +223,7 @@
                 :id="id"
                 :aria-describedby="describedBy"
                 type="number"
-                step="0.1"
+                step="1"
                 min="0"
                 v-model="editingFeedbackScore"
               />
@@ -233,7 +233,7 @@
                 :id="id"
                 :aria-describedby="describedBy"
                 type="number"
-                step="0.1"
+                step="1"
                 v-model="editingFeedbackMatter"
               />
             </Field>
@@ -242,7 +242,7 @@
                 :id="id"
                 :aria-describedby="describedBy"
                 type="number"
-                step="0.1"
+                step="1"
                 v-model="editingFeedbackManner"
               />
             </Field>
@@ -529,7 +529,7 @@
                                 <input
                                   v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'total'"
                                   type="number"
-                                  step="0.1"
+                                  step="1"
                                   v-model="row.entry.score"
                                 />
                                 <span v-else>{{ row.score }}</span>
@@ -538,7 +538,7 @@
                                 <input
                                   v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                                   type="number"
-                                  step="0.1"
+                                  step="1"
                                   v-model="row.entry.matter"
                                 />
                                 <span v-else>{{ row.matter }}</span>
@@ -547,7 +547,7 @@
                                 <input
                                   v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                                   type="number"
-                                  step="0.1"
+                                  step="1"
                                   v-model="row.entry.manner"
                                 />
                                 <span v-else>{{ row.manner }}</span>
@@ -618,7 +618,7 @@
                               :id="id"
                               :aria-describedby="describedBy"
                               type="number"
-                              step="0.1"
+                              step="1"
                               min="0"
                               v-model="editingFeedbackScore"
                             />
@@ -628,7 +628,7 @@
                               :id="id"
                               :aria-describedby="describedBy"
                               type="number"
-                              step="0.1"
+                              step="1"
                               v-model="editingFeedbackMatter"
                             />
                           </Field>
@@ -637,7 +637,7 @@
                               :id="id"
                               :aria-describedby="describedBy"
                               type="number"
-                              step="0.1"
+                              step="1"
                               v-model="editingFeedbackManner"
                             />
                           </Field>
@@ -922,7 +922,7 @@
                             <input
                               v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'total'"
                               type="number"
-                              step="0.1"
+                              step="1"
                               v-model="row.entry.score"
                             />
                             <span v-else>{{ row.score }}</span>
@@ -931,7 +931,7 @@
                             <input
                               v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                               type="number"
-                              step="0.1"
+                              step="1"
                               v-model="row.entry.matter"
                             />
                             <span v-else>{{ row.matter }}</span>
@@ -940,7 +940,7 @@
                             <input
                               v-if="!editingBallotNoSpeakerScore && editingBallotScoreMode === 'matter_manner'"
                               type="number"
-                              step="0.1"
+                              step="1"
                               v-model="row.entry.manner"
                             />
                             <span v-else>{{ row.manner }}</span>
@@ -1011,7 +1011,7 @@
                           :id="id"
                           :aria-describedby="describedBy"
                           type="number"
-                          step="0.1"
+                          step="1"
                           min="0"
                           v-model="editingFeedbackScore"
                         />
@@ -1021,7 +1021,7 @@
                           :id="id"
                           :aria-describedby="describedBy"
                           type="number"
-                          step="0.1"
+                          step="1"
                           v-model="editingFeedbackMatter"
                         />
                       </Field>
@@ -1030,7 +1030,7 @@
                           :id="id"
                           :aria-describedby="describedBy"
                           type="number"
-                          step="0.1"
+                          step="1"
                           v-model="editingFeedbackManner"
                         />
                       </Field>

@@ -37,8 +37,16 @@
               'step-chip-complete': isStepCompleted(step.id),
             }"
           >
-            <span class="step-chip-index">{{ isStepCompleted(step.id) ? '✓' : index + 1 }}</span>
-            <span class="step-chip-label">{{ step.label }}</span>
+            <button
+              type="button"
+              class="step-chip-button"
+              :disabled="!canGoToStep(index)"
+              :aria-current="index === activeStepIndex ? 'step' : undefined"
+              @click="goToStep(index)"
+            >
+              <span class="step-chip-index">{{ isStepCompleted(step.id) ? '✓' : index + 1 }}</span>
+              <span class="step-chip-label">{{ step.label }}</span>
+            </button>
           </li>
         </ol>
       </div>
@@ -320,6 +328,14 @@
         </div>
 
         <div v-if="scoreInputReady" class="row ballot-step-actions">
+          <Button
+            v-if="returnToConfirmAfterEdit"
+            variant="secondary"
+            size="sm"
+            @click="returnToConfirmation"
+          >
+            {{ $t('確認画面に戻る') }}
+          </Button>
           <Button v-if="!isFirstStep" variant="ghost" size="sm" @click="goToPreviousAction">
             {{ previousActionLabel }}
           </Button>
@@ -580,6 +596,7 @@ const confirmCountdown = ref(0)
 const activeStepIndex = ref(0)
 const activeRoleCursor = ref(0)
 const preserveRoleCursorOnScoreStep = ref(false)
+const returnToConfirmAfterEdit = ref(false)
 const prefillAppliedMatchKey = ref('')
 const LOCAL_BALLOT_PREFILL_STORAGE_PREFIX = 'utab:ballot-prefill'
 let countdownTimer: number | null = null
@@ -1801,6 +1818,16 @@ function goToPreviousStep() {
   activeStepIndex.value = normalizeStepIndex(activeStepIndex.value - 1)
 }
 
+function goToStep(index: number) {
+  if (!canGoToStep(index)) return
+  activeStepIndex.value = normalizeStepIndex(index)
+}
+
+function canGoToStep(index: number) {
+  if (submissions.loading || !scoreInputReady.value) return false
+  return index <= activeStepIndex.value
+}
+
 const previousActionLabel = computed(() => {
   if (isScoreStep.value && !isFirstRoleCursor.value) return t('前のロール')
   return t('戻る')
@@ -1858,12 +1885,23 @@ function validateBeforeSubmit() {
   return true
 }
 
-function requestSubmit() {
+function openConfirmation() {
   saved.value = false
   submissions.clearError()
-  if (!validateBeforeSubmit()) return
+  if (!validateBeforeSubmit()) return false
   confirmOpen.value = true
   startCountdown(3)
+  return true
+}
+
+function requestSubmit() {
+  openConfirmation()
+}
+
+function returnToConfirmation() {
+  if (openConfirmation()) {
+    returnToConfirmAfterEdit.value = false
+  }
 }
 
 function closeConfirm() {
@@ -1880,6 +1918,7 @@ function editConfirmSpeaker(row: ConfirmSpeakerRow) {
   if (roleCursor === -1 || scoreStepIndex === -1) return
 
   closeConfirm()
+  returnToConfirmAfterEdit.value = true
   preserveRoleCursorOnScoreStep.value = true
   activeRoleCursor.value = roleCursor
   activeStepIndex.value = scoreStepIndex
@@ -1929,6 +1968,7 @@ async function submitConfirmed() {
       persistLocalPrefillPayload(currentPayload)
     }
     closeConfirm()
+    returnToConfirmAfterEdit.value = false
     saved.value = true
     successOpen.value = true
   }
@@ -1987,6 +2027,7 @@ watch([teamAId, teamBId], ([nextTeamA, nextTeamB], [prevTeamA, prevTeamB]) => {
   if (nextTeamA !== prevTeamA || nextTeamB !== prevTeamB) {
     activeStepIndex.value = 0
     activeRoleCursor.value = 0
+    returnToConfirmAfterEdit.value = false
   }
   if (winnerDrawSelected.value) return
   if (winnerId.value && winnerId.value !== teamAId.value && winnerId.value !== teamBId.value) {
@@ -2115,14 +2156,39 @@ onUnmounted(() => {
 }
 
 .step-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
-  padding: 6px 10px;
   color: color-mix(in srgb, var(--color-text) 78%, white);
+  overflow: hidden;
+}
+
+.step-chip-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 6px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.step-chip-button:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.step-chip-button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.step-chip-button:disabled {
+  cursor: not-allowed;
 }
 
 .step-chip-active {
