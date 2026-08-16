@@ -33,20 +33,20 @@ const listSchema = {
 
 const rawTeamBodySchema = z.object({
   tournamentId: z.string().min(1),
-  id: z.string().min(1),
-  from_id: z.string().min(1),
+  id: z.string().trim().min(1),
+  from_id: z.string().trim().min(1),
   r: z.number().int().min(1),
   weight: z.number().optional(),
   win: z.number(),
-  opponents: z.array(z.string().min(1)),
-  side: z.string(),
+  opponents: z.array(z.string().trim().min(1)),
+  side: z.string().trim().min(1),
   user_defined_data: z.any().optional(),
 })
 
 const rawSpeakerBodySchema = z.object({
   tournamentId: z.string().min(1),
-  id: z.string().min(1),
-  from_id: z.string().min(1),
+  id: z.string().trim().min(1),
+  from_id: z.string().trim().min(1),
   r: z.number().int().min(1),
   weight: z.number().optional(),
   scores: z.array(z.number()),
@@ -55,12 +55,12 @@ const rawSpeakerBodySchema = z.object({
 
 const rawAdjudicatorBodySchema = z.object({
   tournamentId: z.string().min(1),
-  id: z.string().min(1),
-  from_id: z.string().min(1),
+  id: z.string().trim().min(1),
+  from_id: z.string().trim().min(1),
   r: z.number().int().min(1),
   weight: z.number().optional(),
   score: z.number(),
-  judged_teams: z.array(z.string().min(1)),
+  judged_teams: z.array(z.string().trim().min(1)),
   comment: z.string().optional(),
   user_defined_data: z.any().optional(),
 })
@@ -104,16 +104,31 @@ const deleteManySchema = {
   }),
 }
 
-router.get(
+router.get('/teams', requireTournamentAdmin(), validateRequest(listSchema), listRawTeamResults)
+router.post(
   '/teams',
   requireTournamentAdmin(),
-  validateRequest(listSchema),
-  listRawTeamResults
+  validateRequest(createTeamSchema),
+  createRawTeamResult
 )
-router.post('/teams', requireTournamentAdmin(), validateRequest(createTeamSchema), createRawTeamResult)
-router.patch('/teams/:id', requireTournamentAdmin(), validateRequest(updateTeamSchema), updateRawTeamResult)
-router.delete('/teams', requireTournamentAdmin(), validateRequest(deleteManySchema), deleteRawTeamResults)
-router.delete('/teams/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteRawTeamResult)
+router.patch(
+  '/teams/:id',
+  requireTournamentAdmin(),
+  validateRequest(updateTeamSchema),
+  updateRawTeamResult
+)
+router.delete(
+  '/teams',
+  requireTournamentAdmin(),
+  validateRequest(deleteManySchema),
+  deleteRawTeamResults
+)
+router.delete(
+  '/teams/:id',
+  requireTournamentAdmin(),
+  validateRequest(deleteSchema),
+  deleteRawTeamResult
+)
 
 router.get(
   '/speakers',

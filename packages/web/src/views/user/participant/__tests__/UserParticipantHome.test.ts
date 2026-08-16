@@ -22,7 +22,9 @@ describe('UserParticipantHome draw allocation rendering', () => {
     const source = load('src/views/user/participant/UserParticipantHome.vue')
     expect(source).toContain("setAudienceTableSort(round.round, 'panel')")
     expect(source).toContain("setAudienceTableSort(round.round, 'trainee')")
-    expect(source).toContain("type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair' | 'panel' | 'trainee'")
+    expect(source).toContain(
+      "type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair' | 'panel' | 'trainee'"
+    )
     expect(source).toContain("if (key === 'panel') return adjudicatorNames(row.panels ?? [])")
     expect(source).toContain("if (key === 'trainee') return adjudicatorNames(row.trainees ?? [])")
   })
@@ -51,5 +53,17 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).toContain('class="draw-action-button draw-action-button--team"')
     expect(source).toContain('class="draw-action-button draw-action-button--judge"')
     expect(source).not.toContain('draw-action-arrow')
+  })
+
+  it('shows submission actions only for a fully published two-team draw', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain('v-if="roundSubmissionsEnabled(round.round)" class="row draw-actions"')
+    expect(source).toContain('supportsParticipantSubmissions.value &&')
+    expect(source).toContain('teamAllocationVisible(roundNumber) &&')
+    expect(source).toContain('adjudicatorAllocationVisible(roundNumber)')
+    expect(source).toContain('normalizeTournamentTeamNum(style.value?.team_num) === 2')
+    expect(source).toContain(
+      'if (!roundSubmissionsEnabled(pendingTaskContext.value.round)) return false'
+    )
   })
 })

@@ -17,7 +17,7 @@ const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   preev: z.number().optional(),
   template: z.any().optional(),
   details: z.any().optional(),
@@ -39,7 +39,7 @@ const updateSchema = {
   body: z
     .object({
       tournamentId: z.string().min(1),
-      name: z.string().min(1).optional(),
+      name: z.string().trim().min(1).optional(),
       preev: z.number().optional(),
       template: z.any().optional(),
       details: z.any().optional(),
@@ -62,7 +62,7 @@ const bulkUpdateSchema = {
       .object({
         id: z.string().min(1),
         tournamentId: z.string().min(1),
-        name: z.string().min(1).optional(),
+        name: z.string().trim().min(1).optional(),
         preev: z.number().optional(),
         template: z.any().optional(),
         details: z.any().optional(),
@@ -104,20 +104,15 @@ const bulkDeleteSchema = {
   }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listAdjudicators
-)
-router.get(
-  '/:id',
-  requireTournamentView(),
-  validateRequest(getSchema),
-  getAdjudicator
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listAdjudicators)
+router.get('/:id', requireTournamentView(), validateRequest(getSchema), getAdjudicator)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createAdjudicator)
-router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateAdjudicators)
+router.patch(
+  '/',
+  requireTournamentAdmin(),
+  validateRequest(bulkUpdateSchema),
+  bulkUpdateAdjudicators
+)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateAdjudicator)
 router.delete(
   '/:id/personal-data',
@@ -125,7 +120,12 @@ router.delete(
   validateRequest(erasePersonalDataSchema),
   eraseAdjudicatorPersonalData
 )
-router.delete('/', requireTournamentAdmin(), validateRequest(bulkDeleteSchema), bulkDeleteAdjudicators)
+router.delete(
+  '/',
+  requireTournamentAdmin(),
+  validateRequest(bulkDeleteSchema),
+  bulkDeleteAdjudicators
+)
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteAdjudicator)
 
 export { router as adjudicatorRouter }

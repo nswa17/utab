@@ -137,6 +137,8 @@ describe('Server integration', () => {
     })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const roundRes = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
 
     const ballotRes = await agent.post('/api/submissions/ballots').send({
       tournamentId,
@@ -383,6 +385,7 @@ describe('Server integration', () => {
       tournamentId,
       round: 1,
       name: 'Main Round',
+      userDefinedData: { allow_low_tie_win: true },
     })
     expect(roundRes.status).toBe(201)
 
@@ -627,9 +630,11 @@ describe('Server integration', () => {
 
     const tournamentRes = await agent
       .post('/api/tournaments')
-      .send({ name: 'Compile Average Open', style: 1, options: {} })
+      .send({ name: 'Compile Average Open', style: 1, options: { style: { team_num: 2, score_weights: [1] } } })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const roundRes = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
 
     const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
     expect(speakerRes1.status).toBe(201)
@@ -751,9 +756,11 @@ describe('Server integration', () => {
 
     const tournamentRes = await agent
       .post('/api/tournaments')
-      .send({ name: 'Compile Latest Open', style: 1, options: {} })
+      .send({ name: 'Compile Latest Open', style: 1, options: { style: { team_num: 2, score_weights: [1] } } })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const roundRes = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
 
     const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
     expect(speakerRes1.status).toBe(201)
@@ -881,6 +888,8 @@ describe('Server integration', () => {
     })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+    const roundRes = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
 
     const speakerRes1 = await agent.post('/api/speakers').send({ tournamentId, name: 'Speaker A' })
     expect(speakerRes1.status).toBe(201)
@@ -1116,8 +1125,8 @@ describe('Server integration', () => {
       winnerId: teamAId,
       speakerIdsA: [speakerA1, speakerA2, speakerA3, speakerA1],
       speakerIdsB: [speakerB1, speakerB2, speakerB3, speakerB4],
-      scoresA: [11, 10, 12, 10],
-      scoresB: [10, 10, 10, 13],
+      scoresA: [10, 10, 10, 10],
+      scoresB: [10, 10, 10, 10],
       submittedEntityId: 'judge-a',
     })
     expect(ballotRes.status).toBe(201)
@@ -1136,10 +1145,10 @@ describe('Server integration', () => {
     const teamA = teamResults.find((row) => row.id === teamAId)
     const teamB = teamResults.find((row) => row.id === teamBId)
 
-    expect(teamA?.details?.[0]?.sum).toBe(43)
-    expect(teamB?.details?.[0]?.sum).toBe(43)
-    expect(teamA?.sum).toBe(43)
-    expect(teamB?.sum).toBe(43)
+    expect(teamA?.details?.[0]?.sum).toBe(40)
+    expect(teamB?.details?.[0]?.sum).toBe(40)
+    expect(teamA?.sum).toBe(40)
+    expect(teamB?.sum).toBe(40)
   })
 
   it('restores a tournament from an exported backup zip', async () => {
@@ -1155,9 +1164,29 @@ describe('Server integration', () => {
       .send({ username: 'bundle-import-user', password: 'password123' })
     expect(loginRes.status).toBe(200)
 
+    const customStyleId = 9301
+    const styleRes = await agent.post('/api/styles').send({
+      id: customStyleId,
+      name: 'Restore Custom Style',
+      team_num: 2,
+      score_weights: [{ order: 1, value: 1 }],
+      speaker_sequence: [
+        { order: 1, value: 'gov-1' },
+        { order: 2, value: 'opp-1' },
+      ],
+      range: [{ order: 1, value: { from: 70, to: 80, unit: 1, default: 75 } }],
+      adjudicator_range: { from: 1, to: 10, unit: 1, default: 5 },
+      roles: {
+        gov: [{ order: 1, long: 'Government', abbr: 'Gov' }],
+        opp: [{ order: 1, long: 'Opposition', abbr: 'Opp' }],
+      },
+      user_defined_data: { custom: true },
+    })
+    expect(styleRes.status).toBe(201)
+
     const tournamentRes = await agent.post('/api/tournaments').send({
       name: 'Restore Source Open',
-      style: 1,
+      style: customStyleId,
       options: { style: { team_num: 2 } },
       total_round_num: 2,
       current_round_num: 1,
@@ -1208,6 +1237,11 @@ describe('Server integration', () => {
     expect(Buffer.isBuffer(exportRes.body)).toBe(true)
 
     const extractedEntries = extractZip(exportRes.body as Buffer)
+    const styleEntry = extractedEntries.find((entry) => entry.path === 'json/style.json')
+    expect(styleEntry).toBeTruthy()
+    expect(JSON.parse(styleEntry?.content.toString('utf8') ?? '{}')).toEqual(
+      expect.objectContaining({ id: customStyleId, name: 'Restore Custom Style' })
+    )
     const metadataEntry = extractedEntries.find((entry) => entry.path === 'metadata.json')
     expect(metadataEntry).toBeTruthy()
     const metadata = JSON.parse(metadataEntry?.content.toString('utf8') ?? '{}') as {
@@ -1242,15 +1276,25 @@ describe('Server integration', () => {
       }))
     )
 
+    const conflictStyleRes = await agent.patch(`/api/styles/${customStyleId}`).send({
+      name: 'Conflicting Current Style',
+    })
+    expect(conflictStyleRes.status).toBe(200)
+
     const importRes = await agent
       .post('/api/tournaments/import')
       .set('Content-Type', 'application/zip')
       .send(reorderedBundle)
     expect(importRes.status).toBe(201)
 
-    const restoredTournament = importRes.body.data.tournament as { _id: string; name: string }
+    const restoredTournament = importRes.body.data.tournament as {
+      _id: string
+      name: string
+      style: number
+    }
     expect(restoredTournament.name).toBe('Restore Source Open')
     expect(restoredTournament._id).not.toBe(tournamentId)
+    expect(restoredTournament.style).not.toBe(customStyleId)
     expect(importRes.body.data.importedAuditLogs).toBe(2)
     expect(importRes.body.data.importedDocuments).toBe(2)
 
@@ -1273,6 +1317,18 @@ describe('Server integration', () => {
     expect(restoredLogs).toHaveLength(2)
     expect(restoredLogs.some((item) => item.action === 'team.create')).toBe(true)
     expect(restoredLogs.some((item) => String(item._id) === String(originalAuditLog._id))).toBe(false)
+
+    const styleListRes = await agent.get('/api/styles')
+    expect(styleListRes.status).toBe(200)
+    const restoredStyle = styleListRes.body.data.find(
+      (style: any) => style.id === restoredTournament.style
+    )
+    expect(restoredStyle).toEqual(
+      expect.objectContaining({
+        name: 'Restore Custom Style',
+        user_defined_data: { custom: true },
+      })
+    )
 
     const meRes = await agent.get('/api/auth/me').send()
     expect(meRes.status).toBe(200)

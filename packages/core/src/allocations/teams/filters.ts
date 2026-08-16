@@ -59,7 +59,7 @@ function countSchoolOverlap(a: number[], b: number[]): number {
   return overlap
 }
 
-function siblingPastOpponentSchools(
+function schoolPastOpponentSchools(
   team: TeamFilterEntity,
   {
     teams,
@@ -75,18 +75,17 @@ function siblingPastOpponentSchools(
   const selfSchoolSet = new Set<number>(selfSchools)
 
   const teamById = new Map<number, TeamFilterEntity>(teams.map((entry) => [entry.id, entry]))
-  const siblings = teams.filter((entry) => {
-    if (entry.id === team.id) return false
+  const sameSchoolTeams = teams.filter((entry) => {
     const schools = teamSchoolIds(entry, r, config)
     return schools.some((schoolId) => selfSchoolSet.has(schoolId))
   })
-  if (siblings.length === 0) return []
+  if (sameSchoolTeams.length === 0) return []
 
   const schoolSet = new Set<number>()
-  siblings.forEach((sibling) => {
-    const siblingResult = findOne(compiled_team_results, sibling.id)
-    const pastOpponents = Array.isArray(siblingResult.past_opponents)
-      ? siblingResult.past_opponents
+  sameSchoolTeams.forEach((schoolTeam) => {
+    const schoolTeamResult = findOne(compiled_team_results, schoolTeam.id)
+    const pastOpponents = Array.isArray(schoolTeamResult.past_opponents)
+      ? schoolTeamResult.past_opponents
       : []
     pastOpponents.forEach((opponentId) => {
       const opponentTeam = teamById.get(opponentId)
@@ -193,12 +192,12 @@ export function filterBySiblingPastOpponentSchool(
   b: TeamFilterEntity,
   context: TeamFilterContext
 ): number {
-  const siblingOpponentSchools = siblingPastOpponentSchools(team, context)
-  if (siblingOpponentSchools.length === 0) return 0
+  const pastOpponentSchools = schoolPastOpponentSchools(team, context)
+  if (pastOpponentSchools.length === 0) return 0
   const aSchools = teamSchoolIds(a, context.r, context.config)
   const bSchools = teamSchoolIds(b, context.r, context.config)
-  const aOverlap = countSchoolOverlap(aSchools, siblingOpponentSchools)
-  const bOverlap = countSchoolOverlap(bSchools, siblingOpponentSchools)
+  const aOverlap = countSchoolOverlap(aSchools, pastOpponentSchools)
+  const bOverlap = countSchoolOverlap(bSchools, pastOpponentSchools)
   if (aOverlap > bOverlap) return 1
   if (aOverlap < bOverlap) return -1
   return 0

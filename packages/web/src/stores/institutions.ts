@@ -128,12 +128,13 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     )
     if (normalizedIds.length === 0) return 0
 
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete('/institutions', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       institutions.value = institutions.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
@@ -144,7 +145,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

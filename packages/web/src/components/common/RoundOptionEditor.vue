@@ -21,9 +21,33 @@
           <span>{{ $t('チェアを常に評価') }}</span>
           <HelpTip :text="$t('チェアの評価入力を常に要求します。')" />
         </label>
+        <div class="stack option-subgroup">
+          <span class="muted small">{{ $t('判定提出を許可するジャッジ役割') }}</span>
+          <label
+            v-for="role in ballotSubmitterRoleOptions"
+            :key="`ballot-submitter-${role.value}`"
+            class="row small option-item option-item--nested"
+          >
+            <input
+              type="checkbox"
+              :checked="ballotSubmitterRoles.includes(role.value)"
+              :disabled="disabled"
+              @change="
+                setBallotSubmitterRole(role.value, ($event.target as HTMLInputElement).checked)
+              "
+            />
+            <span>{{ role.label }}</span>
+            <HelpTip :text="role.help" />
+          </label>
+        </div>
         <Field :label="$t('チーム内の評価者')">
           <template #default="{ id, describedBy }">
-            <select v-model="evaluatorInTeam" :id="id" :aria-describedby="describedBy" :disabled="disabled">
+            <select
+              v-model="evaluatorInTeam"
+              :id="id"
+              :aria-describedby="describedBy"
+              :disabled="disabled"
+            >
               <option value="team">{{ $t('チーム') }}</option>
               <option value="speaker">{{ $t('スピーカー') }}</option>
             </select>
@@ -71,8 +95,12 @@
           <HelpTip
             :text="
               lockAllowLowTieWin
-                ? $t('ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。引き分け時の勝敗点は0.5-0.5固定です。')
-                : $t('引き分け入力と低勝ち・同点勝ちを許可します。引き分け時の勝敗点は0.5-0.5固定です。')
+                ? $t(
+                    'ブレイクラウンドでは引き分け入力と低勝ち・同点勝ちは常に無効です。引き分け時の勝敗点は0.5-0.5固定です。'
+                  )
+                : $t(
+                    '引き分け入力と低勝ち・同点勝ちを許可します。引き分け時の勝敗点は0.5-0.5固定です。'
+                  )
             "
           />
         </label>
@@ -138,11 +166,11 @@
         </Field>
       </div>
     </section>
-
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Field from '@/components/common/Field.vue'
 import HelpTip from '@/components/common/HelpTip.vue'
 
@@ -157,12 +185,18 @@ withDefaults(
   }
 )
 
-const evaluateFromAdjudicators = defineModel<boolean>('evaluateFromAdjudicators', { required: true })
+const evaluateFromAdjudicators = defineModel<boolean>('evaluateFromAdjudicators', {
+  required: true,
+})
 const evaluateFromTeams = defineModel<boolean>('evaluateFromTeams', { required: true })
 const chairsAlwaysEvaluated = defineModel<boolean>('chairsAlwaysEvaluated', { required: true })
 const evaluatorInTeam = defineModel<'team' | 'speaker'>('evaluatorInTeam', { required: true })
 const noSpeakerScore = defineModel<boolean>('noSpeakerScore', { required: true })
 const allowLowTieWin = defineModel<boolean>('allowLowTieWin', { required: true })
+type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+const ballotSubmitterRoles = defineModel<BallotSubmitterRole[]>('ballotSubmitterRoles', {
+  default: () => ['chair', 'panel'],
+})
 const scoreByMatterManner = defineModel<boolean>('scoreByMatterManner', { required: true })
 const poi = defineModel<boolean>('poi', { required: true })
 const best = defineModel<boolean>('best', { required: true })
@@ -170,6 +204,40 @@ const bestMinCount = defineModel<number>('bestMinCount', { required: true })
 const bestMaxCount = defineModel<number>('bestMaxCount', { required: true })
 const poiMinCount = defineModel<number>('poiMinCount', { required: true })
 const poiMaxCount = defineModel<number>('poiMaxCount', { required: true })
+
+const ballotSubmitterRoleOptions = computed(() => [
+  {
+    value: 'chair' as const,
+    label: 'チェア',
+    help: 'チェアジャッジが判定結果を提出できます。',
+  },
+  {
+    value: 'panel' as const,
+    label: 'パネル',
+    help: 'パネルジャッジが判定結果を提出できます。',
+  },
+  {
+    value: 'trainee' as const,
+    label: 'トレーニー',
+    help: 'トレーニーが判定結果を提出できます。',
+  },
+])
+
+function setBallotSubmitterRole(role: BallotSubmitterRole, enabled: boolean) {
+  const current = Array.isArray(ballotSubmitterRoles.value)
+    ? ballotSubmitterRoles.value.filter(
+        (entry): entry is BallotSubmitterRole =>
+          entry === 'chair' || entry === 'panel' || entry === 'trainee'
+      )
+    : []
+  if (enabled && !current.includes(role)) {
+    ballotSubmitterRoles.value = [...current, role]
+    return
+  }
+  if (!enabled) {
+    ballotSubmitterRoles.value = current.filter((entry) => entry !== role)
+  }
+}
 </script>
 
 <style scoped>
@@ -212,6 +280,14 @@ const poiMaxCount = defineModel<number>('poiMaxCount', { required: true })
   padding: 6px 8px;
   background: var(--color-surface-soft);
   font-size: 0.9rem;
+}
+
+.option-subgroup {
+  gap: 4px;
+}
+
+.option-item--nested {
+  margin-left: 4px;
 }
 
 .round-option-editor :deep(.field-label) {

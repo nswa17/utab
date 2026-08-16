@@ -350,7 +350,12 @@
                           v-for="entry in row.submissionDetail?.team ?? []"
                           :key="`team-${row.key}-${entry.key}`"
                         >
-                          <td>{{ entry.submittedByLabel }}</td>
+                          <td>
+                            {{ entry.submittedByLabel }}
+                            <span v-if="entry.submissionSpeedLabel" class="submission-speed-label">
+                              {{ entry.submissionSpeedLabel }}
+                            </span>
+                          </td>
                           <td>{{ entry.summaryLabel }}</td>
                           <td>{{ entry.submittedAtLabel }}</td>
                           <td>
@@ -389,7 +394,12 @@
                           v-for="entry in row.submissionDetail?.judge ?? []"
                           :key="`judge-${row.key}-${entry.key}`"
                         >
-                          <td>{{ entry.submittedByLabel }}</td>
+                          <td>
+                            {{ entry.submittedByLabel }}
+                            <span v-if="entry.submissionSpeedLabel" class="submission-speed-label">
+                              {{ entry.submissionSpeedLabel }}
+                            </span>
+                          </td>
                           <td>{{ entry.summaryLabel }}</td>
                           <td>{{ entry.submittedAtLabel }}</td>
                           <td>
@@ -656,7 +666,9 @@ function normalizeCountValue(value: unknown): number | null {
   return Math.max(0, parsed)
 }
 
-function winStatusTone(status?: DrawPreviewRow['winStatus'] | string): 'confirmed' | 'provisional' | 'insufficient' {
+function winStatusTone(
+  status?: DrawPreviewRow['winStatus'] | string
+): 'confirmed' | 'provisional' | 'insufficient' {
   const normalized = String(status ?? '')
     .trim()
     .toLowerCase()
@@ -943,6 +955,15 @@ defineExpose({
 
 .draw-preview-detail-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.submission-speed-label {
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

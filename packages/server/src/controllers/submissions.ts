@@ -7,8 +7,11 @@ import { getDrawModel } from '../models/draw.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { StyleModel } from '../models/style.js'
+import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
+import { normalizeTeamNum } from './shared/allocation-support.js'
 import {
   resolveRoundAwardSelectionRules,
   validateBallotAwardSelectionCounts,
@@ -23,8 +26,7 @@ function resolveSubmissionActor(submittedEntityId?: string, sessionUserId?: stri
 
 const DUPLICATE_BALLOT_MESSAGE =
   'すでにチーム評価が送信されています。送信済みのチーム評価を修正する場合は運営に連絡してください。'
-const DUPLICATE_FEEDBACK_MESSAGE =
-  'すでにジャッジ評価が送信されています。運営に報告してください。'
+const DUPLICATE_FEEDBACK_MESSAGE = 'すでにジャッジ評価が送信されています。運営に報告してください。'
 
 function buildBallotDedupeKey(
   payload: Pick<NormalizedBallotPayload, 'teamAId' | 'teamBId' | 'submittedEntityId'>,
@@ -58,6 +60,69 @@ function isDuplicateSubmissionKeyError(error: unknown): boolean {
 
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
+}
+
+type NumericRange = { from: number; to: number; unit: number }
+
+function normalizeNumericRange(value: unknown): NumericRange | null {
+  if (Array.isArray(value)) {
+    const from = Number(value[0])
+    const to = Number(value[1])
+    const unit = Number(value[2])
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return null
+    return { from, to, unit: Number.isFinite(unit) && unit > 0 ? unit : 0 }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const source = 'value' in value && (value as any).value ? (value as any).value : value
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null
+  const from = Number((source as any).from)
+  const to = Number((source as any).to)
+  const unit = Number((source as any).unit)
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return null
+  return { from, to, unit: Number.isFinite(unit) && unit > 0 ? unit : 0 }
+}
+
+function normalizeOrderedRanges(value: unknown): NumericRange[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry, index) => ({
+      range: normalizeNumericRange(entry),
+      order: Number((entry as any)?.order ?? index + 1),
+    }))
+    .filter((entry): entry is { range: NumericRange; order: number } => entry.range !== null)
+    .sort((left, right) => left.order - right.order)
+    .map((entry) => entry.range)
+}
+
+function scoreMatchesRange(score: number, range: NumericRange): boolean {
+  if (score < range.from || score > range.to) return false
+  if (range.unit <= 0) return true
+  const steps = (score - range.from) / range.unit
+  return Math.abs(steps - Math.round(steps)) <= 1e-8
+}
+
+function roleCountForSide(style: Record<string, any>, side: 'gov' | 'opp'): number {
+  const roles = style.roles?.[side]
+  if (Array.isArray(roles) && roles.length > 0) return roles.length
+  const ranges = normalizeOrderedRanges(style.range)
+  if (ranges.length > 0) return ranges.length
+  return Array.isArray(style.score_weights) ? style.score_weights.length : 0
+}
+
+async function loadTournamentStyle(tournamentId: string): Promise<Record<string, any> | null> {
+  const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+  if (!tournament || typeof tournament.style !== 'number') return null
+  const style = await StyleModel.findOne({ id: tournament.style }).lean().exec()
+  if (!style) return null
+  const styleOverrides = toPayloadRecord((tournament.options as any)?.style)
+  if (!styleOverrides) return style as Record<string, any>
+  const overridesScoreLayout = Array.isArray(styleOverrides.score_weights)
+  return {
+    ...(style as Record<string, any>),
+    ...styleOverrides,
+    ...(overridesScoreLayout && styleOverrides.roles === undefined ? { roles: undefined } : {}),
+    ...(overridesScoreLayout && styleOverrides.range === undefined ? { range: [] } : {}),
+  }
 }
 
 function arrayLengthMatches(value: unknown, expectedLength: number): boolean {
@@ -216,7 +281,9 @@ function parseOptionalBoolean(value: unknown, key: string): ValidationOutcome<bo
   return { ok: true, value }
 }
 
-function parseWinnerPolicyToken(value: unknown): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
+function parseWinnerPolicyToken(
+  value: unknown
+): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
   if (typeof value !== 'string') return undefined
   if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
     return value
@@ -238,7 +305,7 @@ function resolveRoundBallotRules(roundDoc: unknown): {
     winnerPolicyToken ? ({ winner_policy: winnerPolicyToken } as any) : undefined,
     DEFAULT_COMPILE_OPTIONS
   )
-  const allowDraw = userDefinedData.allow_low_tie_win !== false
+  const allowDraw = userDefinedData.allow_low_tie_win === true
   const allowWinnerScoreMismatch =
     typeof userDefinedData.allow_score_winner_mismatch === 'boolean'
       ? userDefinedData.allow_score_winner_mismatch
@@ -250,39 +317,37 @@ function resolveRoundBallotRules(roundDoc: unknown): {
 }
 
 type DrawAllocationContext = {
-  teams: {
-    gov: string
-    opp: string
-  }
+  teamIds: string[]
   chairs: string[]
   panels: string[]
   trainees: string[]
 }
 
-function normalizeStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return Array.from(
-    new Set(
-      value
-        .map((item) => String(item ?? '').trim())
-        .filter(Boolean)
-    )
-  )
+type RoundDrawContext = {
+  exists: boolean
+  drawOpened: boolean
+  allocationOpened: boolean
+  rows: DrawAllocationContext[]
 }
 
-function normalizeDrawTeams(teams: unknown): { gov: string; opp: string } | null {
-  let gov = ''
-  let opp = ''
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
+}
+
+function normalizeDrawTeamIds(teams: unknown): string[] {
   if (Array.isArray(teams)) {
-    gov = String(teams[0] ?? '').trim()
-    opp = String(teams[1] ?? '').trim()
-  } else if (teams && typeof teams === 'object') {
-    const source = teams as Record<string, unknown>
-    gov = String(source.gov ?? '').trim()
-    opp = String(source.opp ?? '').trim()
+    return normalizeStringList(teams)
   }
-  if (!gov || !opp || gov === opp) return null
-  return { gov, opp }
+  if (!teams || typeof teams !== 'object') return []
+  const source = teams as Record<string, unknown>
+  const hasFourTeamShape = ['og', 'oo', 'cg', 'co'].some((key) =>
+    Object.prototype.hasOwnProperty.call(source, key)
+  )
+  const values = hasFourTeamShape
+    ? [source.og ?? source.gov, source.oo ?? source.opp, source.cg, source.co]
+    : [source.gov, source.opp]
+  return normalizeStringList(values)
 }
 
 function normalizeDrawAllocationRows(allocation: unknown): DrawAllocationContext[] {
@@ -291,10 +356,10 @@ function normalizeDrawAllocationRows(allocation: unknown): DrawAllocationContext
     .map((item) => {
       if (!item || typeof item !== 'object') return null
       const source = item as Record<string, unknown>
-      const teams = normalizeDrawTeams(source.teams)
-      if (!teams) return null
+      const teamIds = normalizeDrawTeamIds(source.teams)
+      if (teamIds.length < 2) return null
       return {
-        teams,
+        teamIds,
         chairs: normalizeStringList(source.chairs),
         panels: normalizeStringList(source.panels),
         trainees: normalizeStringList(source.trainees),
@@ -303,24 +368,23 @@ function normalizeDrawAllocationRows(allocation: unknown): DrawAllocationContext
     .filter((item): item is DrawAllocationContext => Boolean(item))
 }
 
-async function loadRoundAllocationRows(
+async function loadRoundDrawContext(
   connection: Connection,
   tournamentId: string,
   round: number
-): Promise<DrawAllocationContext[]> {
-  const drawDoc = await getDrawModel(connection)
-    .findOne({ tournamentId, round })
-    .lean()
-    .exec()
-  return normalizeDrawAllocationRows((drawDoc as any)?.allocation)
+): Promise<RoundDrawContext> {
+  const drawDoc = await getDrawModel(connection).findOne({ tournamentId, round }).lean().exec()
+  return {
+    exists: Boolean(drawDoc),
+    drawOpened: (drawDoc as any)?.drawOpened === true,
+    allocationOpened: (drawDoc as any)?.allocationOpened === true,
+    rows: normalizeDrawAllocationRows((drawDoc as any)?.allocation),
+  }
 }
 
-function hasSameMatchup(
-  row: DrawAllocationContext,
-  teamAId: string,
-  teamBId: string
-): boolean {
-  const drawPair = [row.teams.gov, row.teams.opp].sort()
+function hasSameMatchup(row: DrawAllocationContext, teamAId: string, teamBId: string): boolean {
+  if (row.teamIds.length !== 2) return false
+  const drawPair = [...row.teamIds].sort()
   const payloadPair = [teamAId, teamBId].sort()
   return drawPair[0] === payloadPair[0] && drawPair[1] === payloadPair[1]
 }
@@ -335,9 +399,10 @@ async function loadSpeakerIdsByTeamForRound(
   teamIds: string[],
   round: number
 ): Promise<Map<string, Set<string>>> {
-  const uniqueTeamIds = Array.from(new Set(teamIds.map((teamId) => String(teamId ?? '').trim()).filter(Boolean)))
+  const uniqueTeamIds = Array.from(
+    new Set(teamIds.map((teamId) => String(teamId ?? '').trim()).filter(Boolean))
+  )
   const speakerIdsByTeam = new Map<string, Set<string>>()
-  uniqueTeamIds.forEach((teamId) => speakerIdsByTeam.set(teamId, new Set<string>()))
   if (uniqueTeamIds.length === 0) return speakerIdsByTeam
 
   const TeamModel = getTeamModel(connection)
@@ -360,16 +425,7 @@ async function loadSpeakerIdsByTeamForRound(
         if (normalized) collected.add(normalized)
       })
     }
-    if (collected.size === 0) {
-      details.forEach((detail: any) => {
-        if (!Array.isArray(detail?.speakers)) return
-        detail.speakers.forEach((speakerId: any) => {
-          const normalized = String(speakerId ?? '').trim()
-          if (normalized) collected.add(normalized)
-        })
-      })
-    }
-    if (collected.size === 0 && Array.isArray(team?.template?.speakers)) {
+    if (!roundDetail && Array.isArray(team?.template?.speakers)) {
       team.template.speakers.forEach((speakerId: any) => {
         const normalized = String(speakerId ?? '').trim()
         if (normalized) collected.add(normalized)
@@ -413,13 +469,48 @@ async function resolveSubmittedEntityType(
   return undefined
 }
 
+type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
+
+function resolveBallotSubmitterRoles(userDefinedData: unknown): Set<BallotSubmitterRole> {
+  const source = toPayloadRecord(userDefinedData) ?? {}
+  if (Array.isArray(source.ballot_submitter_roles)) {
+    const roles = new Set<BallotSubmitterRole>()
+    source.ballot_submitter_roles.forEach((value) => {
+      const role = String(value ?? '')
+        .trim()
+        .toLowerCase()
+      if (role === 'chair' || role === 'panel' || role === 'trainee') roles.add(role)
+    })
+    return roles
+  }
+  if (typeof source.allow_panel_ballot_submission === 'boolean') {
+    return new Set(
+      source.allow_panel_ballot_submission ? DEFAULT_BALLOT_SUBMITTER_ROLES : ['chair']
+    )
+  }
+  return new Set(DEFAULT_BALLOT_SUBMITTER_ROLES)
+}
+
 async function validateBallotAgainstDraw(
   connection: Connection,
   tournamentId: string,
   round: number,
-  payload: Pick<NormalizedBallotPayload, 'teamAId' | 'teamBId' | 'submittedEntityId'>
+  payload: Pick<NormalizedBallotPayload, 'teamAId' | 'teamBId' | 'submittedEntityId'>,
+  options?: {
+    allowEmptySubmitterList?: boolean
+    requirePublishedDraw?: boolean
+    ballotSubmitterRoles?: ReadonlySet<BallotSubmitterRole>
+  }
 ): Promise<ValidationOutcome<null>> {
-  const allocationRows = await loadRoundAllocationRows(connection, tournamentId, round)
+  const draw = await loadRoundDrawContext(connection, tournamentId, round)
+  const allocationRows = draw.rows
+  if (
+    options?.requirePublishedDraw &&
+    (!draw.exists || !draw.drawOpened || !draw.allocationOpened || allocationRows.length === 0)
+  ) {
+    return { ok: false, message: 'draw allocation is not published' }
+  }
   if (allocationRows.length === 0) return { ok: true, value: null }
 
   const row = allocationRows.find((item) => hasSameMatchup(item, payload.teamAId, payload.teamBId))
@@ -430,8 +521,26 @@ async function validateBallotAgainstDraw(
   const submittedEntityId = String(payload.submittedEntityId ?? '').trim()
   if (!submittedEntityId) return { ok: true, value: null }
 
-  const allowedBallotSubmitters = new Set<string>([...row.chairs, ...row.panels])
-  if (allowedBallotSubmitters.size > 0 && !allowedBallotSubmitters.has(submittedEntityId)) {
+  const submitterRoles =
+    options?.ballotSubmitterRoles ??
+    resolveBallotSubmitterRoles(
+      (
+        await getRoundModel(connection)
+          .findOne({ tournamentId, round })
+          .select({ userDefinedData: 1 })
+          .lean()
+          .exec()
+      )?.userDefinedData
+    )
+  const allowedBallotSubmitters = new Set<string>([
+    ...(submitterRoles.has('chair') ? row.chairs : []),
+    ...(submitterRoles.has('panel') ? row.panels : []),
+    ...(submitterRoles.has('trainee') ? row.trainees : []),
+  ])
+  if (allowedBallotSubmitters.size === 0 && options?.allowEmptySubmitterList) {
+    return { ok: true, value: null }
+  }
+  if (!allowedBallotSubmitters.has(submittedEntityId)) {
     return { ok: false, message: 'submittedEntityId is not assigned to this matchup' }
   }
 
@@ -442,17 +551,30 @@ async function validateFeedbackAgainstDraw(
   connection: Connection,
   tournamentId: string,
   round: number,
-  payload: Pick<NormalizedFeedbackPayload, 'adjudicatorId' | 'submittedEntityId'>
+  payload: Pick<
+    NormalizedFeedbackPayload,
+    'adjudicatorId' | 'submittedEntityId' | 'submittedEntityType'
+  >,
+  options?: { requirePublishedDraw?: boolean }
 ): Promise<ValidationOutcome<null>> {
-  const allocationRows = await loadRoundAllocationRows(connection, tournamentId, round)
-  if (allocationRows.length === 0) return { ok: true, value: null }
-
-  const matchingRows = allocationRows.filter((row) => rowContainsAdjudicator(row, payload.adjudicatorId))
-  if (matchingRows.length === 0) {
-    return { ok: false, message: 'adjudicatorId is not assigned in draw allocation' }
+  const [draw, roundDoc, style] = await Promise.all([
+    loadRoundDrawContext(connection, tournamentId, round),
+    getRoundModel(connection).findOne({ tournamentId, round }).lean().exec(),
+    loadTournamentStyle(tournamentId),
+  ])
+  if (!roundDoc) {
+    return { ok: false, message: 'round not found' }
   }
-
-  const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  if (!style) {
+    return { ok: false, message: 'tournament style not found' }
+  }
+  const allocationRows = draw.rows
+  if (
+    options?.requirePublishedDraw &&
+    (!draw.exists || !draw.drawOpened || !draw.allocationOpened || allocationRows.length === 0)
+  ) {
+    return { ok: false, message: 'draw allocation is not published' }
+  }
   const userDefined = ((roundDoc as any)?.userDefinedData ?? {}) as Record<string, unknown>
   const evaluateFromTeams = userDefined.evaluate_from_teams !== false
   const evaluateFromAdjudicators = userDefined.evaluate_from_adjudicators !== false
@@ -462,12 +584,31 @@ async function validateFeedbackAgainstDraw(
     return { ok: false, message: 'feedback is disabled in this round' }
   }
 
+  const submittedEntityType = payload.submittedEntityType
+  if (
+    (submittedEntityType === 'adjudicator' && !evaluateFromAdjudicators) ||
+    ((submittedEntityType === 'team' || submittedEntityType === 'speaker') && !evaluateFromTeams) ||
+    (submittedEntityType === 'team' && evaluatorInTeam === 'speaker') ||
+    (submittedEntityType === 'speaker' && evaluatorInTeam === 'team')
+  ) {
+    return { ok: false, message: 'submittedEntityId is not allowed for this feedback target' }
+  }
+
+  if (allocationRows.length === 0) return { ok: true, value: null }
+
+  const matchingRows = allocationRows.filter((row) =>
+    rowContainsAdjudicator(row, payload.adjudicatorId)
+  )
+  if (matchingRows.length === 0) {
+    return { ok: false, message: 'adjudicatorId is not assigned in draw allocation' }
+  }
+
   const submittedEntityId = String(payload.submittedEntityId ?? '').trim()
   if (!submittedEntityId) return { ok: true, value: null }
 
   let speakerIdsByTeam = new Map<string, Set<string>>()
   if (evaluateFromTeams && evaluatorInTeam === 'speaker') {
-    const feedbackTeamIds = matchingRows.flatMap((row) => [row.teams.gov, row.teams.opp])
+    const feedbackTeamIds = matchingRows.flatMap((row) => row.teamIds)
     speakerIdsByTeam = await loadSpeakerIdsByTeamForRound(
       connection,
       tournamentId,
@@ -493,17 +634,15 @@ async function validateFeedbackAgainstDraw(
     if (!teamCanEvaluateTarget) return
 
     if (evaluatorInTeam === 'team') {
-      allowedSubmittedEntities.add(row.teams.gov)
-      allowedSubmittedEntities.add(row.teams.opp)
+      row.teamIds.forEach((teamId) => allowedSubmittedEntities.add(teamId))
       return
     }
 
-    ;(speakerIdsByTeam.get(row.teams.gov) ?? new Set<string>()).forEach((speakerId) =>
-      allowedSubmittedEntities.add(speakerId)
-    )
-    ;(speakerIdsByTeam.get(row.teams.opp) ?? new Set<string>()).forEach((speakerId) =>
-      allowedSubmittedEntities.add(speakerId)
-    )
+    row.teamIds.forEach((teamId) => {
+      ;(speakerIdsByTeam.get(teamId) ?? new Set<string>()).forEach((speakerId) =>
+        allowedSubmittedEntities.add(speakerId)
+      )
+    })
   })
 
   if (allowedSubmittedEntities.size === 0) {
@@ -521,14 +660,30 @@ async function normalizeBallotPayload(
   tournamentId: string,
   round: number,
   rawPayload: unknown,
-  options?: { allowHiddenRound?: boolean }
+  options?: {
+    allowHiddenRound?: boolean
+    allowUnknownEntityRefs?: boolean
+    requirePublishedDraw?: boolean
+  }
 ): Promise<ValidationOutcome<NormalizedBallotPayload>> {
   const payload = toPayloadRecord(rawPayload)
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
-  const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  const [roundDoc, style] = await Promise.all([
+    getRoundModel(connection).findOne({ tournamentId, round }).lean().exec(),
+    loadTournamentStyle(tournamentId),
+  ])
+  if (!roundDoc) {
+    return { ok: false, message: 'round not found' }
+  }
+  if (!style) {
+    return { ok: false, message: 'tournament style not found' }
+  }
   if (!options?.allowHiddenRound && isRoundHidden(roundDoc)) {
     return { ok: false, message: 'round is hidden from participants' }
+  }
+  if (normalizeTeamNum(style.team_num) !== 2) {
+    return { ok: false, message: 'ballot submissions support only two-team styles' }
   }
   const { allowDraw, allowWinnerScoreMismatch } = resolveRoundBallotRules(roundDoc)
   const awardSelectionRules = resolveRoundAwardSelectionRules((roundDoc as any)?.userDefinedData)
@@ -557,7 +712,10 @@ async function normalizeBallotPayload(
     return { ok: false, message: 'winnerId and draw cannot both be set' }
   }
   if (!drawSelected && !validWinner) {
-    return { ok: false, message: allowDraw ? 'winnerId or draw is required' : 'winnerId is required' }
+    return {
+      ok: false,
+      message: allowDraw ? 'winnerId or draw is required' : 'winnerId is required',
+    }
   }
 
   const scoresAResult = parseOptionalFiniteNumberArray(payload.scoresA, 'scoresA')
@@ -639,13 +797,34 @@ async function normalizeBallotPayload(
 
   const commentResult = parseOptionalString(payload.comment, 'comment')
   if (!commentResult.ok) return commentResult
-  const submittedEntityResult = parseOptionalTrimmedString(payload.submittedEntityId, 'submittedEntityId')
+  const submittedEntityResult = parseOptionalTrimmedString(
+    payload.submittedEntityId,
+    'submittedEntityId'
+  )
   if (!submittedEntityResult.ok) return submittedEntityResult
   const submittedEntityType = await resolveSubmittedEntityType(
     connection,
     tournamentId,
     submittedEntityResult.value
   )
+  if (!options?.allowUnknownEntityRefs && submittedEntityResult.value && !submittedEntityType) {
+    return { ok: false, message: 'submittedEntityId must reference a tournament entity' }
+  }
+
+  if (!options?.allowUnknownEntityRefs) {
+    if (!isValidObjectId(normalizedTeamAId) || !isValidObjectId(normalizedTeamBId)) {
+      return { ok: false, message: 'teamAId and teamBId must reference tournament teams' }
+    }
+    const referencedTeamCount = await getTeamModel(connection)
+      .countDocuments({
+        tournamentId,
+        _id: { $in: [normalizedTeamAId, normalizedTeamBId] },
+      })
+      .exec()
+    if (referencedTeamCount !== 2) {
+      return { ok: false, message: 'teamAId and teamBId must reference tournament teams' }
+    }
+  }
 
   const hasScoresA = parsedScoresA.length > 0
   const hasScoresB = parsedScoresB.length > 0
@@ -657,6 +836,37 @@ async function normalizeBallotPayload(
   }
   if (noSpeakerScore && (hasScoresA || hasScoresB)) {
     return { ok: false, message: 'speaker scores are disabled in this round' }
+  }
+
+  if (!noSpeakerScore) {
+    const expectedScoresA = roleCountForSide(style, 'gov')
+    const expectedScoresB = roleCountForSide(style, 'opp')
+    if (expectedScoresA > 0 && parsedScoresA.length !== expectedScoresA) {
+      return { ok: false, message: `scoresA must contain exactly ${expectedScoresA} scores` }
+    }
+    if (expectedScoresB > 0 && parsedScoresB.length !== expectedScoresB) {
+      return { ok: false, message: `scoresB must contain exactly ${expectedScoresB} scores` }
+    }
+    if (
+      isValidObjectId(normalizedTeamAId) &&
+      isValidObjectId(normalizedTeamBId) &&
+      (!speakerIdsAResult.value || !speakerIdsBResult.value)
+    ) {
+      return { ok: false, message: 'speakerIdsA and speakerIdsB are required with speaker scores' }
+    }
+    const scoreRanges = normalizeOrderedRanges(style.range)
+    const validateScores = (scores: number[], label: string): string | null => {
+      for (let index = 0; index < scores.length; index += 1) {
+        const range = scoreRanges[index] ?? scoreRanges[scoreRanges.length - 1]
+        if (range && !scoreMatchesRange(scores[index], range)) {
+          return `${label}[${index}] is outside the configured score range or unit`
+        }
+      }
+      return null
+    }
+    const rangeError =
+      validateScores(parsedScoresA, 'scoresA') ?? validateScores(parsedScoresB, 'scoresB')
+    if (rangeError) return { ok: false, message: rangeError }
   }
 
   const scoreLengthMismatch =
@@ -714,12 +924,54 @@ async function normalizeBallotPayload(
     }
   }
 
-  const drawValidation = await validateBallotAgainstDraw(connection, tournamentId, round, {
-    teamAId: normalizedTeamAId,
-    teamBId: normalizedTeamBId,
-    submittedEntityId: submittedEntityResult.value,
-  })
+  const drawValidation = await validateBallotAgainstDraw(
+    connection,
+    tournamentId,
+    round,
+    {
+      teamAId: normalizedTeamAId,
+      teamBId: normalizedTeamBId,
+      submittedEntityId: submittedEntityResult.value,
+    },
+    {
+      allowEmptySubmitterList: options?.allowUnknownEntityRefs === true,
+      requirePublishedDraw: options?.requirePublishedDraw,
+      ballotSubmitterRoles: resolveBallotSubmitterRoles((roundDoc as any)?.userDefinedData),
+    }
+  )
   if (!drawValidation.ok) return drawValidation
+
+  if (!noSpeakerScore && isValidObjectId(normalizedTeamAId) && isValidObjectId(normalizedTeamBId)) {
+    const speakerIdsA = speakerIdsAResult.value ?? []
+    const speakerIdsB = speakerIdsBResult.value ?? []
+    if ([...speakerIdsA, ...speakerIdsB].some((speakerId) => !isValidObjectId(speakerId))) {
+      return { ok: false, message: 'speaker ids must reference tournament speakers' }
+    }
+    const speakerIdsByTeam = await loadSpeakerIdsByTeamForRound(
+      connection,
+      tournamentId,
+      [normalizedTeamAId, normalizedTeamBId],
+      round
+    )
+    if (!speakerIdsByTeam.has(normalizedTeamAId) || !speakerIdsByTeam.has(normalizedTeamBId)) {
+      return { ok: false, message: 'teamAId and teamBId must reference tournament teams' }
+    }
+    const allowedA = speakerIdsByTeam.get(normalizedTeamAId) ?? new Set<string>()
+    const allowedB = speakerIdsByTeam.get(normalizedTeamBId) ?? new Set<string>()
+    if (speakerIdsA.some((speakerId) => !allowedA.has(speakerId))) {
+      return { ok: false, message: 'speakerIdsA contains a speaker outside teamA' }
+    }
+    if (speakerIdsB.some((speakerId) => !allowedB.has(speakerId))) {
+      return { ok: false, message: 'speakerIdsB contains a speaker outside teamB' }
+    }
+    const uniqueSpeakerIds = Array.from(new Set([...speakerIdsA, ...speakerIdsB]))
+    const speakerCount = await getSpeakerModel(connection)
+      .countDocuments({ tournamentId, _id: { $in: uniqueSpeakerIds } })
+      .exec()
+    if (speakerCount !== uniqueSpeakerIds.length) {
+      return { ok: false, message: 'speaker ids must reference tournament speakers' }
+    }
+  }
 
   return {
     ok: true,
@@ -752,12 +1004,25 @@ async function normalizeFeedbackPayload(
   tournamentId: string,
   round: number,
   rawPayload: unknown,
-  options?: { allowHiddenRound?: boolean }
+  options?: {
+    allowHiddenRound?: boolean
+    allowUnknownEntityRefs?: boolean
+    requirePublishedDraw?: boolean
+  }
 ): Promise<ValidationOutcome<NormalizedFeedbackPayload>> {
   const payload = toPayloadRecord(rawPayload)
   if (!payload) return { ok: false, message: 'payload must be an object' }
 
-  const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+  const [roundDoc, style] = await Promise.all([
+    getRoundModel(connection).findOne({ tournamentId, round }).lean().exec(),
+    loadTournamentStyle(tournamentId),
+  ])
+  if (!roundDoc) {
+    return { ok: false, message: 'round not found' }
+  }
+  if (!style) {
+    return { ok: false, message: 'tournament style not found' }
+  }
   if (!options?.allowHiddenRound && isRoundHidden(roundDoc)) {
     return { ok: false, message: 'round is hidden from participants' }
   }
@@ -771,16 +1036,34 @@ async function normalizeFeedbackPayload(
   if (typeof score !== 'number' || !Number.isFinite(score) || score < 0) {
     return { ok: false, message: 'score must be a finite non-negative number' }
   }
+  const adjudicatorRange = normalizeNumericRange(style.adjudicator_range)
 
   const commentResult = parseOptionalString(payload.comment, 'comment')
   if (!commentResult.ok) return commentResult
-  const submittedEntityResult = parseOptionalTrimmedString(payload.submittedEntityId, 'submittedEntityId')
+  const submittedEntityResult = parseOptionalTrimmedString(
+    payload.submittedEntityId,
+    'submittedEntityId'
+  )
   if (!submittedEntityResult.ok) return submittedEntityResult
   const submittedEntityType = await resolveSubmittedEntityType(
     connection,
     tournamentId,
     submittedEntityResult.value
   )
+  if (!options?.allowUnknownEntityRefs && submittedEntityResult.value && !submittedEntityType) {
+    return { ok: false, message: 'submittedEntityId must reference a tournament entity' }
+  }
+  if (!options?.allowUnknownEntityRefs) {
+    if (!isValidObjectId(normalizedAdjudicatorId)) {
+      return { ok: false, message: 'adjudicatorId must reference a tournament adjudicator' }
+    }
+    const targetExists = await getAdjudicatorModel(connection)
+      .exists({ tournamentId, _id: normalizedAdjudicatorId })
+      .exec()
+    if (!targetExists) {
+      return { ok: false, message: 'adjudicatorId must reference a tournament adjudicator' }
+    }
+  }
 
   if (
     payload.matter !== undefined &&
@@ -794,11 +1077,38 @@ async function normalizeFeedbackPayload(
   ) {
     return { ok: false, message: 'manner must be a finite number' }
   }
+  const hasMatter = payload.matter !== undefined
+  const hasManner = payload.manner !== undefined
+  if (hasMatter !== hasManner) {
+    return { ok: false, message: 'matter and manner must be provided together' }
+  }
+  if (adjudicatorRange) {
+    if (hasMatter && hasManner) {
+      if (!scoreMatchesRange(payload.matter as number, adjudicatorRange)) {
+        return { ok: false, message: 'matter is outside the configured score range or unit' }
+      }
+      if (!scoreMatchesRange(payload.manner as number, adjudicatorRange)) {
+        return { ok: false, message: 'manner is outside the configured score range or unit' }
+      }
+      if (Math.abs(score - ((payload.matter as number) + (payload.manner as number))) > 1e-8) {
+        return { ok: false, message: 'score must equal matter plus manner' }
+      }
+    } else if (!scoreMatchesRange(score, adjudicatorRange)) {
+      return { ok: false, message: 'score is outside the configured score range or unit' }
+    }
+  }
 
-  const drawValidation = await validateFeedbackAgainstDraw(connection, tournamentId, round, {
-    adjudicatorId: normalizedAdjudicatorId,
-    submittedEntityId: submittedEntityResult.value,
-  })
+  const drawValidation = await validateFeedbackAgainstDraw(
+    connection,
+    tournamentId,
+    round,
+    {
+      adjudicatorId: normalizedAdjudicatorId,
+      submittedEntityId: submittedEntityResult.value,
+      submittedEntityType,
+    },
+    { requirePublishedDraw: options?.requirePublishedDraw }
+  )
   if (!drawValidation.ok) return drawValidation
 
   return {
@@ -932,30 +1242,45 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     }
 
     if (!ensureTournamentId(res, tournamentId)) return
+    const actor = resolveSubmissionActor(submittedEntityId, req.session?.userId)
+    if (!actor) {
+      badRequest(res, 'submittedEntityId or authenticated user is required')
+      return
+    }
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
-    const normalized = await normalizeBallotPayload(connection, tournamentId, round, {
-      teamAId,
-      teamBId,
-      winnerId,
-      draw,
-      speakerIdsA,
-      speakerIdsB,
-      scoresA,
-      scoresB,
-      comment,
-      submittedEntityId,
-      bestA,
-      bestB,
-      poiA,
-      poiB,
-      matterA,
-      mannerA,
-      matterB,
-      mannerB,
-    }, { allowHiddenRound: isAdmin })
+    const normalized = await normalizeBallotPayload(
+      connection,
+      tournamentId,
+      round,
+      {
+        teamAId,
+        teamBId,
+        winnerId,
+        draw,
+        speakerIdsA,
+        speakerIdsB,
+        scoresA,
+        scoresB,
+        comment,
+        submittedEntityId,
+        bestA,
+        bestB,
+        poiA,
+        poiB,
+        matterA,
+        mannerA,
+        matterB,
+        mannerB,
+      },
+      {
+        allowHiddenRound: isAdmin,
+        allowUnknownEntityRefs: isAdmin,
+        requirePublishedDraw: !isAdmin,
+      }
+    )
     if (!normalized.ok) {
       badRequest(res, normalized.message)
       return
@@ -963,34 +1288,29 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     const payload = normalized.value
     const normalizedTeamAId = payload.teamAId
     const normalizedTeamBId = payload.teamBId
-    const normalizedSubmittedEntityId = payload.submittedEntityId ?? ''
-
-    const actor = resolveSubmissionActor(normalizedSubmittedEntityId, req.session?.userId)
     const dedupeKey = buildBallotDedupeKey(payload, req.session?.userId)
-    if (actor) {
-      const duplicate = await SubmissionModel.findOne({
-        tournamentId,
-        round,
-        type: 'ballot',
-        $and: [
-          { $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }] },
-          {
-            $or: [
-              { 'payload.teamAId': normalizedTeamAId, 'payload.teamBId': normalizedTeamBId },
-              { 'payload.teamAId': normalizedTeamBId, 'payload.teamBId': normalizedTeamAId },
-            ],
-          },
-        ],
-      })
-        .select({ _id: 1 })
-        .lean()
-        .exec()
-      if (duplicate) {
-        res
-          .status(409)
-          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_BALLOT_MESSAGE }] })
-        return
-      }
+    const duplicate = await SubmissionModel.findOne({
+      tournamentId,
+      round,
+      type: 'ballot',
+      $and: [
+        { $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }] },
+        {
+          $or: [
+            { 'payload.teamAId': normalizedTeamAId, 'payload.teamBId': normalizedTeamBId },
+            { 'payload.teamAId': normalizedTeamBId, 'payload.teamBId': normalizedTeamAId },
+          ],
+        },
+      ],
+    })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (duplicate) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_BALLOT_MESSAGE }] })
+      return
     }
     const created = await SubmissionModel.create({
       tournamentId,
@@ -1035,17 +1355,32 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     }
 
     if (!ensureTournamentId(res, tournamentId)) return
+    const actor = resolveSubmissionActor(submittedEntityId, req.session?.userId)
+    if (!actor) {
+      badRequest(res, 'submittedEntityId or authenticated user is required')
+      return
+    }
 
     const connection = await getTournamentConnection(tournamentId)
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
-    const normalized = await normalizeFeedbackPayload(connection, tournamentId, round, {
-      adjudicatorId,
-      score,
-      comment,
-      submittedEntityId,
-      matter,
-      manner,
-    }, { allowHiddenRound: isAdmin })
+    const normalized = await normalizeFeedbackPayload(
+      connection,
+      tournamentId,
+      round,
+      {
+        adjudicatorId,
+        score,
+        comment,
+        submittedEntityId,
+        matter,
+        manner,
+      },
+      {
+        allowHiddenRound: isAdmin,
+        allowUnknownEntityRefs: isAdmin,
+        requirePublishedDraw: !isAdmin,
+      }
+    )
     if (!normalized.ok) {
       badRequest(res, normalized.message)
       return
@@ -1053,25 +1388,22 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
     const payload = normalized.value
 
     const SubmissionModel = getSubmissionModel(connection)
-    const actor = resolveSubmissionActor(payload.submittedEntityId, req.session?.userId)
     const dedupeKey = buildFeedbackDedupeKey(payload, req.session?.userId)
-    if (actor) {
-      const duplicate = await SubmissionModel.findOne({
-        tournamentId,
-        round,
-        type: 'feedback',
-        'payload.adjudicatorId': payload.adjudicatorId,
-        $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
-      })
-        .select({ _id: 1 })
-        .lean()
-        .exec()
-      if (duplicate) {
-        res
-          .status(409)
-          .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_FEEDBACK_MESSAGE }] })
-        return
-      }
+    const duplicate = await SubmissionModel.findOne({
+      tournamentId,
+      round,
+      type: 'feedback',
+      'payload.adjudicatorId': payload.adjudicatorId,
+      $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
+    })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (duplicate) {
+      res
+        .status(409)
+        .json({ data: null, errors: [{ name: 'Conflict', message: DUPLICATE_FEEDBACK_MESSAGE }] })
+      return
     }
     const created = await SubmissionModel.create({
       tournamentId,
@@ -1129,7 +1461,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         tournamentId,
         nextRound,
         nextPayload,
-        { allowHiddenRound: isAdmin }
+        { allowHiddenRound: isAdmin, allowUnknownEntityRefs: isAdmin }
       )
       if (!normalizedBallot.ok) {
         badRequest(res, normalizedBallot.message)
@@ -1142,7 +1474,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         tournamentId,
         nextRound,
         nextPayload,
-        { allowHiddenRound: isAdmin }
+        { allowHiddenRound: isAdmin, allowUnknownEntityRefs: isAdmin }
       )
       if (!normalizedFeedback.ok) {
         badRequest(res, normalizedFeedback.message)

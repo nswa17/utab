@@ -42,7 +42,11 @@
             :disabled="!teamActorIdentityId || teamActorSpeakerOptions.length === 0"
           >
             <option value="">{{ $t('未選択') }}</option>
-            <option v-for="speaker in teamActorSpeakerOptions" :key="speaker._id" :value="speaker._id">
+            <option
+              v-for="speaker in teamActorSpeakerOptions"
+              :key="speaker._id"
+              :value="speaker._id"
+            >
               {{ speaker.name }}
             </option>
           </select>
@@ -194,6 +198,7 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import Button from '@/components/common/Button.vue'
 import Field from '@/components/common/Field.vue'
 import { defaultAdjudicatorRange, normalizeSingleRange } from '@/utils/score'
+import { resolveTournamentStyle } from '@/utils/tournament-style'
 import { useParticipantIdentity } from '@/composables/useParticipantIdentity'
 import { useParticipantMode, appendParticipantMode } from '@/composables/useParticipantMode'
 
@@ -249,13 +254,7 @@ function parseQueryList(value: unknown) {
 }
 
 function uniqueIds(values: Array<string | undefined | null>) {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => String(value ?? '').trim())
-        .filter(Boolean)
-    )
-  )
+  return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
 }
 
 function rowJudgeTargetIds(row: any) {
@@ -327,9 +326,7 @@ const drawRowForContext = computed(() => {
       }) ?? null
     if (byTeams) return byTeams
   }
-  return (
-    allocation.find((row) => rowJudgeTargetIds(row).includes(adjudicatorId.value)) ?? null
-  )
+  return allocation.find((row) => rowJudgeTargetIds(row).includes(adjudicatorId.value)) ?? null
 })
 const contextTeamIds = computed(() => {
   const row = drawRowForContext.value
@@ -398,9 +395,7 @@ const confirmCountdown = ref(0)
 let countdownTimer: number | null = null
 let countdownDeadline = 0
 
-const roundConfig = computed(() =>
-  rounds.rounds.find((item) => item.round === Number(round.value))
-)
+const roundConfig = computed(() => rounds.rounds.find((item) => item.round === Number(round.value)))
 const teamFeedbackEnabled = computed(
   () => roundConfig.value?.userDefinedData?.evaluate_from_teams !== false
 )
@@ -418,7 +413,9 @@ const adjudicatorSubmitterCandidateSet = computed(
 )
 const adjudicatorIdentityOptions = computed(() => {
   if (adjudicatorSubmitterCandidateSet.value.size === 0) return adjudicators.adjudicators
-  return adjudicators.adjudicators.filter((adj) => adjudicatorSubmitterCandidateSet.value.has(adj._id))
+  return adjudicators.adjudicators.filter((adj) =>
+    adjudicatorSubmitterCandidateSet.value.has(adj._id)
+  )
 })
 const speakerSelectionRequired = computed(
   () => showTeamActorSelection.value && evaluatorMode.value === 'speaker'
@@ -436,7 +433,9 @@ const teamActorIdentityId = computed({
 })
 const speakerActorIdentityId = computed({
   get: () =>
-    participantMode.value === 'speaker' ? speakerIdentityId.value : judgeFeedbackSpeakerIdentityId.value,
+    participantMode.value === 'speaker'
+      ? speakerIdentityId.value
+      : judgeFeedbackSpeakerIdentityId.value,
   set: (value: string) => {
     if (participantMode.value === 'speaker') {
       speakerIdentityId.value = value
@@ -460,7 +459,9 @@ const actorOptions = computed<Array<{ value: 'adjudicator' | 'team'; label: stri
   }
   return options
 })
-const evaluatorMode = computed(() => roundConfig.value?.userDefinedData?.evaluator_in_team ?? 'team')
+const evaluatorMode = computed(
+  () => roundConfig.value?.userDefinedData?.evaluator_in_team ?? 'team'
+)
 const useMatterManner = computed(
   () => roundConfig.value?.userDefinedData?.score_by_matter_manner !== false
 )
@@ -468,7 +469,10 @@ const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
 const style = computed(() =>
-  stylesStore.styles.find((item) => item.id === tournament.value?.style)
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
 )
 const range = computed(() =>
   normalizeSingleRange(style.value?.adjudicator_range, defaultAdjudicatorRange)
@@ -476,15 +480,13 @@ const range = computed(() =>
 const computedScore = computed(() =>
   useMatterManner.value ? Number(matter.value) + Number(manner.value) : Number(score.value)
 )
-const minScore = computed(() =>
-  useMatterManner.value ? range.value.from * 2 : range.value.from
-)
-const maxScore = computed(() =>
-  useMatterManner.value ? range.value.to * 2 : range.value.to
-)
+const minScore = computed(() => (useMatterManner.value ? range.value.from * 2 : range.value.from))
+const maxScore = computed(() => (useMatterManner.value ? range.value.to * 2 : range.value.to))
 const submittedEntityId = computed(() => {
   if (showTeamActorSelection.value) {
-    return evaluatorMode.value === 'speaker' ? speakerActorIdentityId.value : teamActorIdentityId.value
+    return evaluatorMode.value === 'speaker'
+      ? speakerActorIdentityId.value
+      : teamActorIdentityId.value
   }
   return teamIdentityId.value
 })
@@ -530,7 +532,11 @@ const identityHint = computed(() => {
   if (showTeamActorSelection.value && !teamActorIdentityId.value) {
     return t('あなたの情報でチームを選択してください。')
   }
-  if (showTeamActorSelection.value && speakerSelectionRequired.value && !speakerActorIdentityId.value) {
+  if (
+    showTeamActorSelection.value &&
+    speakerSelectionRequired.value &&
+    !speakerActorIdentityId.value
+  ) {
     return t('あなたの情報でスピーカーを選択してください。')
   }
   if (showAdjudicatorActorSelection.value && !teamIdentityId.value) {
@@ -685,11 +691,15 @@ watch([tournamentId, round], () => {
   stylesStore.fetchStyles()
 })
 
-watch(range, (next) => {
-  matter.value = next.default
-  manner.value = next.default
-  score.value = next.default
-}, { immediate: true })
+watch(
+  range,
+  (next) => {
+    matter.value = next.default
+    manner.value = next.default
+    score.value = next.default
+  },
+  { immediate: true }
+)
 
 watch(
   [participantMode, actorOptions],
@@ -912,5 +922,4 @@ onUnmounted(() => {
     display: none;
   }
 }
-
 </style>

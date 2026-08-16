@@ -120,12 +120,13 @@ export const useSpeakersStore = defineStore('speakers', () => {
     )
     if (normalizedIds.length === 0) return 0
 
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete('/speakers', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
@@ -134,7 +135,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speakers'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

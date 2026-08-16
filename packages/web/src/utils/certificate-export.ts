@@ -1,3 +1,5 @@
+import { escapeCsvCell } from './csv'
+
 export type AwardExportRowInput = {
   category: string
   ranking: number
@@ -16,13 +18,6 @@ export type ParticipantExportRowInput = {
   team?: string
   institutions?: string[]
   active?: boolean
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
 }
 
 function toText(value: unknown): string {
@@ -76,7 +71,7 @@ export function buildAwardExportCsv(rows: AwardExportRowInput[]): string {
       row.metric_name,
       row.metric_value,
     ]
-      .map((value) => escapeCsv(value))
+      .map((value) => escapeCsvCell(value))
       .join(',')
   )
   return [header.join(','), ...body].join('\n')
@@ -113,7 +108,7 @@ export function buildParticipantExportCsv(rows: ParticipantExportRowInput[]): st
       row.institutions,
       row.active,
     ]
-      .map((value) => escapeCsv(value))
+      .map((value) => escapeCsvCell(value))
       .join(',')
   )
   return [header.join(','), ...body].join('\n')

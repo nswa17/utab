@@ -14,17 +14,17 @@ const router: Router = Router()
 
 const allocationRowSchema = z.object({
   id: z.number().int().optional(),
-  venue: z.string().nullable().optional(),
+  venue: z.string().trim().nullable().optional(),
   teams: z.union([
     z.object({
-      gov: z.string().min(1),
-      opp: z.string().min(1),
+      gov: z.string().trim().min(1),
+      opp: z.string().trim().min(1),
     }),
-    z.array(z.string().min(1)).min(2),
+    z.array(z.string().trim().min(1)).min(2),
   ]),
-  chairs: z.array(z.string()).optional().default([]),
-  panels: z.array(z.string()).optional().default([]),
-  trainees: z.array(z.string()).optional().default([]),
+  chairs: z.array(z.string().trim().min(1)).optional().default([]),
+  panels: z.array(z.string().trim().min(1)).optional().default([]),
+  trainees: z.array(z.string().trim().min(1)).optional().default([]),
 })
 
 const baseBodySchema = z.object({
@@ -56,7 +56,12 @@ router.post(
   validateRequest({ body: baseBodyWithSnapshotSchema }),
   createTeamAllocation
 )
-router.post('/break', requireTournamentAdmin(), validateRequest({ body: baseBodySchema }), createBreakAllocation)
+router.post(
+  '/break',
+  requireTournamentAdmin(),
+  validateRequest({ body: baseBodySchema }),
+  createBreakAllocation
+)
 router.post(
   '/adjudicators',
   requireTournamentAdmin(),

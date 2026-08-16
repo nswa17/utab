@@ -129,12 +129,13 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     )
     if (normalizedIds.length === 0) return 0
 
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete('/adjudicators', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       adjudicators.value = adjudicators.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
@@ -145,7 +146,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicators'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

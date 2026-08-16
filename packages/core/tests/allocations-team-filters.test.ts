@@ -82,6 +82,36 @@ describe('allocations/teams/filters', () => {
     expect(compared).toBe(1)
   })
 
+  it('also avoids another team from a school the current team already faced', () => {
+    const teams = [
+      { id: 1, details: [{ r: 1, conflicts: [1] }] },
+      { id: 2, details: [{ r: 1, conflicts: [1] }] },
+      { id: 3, details: [{ r: 1, conflicts: [2] }] },
+      { id: 4, details: [{ r: 1, conflicts: [2] }] },
+      { id: 5, details: [{ r: 1, conflicts: [3] }] },
+    ]
+    const compiled = [
+      { id: 1, win: 2, sum: 10, past_sides: [], past_opponents: [3] },
+      { id: 2, win: 2, sum: 10, past_sides: [], past_opponents: [] },
+      { id: 3, win: 1, sum: 8, past_sides: [], past_opponents: [1] },
+      { id: 4, win: 1, sum: 8, past_sides: [], past_opponents: [] },
+      { id: 5, win: 1, sum: 8, past_sides: [], past_opponents: [] },
+    ]
+    const compared = filterBySiblingPastOpponentSchool(teams[0], teams[3], teams[4], {
+      teams,
+      compiled_team_results: compiled,
+      r: 1,
+      config: {
+        institution_category_map: {
+          1: 'institution',
+          2: 'institution',
+          3: 'institution',
+        },
+      },
+    })
+    expect(compared).toBe(1)
+  })
+
   it('filters by strength', () => {
     expect(filterByStrength(team, a, b, { compiled_team_results: compiledTeamResults })).toBe(1)
   })

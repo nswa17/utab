@@ -21,10 +21,30 @@ import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
 
+const tournamentOptionsSchema = z.record(z.any()).superRefine((options, ctx) => {
+  const style = options.style
+  if (!style || typeof style !== 'object' || Array.isArray(style)) return
+  const teamNum = (style as Record<string, unknown>).team_num
+  if (teamNum === undefined) return
+  if (
+    typeof teamNum === 'number' &&
+    Number.isFinite(teamNum) &&
+    Number.isInteger(teamNum) &&
+    teamNum >= 2
+  ) {
+    return
+  }
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['style', 'team_num'],
+    message: 'team_num must be an integer greater than or equal to 2',
+  })
+})
+
 const tournamentBodySchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   style: z.number(),
-  options: z.record(z.any()).optional(),
+  options: tournamentOptionsSchema.optional(),
   total_round_num: z.number().int().optional(),
   current_round_num: z.number().int().optional(),
   preev_weights: z.array(z.number()).optional(),
@@ -53,7 +73,7 @@ const accessSchema = {
 const tournamentUserSchema = {
   params: z.object({ id: z.string() }),
   body: z.object({
-    username: z.string().min(1),
+    username: z.string().trim().min(1),
     password: z.string().min(6),
     role: z.enum(['organizer', 'adjudicator', 'speaker', 'audience']),
   }),
@@ -63,7 +83,7 @@ const tournamentUserDeleteSchema = {
   params: z.object({ id: z.string() }),
   query: z
     .object({
-      username: z.string().min(1).optional(),
+      username: z.string().trim().min(1).optional(),
       userId: z.string().min(1).optional(),
     })
     .refine((data) => data.username !== undefined || data.userId !== undefined, {
@@ -72,12 +92,7 @@ const tournamentUserDeleteSchema = {
 }
 
 router.get('/', listTournaments)
-router.get(
-  '/:id',
-  requireTournamentView('id'),
-  validateRequest(idParamSchema),
-  getTournament
-)
+router.get('/:id', requireTournamentView('id'), validateRequest(idParamSchema), getTournament)
 router.get(
   '/:id/export',
   requireTournamentAdmin('id'),
@@ -95,7 +110,12 @@ router.post(
 )
 router.post('/', requireOrganizer, validateRequest(createSchema), createTournament)
 router.patch('/:id', requireTournamentAdmin('id'), validateRequest(updateSchema), updateTournament)
-router.delete('/:id', requireTournamentAdmin('id'), validateRequest(idParamSchema), deleteTournament)
+router.delete(
+  '/:id',
+  requireTournamentAdmin('id'),
+  validateRequest(idParamSchema),
+  deleteTournament
+)
 router.post('/:id/access', validateRequest(accessSchema), accessTournament)
 router.post('/:id/exit', validateRequest(idParamSchema), exitTournamentAccess)
 router.post(

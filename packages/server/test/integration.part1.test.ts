@@ -462,16 +462,23 @@ describe('Server integration', () => {
     expect(afterRevoke.status).toBe(401)
 
     const expiredAt = new Date(Date.now() - 60 * 1000)
-    await ServiceTokenRevocationModel.updateOne({ jti: revokedJti }, { $set: { expireAt: expiredAt } }).exec()
+    await ServiceTokenRevocationModel.updateOne(
+      { jti: revokedJti },
+      { $set: { expireAt: expiredAt } }
+    ).exec()
 
-    const activeListRes = await agent.get('/api/v1/auth/service-token-revocations?active=true&limit=20')
+    const activeListRes = await agent.get(
+      '/api/v1/auth/service-token-revocations?active=true&limit=20'
+    )
     expect(activeListRes.status).toBe(200)
     const activeEntry = (activeListRes.body.data.items as Array<{ jti: string }>).find(
       (item) => item.jti === revokedJti
     )
     expect(activeEntry).toBeUndefined()
 
-    const inactiveListRes = await agent.get('/api/v1/auth/service-token-revocations?active=false&limit=20')
+    const inactiveListRes = await agent.get(
+      '/api/v1/auth/service-token-revocations?active=false&limit=20'
+    )
     expect(inactiveListRes.status).toBe(200)
     const inactiveEntry = (inactiveListRes.body.data.items as Array<{ jti: string }>).find(
       (item) => item.jti === revokedJti
@@ -525,6 +532,13 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
 
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
     const teamRes = await agent.post('/api/teams').send({
       tournamentId,
       name: 'Team A',
@@ -536,6 +550,13 @@ describe('Server integration', () => {
     expect(teamRes.status).toBe(201)
     const teamId = teamRes.body.data._id
 
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Team B',
+    })
+    expect(teamBRes.status).toBe(201)
+    const teamBId = teamBRes.body.data._id
+
     const adjudicatorRes = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Judge 1',
@@ -544,6 +565,7 @@ describe('Server integration', () => {
       userDefinedData: { privateMemo: 'hidden' },
     })
     expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = adjudicatorRes.body.data._id
 
     const resultRes = await agent.post('/api/results').send({
       tournamentId,
@@ -561,14 +583,14 @@ describe('Server integration', () => {
       tournamentId,
       round: 1,
       drawOpened: true,
-      allocationOpened: false,
+      allocationOpened: true,
       allocation: [
         {
-          venue: 'Room 1',
-          teams: { gov: teamId, opp: 'team-b' },
-          chairs: ['adj-chair'],
-          panels: ['adj-panel'],
-          trainees: ['adj-trainee'],
+          venue: null,
+          teams: { gov: teamId, opp: teamBId },
+          chairs: [adjudicatorId],
+          panels: [],
+          trainees: [],
         },
       ],
     })
@@ -608,7 +630,7 @@ describe('Server integration', () => {
     const publicDraws = await request(app).get(`/api/draws?tournamentId=${tournamentId}`)
     expect(publicDraws.status).toBe(200)
     expect(Array.isArray(publicDraws.body.data[0].allocation)).toBe(true)
-    expect(publicDraws.body.data[0].allocation[0].chairs).toEqual([])
+    expect(publicDraws.body.data[0].allocation[0].chairs).toEqual([adjudicatorId])
     expect(publicDraws.body.data[0].allocation[0].panels).toEqual([])
     expect(publicDraws.body.data[0].allocation[0].trainees).toEqual([])
     expect('locked' in publicDraws.body.data[0]).toBe(false)
@@ -629,7 +651,7 @@ describe('Server integration', () => {
     const publicSubmission = await request(app).post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
-      adjudicatorId: 'adj-chair',
+      adjudicatorId,
       score: 6,
       submittedEntityId: teamId,
     })
@@ -724,6 +746,13 @@ describe('Server integration', () => {
       .send({ name: 'Draw Guard Open', style: 1, options: {} })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id as string
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
 
     const unavailableTeamRes = await agent.post('/api/teams').send({
       tournamentId,
@@ -1173,9 +1202,7 @@ describe('Server integration', () => {
     })
     expect(teamOnlyRes.status).toBe(412)
     expect(teamOnlyRes.body.errors?.[0]?.name).toBe('NeedMoreTeam')
-    expect(teamOnlyRes.body.errors?.[0]?.message).toBe(
-      'At least 1 more available teams are needed'
-    )
+    expect(teamOnlyRes.body.errors?.[0]?.message).toBe('At least 1 more available teams are needed')
 
     const combinedRes = await agent.post('/api/allocations').send({
       tournamentId,
@@ -2266,9 +2293,12 @@ describe('Server integration', () => {
 
     const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
-    const round2Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 2, name: 'Break R1' })
+    const round2Res = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Break R1',
+      userDefinedData: { no_speaker_score: true },
+    })
     expect(round2Res.status).toBe(201)
     const round3Res = await agent
       .post('/api/rounds')
@@ -2374,8 +2404,8 @@ describe('Server integration', () => {
       teamAId: betaId,
       teamBId: gammaId,
       winnerId: betaId,
-      scoresA: [75],
-      scoresB: [72],
+      scoresA: [],
+      scoresB: [],
       submittedEntityId: 'break-judge',
     })
     expect(round2BallotRes.status).toBe(201)
@@ -2565,6 +2595,8 @@ describe('Server integration', () => {
       winnerId: alphaId,
       scoresA: [76],
       scoresB: [73],
+      speakerIdsA: [alphaSpeakerId],
+      speakerIdsB: [betaSpeakerId],
       submittedEntityId: 'stale-break-judge-1',
     })
     expect(ballot1Res.status).toBe(201)
@@ -2577,6 +2609,8 @@ describe('Server integration', () => {
       winnerId: deltaId,
       scoresA: [74],
       scoresB: [72],
+      speakerIdsA: [deltaSpeakerId],
+      speakerIdsB: [gammaSpeakerId],
       submittedEntityId: 'stale-break-judge-2',
     })
     expect(ballot2Res.status).toBe(201)
@@ -2659,9 +2693,12 @@ describe('Server integration', () => {
 
     const round1Res = await agent.post('/api/rounds').send({ tournamentId, round: 1, name: 'R1' })
     expect(round1Res.status).toBe(201)
-    const round2Res = await agent
-      .post('/api/rounds')
-      .send({ tournamentId, round: 2, name: 'Break QF' })
+    const round2Res = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Break QF',
+      userDefinedData: { no_speaker_score: true },
+    })
     expect(round2Res.status).toBe(201)
     const round3Res = await agent
       .post('/api/rounds')
@@ -2763,8 +2800,8 @@ describe('Server integration', () => {
         teamAId: teams.gov,
         teamBId: teams.opp,
         winnerId,
-        scoresA: [winnerId === teams.gov ? 76 : 72],
-        scoresB: [winnerId === teams.opp ? 76 : 72],
+        scoresA: [],
+        scoresB: [],
         submittedEntityId: `fixed-break-judge-${matchId}`,
       })
       expect(ballotRes.status).toBe(201)
@@ -3247,50 +3284,50 @@ describe('Server integration', () => {
     expect(adjudicatorRes.status).toBe(201)
     const adjudicatorId = adjudicatorRes.body.data._id as string
 
-    const eraseSpeakerMissingReason = await agent.delete(
-      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
-    ).send({})
+    const eraseSpeakerMissingReason = await agent
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .send({})
     expect(eraseSpeakerMissingReason.status).toBe(400)
 
-    const eraseSpeakerMissingReauth = await agent.delete(
-      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'participant requested erasure',
-    })
+    const eraseSpeakerMissingReauth = await agent
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'participant requested erasure',
+      })
     expect(eraseSpeakerMissingReauth.status).toBe(400)
 
-    const eraseSpeakerWrongReauth = await agent.delete(
-      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'participant requested erasure',
-      reauthPassword: 'wrong-password',
-    })
+    const eraseSpeakerWrongReauth = await agent
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'participant requested erasure',
+        reauthPassword: 'wrong-password',
+      })
     expect(eraseSpeakerWrongReauth.status).toBe(401)
 
-    const eraseSpeakerRes = await agent.delete(
-      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'participant requested erasure',
-      approvedBy: 'ops-approver-1',
-      targetRefs: ['ops:participant:privacy-erase'],
-      eraseMode: 'anonymize',
-      reauthPassword: 'password123',
-    })
+    const eraseSpeakerRes = await agent
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'participant requested erasure',
+        approvedBy: 'ops-approver-1',
+        targetRefs: ['ops:participant:privacy-erase'],
+        eraseMode: 'anonymize',
+        reauthPassword: 'password123',
+      })
     expect(eraseSpeakerRes.status).toBe(200)
     expect(eraseSpeakerRes.body.data.entityType).toBe('speaker')
     expect(eraseSpeakerRes.body.data.redacted).toBe(true)
     expect(eraseSpeakerRes.body.data.reason).toBe('participant requested erasure')
     expect(eraseSpeakerRes.body.data.approvedBy).toBe('ops-approver-1')
 
-    const eraseAdjRes = await agent.delete(
-      `/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'judge requested erasure',
-      approvedBy: 'ops-approver-1',
-      targetRefs: ['ops:adjudicator:privacy-erase'],
-      eraseMode: 'anonymize',
-      reauthPassword: 'password123',
-    })
+    const eraseAdjRes = await agent
+      .delete(`/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'judge requested erasure',
+        approvedBy: 'ops-approver-1',
+        targetRefs: ['ops:adjudicator:privacy-erase'],
+        eraseMode: 'anonymize',
+        reauthPassword: 'password123',
+      })
     expect(eraseAdjRes.status).toBe(200)
     expect(eraseAdjRes.body.data.entityType).toBe('adjudicator')
     expect(eraseAdjRes.body.data.redacted).toBe(true)
@@ -3505,6 +3542,13 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id as string
 
+    const roundRes = await agent.post('/api/v1/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
     const speakerRes = await agent.post('/api/v1/speakers').send({
       tournamentId,
       name: 'Hard Delete Speaker',
@@ -3550,8 +3594,8 @@ describe('Server integration', () => {
           venue: null,
           teams: { gov: govTeamId, opp: oppTeamId },
           chairs: [adjudicatorId],
-          panels: [adjudicatorId],
-          trainees: [adjudicatorId],
+          panels: [],
+          trainees: [],
         },
       ],
     })
@@ -3577,14 +3621,14 @@ describe('Server integration', () => {
     })
     expect(rawAdjRes.status).toBe(201)
 
-    const eraseSpeakerRes = await agent.delete(
-      `/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'hard delete speaker data',
-      approvedBy: 'ops-hard-delete',
-      eraseMode: 'hard_delete',
-      reauthPassword: 'password123',
-    })
+    const eraseSpeakerRes = await agent
+      .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'hard delete speaker data',
+        approvedBy: 'ops-hard-delete',
+        eraseMode: 'hard_delete',
+        reauthPassword: 'password123',
+      })
     expect(eraseSpeakerRes.status).toBe(200)
     expect(eraseSpeakerRes.body.data.eraseMode).toBe('hard_delete')
 
@@ -3595,9 +3639,9 @@ describe('Server integration', () => {
 
     const teamsAfterSpeakerDelete = await agent.get(`/api/v1/teams?tournamentId=${tournamentId}`)
     expect(teamsAfterSpeakerDelete.status).toBe(200)
-    const govTeam = (teamsAfterSpeakerDelete.body.data as Array<{ _id: string; template?: any; details?: any[] }>).find(
-      (item) => item._id === govTeamId
-    )
+    const govTeam = (
+      teamsAfterSpeakerDelete.body.data as Array<{ _id: string; template?: any; details?: any[] }>
+    ).find((item) => item._id === govTeamId)
     expect(govTeam).toBeTruthy()
     expect(Array.isArray(govTeam?.template?.speakers)).toBe(true)
     expect(govTeam?.template?.speakers).not.toContain(speakerId)
@@ -3611,14 +3655,14 @@ describe('Server integration', () => {
     expect(Array.isArray(rawSpeakerAfterDelete.body.data)).toBe(true)
     expect(rawSpeakerAfterDelete.body.data).toHaveLength(0)
 
-    const eraseAdjRes = await agent.delete(
-      `/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`
-    ).send({
-      reason: 'hard delete adjudicator data',
-      approvedBy: 'ops-hard-delete',
-      eraseMode: 'hard_delete',
-      reauthPassword: 'password123',
-    })
+    const eraseAdjRes = await agent
+      .delete(`/api/v1/adjudicators/${adjudicatorId}/personal-data?tournamentId=${tournamentId}`)
+      .send({
+        reason: 'hard delete adjudicator data',
+        approvedBy: 'ops-hard-delete',
+        eraseMode: 'hard_delete',
+        reauthPassword: 'password123',
+      })
     expect(eraseAdjRes.status).toBe(200)
     expect(eraseAdjRes.body.data.eraseMode).toBe('hard_delete')
 
@@ -3987,7 +4031,7 @@ describe('Server integration', () => {
         targetId: speakerId,
         reason: 'list pagination requester b one',
         eraseMode: 'anonymize',
-    })
+      })
     expect(createB1Res.status).toBe(201)
 
     const v1CompatRes = await agent.get(
@@ -4210,13 +4254,11 @@ describe('Server integration', () => {
   it('returns equivalent erasure reject/cancel payloads on v1 and legacy routes', async () => {
     const agent = request.agent(app)
 
-    const registerRes = await agent
-      .post('/api/v1/auth/register')
-      .send({
-        username: 'privacy-reject-cancel-compat',
-        password: 'password123',
-        role: 'organizer',
-      })
+    const registerRes = await agent.post('/api/v1/auth/register').send({
+      username: 'privacy-reject-cancel-compat',
+      password: 'password123',
+      role: 'organizer',
+    })
     expect(registerRes.status).toBe(201)
 
     const loginRes = await agent
@@ -4324,7 +4366,9 @@ describe('Server integration', () => {
     expect(rejectLegacyRes.headers.sunset).toBeTruthy()
     expect(String(rejectLegacyRes.headers.link ?? '')).toContain('/api/v1')
     expect(String(rejectLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
-    expect(normalizeRequestPayload(rejectLegacyRes.body)).toEqual(normalizeRequestPayload(rejectV1Res.body))
+    expect(normalizeRequestPayload(rejectLegacyRes.body)).toEqual(
+      normalizeRequestPayload(rejectV1Res.body)
+    )
 
     const createCancelV1Res = await agent.post('/api/v1/privacy/erasure-requests').send({
       tournamentId,
@@ -4396,19 +4440,19 @@ describe('Server integration', () => {
     expect(cancelLegacyRes.headers.sunset).toBeTruthy()
     expect(String(cancelLegacyRes.headers.link ?? '')).toContain('/api/v1')
     expect(String(cancelLegacyRes.headers.warning ?? '')).toContain('Deprecated API')
-    expect(normalizeRequestPayload(cancelLegacyRes.body)).toEqual(normalizeRequestPayload(cancelV1Res.body))
+    expect(normalizeRequestPayload(cancelLegacyRes.body)).toEqual(
+      normalizeRequestPayload(cancelV1Res.body)
+    )
   })
 
   it('returns equivalent erasure execute-before-approve conflict payloads on v1 and legacy routes', async () => {
     const agent = request.agent(app)
 
-    const registerRes = await agent
-      .post('/api/v1/auth/register')
-      .send({
-        username: 'privacy-execute-conflict-compat',
-        password: 'password123',
-        role: 'organizer',
-      })
+    const registerRes = await agent.post('/api/v1/auth/register').send({
+      username: 'privacy-execute-conflict-compat',
+      password: 'password123',
+      role: 'organizer',
+    })
     expect(registerRes.status).toBe(201)
 
     const loginRes = await agent
@@ -4485,13 +4529,11 @@ describe('Server integration', () => {
   it('returns equivalent erasure execute-after-cancel conflict payloads on v1 and legacy routes', async () => {
     const agent = request.agent(app)
 
-    const registerRes = await agent
-      .post('/api/v1/auth/register')
-      .send({
-        username: 'privacy-execute-cancel-conflict-compat',
-        password: 'password123',
-        role: 'organizer',
-      })
+    const registerRes = await agent.post('/api/v1/auth/register').send({
+      username: 'privacy-execute-cancel-conflict-compat',
+      password: 'password123',
+      role: 'organizer',
+    })
     expect(registerRes.status).toBe(201)
 
     const loginRes = await agent
@@ -4615,6 +4657,13 @@ describe('Server integration', () => {
       .send({ name: 'Short Adjs Open', style: 1, options: {} })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
 
     const teamsRes = await agent.post('/api/teams').send([
       { tournamentId, name: 'Team 1' },

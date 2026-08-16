@@ -1,16 +1,21 @@
 import type { RequestHandler } from 'express'
+import { Types } from 'mongoose'
 import { hasTournamentAdminAccess } from '../../middleware/auth.js'
 import { getTournamentConnection } from '../../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../../services/mongo-error.service.js'
 import { badRequest, isValidObjectId, notFound } from './http-errors.js'
-import { ensureObjectId, ensureTournamentId, requireSingleTournamentPayload } from './request-validators.js'
+import {
+  ensureObjectId,
+  ensureTournamentId,
+  requireSingleTournamentPayload,
+} from './request-validators.js'
 
 type PlainRecord = Record<string, unknown>
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
 type CrudModel = {
   find: (filter: PlainRecord) => { lean: () => { exec: () => Promise<any[]> } }
-  findById: (id: string) => { lean: () => { exec: () => Promise<any | null> } }
+  findOne: (filter: PlainRecord) => { lean: () => { exec: () => Promise<any | null> } }
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<any[]>
   create: (doc: PlainRecord) => Promise<{ toJSON: () => any }>
   bulkWrite: (ops: any[], options: { ordered: boolean }) => Promise<unknown>
@@ -25,6 +30,7 @@ type CrudModel = {
 
 type CrudOptions = {
   fields: readonly string[]
+  uniqueField?: string
   getModel: (connection: TournamentConnection) => CrudModel
   sanitizeForPublic: (value: unknown) => unknown
   invalidEntityIdMessage: string
@@ -50,7 +56,11 @@ function parseBulkIdList(ids: unknown): string[] {
     .filter((id) => id.length > 0)
 }
 
-function buildCreateDoc(payload: PlainRecord, tournamentId: string, fields: readonly string[]): PlainRecord {
+function buildCreateDoc(
+  payload: PlainRecord,
+  tournamentId: string,
+  fields: readonly string[]
+): PlainRecord {
   return {
     tournamentId,
     ...pickKnownFields(payload, fields),
@@ -59,6 +69,23 @@ function buildCreateDoc(payload: PlainRecord, tournamentId: string, fields: read
 
 function buildUpdateDoc(payload: PlainRecord, fields: readonly string[]): PlainRecord {
   return pickKnownFields(payload, fields)
+}
+
+function hasOwn(source: PlainRecord, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(source, key)
+}
+
+function buildRestoreUpdate(record: PlainRecord, fields: readonly string[]): PlainRecord {
+  const set: PlainRecord = {}
+  const unset: PlainRecord = {}
+  fields.forEach((field) => {
+    if (hasOwn(record, field)) {
+      set[field] = record[field]
+      return
+    }
+    unset[field] = 1
+  })
+  return Object.keys(unset).length > 0 ? { $set: set, $unset: unset } : { $set: set }
 }
 
 export function createTournamentEntityCrudHandlers(options: CrudOptions): {
@@ -70,6 +97,15 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
   update: RequestHandler
   deleteOne: RequestHandler
 } {
+  const uniqueField = options.uniqueField ?? 'name'
+
+  const sendDuplicateConflict = (res: Parameters<RequestHandler>[1]) => {
+    res.status(409).json({
+      data: null,
+      errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
+    })
+  }
+
   const list: RequestHandler = async (req, res, next) => {
     try {
       const { tournamentId } = req.query as { tournamentId?: string }
@@ -102,7 +138,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       if (!ensureObjectId(res, id, options.invalidEntityIdMessage)) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const record = await Model.findById(id).lean().exec()
+      const record = await Model.findOne({ _id: id, tournamentId }).lean().exec()
       if (!record) {
         notFound(res, options.notFoundMessage)
         return
@@ -133,8 +169,40 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         if (!tournamentId) return
         const connection = await getTournamentConnection(tournamentId)
         const Model = options.getModel(connection)
-        const docs = payload.map((item) => buildCreateDoc(item, tournamentId, options.fields))
-        const created = await Model.insertMany(docs, { ordered: false })
+        const docs: PlainRecord[] = payload.map((item) => ({
+          _id: new Types.ObjectId(),
+          ...buildCreateDoc(item, tournamentId, options.fields),
+        }))
+        const proposedValues = docs.map((doc) => String(doc[uniqueField] ?? ''))
+        if (new Set(proposedValues).size !== proposedValues.length) {
+          sendDuplicateConflict(res)
+          return
+        }
+        const existing = await Model.find({ tournamentId }).lean().exec()
+        const existingValues = new Set(
+          existing.map((record) => String(record?.[uniqueField] ?? ''))
+        )
+        if (proposedValues.some((value) => existingValues.has(value))) {
+          sendDuplicateConflict(res)
+          return
+        }
+        let created: any[]
+        try {
+          created = await Model.insertMany(docs, { ordered: true })
+        } catch (createError) {
+          try {
+            await Model.deleteMany({
+              tournamentId,
+              _id: { $in: docs.map((doc) => doc._id) },
+            }).exec()
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [createError, rollbackError],
+              'Failed to roll back bulk entity creation'
+            )
+          }
+          throw createError
+        }
         res.status(201).json({ data: created, errors: [] })
         return
       }
@@ -172,19 +240,115 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         badRequest(res, options.invalidEntityIdMessage)
         return
       }
+      const ids = payload.map((item) => String(item.id))
+      if (new Set(ids).size !== ids.length) {
+        badRequest(res, 'Bulk update ids must be unique')
+        return
+      }
 
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
+      const existing = await Model.find({ tournamentId }).lean().exec()
+      const existingById = new Map(existing.map((record) => [String(record?._id ?? ''), record]))
+      if (ids.some((id) => !existingById.has(id))) {
+        notFound(res, options.notFoundMessage)
+        return
+      }
+      const updateById = new Map(
+        payload.map((item) => [String(item.id), buildUpdateDoc(item, options.fields)])
+      )
+      const finalUniqueValues = new Map<string, string>()
+      for (const record of existing) {
+        const id = String(record?._id ?? '')
+        const update = updateById.get(id)
+        const value = String(update?.[uniqueField] ?? record?.[uniqueField] ?? '')
+        const ownerId = finalUniqueValues.get(value)
+        if (ownerId && ownerId !== id) {
+          sendDuplicateConflict(res)
+          return
+        }
+        finalUniqueValues.set(value, id)
+      }
       const ops = payload.map((item) => ({
         updateOne: {
           filter: { _id: item.id, tournamentId },
           update: { $set: buildUpdateDoc(item, options.fields) },
         },
       }))
-      await Model.bulkWrite(ops, { ordered: false })
+      const changedUniqueIds = payload
+        .filter((item) => {
+          const update = updateById.get(String(item.id)) ?? {}
+          const current = existingById.get(String(item.id)) ?? {}
+          return (
+            hasOwn(update, uniqueField) &&
+            String(update[uniqueField]) !== String(current[uniqueField])
+          )
+        })
+        .map((item) => String(item.id))
+      const occupiedUniqueValues = new Set<string>([
+        ...existing.map((record) => String(record?.[uniqueField] ?? '')),
+        ...Array.from(finalUniqueValues.keys()),
+      ])
+      const temporaryUniqueValueById = new Map<string, string>()
+      changedUniqueIds.forEach((id, index) => {
+        let suffix = index
+        let candidate = `__utab_bulk_${id}_${suffix}__`
+        while (occupiedUniqueValues.has(candidate)) {
+          suffix += 1
+          candidate = `__utab_bulk_${id}_${suffix}__`
+        }
+        occupiedUniqueValues.add(candidate)
+        temporaryUniqueValueById.set(id, candidate)
+      })
+      const stageOps = changedUniqueIds.map((id) => ({
+        updateOne: {
+          filter: { _id: id, tournamentId },
+          update: { $set: { [uniqueField]: temporaryUniqueValueById.get(id) } },
+        },
+      }))
+      const restoreOps = payload.map((item) => ({
+        updateOne: {
+          filter: { _id: item.id, tournamentId },
+          update: buildRestoreUpdate(existingById.get(String(item.id)) ?? {}, options.fields),
+        },
+      }))
 
-      const ids = payload.map((item) => item.id)
-      const updated = await Model.find({ _id: { $in: ids }, tournamentId }).lean().exec()
+      let mutationStarted = false
+      try {
+        if (stageOps.length > 0) {
+          mutationStarted = true
+          await Model.bulkWrite(stageOps, { ordered: true })
+        }
+        mutationStarted = true
+        await Model.bulkWrite(ops, { ordered: true })
+      } catch (updateError) {
+        if (mutationStarted) {
+          const rollbackErrors: unknown[] = []
+          if (stageOps.length > 0) {
+            try {
+              await Model.bulkWrite(stageOps, { ordered: true })
+            } catch (rollbackStageError) {
+              rollbackErrors.push(rollbackStageError)
+            }
+          }
+          try {
+            await Model.bulkWrite(restoreOps, { ordered: true })
+          } catch (rollbackRestoreError) {
+            rollbackErrors.push(rollbackRestoreError)
+          }
+          if (rollbackErrors.length > 0) {
+            throw new AggregateError(
+              [updateError, ...rollbackErrors],
+              'Failed to roll back bulk entity update'
+            )
+          }
+        }
+        throw updateError
+      }
+
+      const updated = await Model.find({ _id: { $in: ids }, tournamentId })
+        .lean()
+        .exec()
       res.json({ data: updated, errors: [] })
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {

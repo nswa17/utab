@@ -26,7 +26,12 @@ import {
   type CompileOptions,
   type CompileOptionsInput,
 } from '../types/compiled-options.js'
-import { buildDetailsForRounds, buildIdMaps, normalizeScoreWeights } from './shared/allocation-support.js'
+import {
+  buildDetailsForRounds,
+  buildIdMaps,
+  normalizeScoreWeights,
+  normalizeTeamNum,
+} from './shared/allocation-support.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 type BallotPayload = {
@@ -180,14 +185,20 @@ async function buildCompiledPreviewPayload(params: {
   source?: 'submissions' | 'raw'
   requestedRounds?: number[]
   compileOptions: CompileOptions
-}): Promise<{ payload: CompiledPayload; connection: Connection; preview_signature: string; revision: string }> {
+}): Promise<{
+  payload: CompiledPayload
+  connection: Connection
+  preview_signature: string
+  revision: string
+}> {
   const { payload, connection } = await buildCompiledPayload(
     params.tournamentId,
     params.source,
     params.requestedRounds,
     params.compileOptions
   )
-  payload.compile_source = payload.compile_source === 'raw' || params.source === 'raw' ? 'raw' : 'submissions'
+  payload.compile_source =
+    payload.compile_source === 'raw' || params.source === 'raw' ? 'raw' : 'submissions'
   await attachDiffAgainstBaseline(payload, connection)
   return {
     payload,
@@ -203,7 +214,8 @@ function validatePreviewToken(
   provided: { preview_signature: string; revision: string }
 ): boolean {
   const signatureMismatch =
-    provided.preview_signature.length > 0 && provided.preview_signature !== expected.preview_signature
+    provided.preview_signature.length > 0 &&
+    provided.preview_signature !== expected.preview_signature
   const revisionMismatch = provided.revision.length > 0 && provided.revision !== expected.revision
   if (!signatureMismatch && !revisionMismatch) return true
   res.status(409).json({
@@ -223,7 +235,10 @@ function toNumberArray(value: unknown): number[] {
   return value.map((item) => (typeof item === 'number' ? item : Number(item)))
 }
 
-function buildStringIdMaps(ids: Iterable<string>): { map: Map<string, number>; reverse: Map<number, string> } {
+function buildStringIdMaps(ids: Iterable<string>): {
+  map: Map<string, number>
+  reverse: Map<number, string>
+} {
   const normalizedIds = Array.from(
     new Set(
       Array.from(ids)
@@ -249,10 +264,7 @@ function restoreMappedId(value: unknown, reverse: Map<number, string>): string {
   return String(value ?? '')
 }
 
-function remapCompiledTeamResults(
-  teamResults: any[],
-  teamReverse: Map<number, string>
-): any[] {
+function remapCompiledTeamResults(teamResults: any[], teamReverse: Map<number, string>): any[] {
   return teamResults.map((result: any) => ({
     ...result,
     id: restoreMappedId(result?.id, teamReverse),
@@ -415,11 +427,7 @@ function toNumericValue(value: unknown, mode: 'desc' | 'asc'): number {
   return mode === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY
 }
 
-function compareByNumericValue(
-  left: unknown,
-  right: unknown,
-  mode: 'desc' | 'asc'
-): number {
+function compareByNumericValue(left: unknown, right: unknown, mode: 'desc' | 'asc'): number {
   const a = toNumericValue(left, mode)
   const b = toNumericValue(right, mode)
   if (a === b) return 0
@@ -479,10 +487,7 @@ function compareAdjudicatorsByRankingPriority(
   return leftId < rightId ? -1 : 1
 }
 
-function applyTeamRankingPriority(
-  teamResults: any[],
-  compileOptions: CompileOptions
-): any[] {
+function applyTeamRankingPriority(teamResults: any[], compileOptions: CompileOptions): any[] {
   if (compileOptions.ranking_priority.preset !== 'custom') return teamResults
   const sorted = [...teamResults]
   sorted.sort((left, right) =>
@@ -710,7 +715,9 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
 }
 
 function resolveBallotSubmissionActor(submission: any): string {
-  const payloadActor = String((submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? '').trim()
+  const payloadActor = String(
+    (submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? ''
+  ).trim()
   if (payloadActor) return payloadActor
   const submittedBy = String(submission?.submittedBy ?? '').trim()
   if (submittedBy) return submittedBy
@@ -894,7 +901,8 @@ function orientBallotPayload(
   const payloadTeamAId = String(payload.teamAId ?? '').trim()
   const payloadTeamBId = String(payload.teamBId ?? '').trim()
   if (!payloadTeamAId || !payloadTeamBId) return null
-  if (payloadTeamAId === teamAId && payloadTeamBId === teamBId) return { ...payload, teamAId, teamBId }
+  if (payloadTeamAId === teamAId && payloadTeamBId === teamBId)
+    return { ...payload, teamAId, teamBId }
   if (payloadTeamAId === teamBId && payloadTeamBId === teamAId) {
     return {
       ...payload,
@@ -1078,22 +1086,31 @@ async function buildCompiledPayloadFromRaw(
     throw err
   }
 
-  const [teams, adjudicators, rawTeamResults, rawSpeakerResults, rawAdjudicatorResults, draws] =
-    await Promise.all([
-      getTeamModel(connection).find({ tournamentId }).lean().exec(),
-      getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
-      getRawTeamResultModel(connection).find({ tournamentId }).lean().exec(),
-      getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
-      getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec(),
-      getDrawModel(connection).find({ tournamentId }).lean().exec(),
-    ])
+  const [
+    teams,
+    adjudicators,
+    rawTeamResults,
+    rawSpeakerResults,
+    rawAdjudicatorResults,
+    draws,
+    roundDocs,
+  ] = await Promise.all([
+    getTeamModel(connection).find({ tournamentId }).lean().exec(),
+    getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
+    getRawTeamResultModel(connection).find({ tournamentId }).lean().exec(),
+    getRawSpeakerResultModel(connection).find({ tournamentId }).lean().exec(),
+    getRawAdjudicatorResultModel(connection).find({ tournamentId }).lean().exec(),
+    getDrawModel(connection).find({ tournamentId }).lean().exec(),
+    getRoundModel(connection).find({ tournamentId }).lean().exec(),
+  ])
 
+  const existingRoundSet = new Set(roundDocs.map((doc: any) => Number(doc.round)))
   const rounds = resolveRounds(
     requestedRounds,
     rawTeamResults as Array<{ r?: number }>,
     rawSpeakerResults as Array<{ r?: number }>,
     rawAdjudicatorResults as Array<{ r?: number }>
-  )
+  ).filter((round) => existingRoundSet.has(round))
   const selectedRoundSet = new Set(rounds.map((r) => Number(r)))
   const filteredRawTeamResults = (rawTeamResults as any[]).filter((result) =>
     selectedRoundSet.has(Number((result as any).r))
@@ -1105,7 +1122,6 @@ async function buildCompiledPayloadFromRaw(
     selectedRoundSet.has(Number((result as any).r))
   )
   const filteredDraws = (draws as any[]).filter((draw) => selectedRoundSet.has(Number(draw.round)))
-  const roundDocs = await getRoundModel(connection).find({ tournamentId }).lean().exec()
   const roundNameMap = new Map<number, string>(
     roundDocs.map((doc: any) => [Number(doc.round), doc.name ?? `Round ${doc.round}`])
   )
@@ -1116,7 +1132,7 @@ async function buildCompiledPayloadFromRaw(
       ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
       : null
   const scoreWeights = normalizeScoreWeights(styleOptions.score_weights ?? styleDoc?.score_weights)
-  const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
+  const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
   const teamMaps = buildIdMaps(teams)
@@ -1140,10 +1156,7 @@ async function buildCompiledPayloadFromRaw(
   const speakerMaps = buildStringIdMaps(speakerIdPool)
 
   const mapFromId = (id: string): number =>
-    adjudicatorMaps.map.get(id) ??
-    speakerMaps.map.get(id) ??
-    teamMaps.map.get(id) ??
-    0
+    adjudicatorMaps.map.get(id) ?? speakerMaps.map.get(id) ?? teamMaps.map.get(id) ?? 0
 
   const mappedRawTeamResults = filteredRawTeamResults
     .map((result: any) => {
@@ -1290,7 +1303,10 @@ async function buildCompiledPayloadFromRaw(
       : []
 
   const compiledTeamResults = remapCompiledTeamResults(compiledTeamResultsCore, teamMaps.reverse)
-  const compiledSpeakerResults = remapCompiledSpeakerResults(compiledSpeakerResultsCore, speakerMaps.reverse)
+  const compiledSpeakerResults = remapCompiledSpeakerResults(
+    compiledSpeakerResultsCore,
+    speakerMaps.reverse
+  )
   const compiledAdjudicatorResults = remapCompiledAdjudicatorResults(
     compiledAdjudicatorResultsCore,
     adjudicatorMaps.reverse,
@@ -1300,7 +1316,9 @@ async function buildCompiledPayloadFromRaw(
   const teamMeta = new Map<string, { institutions: string[] }>()
   teams.forEach((team: any) => {
     const institutions = new Set<string>()
-    const templateConflicts = Array.isArray(team?.template?.conflicts) ? team.template.conflicts : []
+    const templateConflicts = Array.isArray(team?.template?.conflicts)
+      ? team.template.conflicts
+      : []
     templateConflicts.forEach((inst: string) => {
       if (inst) institutions.add(String(inst))
     })
@@ -1394,26 +1412,25 @@ async function buildCompiledPayloadFromSubmissions(
     throw err
   }
 
-  const [teams, adjudicators, submissions, draws] = await Promise.all([
+  const [teams, adjudicators, submissions, draws, roundDocs] = await Promise.all([
     getTeamModel(connection).find({ tournamentId }).lean().exec(),
     getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
     getSubmissionModel(connection).find({ tournamentId }).lean().exec(),
     getDrawModel(connection).find({ tournamentId }).lean().exec(),
+    getRoundModel(connection).find({ tournamentId }).lean().exec(),
   ])
 
+  const existingRoundSet = new Set(roundDocs.map((doc: any) => Number(doc.round)))
   const rounds = resolveRoundsFromSubmissions(
     requestedRounds,
     submissions as Array<{ round?: number }>,
     draws as Array<{ round?: number }>
-  )
+  ).filter((round) => existingRoundSet.has(round))
   const selectedRoundSet = new Set(rounds.map((r) => Number(r)))
   const filteredSubmissions = (submissions as any[]).filter((item) =>
     selectedRoundSet.has(Number(item.round))
   )
-  const filteredDraws = (draws as any[]).filter((draw) =>
-    selectedRoundSet.has(Number(draw.round))
-  )
-  const roundDocs = await getRoundModel(connection).find({ tournamentId }).lean().exec()
+  const filteredDraws = (draws as any[]).filter((draw) => selectedRoundSet.has(Number(draw.round)))
   const roundNameMap = new Map<number, string>(
     roundDocs.map((doc: any) => [Number(doc.round), doc.name ?? `Round ${doc.round}`])
   )
@@ -1515,7 +1532,9 @@ async function buildCompiledPayloadFromSubmissions(
   }
 
   const ballotSubmissions = filteredSubmissions.filter((submission) => submission.type === 'ballot')
-  const feedbackSubmissions = filteredSubmissions.filter((submission) => submission.type === 'feedback')
+  const feedbackSubmissions = filteredSubmissions.filter(
+    (submission) => submission.type === 'feedback'
+  )
 
   const ballotGroups = new Map<string, any[]>()
   ballotSubmissions.forEach((submission) => {
@@ -1578,7 +1597,8 @@ async function buildCompiledPayloadFromSubmissions(
 
     const scoresA = toNumberArray(payload.scoresA)
     const scoresB = toNumberArray(payload.scoresB)
-    const hasInvalidScore = scoresA.some((value) => !Number.isFinite(value)) ||
+    const hasInvalidScore =
+      scoresA.some((value) => !Number.isFinite(value)) ||
       scoresB.some((value) => !Number.isFinite(value))
     if (hasInvalidScore) {
       registerMissingIssue({
@@ -1595,10 +1615,9 @@ async function buildCompiledPayloadFromSubmissions(
     const normalizedWinA = Number((submission as any).__normalizedWinA)
     const normalizedWinB = Number((submission as any).__normalizedWinB)
     const hasNormalizedWins = Number.isFinite(normalizedWinA) && Number.isFinite(normalizedWinB)
-    const ballotVerdict =
-      hasNormalizedWins
-        ? ({ winnerId: undefined, draw: true, inferred: false } as BallotResolution)
-        : resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
+    const ballotVerdict = hasNormalizedWins
+      ? ({ winnerId: undefined, draw: true, inferred: false } as BallotResolution)
+      : resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
     if (!hasNormalizedWins && ballotVerdict.inferred) {
       registerMissingIssue({
         code: 'missing_verdict',
@@ -1615,8 +1634,8 @@ async function buildCompiledPayloadFromSubmissions(
         : ballotVerdict.draw
           ? compileOptions.tie_points
           : ballotVerdict.winnerId
-          ? 0
-          : compileOptions.tie_points
+            ? 0
+            : compileOptions.tie_points
     const winB = hasNormalizedWins
       ? normalizedWinB
       : ballotVerdict.winnerId === teamBId
@@ -1624,8 +1643,8 @@ async function buildCompiledPayloadFromSubmissions(
         : ballotVerdict.draw
           ? compileOptions.tie_points
           : ballotVerdict.winnerId
-          ? 0
-          : compileOptions.tie_points
+            ? 0
+            : compileOptions.tie_points
     const sideMap = sideByRoundTeam.get(round)
 
     rawTeamResults.push({
@@ -1657,11 +1676,15 @@ async function buildCompiledPayloadFromSubmissions(
     const fallbackSpeakersB = getSpeakersForTeamRound(teamBId, round)
     const speakersA =
       selectedSpeakerIdsA.length > 0
-        ? scoresA.map((_score, index) => selectedSpeakerIdsA[index] || fallbackSpeakersA[index] || '')
+        ? scoresA.map(
+            (_score, index) => selectedSpeakerIdsA[index] || fallbackSpeakersA[index] || ''
+          )
         : fallbackSpeakersA
     const speakersB =
       selectedSpeakerIdsB.length > 0
-        ? scoresB.map((_score, index) => selectedSpeakerIdsB[index] || fallbackSpeakersB[index] || '')
+        ? scoresB.map(
+            (_score, index) => selectedSpeakerIdsB[index] || fallbackSpeakersB[index] || ''
+          )
         : fallbackSpeakersB
     const bestA = Array.isArray((submission.payload as any)?.bestA)
       ? ((submission.payload as any).bestA as boolean[])
@@ -1765,7 +1788,7 @@ async function buildCompiledPayloadFromSubmissions(
       ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
       : null
   const scoreWeights = normalizeScoreWeights(styleOptions.score_weights ?? styleDoc?.score_weights)
-  const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
+  const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
   const speakerIdPool = new Set<string>()
@@ -1780,10 +1803,7 @@ async function buildCompiledPayloadFromSubmissions(
   const speakerMaps = buildStringIdMaps(speakerIdPool)
 
   const mapFromId = (id: string): number =>
-    adjudicatorMaps.map.get(id) ??
-    speakerMaps.map.get(id) ??
-    teamMaps.map.get(id) ??
-    0
+    adjudicatorMaps.map.get(id) ?? speakerMaps.map.get(id) ?? teamMaps.map.get(id) ?? 0
 
   const mappedRawTeamResults = rawTeamResults
     .map((result: any) => {
@@ -1849,7 +1869,9 @@ async function buildCompiledPayloadFromSubmissions(
     })
     .filter((team): team is { id: number; details: any[] } => team !== null)
 
-  const speakerInstances = Array.from(new Set(mappedRawSpeakerResults.map((result) => Number(result.id))))
+  const speakerInstances = Array.from(
+    new Set(mappedRawSpeakerResults.map((result) => Number(result.id)))
+  )
     .filter((numericId) => Number.isFinite(numericId))
     .map((id) => ({ id }))
   const adjudicatorInstances = Array.from(
@@ -1911,7 +1933,10 @@ async function buildCompiledPayloadFromSubmissions(
       : []
 
   const compiledTeamResults = remapCompiledTeamResults(compiledTeamResultsCore, teamMaps.reverse)
-  const compiledSpeakerResults = remapCompiledSpeakerResults(compiledSpeakerResultsCore, speakerMaps.reverse)
+  const compiledSpeakerResults = remapCompiledSpeakerResults(
+    compiledSpeakerResultsCore,
+    speakerMaps.reverse
+  )
   const compiledAdjudicatorResults = remapCompiledAdjudicatorResults(
     compiledAdjudicatorResultsCore,
     adjudicatorMaps.reverse,
@@ -2002,7 +2027,9 @@ function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
     tournamentId: String(tournamentId),
     compile_source: payload.compile_source === 'raw' ? 'raw' : 'submissions',
     rounds: Array.isArray(payload.rounds) ? payload.rounds : [],
-    compile_options: normalizeCompileOptions(payload.compile_options as CompileOptionsInput | undefined),
+    compile_options: normalizeCompileOptions(
+      payload.compile_options as CompileOptionsInput | undefined
+    ),
     compile_warnings: Array.isArray(payload.compile_warnings) ? payload.compile_warnings : [],
     compile_diff_meta:
       payload.compile_diff_meta && typeof payload.compile_diff_meta === 'object'
@@ -2071,7 +2098,11 @@ const makeCreateCompiled =
   (key: CompiledResultsKey): RequestHandler =>
   async (req, res, next) => {
     try {
-      const { tournamentId, source, rounds: requestedRounds } = req.body as {
+      const {
+        tournamentId,
+        source,
+        rounds: requestedRounds,
+      } = req.body as {
         tournamentId: string
         source?: 'submissions' | 'raw'
         rounds?: number[]
@@ -2083,7 +2114,9 @@ const makeCreateCompiled =
       }
       if (!ensureTournamentId(res, tournamentId)) return
 
-      const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
+      const compileOptions = normalizeCompileOptions(
+        req.body?.options as CompileOptionsInput | undefined
+      )
       const buildResult = await buildCompiledPreviewPayload({
         tournamentId,
         source,
@@ -2119,11 +2152,15 @@ const makeCreateCompiled =
 
 export const listCompiledTeams: RequestHandler = makeListCompiled('compiled_team_results')
 export const listCompiledSpeakers: RequestHandler = makeListCompiled('compiled_speaker_results')
-export const listCompiledAdjudicators: RequestHandler = makeListCompiled('compiled_adjudicator_results')
+export const listCompiledAdjudicators: RequestHandler = makeListCompiled(
+  'compiled_adjudicator_results'
+)
 
 export const createCompiledTeams: RequestHandler = makeCreateCompiled('compiled_team_results')
 export const createCompiledSpeakers: RequestHandler = makeCreateCompiled('compiled_speaker_results')
-export const createCompiledAdjudicators: RequestHandler = makeCreateCompiled('compiled_adjudicator_results')
+export const createCompiledAdjudicators: RequestHandler = makeCreateCompiled(
+  'compiled_adjudicator_results'
+)
 
 export const listCompiled: RequestHandler = async (req, res, next) => {
   try {
@@ -2162,7 +2199,11 @@ export const listCompiled: RequestHandler = async (req, res, next) => {
 
 export const createCompiled: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, source, rounds: requestedRounds } = req.body as {
+    const {
+      tournamentId,
+      source,
+      rounds: requestedRounds,
+    } = req.body as {
       tournamentId: string
       source?: 'submissions' | 'raw'
       rounds?: number[]
@@ -2174,7 +2215,9 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
     }
     if (!ensureTournamentId(res, tournamentId)) return
 
-    const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
+    const compileOptions = normalizeCompileOptions(
+      req.body?.options as CompileOptionsInput | undefined
+    )
     const buildResult = await buildCompiledPreviewPayload({
       tournamentId,
       source,
@@ -2232,7 +2275,11 @@ export const deleteCompiled: RequestHandler = async (req, res, next) => {
 
 export const createCompiledPreview: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, source, rounds: requestedRounds } = req.body as {
+    const {
+      tournamentId,
+      source,
+      rounds: requestedRounds,
+    } = req.body as {
       tournamentId: string
       source?: 'submissions' | 'raw'
       rounds?: number[]
@@ -2240,7 +2287,9 @@ export const createCompiledPreview: RequestHandler = async (req, res, next) => {
     }
     if (!ensureTournamentId(res, tournamentId)) return
 
-    const compileOptions = normalizeCompileOptions(req.body?.options as CompileOptionsInput | undefined)
+    const compileOptions = normalizeCompileOptions(
+      req.body?.options as CompileOptionsInput | undefined
+    )
     const built = await buildCompiledPreviewPayload({
       tournamentId,
       source,

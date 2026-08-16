@@ -17,7 +17,7 @@ const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string().min(1),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   userDefinedData: z.any().optional(),
 })
 
@@ -36,7 +36,7 @@ const updateSchema = {
   body: z
     .object({
       tournamentId: z.string().min(1),
-      name: z.string().min(1).optional(),
+      name: z.string().trim().min(1).optional(),
       userDefinedData: z.any().optional(),
     })
     .refine((data) => data.name !== undefined || data.userDefinedData !== undefined, {
@@ -50,7 +50,7 @@ const bulkUpdateSchema = {
       .object({
         id: z.string().min(1),
         tournamentId: z.string().min(1),
-        name: z.string().min(1).optional(),
+        name: z.string().trim().min(1).optional(),
         userDefinedData: z.any().optional(),
       })
       .refine((data) => data.name !== undefined || data.userDefinedData !== undefined, {
@@ -83,18 +83,8 @@ const bulkDeleteSchema = {
   }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listSpeakers
-)
-router.get(
-  '/:id',
-  requireTournamentView(),
-  validateRequest(getSchema),
-  getSpeaker
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listSpeakers)
+router.get('/:id', requireTournamentView(), validateRequest(getSchema), getSpeaker)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createSpeaker)
 router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateSpeakers)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateSpeaker)

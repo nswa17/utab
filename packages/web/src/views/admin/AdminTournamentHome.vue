@@ -433,6 +433,9 @@
                           v-model:no-speaker-score="
                             setupRoundEditForm.userDefinedData.no_speaker_score
                           "
+                          v-model:ballot-submitter-roles="
+                            setupRoundEditForm.userDefinedData.ballot_submitter_roles
+                          "
                           v-model:allow-low-tie-win="
                             setupRoundEditForm.userDefinedData.allow_low_tie_win
                           "
@@ -1207,10 +1210,7 @@
               </Field>
               <div class="availability-control">
                 <label class="row small round-detail-switch">
-                  <ToggleSwitch
-                    v-model="venueForm.available"
-                    :aria-label="$t('会場を有効化')"
-                  />
+                  <ToggleSwitch v-model="venueForm.available" :aria-label="$t('会場を有効化')" />
                   <span class="muted small">{{ $t('有効') }}</span>
                 </label>
               </div>
@@ -1667,6 +1667,9 @@
             "
             v-model:evaluator-in-team="roundDefaultsForm.userDefinedData.evaluator_in_team"
             v-model:no-speaker-score="roundDefaultsForm.userDefinedData.no_speaker_score"
+            v-model:ballot-submitter-roles="
+              roundDefaultsForm.userDefinedData.ballot_submitter_roles
+            "
             v-model:allow-low-tie-win="roundDefaultsForm.userDefinedData.allow_low_tie_win"
             v-model:score-by-matter-manner="
               roundDefaultsForm.userDefinedData.score_by_matter_manner
@@ -1832,10 +1835,7 @@ import { useInstitutionsStore } from '@/stores/institutions'
 import { useSubmissionsStore } from '@/stores/submissions'
 import type { Institution } from '@/types/institution'
 import { renderMarkdown } from '@/utils/markdown'
-import {
-  readTournamentAccessState,
-  resolveTournamentAccessForm,
-} from '@/utils/tournament-access'
+import { readTournamentAccessState, resolveTournamentAccessForm } from '@/utils/tournament-access'
 import {
   buildEntityImportPayload,
   type DuplicateNameWarning,
@@ -2100,7 +2100,9 @@ const JUDGE_CLASS_LABELS: Record<(typeof JUDGE_CLASS_VALUES)[number], string> = 
   C: 'panel_or_trainee',
 }
 const preevHelpText = computed(() =>
-  t('事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。推奨範囲は 0〜10 です。')
+  t(
+    '事前評価は大会開始前の参考評価です。自動割り当ての優先度計算に利用されます。推奨範囲は 0〜10 です。'
+  )
 )
 const judgeClassHelpText = computed(() =>
   t(
@@ -2468,10 +2470,46 @@ const importAdjudicatorRows: string[][] = [
   ['Judge 06', '0', 'chair_or_panel', 'true', 'West Block', '', 'false', 'true'],
   ['Judge 07', '3', 'chair_preferred', 'true', 'North League', 'Team 08', 'true', 'true'],
   ['Judge 08', '0', 'panel_or_trainee', 'true', 'South League', 'Team 03', 'true', 'false'],
-  ['Judge 09', '2', 'chair_or_panel', 'true', 'Aurora University|East Block', 'Team 01', 'false', 'true'],
-  ['Judge 10', '1', 'chair_preferred', 'true', 'Beacon College|West Block', 'Team 06', 'true', 'true'],
-  ['Judge 11', '1', 'chair_or_panel', 'true', 'Crest Institute|North League', 'Team 03', 'true', 'false'],
-  ['Judge 12', '-1', 'panel_or_trainee', 'true', 'Delta Academy|South League', 'Team 04', 'false', 'true'],
+  [
+    'Judge 09',
+    '2',
+    'chair_or_panel',
+    'true',
+    'Aurora University|East Block',
+    'Team 01',
+    'false',
+    'true',
+  ],
+  [
+    'Judge 10',
+    '1',
+    'chair_preferred',
+    'true',
+    'Beacon College|West Block',
+    'Team 06',
+    'true',
+    'true',
+  ],
+  [
+    'Judge 11',
+    '1',
+    'chair_or_panel',
+    'true',
+    'Crest Institute|North League',
+    'Team 03',
+    'true',
+    'false',
+  ],
+  [
+    'Judge 12',
+    '-1',
+    'panel_or_trainee',
+    'true',
+    'Delta Academy|South League',
+    'Team 04',
+    'false',
+    'true',
+  ],
 ]
 
 const entityImportTemplateMap: Record<EntityTabKey, string> = {
@@ -2551,8 +2589,7 @@ const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRo
     {
       header: 'judge_class',
       required: false,
-      description:
-        'chair_preferred / chair_or_panel / panel_or_trainee を指定します。',
+      description: 'chair_preferred / chair_or_panel / panel_or_trainee を指定します。',
       example: 'chair_or_panel',
     },
     {
@@ -2632,7 +2669,8 @@ const entityImportHeaderGuideMap: Record<EntityTabKey, EntityImportHeaderGuideRo
     {
       header: 'priority',
       required: false,
-      description: '回避優先順 (数値)。小さい値ほど優先して回避。既存の weight ヘッダーも取り込めます。',
+      description:
+        '回避優先順 (数値)。小さい値ほど優先して回避。既存の weight ヘッダーも取り込めます。',
       example: '1',
     },
   ],
@@ -3053,10 +3091,7 @@ async function copyParticipantUrl() {
   }
 }
 
-function applyAccessForm(
-  authValue: unknown,
-  options: { preserveExistingPassword?: boolean } = {}
-) {
+function applyAccessForm(authValue: unknown, options: { preserveExistingPassword?: boolean } = {}) {
   const next = resolveTournamentAccessForm(authValue, tournamentForm.accessPassword, options)
   tournamentForm.accessRequired = next.required
   tournamentForm.accessPassword = next.password

@@ -53,6 +53,43 @@ describe('team warning baseline', () => {
     expect(result.entries).toEqual([{ filter: 'by_side', count: 0 }])
   })
 
+  it('avoids repeating a school pairing when different teams met before', () => {
+    const teamIds = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2']
+    const schoolByTeam: Record<string, string> = {
+      A1: 'school-a',
+      A2: 'school-a',
+      B1: 'school-b',
+      B2: 'school-b',
+      C1: 'school-c',
+      C2: 'school-c',
+      D1: 'school-d',
+      D2: 'school-d',
+    }
+    const pastOpponents: Record<string, string[]> = {
+      A1: ['B1'],
+      B1: ['A1'],
+    }
+
+    const result = estimateTeamWarningBaseline({
+      teamIds,
+      schoolHistoryTeamIds: teamIds,
+      teamNum: 2,
+      filterOrder: ['by_conflict_group', 'by_sibling_past_opponent_school'],
+      teamWin: () => undefined,
+      teamPastOpponents: (teamId) => pastOpponents[teamId] ?? [],
+      teamPastSides: () => [],
+      teamInstitutions: (teamId) => [schoolByTeam[teamId]],
+      institutionCategory: () => 'institution',
+    })
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') return
+    expect(result.entries).toEqual([
+      { filter: 'by_conflict_group', count: 0 },
+      { filter: 'by_sibling_past_opponent_school', count: 0 },
+    ])
+  })
+
   it('falls back to estimated mode for large fields and keeps ignored filters separate', () => {
     const teamIds = Array.from({ length: 8 }, (_, index) => `T${index + 1}`)
     const wins = Object.fromEntries(teamIds.map((teamId, index) => [teamId, Math.floor(index / 2)]))

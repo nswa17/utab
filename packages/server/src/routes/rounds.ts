@@ -19,12 +19,14 @@ const router: Router = Router()
 const createBodySchema = z.object({
   tournamentId: z.string().min(1),
   round: z.number().int().min(1),
-  name: z.string().optional(),
-  motions: z.array(z.string()).optional(),
+  name: z.string().trim().min(1).optional(),
+  motions: z.array(z.string().trim().min(1)).optional(),
   motionOpened: z.boolean().optional(),
   teamAllocationOpened: z.boolean().optional(),
   adjudicatorAllocationOpened: z.boolean().optional(),
-  weightsOfAdjudicators: z.object({ chair: z.number(), panel: z.number(), trainee: z.number() }).optional(),
+  weightsOfAdjudicators: z
+    .object({ chair: z.number(), panel: z.number(), trainee: z.number() })
+    .optional(),
   userDefinedData: z.any().optional(),
 })
 
@@ -49,8 +51,8 @@ const updateSchema = {
     .object({
       tournamentId: z.string().min(1),
       round: z.number().int().min(1).optional(),
-      name: z.string().optional(),
-      motions: z.array(z.string()).optional(),
+      name: z.string().trim().min(1).optional(),
+      motions: z.array(z.string().trim().min(1)).optional(),
       motionOpened: z.boolean().optional(),
       teamAllocationOpened: z.boolean().optional(),
       adjudicatorAllocationOpened: z.boolean().optional(),
@@ -80,8 +82,8 @@ const bulkUpdateSchema = {
         id: z.string().min(1),
         tournamentId: z.string().min(1),
         round: z.number().int().min(1).optional(),
-        name: z.string().optional(),
-        motions: z.array(z.string()).optional(),
+        name: z.string().trim().min(1).optional(),
+        motions: z.array(z.string().trim().min(1)).optional(),
         motionOpened: z.boolean().optional(),
         teamAllocationOpened: z.boolean().optional(),
         adjudicatorAllocationOpened: z.boolean().optional(),
@@ -177,18 +179,8 @@ const updateBreakSchema = {
   }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listRounds
-)
-router.get(
-  '/:id',
-  requireTournamentView(),
-  validateRequest(getSchema),
-  getRound
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listRounds)
+router.get('/:id', requireTournamentView(), validateRequest(getSchema), getRound)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createRound)
 router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateRounds)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateRound)
@@ -198,7 +190,12 @@ router.post(
   validateRequest(breakCandidatesSchema),
   previewBreakCandidates
 )
-router.patch('/:id/break', requireTournamentAdmin(), validateRequest(updateBreakSchema), updateRoundBreak)
+router.patch(
+  '/:id/break',
+  requireTournamentAdmin(),
+  validateRequest(updateBreakSchema),
+  updateRoundBreak
+)
 router.delete('/', requireTournamentAdmin(), validateRequest(bulkDeleteSchema), bulkDeleteRounds)
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteRound)
 

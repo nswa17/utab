@@ -80,7 +80,11 @@
             </div>
             <div v-if="rolesA.length === 0" class="muted">{{ $t('スピーカーがいません') }}</div>
             <div v-else class="stack">
-              <div v-for="(role, index) in rolesA" :key="`speaker-gov-${role.order}`" class="role-card">
+              <div
+                v-for="(role, index) in rolesA"
+                :key="`speaker-gov-${role.order}`"
+                class="role-card"
+              >
                 <div class="row role-header">
                   <span class="role-token">{{ role.abbr ?? `#${role.order}` }}</span>
                   <span class="role-description">{{ role.long ?? '' }}</span>
@@ -110,7 +114,11 @@
             </div>
             <div v-if="rolesB.length === 0" class="muted">{{ $t('スピーカーがいません') }}</div>
             <div v-else class="stack">
-              <div v-for="(role, index) in rolesB" :key="`speaker-opp-${role.order}`" class="role-card">
+              <div
+                v-for="(role, index) in rolesB"
+                :key="`speaker-opp-${role.order}`"
+                class="role-card"
+              >
                 <div class="row role-header">
                   <span class="role-token">{{ role.abbr ?? `#${role.order}` }}</span>
                   <span class="role-description">{{ role.long ?? '' }}</span>
@@ -132,173 +140,198 @@
           </div>
         </div>
 
-        <div v-else-if="scoreInputReady && isScoreStep" class="stack role-sequence-panel">
-          <div v-if="currentRoleEntry" class="stack role-sequence-main">
-            <div class="row role-sequence-header">
-              <div class="row role-sequence-team">
-                <span class="side-chip" :class="currentRoleEntry.sideClass">{{
-                  currentRoleEntry.sideLabel
-                }}</span>
-                <strong class="role-sequence-team-name">{{ currentRoleEntry.teamName }}</strong>
-              </div>
-              <span class="role-progress-text">{{ roleSequenceProgressText }}</span>
-            </div>
-
-            <div class="role-card role-card--focus">
-              <div class="row role-header">
+        <div v-else-if="scoreInputReady && isScoreStep" class="stack score-bulk-panel">
+          <p class="muted small">
+            {{ $t('全スピーカーのスコアと賞をこの画面でまとめて入力できます。') }}
+          </p>
+          <div v-if="roleInputSequence.length > 0" class="score-bulk-grid">
+            <article
+              v-for="entry in roleInputSequence"
+              :key="`score-${entry.key}`"
+              class="role-card score-bulk-card"
+            >
+              <div class="row role-sequence-header">
+                <div class="row role-sequence-team">
+                  <span class="side-chip" :class="entry.sideClass">{{ entry.sideLabel }}</span>
+                  <strong class="role-sequence-team-name">{{ entry.teamName }}</strong>
+                </div>
                 <span class="role-token role-token--score">{{
-                  currentRoleEntry.role.abbr ?? `#${currentRoleEntry.role.order}`
+                  entry.role.abbr ?? `#${entry.role.order}`
                 }}</span>
+              </div>
+              <div class="row score-bulk-speaker-line">
                 <span class="role-description role-description--score">{{
-                  currentRoleEntry.role.long ?? ''
+                  entry.role.long ?? ''
                 }}</span>
+                <strong class="selected-speaker-name">{{ roleSpeakerLabel(entry) }}</strong>
               </div>
 
-              <p class="selected-speaker-line">
-                <strong class="selected-speaker-name">{{ activeRoleSpeakerLabel }}</strong>
-              </p>
-
-              <template v-if="useMatterManner">
-                <label class="stack">
-                  <span class="score-field-label">{{ $t('マター') }}</span>
-                  <div class="row score-adjust-row">
-                    <button
-                      type="button"
-                      class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('matter', -1)"
-                    >
-                      -
-                    </button>
-                    <input
-                      v-model.number="activeRoleMatter"
-                      class="score-adjust-input"
-                      type="number"
-                      :min="activeRoleRange.from"
-                      :max="activeRoleRange.to"
-                      :step="activeRoleRange.unit"
-                      @change="normalizeCurrentRoleNumeric('matter')"
-                    />
-                    <button
-                      type="button"
-                      class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('matter', 1)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </label>
-                <label class="stack">
-                  <span class="score-field-label">{{ $t('マナー') }}</span>
-                  <div class="row score-adjust-row">
-                    <button
-                      type="button"
-                      class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('manner', -1)"
-                    >
-                      -
-                    </button>
-                    <input
-                      v-model.number="activeRoleManner"
-                      class="score-adjust-input"
-                      type="number"
-                      :min="activeRoleRange.from"
-                      :max="activeRoleRange.to"
-                      :step="activeRoleRange.unit"
-                      @change="normalizeCurrentRoleNumeric('manner')"
-                    />
-                    <button
-                      type="button"
-                      class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('manner', 1)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </label>
-              </template>
-              <template v-else>
-                <label class="stack">
+              <div class="score-bulk-fields">
+                <template v-if="useMatterManner">
+                  <label class="stack score-bulk-field">
+                    <span class="score-field-label">{{ $t('マター') }}</span>
+                    <div class="row score-adjust-row score-adjust-row--compact">
+                      <button
+                        type="button"
+                        class="score-adjust-btn"
+                        @click="adjustRoleNumeric(entry, 'matter', -1)"
+                      >
+                        -
+                      </button>
+                      <input
+                        :value="readNumericValue(entry.side, 'matter', entry.index)"
+                        class="score-adjust-input"
+                        type="number"
+                        :min="scoreRange(entry.index).from"
+                        :max="scoreRange(entry.index).to"
+                        :step="scoreRange(entry.index).unit"
+                        @change="writeRoleNumericFromEvent(entry, 'matter', $event)"
+                      />
+                      <button
+                        type="button"
+                        class="score-adjust-btn"
+                        @click="adjustRoleNumeric(entry, 'matter', 1)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </label>
+                  <label class="stack score-bulk-field">
+                    <span class="score-field-label">{{ $t('マナー') }}</span>
+                    <div class="row score-adjust-row score-adjust-row--compact">
+                      <button
+                        type="button"
+                        class="score-adjust-btn"
+                        @click="adjustRoleNumeric(entry, 'manner', -1)"
+                      >
+                        -
+                      </button>
+                      <input
+                        :value="readNumericValue(entry.side, 'manner', entry.index)"
+                        class="score-adjust-input"
+                        type="number"
+                        :min="scoreRange(entry.index).from"
+                        :max="scoreRange(entry.index).to"
+                        :step="scoreRange(entry.index).unit"
+                        @change="writeRoleNumericFromEvent(entry, 'manner', $event)"
+                      />
+                      <button
+                        type="button"
+                        class="score-adjust-btn"
+                        @click="adjustRoleNumeric(entry, 'manner', 1)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </label>
+                </template>
+                <label v-else class="stack score-bulk-field">
                   <span class="score-field-label">{{ $t('スコア') }}</span>
-                  <div class="row score-adjust-row">
+                  <div class="row score-adjust-row score-adjust-row--compact">
                     <button
                       type="button"
                       class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('score', -1)"
+                      @click="adjustRoleNumeric(entry, 'score', -1)"
                     >
                       -
                     </button>
                     <input
-                      v-model.number="activeRoleScore"
+                      :value="readNumericValue(entry.side, 'score', entry.index)"
                       class="score-adjust-input"
                       type="number"
-                      :min="activeRoleRange.from"
-                      :max="activeRoleRange.to"
-                      :step="activeRoleRange.unit"
-                      @change="normalizeCurrentRoleNumeric('score')"
+                      :min="scoreRange(entry.index).from"
+                      :max="scoreRange(entry.index).to"
+                      :step="scoreRange(entry.index).unit"
+                      @change="writeRoleNumericFromEvent(entry, 'score', $event)"
                     />
                     <button
                       type="button"
                       class="score-adjust-btn"
-                      @click="adjustCurrentRoleNumeric('score', 1)"
+                      @click="adjustRoleNumeric(entry, 'score', 1)"
                     >
                       +
                     </button>
                   </div>
                 </label>
-              </template>
-
-              <div v-if="showActiveRoleTotalScore" class="stack">
-                <span class="score-field-label">{{ $t('合計スコア') }}</span>
-                <div class="score-total-box">{{ activeRoleTotalScore }}</div>
-              </div>
-
-              <div v-if="bestEnabled" class="row toggle-field">
-                <span class="toggle-title">{{ $t('ベストディベーター') }}</span>
-                <div class="award-choice" role="group" :aria-label="$t('ベストディベーター')">
-                  <button
-                    type="button"
-                    class="award-choice-option"
-                    :class="{ 'award-choice-option-active': !activeRoleBest }"
-                    :aria-pressed="!activeRoleBest"
-                    @click="activeRoleBest = false"
-                  >
-                    {{ $t('いいえ') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="award-choice-option"
-                    :class="{ 'award-choice-option-active': activeRoleBest }"
-                    :aria-pressed="activeRoleBest"
-                    @click="activeRoleBest = true"
-                  >
-                    {{ $t('はい') }}
-                  </button>
+                <div v-if="useMatterManner" class="stack score-bulk-field score-bulk-total">
+                  <span class="score-field-label">{{ $t('合計スコア') }}</span>
+                  <div class="score-total-box">{{ roleTotalScore(entry) }}</div>
                 </div>
               </div>
-              <div v-if="poiEnabled" class="row toggle-field">
-                <span class="toggle-title">{{ $t('POI') }}</span>
-                <div class="award-choice" role="group" :aria-label="$t('POI')">
-                  <button
-                    type="button"
-                    class="award-choice-option"
-                    :class="{ 'award-choice-option-active': !activeRolePoi }"
-                    :aria-pressed="!activeRolePoi"
-                    @click="activeRolePoi = false"
-                  >
-                    {{ $t('いいえ') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="award-choice-option"
-                    :class="{ 'award-choice-option-active': activeRolePoi }"
-                    :aria-pressed="activeRolePoi"
-                    @click="activeRolePoi = true"
-                  >
-                    {{ $t('はい') }}
-                  </button>
+
+              <div v-if="bestEnabled || poiEnabled" class="score-bulk-awards">
+                <div v-if="bestEnabled" class="row toggle-field">
+                  <span class="toggle-title">{{ $t('ベストディベーター') }}</span>
+                  <div class="award-choice" role="group" :aria-label="$t('ベストディベーター')">
+                    <button
+                      type="button"
+                      class="award-choice-option"
+                      :class="{
+                        'award-choice-option-active': !readToggleValue(
+                          entry.side,
+                          'best',
+                          entry.index
+                        ),
+                      }"
+                      :aria-pressed="!readToggleValue(entry.side, 'best', entry.index)"
+                      @click="writeToggleValue(entry.side, 'best', entry.index, false)"
+                    >
+                      {{ $t('いいえ') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="award-choice-option"
+                      :class="{
+                        'award-choice-option-active': readToggleValue(
+                          entry.side,
+                          'best',
+                          entry.index
+                        ),
+                      }"
+                      :aria-pressed="readToggleValue(entry.side, 'best', entry.index)"
+                      @click="writeToggleValue(entry.side, 'best', entry.index, true)"
+                    >
+                      {{ $t('はい') }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="poiEnabled" class="row toggle-field">
+                  <span class="toggle-title">{{ $t('POI') }}</span>
+                  <div class="award-choice" role="group" :aria-label="$t('POI')">
+                    <button
+                      type="button"
+                      class="award-choice-option"
+                      :class="{
+                        'award-choice-option-active': !readToggleValue(
+                          entry.side,
+                          'poi',
+                          entry.index
+                        ),
+                      }"
+                      :aria-pressed="!readToggleValue(entry.side, 'poi', entry.index)"
+                      @click="writeToggleValue(entry.side, 'poi', entry.index, false)"
+                    >
+                      {{ $t('いいえ') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="award-choice-option"
+                      :class="{
+                        'award-choice-option-active': readToggleValue(
+                          entry.side,
+                          'poi',
+                          entry.index
+                        ),
+                      }"
+                      :aria-pressed="readToggleValue(entry.side, 'poi', entry.index)"
+                      @click="writeToggleValue(entry.side, 'poi', entry.index, true)"
+                    >
+                      {{ $t('はい') }}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            </article>
           </div>
           <div v-else class="muted">{{ $t('入力可能なロールがありません。') }}</div>
         </div>
@@ -339,7 +372,12 @@
           <Button v-if="!isFirstStep" variant="ghost" size="sm" @click="goToPreviousAction">
             {{ previousActionLabel }}
           </Button>
-          <Button v-if="!isLastStep" size="sm" :disabled="stepActionDisabled" @click="goToNextAction">
+          <Button
+            v-if="!isLastStep"
+            size="sm"
+            :disabled="stepActionDisabled"
+            @click="goToNextAction"
+          >
             {{ nextActionLabel }}
           </Button>
           <Button
@@ -408,11 +446,7 @@
                   <span class="confirm-speaker-team-total">{{ team.totalLabel }}</span>
                 </div>
                 <div class="stack confirm-speaker-list">
-                  <div
-                    v-for="row in team.rows"
-                    :key="row.key"
-                    class="confirm-speaker-row"
-                  >
+                  <div v-for="row in team.rows" :key="row.key" class="confirm-speaker-row">
                     <div class="stack confirm-speaker-main">
                       <div class="confirm-speaker-row-head">
                         <span class="confirm-role-token">{{ row.roleToken }}</span>
@@ -431,7 +465,9 @@
                         }}</span>
                       </div>
                       <span class="muted tiny">{{ row.roleDescription }}</span>
-                      <span v-if="row.scoreBreakdown" class="muted tiny">{{ row.scoreBreakdown }}</span>
+                      <span v-if="row.scoreBreakdown" class="muted tiny">{{
+                        row.scoreBreakdown
+                      }}</span>
                     </div>
                     <Button
                       variant="ghost"
@@ -488,7 +524,9 @@
               <span v-if="row.best" class="confirm-award-chip confirm-award-chip--best">{{
                 $t('ベストディベーター')
               }}</span>
-              <span v-if="row.poi" class="confirm-award-chip confirm-award-chip--poi">{{ $t('POI') }}</span>
+              <span v-if="row.poi" class="confirm-award-chip confirm-award-chip--poi">{{
+                $t('POI')
+              }}</span>
             </div>
           </div>
         </div>
@@ -525,8 +563,14 @@ import {
 } from '@/utils/award-selection'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { defaultSpeakerRange, getRangeForIndex, normalizeScoreRanges } from '@/utils/score'
+import { resolveTournamentStyle } from '@/utils/tournament-style'
+import { resolveBallotSubmitterRoles } from '@/utils/submission-expectations'
 import { buildSpeakerRoleSequence } from '@/utils/style-speaker-sequence'
-import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
+import {
+  isCompleteSpeakerSelection,
+  normalizeBallotPrefillPayload,
+  type BallotPrefillPayload,
+} from '@/utils/ballot-prefill'
 
 const route = useRoute()
 const router = useRouter()
@@ -594,8 +638,6 @@ const confirmOpen = ref(false)
 const successOpen = ref(false)
 const confirmCountdown = ref(0)
 const activeStepIndex = ref(0)
-const activeRoleCursor = ref(0)
-const preserveRoleCursorOnScoreStep = ref(false)
 const returnToConfirmAfterEdit = ref(false)
 const prefillAppliedMatchKey = ref('')
 const LOCAL_BALLOT_PREFILL_STORAGE_PREFIX = 'utab:ballot-prefill'
@@ -651,17 +693,13 @@ const speakerSelectionValid = computed(() => {
   const countB = rolesB.value.length
   const availableA = new Set(teamASpeakerEntries.value.map((speaker) => speaker.id))
   const availableB = new Set(teamBSpeakerEntries.value.map((speaker) => speaker.id))
-  const requireA = availableA.size > 0
-  const requireB = availableB.size > 0
-  const selectionA = speakerIdsA.value.slice(0, countA)
-  const selectionB = speakerIdsB.value.slice(0, countB)
-  const okA = !requireA || selectionA.every((id) => id && availableA.has(id))
-  const okB = !requireB || selectionB.every((id) => id && availableB.has(id))
+  const okA = isCompleteSpeakerSelection(speakerIdsA.value, countA, availableA)
+  const okB = isCompleteSpeakerSelection(speakerIdsB.value, countB, availableB)
   return okA && okB
 })
 
 const allowLowTieWin = computed(
-  () => roundConfig.value?.userDefinedData?.allow_low_tie_win !== false
+  () => roundConfig.value?.userDefinedData?.allow_low_tie_win === true
 )
 const allowWinnerScoreMismatch = computed(() =>
   roundAllowsWinnerScoreMismatch(roundConfig.value?.userDefinedData)
@@ -685,14 +723,13 @@ const totalScoreA = computed(() =>
 const totalScoreB = computed(() =>
   effectiveScoresB.value.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 )
-const currentTotalSummaryText = computed(
-  () =>
-    t('現在の合計: {gov} {govScore} / {opp} {oppScore}', {
-      gov: govLabel.value,
-      govScore: totalScoreA.value,
-      opp: oppLabel.value,
-      oppScore: totalScoreB.value,
-    })
+const currentTotalSummaryText = computed(() =>
+  t('現在の合計: {gov} {govScore} / {opp} {oppScore}', {
+    gov: govLabel.value,
+    govScore: totalScoreA.value,
+    opp: oppLabel.value,
+    oppScore: totalScoreB.value,
+  })
 )
 const winnerSelectionMade = computed(
   () => Boolean(effectiveWinnerId.value) || winnerDrawSelected.value
@@ -799,8 +836,14 @@ const validationError = computed(() => {
   if (!selectedTeamA.value || !selectedTeamB.value) return t('チーム情報が不足しています。')
   if (isSubmitterStep.value) return submitterStepError.value
   if (isSpeakerStep.value) return speakerStepError.value || submitterStepError.value
-  if (isScoreStep.value) return scoreStepError.value || speakerStepError.value || submitterStepError.value
-  return winnerStepError.value || scoreStepError.value || speakerStepError.value || submitterStepError.value
+  if (isScoreStep.value)
+    return scoreStepError.value || speakerStepError.value || submitterStepError.value
+  return (
+    winnerStepError.value ||
+    scoreStepError.value ||
+    speakerStepError.value ||
+    submitterStepError.value
+  )
 })
 const stepActionDisabled = computed(() => {
   if (submissions.loading || !scoreInputReady.value) return true
@@ -874,8 +917,15 @@ const querySubmitterCandidates = computed(() =>
 const matchSubmitterCandidates = computed(() =>
   Array.from(
     new Set([
-      ...(drawRowForCurrentMatch.value?.chairs ?? []),
-      ...(drawRowForCurrentMatch.value?.panels ?? []),
+      ...(resolveBallotSubmitterRoles(roundConfig.value?.userDefinedData).includes('chair')
+        ? (drawRowForCurrentMatch.value?.chairs ?? [])
+        : []),
+      ...(resolveBallotSubmitterRoles(roundConfig.value?.userDefinedData).includes('panel')
+        ? (drawRowForCurrentMatch.value?.panels ?? [])
+        : []),
+      ...(resolveBallotSubmitterRoles(roundConfig.value?.userDefinedData).includes('trainee')
+        ? (drawRowForCurrentMatch.value?.trainees ?? [])
+        : []),
     ])
   )
     .map((id) => String(id ?? '').trim())
@@ -886,10 +936,19 @@ const submitterCandidateIds = computed(() => {
   return matchSubmitterCandidates.value
 })
 const submitterCandidateSet = computed(() => new Set(submitterCandidateIds.value))
-const hasSubmitterCandidateRestriction = computed(() => submitterCandidateSet.value.size > 0)
+const hasSubmitterCandidateRestriction = computed(
+  () => submitterCandidateSet.value.size > 0 || Boolean(drawRowForCurrentMatch.value)
+)
 const submitterOptions = computed(() => {
-  if (!hasSubmitterCandidateRestriction.value) return adjudicatorsStore.adjudicators
-  return adjudicatorsStore.adjudicators.filter((adj) => submitterCandidateSet.value.has(adj._id))
+  const allowedRoleIds = new Set(matchSubmitterCandidates.value)
+  const hasMatchAllocation = Boolean(drawRowForCurrentMatch.value)
+  return adjudicatorsStore.adjudicators.filter((adj) => {
+    if (hasMatchAllocation && !allowedRoleIds.has(adj._id)) return false
+    if (hasSubmitterCandidateRestriction.value && !submitterCandidateSet.value.has(adj._id)) {
+      return false
+    }
+    return true
+  })
 })
 const teamAName = computed(() => selectedTeamA.value?.name ?? '')
 const teamBName = computed(() => selectedTeamB.value?.name ?? '')
@@ -909,13 +968,6 @@ function selectedSpeakerLabel(
   }
   return role.abbr ?? `#${role.order}`
 }
-
-const activeRoleSpeakerLabel = computed(() => {
-  const entry = currentRoleEntry.value
-  if (!entry) return ''
-  const speakerIds = entry.side === 'gov' ? speakerIdsA.value : speakerIdsB.value
-  return selectedSpeakerLabel(activeRoleSpeakerEntries.value, speakerIds, entry.role, entry.index)
-})
 
 function countDecimals(value: number) {
   const text = String(value)
@@ -990,56 +1042,6 @@ function writeNumericValue(
   mannerB.value[index] = normalized
 }
 
-const activeRoleRange = computed(() => scoreRange(currentRoleEntry.value?.index ?? 0))
-
-const activeRoleScore = computed({
-  get: () => {
-    if (!currentRoleEntry.value) return activeRoleRange.value.default
-    return readNumericValue(currentRoleEntry.value.side, 'score', currentRoleEntry.value.index)
-  },
-  set: (value: number) => {
-    if (!currentRoleEntry.value) return
-    writeNumericValue(
-      currentRoleEntry.value.side,
-      'score',
-      currentRoleEntry.value.index,
-      Number(value)
-    )
-  },
-})
-
-const activeRoleMatter = computed({
-  get: () => {
-    if (!currentRoleEntry.value) return activeRoleRange.value.default
-    return readNumericValue(currentRoleEntry.value.side, 'matter', currentRoleEntry.value.index)
-  },
-  set: (value: number) => {
-    if (!currentRoleEntry.value) return
-    writeNumericValue(
-      currentRoleEntry.value.side,
-      'matter',
-      currentRoleEntry.value.index,
-      Number(value)
-    )
-  },
-})
-
-const activeRoleManner = computed({
-  get: () => {
-    if (!currentRoleEntry.value) return activeRoleRange.value.default
-    return readNumericValue(currentRoleEntry.value.side, 'manner', currentRoleEntry.value.index)
-  },
-  set: (value: number) => {
-    if (!currentRoleEntry.value) return
-    writeNumericValue(
-      currentRoleEntry.value.side,
-      'manner',
-      currentRoleEntry.value.index,
-      Number(value)
-    )
-  },
-})
-
 function readToggleValue(side: RoleSide, category: 'best' | 'poi', index: number) {
   const source =
     category === 'best'
@@ -1066,66 +1068,6 @@ function writeToggleValue(side: RoleSide, category: 'best' | 'poi', index: numbe
     return
   }
   poiB.value[index] = value
-}
-
-const activeRoleBest = computed({
-  get: () => {
-    if (!currentRoleEntry.value) return false
-    return readToggleValue(currentRoleEntry.value.side, 'best', currentRoleEntry.value.index)
-  },
-  set: (value: boolean) => {
-    if (!currentRoleEntry.value) return
-    writeToggleValue(currentRoleEntry.value.side, 'best', currentRoleEntry.value.index, value)
-  },
-})
-
-const activeRolePoi = computed({
-  get: () => {
-    if (!currentRoleEntry.value) return false
-    return readToggleValue(currentRoleEntry.value.side, 'poi', currentRoleEntry.value.index)
-  },
-  set: (value: boolean) => {
-    if (!currentRoleEntry.value) return
-    writeToggleValue(currentRoleEntry.value.side, 'poi', currentRoleEntry.value.index, value)
-  },
-})
-
-const activeRoleTotalScore = computed(() => {
-  const entry = currentRoleEntry.value
-  if (!entry) return 0
-  if (useMatterManner.value) {
-    const total =
-      readNumericValue(entry.side, 'matter', entry.index) +
-      readNumericValue(entry.side, 'manner', entry.index)
-    return normalizeDisplayValue(total, entry.index)
-  }
-  return normalizeDisplayValue(readNumericValue(entry.side, 'score', entry.index), entry.index)
-})
-const showActiveRoleTotalScore = computed(() => useMatterManner.value)
-
-function adjustCurrentRoleNumeric(category: 'score' | 'matter' | 'manner', direction: -1 | 1) {
-  const entry = currentRoleEntry.value
-  if (!entry) return
-  const delta = scoreRange(entry.index).unit * direction
-  const current = readNumericValue(entry.side, category, entry.index)
-  writeNumericValue(entry.side, category, entry.index, current + delta)
-}
-
-function normalizeCurrentRoleNumeric(category: 'score' | 'matter' | 'manner') {
-  const entry = currentRoleEntry.value
-  if (!entry) return
-  const current = readNumericValue(entry.side, category, entry.index)
-  writeNumericValue(entry.side, category, entry.index, current)
-}
-
-function goToNextRole() {
-  if (isLastRoleCursor.value) return
-  activeRoleCursor.value = normalizeRoleCursor(activeRoleCursor.value + 1)
-}
-
-function goToPreviousRole() {
-  if (isFirstRoleCursor.value) return
-  activeRoleCursor.value = normalizeRoleCursor(activeRoleCursor.value - 1)
 }
 
 function speakerEntriesFromDetail(team: any): SpeakerEntry[] {
@@ -1169,7 +1111,12 @@ const poiEnabled = computed(() => awardSelectionRules.value.poi.enabled)
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
-const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const style = computed(() =>
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
+)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const speakerRanges = computed(() => normalizeScoreRanges(style.value?.range, defaultSpeakerRange))
@@ -1179,7 +1126,13 @@ function normalizeRoles(side: 'gov' | 'opp'): RoleDefinition[] {
   if (Array.isArray(roles) && roles.length > 0) {
     return roles.slice().sort((a, b) => Number(a.order) - Number(b.order))
   }
-  return speakerRanges.value.map((_, index) => ({
+  const fallbackCount =
+    speakerRanges.value.length > 0
+      ? speakerRanges.value.length
+      : Array.isArray(style.value?.score_weights)
+        ? style.value.score_weights.length
+        : 0
+  return Array.from({ length: fallbackCount }, (_, index) => ({
     order: index + 1,
     abbr: `#${index + 1}`,
     long: t('スピーカー {index}', { index: index + 1 }),
@@ -1220,32 +1173,42 @@ const roleInputSequence = computed<RoleSequenceEntry[]>(() => {
     .filter((entry): entry is RoleSequenceEntry => entry !== null)
 })
 
-function normalizeRoleCursor(index: number) {
-  if (roleInputSequence.value.length === 0) return 0
-  return Math.min(Math.max(index, 0), roleInputSequence.value.length - 1)
+function roleSpeakerLabel(entry: RoleSequenceEntry) {
+  const speakerEntries = entry.side === 'gov' ? teamASpeakerEntries.value : teamBSpeakerEntries.value
+  const speakerIds = entry.side === 'gov' ? speakerIdsA.value : speakerIdsB.value
+  return selectedSpeakerLabel(speakerEntries, speakerIds, entry.role, entry.index)
 }
 
-const currentRoleEntry = computed(
-  () => roleInputSequence.value[normalizeRoleCursor(activeRoleCursor.value)] ?? null
-)
-const currentRoleDisplayIndex = computed(() =>
-  Math.min(activeRoleCursor.value + 1, Math.max(1, roleInputSequence.value.length))
-)
-const roleSequenceProgressText = computed(() => {
-  const total = Math.max(1, roleInputSequence.value.length)
-  const current = Math.min(currentRoleDisplayIndex.value, total)
-  return t('ロール {current} / {total}', { current, total })
-})
-const isFirstRoleCursor = computed(() => activeRoleCursor.value <= 0)
-const isLastRoleCursor = computed(
-  () => activeRoleCursor.value >= Math.max(0, roleInputSequence.value.length - 1)
-)
-const activeRoleSpeakerEntries = computed(() => {
-  if (!currentRoleEntry.value) return []
-  return currentRoleEntry.value.side === 'gov'
-    ? teamASpeakerEntries.value
-    : teamBSpeakerEntries.value
-})
+function adjustRoleNumeric(
+  entry: RoleSequenceEntry,
+  category: 'score' | 'matter' | 'manner',
+  direction: -1 | 1
+) {
+  const delta = scoreRange(entry.index).unit * direction
+  const current = readNumericValue(entry.side, category, entry.index)
+  writeNumericValue(entry.side, category, entry.index, current + delta)
+}
+
+function writeRoleNumericFromEvent(
+  entry: RoleSequenceEntry,
+  category: 'score' | 'matter' | 'manner',
+  event: Event
+) {
+  const input = event.target as HTMLInputElement | null
+  const parsed = Number(input?.value)
+  const nextValue = Number.isFinite(parsed) ? parsed : scoreRange(entry.index).default
+  writeNumericValue(entry.side, category, entry.index, nextValue)
+  if (input) {
+    input.value = String(readNumericValue(entry.side, category, entry.index))
+  }
+}
+
+function roleTotalScore(entry: RoleSequenceEntry) {
+  const total =
+    readNumericValue(entry.side, 'matter', entry.index) +
+    readNumericValue(entry.side, 'manner', entry.index)
+  return normalizeDisplayValue(total, entry.index)
+}
 
 type ConfirmSpeakerRow = {
   key: string
@@ -1509,11 +1472,6 @@ function speakerTotal(matter: number | undefined, manner: number | undefined) {
   return Number(matter ?? 0) + Number(manner ?? 0)
 }
 
-function toNumberArray(value: unknown): number[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
-}
-
 function currentMatchKey() {
   const ids = [teamAId.value, teamBId.value]
     .map((value) => value.trim())
@@ -1523,96 +1481,7 @@ function currentMatchKey() {
   return ids.join('|')
 }
 
-type PrefillBallotPayload = {
-  teamAId: string
-  teamBId: string
-  winnerId?: string
-  draw?: boolean
-  comment?: string
-  speakerIdsA?: string[]
-  speakerIdsB?: string[]
-  scoresA?: number[]
-  scoresB?: number[]
-  matterA?: number[]
-  mannerA?: number[]
-  matterB?: number[]
-  mannerB?: number[]
-  bestA?: boolean[]
-  bestB?: boolean[]
-  poiA?: boolean[]
-  poiB?: boolean[]
-}
-
-function normalizePrefillPayload(
-  payload: Record<string, unknown> | null
-): PrefillBallotPayload | null {
-  if (!payload) return null
-  const sourceA = String(payload.teamAId ?? '')
-  const sourceB = String(payload.teamBId ?? '')
-  if (!sourceA || !sourceB) return null
-  const direct = sourceA === teamAId.value && sourceB === teamBId.value
-  const reverse = sourceA === teamBId.value && sourceB === teamAId.value
-  if (!direct && !reverse) return null
-
-  const winnerRaw = String(payload.winnerId ?? '')
-  const drawSelected = payload.draw === true || (payload.draw === undefined && !winnerRaw)
-  const winnerId = drawSelected
-    ? ''
-    : reverse
-      ? winnerRaw === sourceA
-        ? sourceB
-        : winnerRaw === sourceB
-          ? sourceA
-          : ''
-      : winnerRaw
-
-  const mapSide = <T,>(aValue: T, bValue: T): [T, T] =>
-    reverse ? [bValue, aValue] : [aValue, bValue]
-
-  const [speakerIdsAValue, speakerIdsBValue] = mapSide(
-    toStringArray(payload.speakerIdsA),
-    toStringArray(payload.speakerIdsB)
-  )
-  const [scoresAValue, scoresBValue] = mapSide(
-    toNumberArray(payload.scoresA),
-    toNumberArray(payload.scoresB)
-  )
-  const [matterAValue, matterBValue] = mapSide(
-    toNumberArray(payload.matterA),
-    toNumberArray(payload.matterB)
-  )
-  const [mannerAValue, mannerBValue] = mapSide(
-    toNumberArray(payload.mannerA),
-    toNumberArray(payload.mannerB)
-  )
-  const [bestAValue, bestBValue] = mapSide(
-    toBooleanArray(payload.bestA),
-    toBooleanArray(payload.bestB)
-  )
-  const [poiAValue, poiBValue] = mapSide(toBooleanArray(payload.poiA), toBooleanArray(payload.poiB))
-
-  return {
-    teamAId: teamAId.value,
-    teamBId: teamBId.value,
-    winnerId: winnerId || undefined,
-    draw: drawSelected || undefined,
-    comment: typeof payload.comment === 'string' ? payload.comment : undefined,
-    speakerIdsA: speakerIdsAValue,
-    speakerIdsB: speakerIdsBValue,
-    scoresA: scoresAValue,
-    scoresB: scoresBValue,
-    matterA: matterAValue,
-    mannerA: mannerAValue,
-    matterB: matterBValue,
-    mannerB: mannerBValue,
-    bestA: bestAValue,
-    bestB: bestBValue,
-    poiA: poiAValue,
-    poiB: poiBValue,
-  }
-}
-
-function applyPrefillPayload(payload: PrefillBallotPayload) {
+function applyPrefillPayload(payload: BallotPrefillPayload) {
   winnerDrawSelected.value = payload.draw === true
   winnerId.value = payload.draw === true ? '' : (payload.winnerId ?? '')
   comment.value = payload.comment ?? ''
@@ -1702,21 +1571,21 @@ function localPrefillStorageKey(matchKey = currentMatchKey()) {
   ].join(':')
 }
 
-function loadLocalPrefillPayload(matchKey = currentMatchKey()): PrefillBallotPayload | null {
+function loadLocalPrefillPayload(matchKey = currentMatchKey()): BallotPrefillPayload | null {
   const storageKey = localPrefillStorageKey(matchKey)
   if (!storageKey) return null
   const stored = localStorage.getItem(storageKey)
   if (!stored) return null
   try {
     const parsed = JSON.parse(stored) as Record<string, unknown>
-    return normalizePrefillPayload(parsed)
+    return normalizeBallotPrefillPayload(parsed, teamAId.value, teamBId.value)
   } catch {
     localStorage.removeItem(storageKey)
     return null
   }
 }
 
-function persistLocalPrefillPayload(payload: PrefillBallotPayload) {
+function persistLocalPrefillPayload(payload: BallotPrefillPayload) {
   const matchKey = [payload.teamAId, payload.teamBId]
     .map((value) => String(value ?? '').trim())
     .sort()
@@ -1726,7 +1595,7 @@ function persistLocalPrefillPayload(payload: PrefillBallotPayload) {
   localStorage.setItem(storageKey, JSON.stringify(payload))
 }
 
-function buildCurrentPrefillPayload(): PrefillBallotPayload | null {
+function buildCurrentPrefillPayload(): BallotPrefillPayload | null {
   const normalizedTeamAId = String(teamAId.value ?? '').trim()
   const normalizedTeamBId = String(teamBId.value ?? '').trim()
   if (!normalizedTeamAId || !normalizedTeamBId) return null
@@ -1828,29 +1697,15 @@ function canGoToStep(index: number) {
   return index <= activeStepIndex.value
 }
 
-const previousActionLabel = computed(() => {
-  if (isScoreStep.value && !isFirstRoleCursor.value) return t('前のロール')
-  return t('戻る')
-})
+const previousActionLabel = computed(() => t('戻る'))
 
-const nextActionLabel = computed(() => {
-  if (isScoreStep.value && !isLastRoleCursor.value) return t('次のロール')
-  return t('次へ')
-})
+const nextActionLabel = computed(() => t('次へ'))
 
 function goToPreviousAction() {
-  if (isScoreStep.value && !isFirstRoleCursor.value) {
-    goToPreviousRole()
-    return
-  }
   goToPreviousStep()
 }
 
 function goToNextAction() {
-  if (isScoreStep.value && !isLastRoleCursor.value) {
-    goToNextRole()
-    return
-  }
   goToNextStep()
 }
 
@@ -1911,16 +1766,14 @@ function closeConfirm() {
 }
 
 function editConfirmSpeaker(row: ConfirmSpeakerRow) {
-  const roleCursor = roleInputSequence.value.findIndex(
+  const scoreStepIndex = ballotSteps.value.findIndex((step) => step.id === 'score')
+  const roleExists = roleInputSequence.value.some(
     (entry) => entry.side === row.side && entry.index === row.index
   )
-  const scoreStepIndex = ballotSteps.value.findIndex((step) => step.id === 'score')
-  if (roleCursor === -1 || scoreStepIndex === -1) return
+  if (!roleExists || scoreStepIndex === -1) return
 
   closeConfirm()
   returnToConfirmAfterEdit.value = true
-  preserveRoleCursorOnScoreStep.value = true
-  activeRoleCursor.value = roleCursor
   activeStepIndex.value = scoreStepIndex
 }
 
@@ -1948,8 +1801,14 @@ async function submitConfirmed() {
     winnerId: effectiveWinnerId.value || undefined,
     draw: winnerDrawSelected.value || undefined,
     submittedEntityId: identityId.value || undefined,
-    speakerIdsA: noSpeakerScore.value ? undefined : speakerIdsA.value,
-    speakerIdsB: noSpeakerScore.value ? undefined : speakerIdsB.value,
+    speakerIdsA:
+      noSpeakerScore.value || teamASpeakerEntries.value.length === 0
+        ? undefined
+        : speakerIdsA.value,
+    speakerIdsB:
+      noSpeakerScore.value || teamBSpeakerEntries.value.length === 0
+        ? undefined
+        : speakerIdsB.value,
     scoresA: noSpeakerScore.value ? [] : effectiveScoresA.value,
     scoresB: noSpeakerScore.value ? [] : effectiveScoresB.value,
     comment: comment.value,
@@ -1996,37 +1855,9 @@ watch(
   { immediate: true }
 )
 
-watch(
-  roleInputSequence,
-  () => {
-    activeRoleCursor.value = normalizeRoleCursor(activeRoleCursor.value)
-  },
-  { immediate: true }
-)
-
-watch(currentStepId, (nextStep, previousStep) => {
-  if (nextStep === previousStep) return
-  if (nextStep === 'speaker') {
-    activeRoleCursor.value = 0
-    return
-  }
-  if (nextStep === 'score') {
-    if (preserveRoleCursorOnScoreStep.value) {
-      preserveRoleCursorOnScoreStep.value = false
-      return
-    }
-    if (previousStep === 'winner') {
-      activeRoleCursor.value = normalizeRoleCursor(roleInputSequence.value.length - 1)
-      return
-    }
-    activeRoleCursor.value = 0
-  }
-})
-
 watch([teamAId, teamBId], ([nextTeamA, nextTeamB], [prevTeamA, prevTeamB]) => {
   if (nextTeamA !== prevTeamA || nextTeamB !== prevTeamB) {
     activeStepIndex.value = 0
-    activeRoleCursor.value = 0
     returnToConfirmAfterEdit.value = false
   }
   if (winnerDrawSelected.value) return
@@ -2265,12 +2096,51 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.role-sequence-panel {
+.score-bulk-panel {
   gap: var(--space-3);
 }
 
-.role-sequence-main {
+.score-bulk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: var(--space-3);
+}
+
+.score-bulk-card {
+  align-content: start;
+  border-color: #cbd5e1;
+  background: #fcfdff;
+}
+
+.score-bulk-speaker-line {
+  align-items: center;
+  justify-content: space-between;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.score-bulk-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+}
+
+.score-bulk-field {
+  align-content: start;
+}
+
+.score-bulk-total {
+  min-width: 110px;
+}
+
+.score-bulk-awards {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
 }
 
 .role-sequence-header {
@@ -2292,12 +2162,6 @@ onUnmounted(() => {
 
 .role-sequence-team-name {
   font-weight: 700;
-}
-
-.role-progress-text {
-  color: color-mix(in srgb, var(--color-text) 68%, white);
-  font-size: clamp(1rem, 3.3vw, 1.15rem);
-  font-weight: 600;
 }
 
 .team-column {
@@ -2352,12 +2216,6 @@ onUnmounted(() => {
   background: var(--color-surface);
 }
 
-.role-card--focus {
-  border-width: 2px;
-  border-color: #bfdbfe;
-  background: #f8fbff;
-}
-
 .role-header {
   justify-content: space-between;
   align-items: baseline;
@@ -2386,16 +2244,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.selected-speaker-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  gap: 8px;
-}
-
 .selected-speaker-name {
   font-size: clamp(1.08rem, 3.6vw, 1.28rem);
   line-height: 1.25;
@@ -2411,6 +2259,20 @@ onUnmounted(() => {
 .score-adjust-row {
   align-items: center;
   gap: 10px;
+}
+
+.score-adjust-row--compact {
+  gap: 6px;
+}
+
+.score-adjust-row--compact .score-adjust-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.score-adjust-row--compact .score-adjust-input {
+  min-width: 76px;
+  min-height: 36px;
 }
 
 .score-adjust-btn {
@@ -2799,6 +2661,11 @@ onUnmounted(() => {
   .ballot-step-actions :deep(button),
   .ballot-step-actions :deep(a) {
     width: 100%;
+  }
+
+  .score-bulk-grid,
+  .score-bulk-fields {
+    grid-template-columns: 1fr;
   }
 
   .optional-back-action {

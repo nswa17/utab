@@ -1065,6 +1065,7 @@ import {
 } from '@/utils/slides-presentation'
 import { isBreakRoundLike, resolveBreakStageTeamIds } from '@/utils/break-round'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { escapeCsvCell } from '@/utils/csv'
 
 const route = useRoute()
 const tournamentStore = useTournamentStore()
@@ -3463,13 +3464,6 @@ function columnLabel(key: string) {
   return map[key] ?? key
 }
 
-function escapeCsv(value: string) {
-  if (value.includes('"') || value.includes(',') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
 function ordinal(value: number) {
   if (!Number.isFinite(value)) return ''
   const v = Math.round(value)
@@ -3769,7 +3763,7 @@ function buildCompiledCsvExport(label: CompiledLabel, sourceResults: any[]): Csv
       return headerKeys.map((key) => {
         const value = key === 'name' ? enriched.name : enriched[key]
         const formatted = formatCsvValue(value)
-        return escapeCsv(String(formatted))
+        return escapeCsvCell(String(formatted))
       })
     })
 

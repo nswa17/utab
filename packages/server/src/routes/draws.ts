@@ -7,17 +7,29 @@ import { validateRequest } from '../middleware/validation.js'
 const router: Router = Router()
 
 const allocationRowSchema = z.object({
-  venue: z.string().nullable().optional(),
+  venue: z.string().trim().nullable().optional(),
   teams: z.union([
     z.object({
-      gov: z.string().min(1),
-      opp: z.string().min(1),
+      og: z.string().trim().min(1),
+      oo: z.string().trim().min(1),
+      cg: z.string().trim().min(1),
+      co: z.string().trim().min(1),
     }),
-    z.array(z.string().min(1)).min(2),
+    z.object({
+      gov: z.string().trim().min(1),
+      opp: z.string().trim().min(1),
+      cg: z.string().trim().min(1),
+      co: z.string().trim().min(1),
+    }),
+    z.object({
+      gov: z.string().trim().min(1),
+      opp: z.string().trim().min(1),
+    }),
+    z.array(z.string().trim().min(1)).min(2),
   ]),
-  chairs: z.array(z.string()).optional().default([]),
-  panels: z.array(z.string()).optional().default([]),
-  trainees: z.array(z.string()).optional().default([]),
+  chairs: z.array(z.string().trim().min(1)).optional().default([]),
+  panels: z.array(z.string().trim().min(1)).optional().default([]),
+  trainees: z.array(z.string().trim().min(1)).optional().default([]),
 })
 
 const listSchema = {
@@ -54,12 +66,7 @@ const deleteSchema = {
   query: z.object({ tournamentId: z.string().min(1) }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listDraws
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listDraws)
 router.post('/generate', requireTournamentAdmin(), validateRequest(generateSchema), generateDraw)
 router.post('/', requireTournamentAdmin(), validateRequest(upsertSchema), upsertDraw)
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteDraw)

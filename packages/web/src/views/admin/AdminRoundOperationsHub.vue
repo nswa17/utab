@@ -132,7 +132,11 @@
                   </section>
                 </div>
                 <p v-if="canShowPriorRoundsHideSwitch" class="muted small">
-                  {{ $t('このラウンドより前のモーション・チーム割り当て・ジャッジ割り当てを同時に非公開にします。') }}
+                  {{
+                    $t(
+                      'このラウンドより前のモーション・チーム割り当て・ジャッジ割り当てを同時に非公開にします。'
+                    )
+                  }}
                 </p>
                 <section class="stack publish-preview-section">
                   <div class="row preview-head">
@@ -230,7 +234,10 @@
                 <p v-if="compileAutoError" class="muted warning">
                   {{ compileAutoError }}
                 </p>
-                <section v-if="snapshotIncludesSelectedRound && hasVisibleCompileRows" class="stack">
+                <section
+                  v-if="snapshotIncludesSelectedRound && hasVisibleCompileRows"
+                  class="stack"
+                >
                   <div v-if="showCompileDiffLegend" class="row diff-legend">
                     <span class="diff-legend-item">
                       <span class="diff-marker diff-improved">▲</span>{{ $t('改善') }}
@@ -245,7 +252,10 @@
                       <span class="diff-marker diff-new">＋</span>{{ $t('新規') }}
                     </span>
                   </div>
-                  <section v-if="showTeamCompileResult" class="card soft stack compile-result-panel">
+                  <section
+                    v-if="showTeamCompileResult"
+                    class="card soft stack compile-result-panel"
+                  >
                     <div class="row compile-result-subhead">
                       <strong>{{ $t('チーム集計') }}</strong>
                       <span
@@ -283,7 +293,10 @@
                       </Button>
                     </div>
                   </section>
-                  <section v-if="showAdjudicatorCompileResult" class="card soft stack compile-result-panel">
+                  <section
+                    v-if="showAdjudicatorCompileResult"
+                    class="card soft stack compile-result-panel"
+                  >
                     <div class="row compile-result-subhead">
                       <strong>{{ $t('ジャッジ集計') }}</strong>
                       <span
@@ -330,7 +343,11 @@
                   "
                   class="muted warning"
                 >
-                  {{ $t('集計結果を再計算できませんでした。提出データを確認して再読み込みしてください。') }}
+                  {{
+                    $t(
+                      '集計結果を再計算できませんでした。提出データを確認して再読み込みしてください。'
+                    )
+                  }}
                 </p>
                 <p v-else-if="snapshotIncludesSelectedRound" class="muted small">
                   {{ $t('集計結果を表示するデータがありません。') }}
@@ -384,7 +401,6 @@
         />
       </div>
     </div>
-
   </section>
 </template>
 
@@ -438,10 +454,7 @@ import {
 } from '@/utils/diff-indicator'
 import { isBreakRoundLike, resolveBreakStageTeamIds } from '@/utils/break-round'
 import { applyClientBaselineDiff } from '@/utils/compiled-diff'
-import {
-  resolveRoundOperationStatus,
-  type RoundOperationStatus,
-} from '@/stores/round-operations'
+import { resolveRoundOperationStatus, type RoundOperationStatus } from '@/stores/round-operations'
 import {
   formatCompiledSnapshotOptionLabel,
   resolveLatestCompiledIdContainingRound,
@@ -451,6 +464,7 @@ import {
   buildRoundSubmissionCoverage,
   expectedFeedbackCountForRow,
   normalizeIdList,
+  resolveBallotSubmitterRoles,
   resolveFeedbackExpectationSettings,
   type FeedbackExpectationSettings,
   type RoundSubmissionCoverage,
@@ -459,7 +473,9 @@ import {
 import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { resolveTournamentStyle } from '@/utils/tournament-style'
 import { createLatestRequestGate } from '@/utils/latest-request'
+import { escapeCsvCell } from '@/utils/csv'
 
 const route = useRoute()
 const router = useRouter()
@@ -589,7 +605,12 @@ const selectedDraw = computed(
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
-const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const style = computed(() =>
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
+)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 function asRecord(value: unknown): Record<string, unknown> {
@@ -615,7 +636,9 @@ function normalizeCompiledRoundNumbers(value: unknown): number[] {
 }
 function readDrawReferenceCompiledRounds(value: unknown): number[] {
   const payload = asRecord(value)
-  const teamRounds = normalizeCompiledRoundNumbers(payload[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY])
+  const teamRounds = normalizeCompiledRoundNumbers(
+    payload[DRAW_REFERENCE_COMPILED_ROUNDS_TEAMS_KEY]
+  )
   if (teamRounds.length > 0) return teamRounds
   return normalizeCompiledRoundNumbers(payload[DRAW_REFERENCE_COMPILED_ROUNDS_KEY])
 }
@@ -650,7 +673,8 @@ function resolveCompiledRoundNumbersById(compiledId: string): number[] {
     (item) => String(item?._id ?? '').trim() === normalizedId
   )
   if (!matched) return []
-  const payload = matched?.payload && typeof matched.payload === 'object' ? matched.payload : matched
+  const payload =
+    matched?.payload && typeof matched.payload === 'object' ? matched.payload : matched
   return normalizeCompiledRoundNumbers((payload as Record<string, any>)?.rounds)
 }
 const selectedRoundReferenceCompiledRounds = computed<number[]>(() => {
@@ -719,9 +743,7 @@ const priorRoundsFullyHidden = computed(() => {
   return priorRounds.value.every((round) => {
     const draw = priorRoundDrawMap.value.get(round.round)
     return (
-      !Boolean(round.motionOpened) &&
-      !Boolean(draw?.drawOpened) &&
-      !Boolean(draw?.allocationOpened)
+      !Boolean(round.motionOpened) && !Boolean(draw?.drawOpened) && !Boolean(draw?.allocationOpened)
     )
   })
 })
@@ -850,9 +872,7 @@ function requiredLabelsForCompileScope(scope: CompileScope): CompileIncludeLabel
   }
   return shouldTrackAdjudicatorCompile.value ? ['teams', 'adjudicators'] : ['teams']
 }
-function submissionTypeForCompileScope(
-  scope: CompileScope
-): 'ballot' | 'feedback' | undefined {
+function submissionTypeForCompileScope(scope: CompileScope): 'ballot' | 'feedback' | undefined {
   if (scope === 'teams') return 'ballot'
   if (scope === 'adjudicators') return 'feedback'
   return undefined
@@ -1065,7 +1085,10 @@ const compileRows = computed<any[]>(() => {
   ) {
     return currentRows
   }
-  return applyClientBaselineDiff(currentRows, stripDiffFields(selectedCompileDiffBaselineRows.value))
+  return applyClientBaselineDiff(
+    currentRows,
+    stripDiffFields(selectedCompileDiffBaselineRows.value)
+  )
 })
 const compileAdjudicatorRows = computed<any[]>(() => {
   const currentRows = stripDiffFields(compileAdjudicatorRowsBase.value)
@@ -1111,9 +1134,7 @@ function withCompilePlaceholderRows(
   const targetIdSet = new Set(normalizedTargetIds)
   const filteredRows = normalizedRows.filter((row) => targetIdSet.has(String(row?.id ?? '').trim()))
   const rowIdSet = new Set(
-    filteredRows
-      .map((row) => String(row?.id ?? '').trim())
-      .filter((id) => id.length > 0)
+    filteredRows.map((row) => String(row?.id ?? '').trim()).filter((id) => id.length > 0)
   )
   const placeholders = normalizedTargetIds
     .filter((id) => !rowIdSet.has(id))
@@ -1146,17 +1167,15 @@ const compileAdjudicatorDisplayRows = computed<any[]>(() =>
     })
   )
 )
-const showCompileDiffLegend = computed(
-  () => {
-    if (selectedCompileDiffBaselineCompiledId.value.length === 0) return false
-    const hasTeamDiff =
-      showTeamCompileResult.value && compileTeamDisplayRows.value.some((row) => row?.diff?.ranking)
-    const hasAdjudicatorDiff =
-      showAdjudicatorCompileResult.value &&
-      compileAdjudicatorDisplayRows.value.some((row) => row?.diff?.ranking)
-    return hasTeamDiff || hasAdjudicatorDiff
-  }
-)
+const showCompileDiffLegend = computed(() => {
+  if (selectedCompileDiffBaselineCompiledId.value.length === 0) return false
+  const hasTeamDiff =
+    showTeamCompileResult.value && compileTeamDisplayRows.value.some((row) => row?.diff?.ranking)
+  const hasAdjudicatorDiff =
+    showAdjudicatorCompileResult.value &&
+    compileAdjudicatorDisplayRows.value.some((row) => row?.diff?.ranking)
+  return hasTeamDiff || hasAdjudicatorDiff
+})
 const compileColumns = computed(() => {
   const metricKeys = ['win', 'sum', 'margin', 'vote', 'average', 'sd']
   const visibleMetrics = metricKeys.filter((key) =>
@@ -1273,7 +1292,9 @@ function buildCompiledRoundSetForLabels(requiredLabels: CompileIncludeLabel[]): 
 }
 const compiledRoundSetTeams = computed(() => buildCompiledRoundSetForLabels(['teams']))
 const compiledRoundSetAdjudicators = computed(() =>
-  shouldTrackAdjudicatorCompile.value ? buildCompiledRoundSetForLabels(['adjudicators']) : new Set<number>()
+  shouldTrackAdjudicatorCompile.value
+    ? buildCompiledRoundSetForLabels(['adjudicators'])
+    : new Set<number>()
 )
 
 const roundConfigByRound = computed(() => {
@@ -1439,7 +1460,8 @@ const submissionPreviewJudgeColumnLabel = computed(() => {
 })
 
 function submissionGapForRound(roundNumber: number, type: 'ballot' | 'feedback') {
-  const expected = type === 'ballot' ? ballotExpectedCount(roundNumber) : feedbackExpectedCount(roundNumber)
+  const expected =
+    type === 'ballot' ? ballotExpectedCount(roundNumber) : feedbackExpectedCount(roundNumber)
   const submitted =
     type === 'ballot' ? ballotSubmittedCount(roundNumber) : feedbackSubmittedCount(roundNumber)
   const unknown = unknownSubmissionCount(roundNumber, type)
@@ -1570,11 +1592,7 @@ function roundTaskStates(roundNumber: number): Record<HubTask, HubTaskState> {
   const drawState: HubTaskState = hasDraw ? 'done' : 'ready'
   const publishState: HubTaskState =
     published || hasAnySubmission || hasCompiled ? 'done' : !hasDraw ? 'blocked' : 'ready'
-  const submissionsState: HubTaskState = !hasDraw
-    ? 'blocked'
-    : hasGap
-      ? 'ready'
-      : 'done'
+  const submissionsState: HubTaskState = !hasDraw ? 'blocked' : hasGap ? 'ready' : 'done'
 
   return {
     draw: drawState,
@@ -1815,9 +1833,12 @@ function applyCompileDraftFromRound() {
   compileMissingDataPolicy.value = normalizedOptions.missing_data_policy
 }
 
-function buildCompileOptions(overrides?: {
-  missing_data_policy?: CompileOptions['missing_data_policy']
-}, scope: CompileScope = compileScope.value): CompileOptions {
+function buildCompileOptions(
+  overrides?: {
+    missing_data_policy?: CompileOptions['missing_data_policy']
+  },
+  scope: CompileScope = compileScope.value
+): CompileOptions {
   const selectedBaselineId = selectedCompileDiffBaselineCompiledId.value
   const diffBaseline =
     selectedBaselineId.length > 0
@@ -2018,13 +2039,6 @@ function formatCompileCsvValue(value: unknown) {
   return String(value)
 }
 
-function escapeCsv(value: string) {
-  if (value.includes('"') || value.includes(',') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
 function downloadCompileReportCsv() {
   if (sortedCompileRows.value.length === 0) return
   const headerKeys = [...compileColumns.value]
@@ -2032,11 +2046,11 @@ function downloadCompileReportCsv() {
   const rows = sortedCompileRows.value.map((row) =>
     headerKeys.map((key) => {
       const raw = key === 'team' ? teamName(String(row?.id ?? '')) : row?.[key]
-      return escapeCsv(formatCompileCsvValue(raw))
+      return escapeCsvCell(formatCompileCsvValue(raw))
     })
   )
   const csv = [
-    headerLabels.map((label) => escapeCsv(label)).join(','),
+    headerLabels.map((label) => escapeCsvCell(label)).join(','),
     ...rows.map((row) => row.join(',')),
   ].join('\n')
   const bom = new Uint8Array([0xef, 0xbb, 0xbf])
@@ -2058,11 +2072,11 @@ function downloadCompileAdjudicatorReportCsv() {
   const rows = sortedCompileAdjudicatorRows.value.map((row) =>
     headerKeys.map((key) => {
       const raw = key === 'adjudicator' ? adjudicatorName(String(row?.id ?? '')) : row?.[key]
-      return escapeCsv(formatCompileCsvValue(raw))
+      return escapeCsvCell(formatCompileCsvValue(raw))
     })
   )
   const csv = [
-    headerLabels.map((label) => escapeCsv(label)).join(','),
+    headerLabels.map((label) => escapeCsvCell(label)).join(','),
     ...rows.map((row) => row.join(',')),
   ].join('\n')
   const bom = new Uint8Array([0xef, 0xbb, 0xbf])
@@ -2295,22 +2309,54 @@ function submissionSortValue(value?: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function submissionTimestampValue(value?: string) {
+  const parsed = Date.parse(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : Number.NaN
+}
+
+function submissionSpeedLabel(
+  timestamp: number,
+  firstTimestamp: number,
+  isFirstSubmission: boolean
+): string | undefined {
+  if (!Number.isFinite(timestamp) || !Number.isFinite(firstTimestamp)) return undefined
+  if (isFirstSubmission) return '🏁'
+  const elapsedSeconds = Math.max(0, Math.round((timestamp - firstTimestamp) / 1000))
+  const minutes = Math.floor(elapsedSeconds / 60)
+  const seconds = elapsedSeconds % 60
+  if (minutes > 0) return `+${minutes}:${String(seconds).padStart(2, '0')}`
+  return `+${elapsedSeconds}s`
+}
+
 function submissionActorKey(item: any) {
   const payloadEntityId = String(item?.payload?.submittedEntityId ?? '').trim()
   if (payloadEntityId) return payloadEntityId
   return String(item?.submittedBy ?? '').trim()
 }
 
-function buildSubmissionPreviewEntry(item: any, index: number): SubmissionPreviewEntry {
+function buildSubmissionPreviewEntry(
+  item: any,
+  index: number,
+  firstTimestamp: number,
+  firstSubmissionKey: string,
+  includeSpeed: boolean
+): SubmissionPreviewEntry {
   const actorId = submissionActorKey(item)
   const submittedBy = actorId ? submissionEntityName(actorId) : ''
+  const sortValue = submissionSortValue(item?.createdAt)
+  const timestamp = submissionTimestampValue(item?.createdAt)
+  const key = String(item?._id ?? `${item?.type ?? 'submission'}-${index}`)
   return {
-    key: String(item?._id ?? `${item?.type ?? 'submission'}-${index}`),
+    key,
     submissionId: String(item?._id ?? '').trim() || undefined,
+    submittedById: actorId || undefined,
     submittedByLabel: submittedBy || t('不明'),
     summaryLabel: submissionSummaryForPreview(item),
     submittedAtLabel: formatSubmissionTimestamp(item?.createdAt),
-    sortValue: submissionSortValue(item?.createdAt),
+    submissionSpeedLabel: includeSpeed
+      ? submissionSpeedLabel(timestamp, firstTimestamp, key === firstSubmissionKey)
+      : undefined,
+    sortValue,
   }
 }
 
@@ -2323,6 +2369,25 @@ function sortSubmissionPreviewEntries(
     .map(({ sortValue: _, ...entry }) => entry)
 }
 
+function adjudicatorSubmissionLabel(ids: string[], entries: SubmissionPreviewEntry[]) {
+  if (!ids || ids.length === 0) return '—'
+  const earliestBySubmitter = new Map<string, SubmissionPreviewEntry>()
+  entries.forEach((entry) => {
+    const submitterId = String(entry.submittedById ?? '').trim()
+    if (!submitterId || !entry.submissionSpeedLabel) return
+    const current = earliestBySubmitter.get(submitterId)
+    if (!current || entry.sortValue < current.sortValue) {
+      earliestBySubmitter.set(submitterId, entry)
+    }
+  })
+  return ids
+    .map((id) => {
+      const marker = earliestBySubmitter.get(String(id))?.submissionSpeedLabel
+      return marker ? `${adjudicatorName(String(id))} ${marker}` : adjudicatorName(String(id))
+    })
+    .join(', ')
+}
+
 function toFiniteNumberList(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return value
@@ -2330,7 +2395,10 @@ function toFiniteNumberList(value: unknown): number[] {
     .filter((entry: number | null): entry is number => entry !== null)
 }
 
-function sideScoreTotalFromPayload(payload: Record<string, unknown>, side: 'A' | 'B'): number | null {
+function sideScoreTotalFromPayload(
+  payload: Record<string, unknown>,
+  side: 'A' | 'B'
+): number | null {
   const scores = toFiniteNumberList(payload[`scores${side}`])
   if (scores.length > 0) {
     return scores.reduce((total, score) => total + score, 0)
@@ -2489,6 +2557,13 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
   const allocation = Array.isArray(selectedDraw.value?.allocation)
     ? selectedDraw.value?.allocation
     : []
+  const ballotRoles = new Set(
+    resolveBallotSubmitterRoles(
+      selectedRound.value === null
+        ? undefined
+        : roundConfigByRound.value.get(selectedRound.value)?.userDefinedData
+    )
+  )
   return allocation.map((row: any, index: number) => {
     const govId = String(row?.teams?.gov ?? '')
     const oppId = String(row?.teams?.opp ?? '')
@@ -2498,7 +2573,11 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
     const chairs = normalizeIdList(row?.chairs ?? [])
     const panels = normalizeIdList(row?.panels ?? [])
     const trainees = normalizeIdList(row?.trainees ?? [])
-    const ballotSubmitterIds = normalizeIdList([...chairs, ...panels])
+    const ballotSubmitterIds = normalizeIdList([
+      ...(ballotRoles.has('chair') ? chairs : []),
+      ...(ballotRoles.has('panel') ? panels : []),
+      ...(ballotRoles.has('trainee') ? trainees : []),
+    ])
     const adjudicatorIds = normalizeIdList([...chairs, ...panels, ...trainees])
     return {
       key: `${index}-${govId}-${oppId}-${venueId}`,
@@ -2574,6 +2653,20 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
   const rows = drawPreviewRows.value
   if (rows.length === 0) return []
 
+  let firstTimestamp = Number.POSITIVE_INFINITY
+  let firstSubmissionKey = ''
+  selectedRoundSubmissions.value.forEach((item, index) => {
+    if (item?.type !== 'ballot') return
+    const timestamp = submissionTimestampValue(item?.createdAt)
+    if (!Number.isFinite(timestamp)) return
+    const key = String(item?._id ?? `${item?.type ?? 'submission'}-${index}`)
+    if (timestamp < firstTimestamp) {
+      firstTimestamp = timestamp
+      firstSubmissionKey = key
+    }
+  })
+  if (!Number.isFinite(firstTimestamp)) firstTimestamp = Number.NaN
+
   const teamPairToRowKey = new Map<string, string>()
   const adjudicatorToRowKey = new Map<string, string>()
   const bucketByRowKey = new Map<
@@ -2605,7 +2698,9 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
       if (!rowKey) return
       const bucket = bucketByRowKey.get(rowKey)
       if (!bucket) return
-      bucket.team.push(buildSubmissionPreviewEntry(item, index))
+      bucket.team.push(
+        buildSubmissionPreviewEntry(item, index, firstTimestamp, firstSubmissionKey, true)
+      )
       bucket.teamBallots.push(item as Submission)
       return
     }
@@ -2616,7 +2711,9 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
       if (!rowKey) return
       const bucket = bucketByRowKey.get(rowKey)
       if (!bucket) return
-      bucket.judge.push(buildSubmissionPreviewEntry(item, index))
+      bucket.judge.push(
+        buildSubmissionPreviewEntry(item, index, firstTimestamp, firstSubmissionKey, false)
+      )
       const score = toFiniteNumber(payload.score)
       if (score !== null) bucket.judgeScores.push(score)
     }
@@ -2636,12 +2733,13 @@ const submissionPreviewRows = computed<DrawPreviewRow[]>(() => {
         ? bucket.judgeScores.reduce((sum, score) => sum + score, 0) / bucket.judgeScores.length
         : null
     const judgeScoreAverageLabel =
-      judgeScoreAverage === null
-        ? undefined
-        : String(Math.round(judgeScoreAverage * 1000) / 1000)
+      judgeScoreAverage === null ? undefined : String(Math.round(judgeScoreAverage * 1000) / 1000)
     return {
       ...row,
       ...winDisplay,
+      chairsLabel: adjudicatorSubmissionLabel(row.chairIds, bucket.team),
+      panelsLabel: adjudicatorSubmissionLabel(row.panelIds, bucket.team),
+      traineesLabel: adjudicatorSubmissionLabel(row.traineeIds, bucket.team),
       teamSubmissionCount: bucket.team.length,
       teamSubmissionExpectedCount: expectedBallotCount,
       judgeSubmissionCount: bucket.judge.length,
@@ -2660,7 +2758,10 @@ function submissionPreviewSearchText(row: DrawPreviewRow): string {
   const teamDetails = row.submissionDetail?.team ?? []
   const judgeDetails = row.submissionDetail?.judge ?? []
   const detailText = [...teamDetails, ...judgeDetails]
-    .map((entry) => `${entry.submittedByLabel} ${entry.summaryLabel} ${entry.submittedAtLabel}`)
+    .map(
+      (entry) =>
+        `${entry.submittedByLabel} ${entry.summaryLabel} ${entry.submittedAtLabel} ${entry.submissionSpeedLabel ?? ''}`
+    )
     .join(' ')
   return [
     row.venueLabel,
@@ -2720,8 +2821,7 @@ async function runAutoCompilePreview(
   const currentTournamentId = input.tournamentId ?? tournamentId.value
   const currentRound = input.roundNumber ?? selectedRound.value
   const targetRounds = input.targetRounds ?? [...effectiveCompileTargetRounds.value]
-  const scope: CompileScope =
-    input.scope ?? (shouldTrackAdjudicatorCompile.value ? 'all' : 'teams')
+  const scope: CompileScope = input.scope ?? (shouldTrackAdjudicatorCompile.value ? 'all' : 'teams')
   if (autoCompilePreviewGate.isCurrent(token)) {
     autoCompilePreviewPayload.value = null
     compileAutoError.value = ''
@@ -3256,18 +3356,15 @@ watch(
   { immediate: true }
 )
 
-watch(
-  activeTask,
-  (nextTask, previousTask) => {
-    if (nextTask === previousTask) return
-    if (nextTask !== 'submissions') {
-      closeCompileOptionsModal()
-    }
-    if (previousTask === 'submissions' && nextTask !== 'submissions') {
-      clearUnsavedCompilePreview()
-    }
+watch(activeTask, (nextTask, previousTask) => {
+  if (nextTask === previousTask) return
+  if (nextTask !== 'submissions') {
+    closeCompileOptionsModal()
   }
-)
+  if (previousTask === 'submissions' && nextTask !== 'submissions') {
+    clearUnsavedCompilePreview()
+  }
+})
 
 watch(
   () => route.query.round,

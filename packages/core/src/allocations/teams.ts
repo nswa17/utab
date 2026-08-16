@@ -158,15 +158,15 @@ const getTeamRanksMethods = {
   custom: getTeamRanksCustom,
 } as const
 
-function normalizeInstitutionCategoryMap(
-  value: unknown
-): Record<number, string> {
+function normalizeInstitutionCategoryMap(value: unknown): Record<number, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const out: Record<number, string> = {}
   Object.entries(value as Record<string, unknown>).forEach(([rawKey, rawCategory]) => {
     const key = Number(rawKey)
     if (!Number.isFinite(key)) return
-    const category = String(rawCategory ?? '').trim().toLowerCase()
+    const category = String(rawCategory ?? '')
+      .trim()
+      .toLowerCase()
     out[key] = category.length > 0 ? category : 'institution'
   })
   return out
@@ -337,6 +337,7 @@ function getTeamDraw(
       'by_side',
       'by_past_opponent',
       'by_conflict_group',
+      'by_sibling_past_opponent_school',
       'by_random',
     ],
     method = 'straight',
@@ -349,7 +350,8 @@ function getTeamDraw(
   const availableTeams = filterAvailable(teams, r)
   const sortedTeams = sortTeams(availableTeams, compiledTeamResults)
   const teamIds = sortedTeams.map((team) => team.id)
-  const rankMethod = getTeamRanksMethods[method as keyof typeof getTeamRanksMethods] ?? getTeamRanksStraight
+  const rankMethod =
+    getTeamRanksMethods[method as keyof typeof getTeamRanksMethods] ?? getTeamRanksStraight
   const ranks = rankMethod(
     r,
     sortedTeams,
@@ -401,7 +403,10 @@ function getTeamDrawRandom(
 ): Draw {
   const teamNum = config.style.team_num
   const availableTeamIds = filterAvailable(teams, r).map((team) => team.id)
-  const shuffledTeamIds = shuffle(availableTeamIds, `${Date.now()}:team-random:${config.name ?? 'draw'}:${r}`)
+  const shuffledTeamIds = shuffle(
+    availableTeamIds,
+    `${Date.now()}:team-random:${config.name ?? 'draw'}:${r}`
+  )
   const allocation: Draw['allocation'] = []
 
   for (let index = 0; index < shuffledTeamIds.length; index += teamNum) {

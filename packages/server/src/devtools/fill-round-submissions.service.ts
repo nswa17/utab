@@ -1,7 +1,11 @@
+import { Types } from 'mongoose'
+
 import { getDrawModel } from '../models/draw.js'
 import { getRoundModel } from '../models/round.js'
 import { getSubmissionModel } from '../models/submission.js'
 import { getTeamModel } from '../models/team.js'
+import { StyleModel } from '../models/style.js'
+import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import {
   DevToolsServiceError,
@@ -27,6 +31,16 @@ type FeedbackSettings = {
   evaluatorInTeam: 'team' | 'speaker'
   chairsAlwaysEvaluated: boolean
   noSpeakerScore: boolean
+  ballotSubmitterRoles: Set<'chair' | 'panel' | 'trainee'>
+}
+
+type NumericRange = { from: number; to: number; unit: number }
+
+type SubmissionStyleSettings = {
+  govScoreCount: number
+  oppScoreCount: number
+  speakerRanges: NumericRange[]
+  adjudicatorRange: NumericRange | null
 }
 
 function normalizeIdList(value: unknown): string[] {
@@ -57,8 +71,26 @@ function normalizeDrawTeams(value: unknown): { gov: string; opp: string } | null
   return { gov, opp }
 }
 
-function normalizeDrawRows(allocation: unknown): NormalizedDrawRow[] {
+function normalizeDrawRows(allocation: unknown, userDefinedData?: unknown): NormalizedDrawRow[] {
   if (!Array.isArray(allocation)) return []
+  const settings = asRecord(userDefinedData)
+  const configuredRoles = Array.isArray(settings.ballot_submitter_roles)
+    ? settings.ballot_submitter_roles
+        .map((value) =>
+          String(value ?? '')
+            .trim()
+            .toLowerCase()
+        )
+        .filter(
+          (value): value is 'chair' | 'panel' | 'trainee' =>
+            value === 'chair' || value === 'panel' || value === 'trainee'
+        )
+    : typeof settings.allow_panel_ballot_submission === 'boolean'
+      ? settings.allow_panel_ballot_submission
+        ? ['chair', 'panel']
+        : ['chair']
+      : ['chair', 'panel']
+  const ballotSubmitterRoles = new Set(configuredRoles)
   return allocation
     .map((item) => {
       if (!item || typeof item !== 'object') return null
@@ -68,7 +100,11 @@ function normalizeDrawRows(allocation: unknown): NormalizedDrawRow[] {
       const chairs = normalizeIdList(source.chairs)
       const panels = normalizeIdList(source.panels)
       const trainees = normalizeIdList(source.trainees)
-      const ballotSubmitters = normalizeIdList([...chairs, ...panels])
+      const ballotSubmitters = normalizeIdList([
+        ...(ballotSubmitterRoles.has('chair') ? chairs : []),
+        ...(ballotSubmitterRoles.has('panel') ? panels : []),
+        ...(ballotSubmitterRoles.has('trainee') ? trainees : []),
+      ])
       const adjudicators = normalizeIdList([...chairs, ...panels, ...trainees])
       if (adjudicators.length === 0) return null
       return {
@@ -89,6 +125,65 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function normalizeNumericRange(value: unknown): NumericRange | null {
+  if (Array.isArray(value)) {
+    const from = Number(value[0])
+    const to = Number(value[1])
+    const unit = Number(value[2])
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return null
+    return { from, to, unit: Number.isFinite(unit) && unit > 0 ? unit : 0 }
+  }
+  const source = asRecord(asRecord(value).value ?? value)
+  const from = Number(source.from)
+  const to = Number(source.to)
+  const unit = Number(source.unit)
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return null
+  return { from, to, unit: Number.isFinite(unit) && unit > 0 ? unit : 0 }
+}
+
+function normalizeOrderedRanges(value: unknown): NumericRange[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry, index) => ({
+      range: normalizeNumericRange(entry),
+      order: Number(asRecord(entry).order ?? index + 1),
+    }))
+    .filter((entry): entry is { range: NumericRange; order: number } => entry.range !== null)
+    .sort((left, right) => left.order - right.order)
+    .map((entry) => entry.range)
+}
+
+function roleCountForSide(style: Record<string, unknown>, side: 'gov' | 'opp'): number {
+  const roles = asRecord(style.roles)[side]
+  if (Array.isArray(roles) && roles.length > 0) return roles.length
+  const ranges = normalizeOrderedRanges(style.range)
+  if (ranges.length > 0) return ranges.length
+  return Array.isArray(style.score_weights) ? style.score_weights.length : 0
+}
+
+async function loadSubmissionStyleSettings(tournamentId: string): Promise<SubmissionStyleSettings> {
+  const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+  if (!tournament || typeof tournament.style !== 'number') {
+    throw new DevToolsServiceError(400, 'Tournament style is required')
+  }
+  const styleDoc = await StyleModel.findOne({ id: tournament.style }).lean().exec()
+  if (!styleDoc) throw new DevToolsServiceError(400, 'Tournament style not found')
+  const overrides = asRecord((tournament.options as any)?.style)
+  const overridesScoreLayout = Array.isArray(overrides.score_weights)
+  const style: Record<string, unknown> = {
+    ...(styleDoc as Record<string, unknown>),
+    ...overrides,
+    ...(overridesScoreLayout && overrides.roles === undefined ? { roles: undefined } : {}),
+    ...(overridesScoreLayout && overrides.range === undefined ? { range: [] } : {}),
+  }
+  return {
+    govScoreCount: roleCountForSide(style, 'gov'),
+    oppScoreCount: roleCountForSide(style, 'opp'),
+    speakerRanges: normalizeOrderedRanges(style.range),
+    adjudicatorRange: normalizeNumericRange(style.adjudicator_range),
+  }
+}
+
 function resolveFeedbackSettings(roundDoc: unknown): FeedbackSettings {
   const userDefinedData = asRecord((roundDoc as any)?.userDefinedData)
   return {
@@ -97,6 +192,14 @@ function resolveFeedbackSettings(roundDoc: unknown): FeedbackSettings {
     evaluatorInTeam: userDefinedData.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
     chairsAlwaysEvaluated: userDefinedData.chairs_always_evaluated === true,
     noSpeakerScore: userDefinedData.no_speaker_score === true,
+    ballotSubmitterRoles: new Set(
+      Array.isArray(userDefinedData.ballot_submitter_roles)
+        ? userDefinedData.ballot_submitter_roles.filter(
+            (value): value is 'chair' | 'panel' | 'trainee' =>
+              value === 'chair' || value === 'panel' || value === 'trainee'
+          )
+        : ['chair', 'panel']
+    ),
   }
 }
 
@@ -106,6 +209,17 @@ function randomInt(minInclusive: number, maxInclusive: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+function randomScore(
+  range: NumericRange | undefined,
+  fallbackFrom: number,
+  fallbackTo: number
+): number {
+  if (!range) return randomInt(fallbackFrom, fallbackTo)
+  if (range.unit <= 0) return range.from + Math.random() * (range.to - range.from)
+  const stepCount = Math.floor((range.to - range.from) / range.unit + 1e-8)
+  return range.from + randomInt(0, Math.max(0, stepCount)) * range.unit
+}
+
 function ballotKey(round: number, actor: string, teamAId: string, teamBId: string): string {
   const pair = [teamAId, teamBId].sort()
   return `${round}:ballot:${actor}:${pair[0]}:${pair[1]}`
@@ -113,6 +227,21 @@ function ballotKey(round: number, actor: string, teamAId: string, teamBId: strin
 
 function feedbackKey(round: number, actor: string, adjudicatorId: string): string {
   return `${round}:feedback:${actor}:${adjudicatorId}`
+}
+
+function ballotDedupeKey(payload: Record<string, unknown>): string {
+  const actor = String(payload.submittedEntityId ?? '').trim()
+  const teamIds = [
+    String(payload.teamAId ?? '').trim(),
+    String(payload.teamBId ?? '').trim(),
+  ].sort()
+  return `ballot:${actor}:${teamIds[0]}:${teamIds[1]}`
+}
+
+function feedbackDedupeKey(payload: Record<string, unknown>): string {
+  const actor = String(payload.submittedEntityId ?? '').trim()
+  const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
+  return `feedback:${actor}:${adjudicatorId}`
 }
 
 function resolveSubmissionActor(item: any): string {
@@ -126,7 +255,8 @@ function buildBallotPayload(
   submittedEntityId: string,
   govSpeakerIds: string[],
   oppSpeakerIds: string[],
-  noSpeakerScore: boolean
+  noSpeakerScore: boolean,
+  style: SubmissionStyleSettings
 ): Record<string, unknown> {
   if (noSpeakerScore) {
     const winnerId = Math.random() < 0.5 ? row.gov : row.opp
@@ -142,11 +272,19 @@ function buildBallotPayload(
     }
   }
 
-  const useSpeakerIds = govSpeakerIds.length > 0 && oppSpeakerIds.length > 0
-  const scoreLength = useSpeakerIds ? Math.max(1, Math.min(govSpeakerIds.length, oppSpeakerIds.length)) : 1
+  if (style.govScoreCount < 1 || style.oppScoreCount < 1) {
+    throw new DevToolsServiceError(400, 'Tournament style must define speaker score roles')
+  }
+  if (govSpeakerIds.length === 0 || oppSpeakerIds.length === 0) {
+    throw new DevToolsServiceError(400, 'Speaker assignments are required for generated ballots')
+  }
 
-  const scoresA = Array.from({ length: scoreLength }).map(() => randomInt(72, 79))
-  const scoresB = Array.from({ length: scoreLength }).map(() => randomInt(72, 79))
+  const scoresA = Array.from({ length: style.govScoreCount }).map((_, index) =>
+    randomScore(style.speakerRanges[index] ?? style.speakerRanges.at(-1), 72, 79)
+  )
+  const scoresB = Array.from({ length: style.oppScoreCount }).map((_, index) =>
+    randomScore(style.speakerRanges[index] ?? style.speakerRanges.at(-1), 72, 79)
+  )
 
   const totalA = scoresA.reduce((sum, value) => sum + value, 0)
   const totalB = scoresB.reduce((sum, value) => sum + value, 0)
@@ -163,18 +301,26 @@ function buildBallotPayload(
     userDefinedData: { __devtools: { source: 'fill-round-submissions' } },
   }
 
-  if (useSpeakerIds) {
-    payload.speakerIdsA = govSpeakerIds.slice(0, scoreLength)
-    payload.speakerIdsB = oppSpeakerIds.slice(0, scoreLength)
-  }
+  payload.speakerIdsA = Array.from(
+    { length: style.govScoreCount },
+    (_, index) => govSpeakerIds[index % govSpeakerIds.length]
+  )
+  payload.speakerIdsB = Array.from(
+    { length: style.oppScoreCount },
+    (_, index) => oppSpeakerIds[index % oppSpeakerIds.length]
+  )
 
   return payload
 }
 
-function buildFeedbackPayload(adjudicatorId: string, submittedEntityId: string): Record<string, unknown> {
+function buildFeedbackPayload(
+  adjudicatorId: string,
+  submittedEntityId: string,
+  range: NumericRange | null
+): Record<string, unknown> {
   return {
     adjudicatorId,
-    score: randomInt(5, 9),
+    score: randomScore(range ?? undefined, 5, 9),
     submittedEntityId,
     comment: 'devtools generated feedback',
     userDefinedData: { __devtools: { source: 'fill-round-submissions' } },
@@ -233,11 +379,7 @@ function teamSpeakerIdsForRound(team: any, round: number): string[] {
   const templateSpeakers = normalizeIdList(team?.template?.speakers)
   if (templateSpeakers.length > 0) return templateSpeakers
 
-  // Fall back to any known speaker ids on team details to keep ballot payload usable.
-  const fallbackSpeakers = normalizeIdList(
-    details.flatMap((detail: any) => (Array.isArray(detail?.speakers) ? detail.speakers : []))
-  )
-  return fallbackSpeakers
+  return []
 }
 
 export async function fillRoundSubmissions(
@@ -250,6 +392,7 @@ export async function fillRoundSubmissions(
     throw new DevToolsServiceError(400, 'round must be an integer >= 1')
   }
 
+  const tournamentObjectId = new Types.ObjectId(tournamentId)
   const connection = await getTournamentConnection(tournamentId)
   const RoundModel = getRoundModel(connection)
   const DrawModel = getDrawModel(connection)
@@ -262,13 +405,15 @@ export async function fillRoundSubmissions(
   }
 
   const drawDoc = await DrawModel.findOne({ tournamentId, round }).lean().exec()
-  const rows = normalizeDrawRows((drawDoc as any)?.allocation)
+  const rows = normalizeDrawRows((drawDoc as any)?.allocation, (roundDoc as any)?.userDefinedData)
   if (rows.length === 0) {
     throw new DevToolsServiceError(400, 'Draw allocation is required for this round')
   }
 
   const teamIds = Array.from(new Set(rows.flatMap((row) => [row.gov, row.opp])))
-  const teams = await TeamModel.find({ tournamentId, _id: { $in: teamIds } }).lean().exec()
+  const teams = await TeamModel.find({ tournamentId, _id: { $in: teamIds } })
+    .lean()
+    .exec()
   const teamById = new Map<string, any>()
   teams.forEach((team: any) => {
     const teamId = String(team?._id ?? '').trim()
@@ -282,6 +427,7 @@ export async function fillRoundSubmissions(
   })
 
   const settings = resolveFeedbackSettings(roundDoc)
+  const styleSettings = await loadSubmissionStyleSettings(tournamentId)
   const expectedBallotByKey = new Map<string, Record<string, unknown>>()
   const expectedFeedbackByKey = new Map<string, Record<string, unknown>>()
 
@@ -302,7 +448,8 @@ export async function fillRoundSubmissions(
             submittedEntityId,
             teamSpeakerIdsByTeam.get(row.gov) ?? [],
             teamSpeakerIdsByTeam.get(row.opp) ?? [],
-            settings.noSpeakerScore
+            settings.noSpeakerScore,
+            styleSettings
           )
         )
       })
@@ -325,7 +472,10 @@ export async function fillRoundSubmissions(
         targetsFromTeams.forEach((adjudicatorId) => {
           const key = feedbackKey(round, submittedEntityId, adjudicatorId)
           if (expectedFeedbackByKey.has(key)) return
-          expectedFeedbackByKey.set(key, buildFeedbackPayload(adjudicatorId, submittedEntityId))
+          expectedFeedbackByKey.set(
+            key,
+            buildFeedbackPayload(adjudicatorId, submittedEntityId, styleSettings.adjudicatorRange)
+          )
         })
       })
     }
@@ -336,7 +486,10 @@ export async function fillRoundSubmissions(
           if (adjudicatorId === submittedEntityId) return
           const key = feedbackKey(round, submittedEntityId, adjudicatorId)
           if (expectedFeedbackByKey.has(key)) return
-          expectedFeedbackByKey.set(key, buildFeedbackPayload(adjudicatorId, submittedEntityId))
+          expectedFeedbackByKey.set(
+            key,
+            buildFeedbackPayload(adjudicatorId, submittedEntityId, styleSettings.adjudicatorRange)
+          )
         })
       })
     }
@@ -380,30 +533,68 @@ export async function fillRoundSubmissions(
   const missingBallotKeys = expectedBallotKeys.filter((key) => !existingBallotKeys.has(key))
   const missingFeedbackKeys = expectedFeedbackKeys.filter((key) => !existingFeedbackKeys.has(key))
 
-  const createdBallotDocs = missingBallotKeys.map((key) => ({
-    tournamentId,
-    round,
-    type: 'ballot',
-    payload: expectedBallotByKey.get(key),
-    submittedBy: actorUserId,
-  }))
-  const createdFeedbackDocs = missingFeedbackKeys.map((key) => ({
-    tournamentId,
-    round,
-    type: 'feedback',
-    payload: expectedFeedbackByKey.get(key),
-    submittedBy: actorUserId,
-  }))
+  const createdBallotDocs = missingBallotKeys.map((key) => {
+    const payload = expectedBallotByKey.get(key) ?? {}
+    return {
+      tournamentId: tournamentObjectId,
+      round,
+      type: 'ballot' as const,
+      payload,
+      submittedBy: actorUserId,
+      dedupeKey: ballotDedupeKey(payload),
+    }
+  })
+  const createdFeedbackDocs = missingFeedbackKeys.map((key) => {
+    const payload = expectedFeedbackByKey.get(key) ?? {}
+    return {
+      tournamentId: tournamentObjectId,
+      round,
+      type: 'feedback' as const,
+      payload,
+      submittedBy: actorUserId,
+      dedupeKey: feedbackDedupeKey(payload),
+    }
+  })
 
-  if (createdBallotDocs.length > 0) {
-    await SubmissionModel.insertMany(createdBallotDocs, { ordered: false })
-  }
-  if (createdFeedbackDocs.length > 0) {
-    await SubmissionModel.insertMany(createdFeedbackDocs, { ordered: false })
-  }
+  const ballotWriteResult =
+    createdBallotDocs.length > 0
+      ? await SubmissionModel.bulkWrite(
+          createdBallotDocs.map((doc) => ({
+            updateOne: {
+              filter: {
+                tournamentId: tournamentObjectId,
+                round,
+                type: doc.type,
+                dedupeKey: doc.dedupeKey,
+              },
+              update: { $setOnInsert: doc },
+              upsert: true,
+            },
+          })),
+          { ordered: false }
+        )
+      : null
+  const feedbackWriteResult =
+    createdFeedbackDocs.length > 0
+      ? await SubmissionModel.bulkWrite(
+          createdFeedbackDocs.map((doc) => ({
+            updateOne: {
+              filter: {
+                tournamentId: tournamentObjectId,
+                round,
+                type: doc.type,
+                dedupeKey: doc.dedupeKey,
+              },
+              update: { $setOnInsert: doc },
+              upsert: true,
+            },
+          })),
+          { ordered: false }
+        )
+      : null
 
-  const createdBallot = createdBallotDocs.length
-  const createdFeedback = createdFeedbackDocs.length
+  const createdBallot = Number(ballotWriteResult?.upsertedCount ?? 0)
+  const createdFeedback = Number(feedbackWriteResult?.upsertedCount ?? 0)
 
   return {
     tournamentId,
@@ -412,6 +603,6 @@ export async function fillRoundSubmissions(
     expected: toSummary(expectedBallotByKey.size, expectedFeedbackByKey.size),
     before: toSummary(beforeBallot, beforeFeedback),
     created: toSummary(createdBallot, createdFeedback),
-    after: toSummary(beforeBallot + createdBallot, beforeFeedback + createdFeedback),
+    after: toSummary(expectedBallotByKey.size, expectedFeedbackByKey.size),
   }
 }
