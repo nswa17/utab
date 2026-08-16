@@ -240,4 +240,10 @@ describe('AdminRoundOperationsHub', () => {
       /:label=\"\$t\('勝者'\)\"[\s\S]{0,220}<option value=\"\">\{\{ \$t\('未選択'\) \}\}<\/option>/
     )
   })
+
+  it('increments score-editing spinners by whole points', () => {
+    const submissionsView = load('src/views/admin/AdminTournamentSubmissions.vue')
+    expect(submissionsView).toContain('step="1"')
+    expect(submissionsView).not.toContain('step="0.1"')
+  })
 })

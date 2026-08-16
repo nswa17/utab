@@ -126,6 +126,30 @@ describe('AdminRoundAllocation', () => {
     expect(source).not.toContain('drop-zone--drag-related--history')
   })
 
+  it('keeps the color legend beside the placement title and summarizes every warning tone', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('class="warning-color-legend"')
+    expect(source.indexOf('class="warning-color-legend"')).toBeLessThan(
+      source.indexOf('<Teleport to="body">')
+    )
+    expect(source).toContain('赤: 同一機関・利用不可などの重大な競合')
+    expect(source).toContain('橙: 過去の対戦')
+    expect(source).toContain('黄: 過去に担当済み・サイド偏りなど')
+    expect(source).toContain('青: 同地域・同リーグなどの参考情報')
+    expect(source).toContain('warning-color-legend-dot--critical')
+    expect(source).toContain('warning-color-legend-dot--history')
+    expect(source).toContain('warning-color-legend-dot--caution')
+    expect(source).toContain('warning-color-legend-dot--info')
+    expect(source).toContain('warningSummaryItems(rowWarningState(index).warnings)')
+    expect(source).toContain('warningSummaryToneOrder')
+    expect(source).toContain('counts[warningDisplayTone(warning)] += 1')
+    expect(source).toContain('warning-summary-item--history')
+    expect(source).toContain('warning-summary-item--caution')
+    expect(source).toContain("if (tone === 'history') return 'vs'")
+    expect(source).toContain('warningDisplayToneShortLabel(warningDisplayTone(warning))')
+    expect(source).toContain('class="warning-summary-icon"')
+  })
+
   it('invalidates stale refresh and compiled-history requests while route context changes', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
     expect(source).toContain('createLatestRequestGate')
