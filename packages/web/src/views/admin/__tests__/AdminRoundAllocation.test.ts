@@ -150,6 +150,27 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('class="warning-summary-icon"')
   })
 
+  it('renders conflict and past-match warnings with the actual team names', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain("if (warningCode === 'team_same_institution')")
+    expect(source).toContain("if (warningCode === 'team_past_match')")
+    expect(source).toContain("if (warningCode === 'team_past_match_same_institution')")
+    expect(source).toContain("teamNameById(String(warning.params.teamAId ?? ''))")
+    expect(source).toContain("teamNameById(String(warning.params.teamBId ?? ''))")
+    expect(source).not.toContain('Team A and Team B')
+  })
+
+  it('lets an assigned unavailable adjudicator be removed to waiting', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain(
+      "if (kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)) return true"
+    )
+    expect(source).toContain(
+      "!(kind === 'adjudicator' && isEntityAssignedInAllocation(kind, payload.id))"
+    )
+    expect(source).toContain("if (kind === 'adjudicator') removeAdjudicatorFromAllocation(payload.id)")
+  })
+
   it('invalidates stale refresh and compiled-history requests while route context changes', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
     expect(source).toContain('createLatestRequestGate')

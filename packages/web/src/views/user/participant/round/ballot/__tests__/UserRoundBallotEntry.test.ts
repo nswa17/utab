@@ -73,19 +73,28 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("if (!identityReady.value) return t('提出者ジャッジを選択してください。')")
   })
 
-  it('supports role-by-role controls with steppers and large explicit award choices', () => {
+  it('validates complete rosters and omits speaker ids when no roster exists', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
-    expect(source).toContain('const roleSequenceProgressText = computed(() => {')
+    expect(source).toContain('teamASpeakerEntries.value.length === 0')
+    expect(source).toContain('teamBSpeakerEntries.value.length === 0')
+    expect(source).toContain('isCompleteSpeakerSelection(speakerIdsA.value, countA, availableA)')
+  })
+
+  it('shows all speaker scores and awards together with large explicit controls', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain('buildSpeakerRoleSequence(style.value?.speaker_sequence')
-    expect(source).toContain('function goToNextRole() {')
-    expect(source).toContain('function goToPreviousRole() {')
-    expect(source).toContain("t('前のロール')")
-    expect(source).toContain("t('次のロール')")
-    expect(source).toContain("adjustCurrentRoleNumeric('score', 1)")
+    expect(source).toContain('class="stack score-bulk-panel"')
+    expect(source).toContain('v-for="entry in roleInputSequence"')
+    expect(source).toContain('function adjustRoleNumeric(')
+    expect(source).toContain("adjustRoleNumeric(entry, 'score', 1)")
+    expect(source).toContain('function writeRoleNumericFromEvent(')
+    expect(source).toContain('function roleTotalScore(entry: RoleSequenceEntry)')
+    expect(source).not.toContain('currentRoleEntry')
+    expect(source).not.toContain('goToNextRole')
     expect(source).toContain('class="award-choice"')
     expect(source).toContain('class="award-choice-option"')
-    expect(source).toContain(':aria-pressed="activeRoleBest"')
-    expect(source).toContain(':aria-pressed="activeRolePoi"')
+    expect(source).toContain(":aria-pressed=\"readToggleValue(entry.side, 'best', entry.index)\"")
+    expect(source).toContain(":aria-pressed=\"readToggleValue(entry.side, 'poi', entry.index)\"")
     expect(source).toContain('min-height: 44px;')
     expect(source).toContain('touch-action: manipulation;')
   })
@@ -99,7 +108,7 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain("$t('付与なし')")
     expect(source).toContain('@click="editConfirmSpeaker(row)"')
     expect(source).toContain('function editConfirmSpeaker(row: ConfirmSpeakerRow)')
-    expect(source).toContain('preserveRoleCursorOnScoreStep')
+    expect(source).toContain('const roleExists = roleInputSequence.value.some(')
     expect(source).toContain('const returnToConfirmAfterEdit = ref(false)')
     expect(source).toContain('v-if="returnToConfirmAfterEdit"')
     expect(source).toContain('@click="returnToConfirmation"')
@@ -136,5 +145,8 @@ describe('UserRoundBallotEntry winner selection rules', () => {
       'Current total: {gov} {govScore} / {opp} {oppScore}'
     )
     expect(messages.en['ロール {current} / {total}']).toBe('Role {current} / {total}')
+    expect(messages.en['全スピーカーのスコアと賞をこの画面でまとめて入力できます。']).toBe(
+      'Enter scores and awards for every speaker on this screen.'
+    )
   })
 })

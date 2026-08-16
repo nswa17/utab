@@ -231,6 +231,9 @@
                   "
                   v-model:evaluator-in-team="roundDraft(round).userDefined.evaluator_in_team"
                   v-model:no-speaker-score="roundDraft(round).userDefined.no_speaker_score"
+                  v-model:ballot-submitter-roles="
+                    roundDraft(round).userDefined.ballot_submitter_roles
+                  "
                   v-model:allow-low-tie-win="roundDraft(round).userDefined.allow_low_tie_win"
                   v-model:score-by-matter-manner="
                     roundDraft(round).userDefined.score_by_matter_manner
@@ -269,7 +272,9 @@
                         :disabled="isLoading"
                       />
                       <RankingPriorityEditor
-                        v-model="roundDraft(round).compile.options.adjudicator_ranking_priority.order"
+                        v-model="
+                          roundDraft(round).compile.options.adjudicator_ranking_priority.order
+                        "
                         :title="$t('ジャッジ順位優先度設定')"
                         :help-text="$t('使用する基準を有効化し、上から優先順に並べてください。')"
                         :options="adjudicatorRankingPriorityOptions"
@@ -422,6 +427,7 @@ import {
   type CompileAdjudicatorRankingMetric,
 } from '@/types/compiled'
 import { createLatestRequestGate } from '@/utils/latest-request'
+import { resolveBallotSubmitterRoles } from '@/utils/submission-expectations'
 
 const route = useRoute()
 const router = useRouter()
@@ -685,6 +691,25 @@ function expectedAdjudicatorIds(roundNumber: number) {
   return set
 }
 
+function expectedBallotSubmitterIds(roundLike: any) {
+  const set = new Set<string>()
+  const draw = roundDraw(Number(roundLike?.round))
+  const allocation = Array.isArray(draw?.allocation) ? draw.allocation : []
+  const roles = new Set(resolveBallotSubmitterRoles(roundLike?.userDefinedData))
+  allocation.forEach((row: any) => {
+    if (roles.has('chair')) {
+      ;(row.chairs ?? []).forEach((id: string) => id && set.add(String(id)))
+    }
+    if (roles.has('panel')) {
+      ;(row.panels ?? []).forEach((id: string) => id && set.add(String(id)))
+    }
+    if (roles.has('trainee')) {
+      ;(row.trainees ?? []).forEach((id: string) => id && set.add(String(id)))
+    }
+  })
+  return set
+}
+
 function expectedTeamIds(roundNumber: number) {
   const set = new Set<string>()
   const draw = roundDraw(roundNumber)
@@ -723,11 +748,11 @@ function intersectionCount(expected: Set<string>, actual: Set<string>) {
 }
 
 function ballotExpectedCount(round: any) {
-  return expectedAdjudicatorIds(round.round).size
+  return expectedBallotSubmitterIds(round).size
 }
 
 function ballotSubmittedCount(round: any) {
-  const expected = expectedAdjudicatorIds(round.round)
+  const expected = expectedBallotSubmitterIds(round)
   const actual = submittedIds(round.round, 'ballot')
   return intersectionCount(expected, actual)
 }
@@ -791,7 +816,7 @@ function adjudicatorName(id: string) {
 function missingBallotNames(round: any) {
   const roundNumber = Number(round.round)
   const submitted = submittedIds(roundNumber, 'ballot')
-  return Array.from(expectedAdjudicatorIds(roundNumber))
+  return Array.from(expectedBallotSubmitterIds(round))
     .filter((id) => !submitted.has(id))
     .map(adjudicatorName)
 }

@@ -15,14 +15,14 @@ const router: Router = Router()
 
 const loginSchema = {
   body: z.object({
-    username: z.string().min(1),
+    username: z.string().trim().min(1),
     password: z.string().min(1),
   }),
 }
 
 const registerSchema = {
   body: z.object({
-    username: z.string().min(1),
+    username: z.string().trim().min(1),
     password: z.string().min(6),
     role: z.enum(['superuser', 'organizer', 'adjudicator', 'speaker', 'audience']),
   }),

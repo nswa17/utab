@@ -10,6 +10,7 @@ describe('round defaults', () => {
   it('falls back to defaults when input is invalid', () => {
     const normalized = normalizeRoundDefaults(null)
     expect(normalized).toEqual(defaultRoundDefaults())
+    expect(normalized.userDefinedData.allow_low_tie_win).toBe(false)
   })
 
   it('normalizes partial values and guards invalid enums', () => {
@@ -84,6 +85,7 @@ describe('round defaults', () => {
         poi_min_count: 0,
         poi_max_count: 2,
         allow_low_tie_win: true,
+        ballot_submitter_roles: ['chair', 'panel'],
       },
       break: {
         source: 'submissions',
@@ -142,7 +144,8 @@ describe('round defaults', () => {
         best_max_count: 2,
         poi_min_count: 0,
         poi_max_count: 2,
-        allow_low_tie_win: true,
+        allow_low_tie_win: false,
+        ballot_submitter_roles: ['chair', 'panel'],
       },
       break: {
         source: 'submissions',

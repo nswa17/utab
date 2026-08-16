@@ -16,6 +16,9 @@ type BreakSeeding =
   | 'random_within_tie_group'
   | 'random_full'
 type CompileSource = 'submissions' | 'raw'
+export type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+
+const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
 
 export type RoundDefaults = {
   userDefinedData: {
@@ -32,6 +35,7 @@ export type RoundDefaults = {
     poi_min_count: number
     poi_max_count: number
     allow_low_tie_win: boolean
+    ballot_submitter_roles: BallotSubmitterRole[]
   }
   break: {
     source: BreakSource
@@ -56,6 +60,35 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return fallback
 }
 
+function normalizeBallotSubmitterRoles(
+  value: unknown,
+  fallback: BallotSubmitterRole[] = DEFAULT_BALLOT_SUBMITTER_ROLES
+): BallotSubmitterRole[] {
+  if (!Array.isArray(value)) return [...fallback]
+  const roles: BallotSubmitterRole[] = []
+  value.forEach((entry) => {
+    const role = String(entry ?? '')
+      .trim()
+      .toLowerCase()
+    if (role !== 'chair' && role !== 'panel' && role !== 'trainee') return
+    if (!roles.includes(role)) roles.push(role)
+  })
+  return roles
+}
+
+function resolveBallotSubmitterRoles(
+  source: Record<string, unknown>,
+  fallback: BallotSubmitterRole[] = DEFAULT_BALLOT_SUBMITTER_ROLES
+): BallotSubmitterRole[] {
+  if (Array.isArray(source.ballot_submitter_roles)) {
+    return normalizeBallotSubmitterRoles(source.ballot_submitter_roles, fallback)
+  }
+  if (typeof source.allow_panel_ballot_submission === 'boolean') {
+    return source.allow_panel_ballot_submission ? ['chair', 'panel'] : ['chair']
+  }
+  return [...fallback]
+}
+
 function asPositiveInt(value: unknown, fallback: number): number {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1) return fallback
@@ -65,11 +98,7 @@ function asPositiveInt(value: unknown, fallback: number): number {
 function asRoundList(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return Array.from(
-    new Set(
-      value
-        .map((item) => Number(item))
-        .filter((item) => Number.isInteger(item) && item >= 1)
-    )
+    new Set(value.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 1))
   ).sort((left, right) => left - right)
 }
 
@@ -106,7 +135,8 @@ export function defaultRoundDefaults(): RoundDefaults {
       poi: true,
       best: true,
       ...awardSelection,
-      allow_low_tie_win: true,
+      allow_low_tie_win: false,
+      ballot_submitter_roles: [...DEFAULT_BALLOT_SUBMITTER_ROLES],
     },
     break: {
       source: 'submissions',
@@ -166,12 +196,17 @@ export function normalizeRoundDefaults(input: unknown): RoundDefaults {
         userDefinedSource.allow_low_tie_win,
         fallback.userDefinedData.allow_low_tie_win
       ),
+      ballot_submitter_roles: resolveBallotSubmitterRoles(
+        userDefinedSource,
+        fallback.userDefinedData.ballot_submitter_roles
+      ),
     },
     break: {
       source: breakSource.source === 'raw' ? 'raw' : fallback.break.source,
       size: asPositiveInt(breakSource.size, fallback.break.size),
       cutoff_tie_policy:
-        breakSource.cutoff_tie_policy === 'include_all' || breakSource.cutoff_tie_policy === 'strict'
+        breakSource.cutoff_tie_policy === 'include_all' ||
+        breakSource.cutoff_tie_policy === 'strict'
           ? breakSource.cutoff_tie_policy
           : fallback.break.cutoff_tie_policy,
       seeding: normalizeBreakSeeding(breakSource.seeding, fallback.break.seeding),

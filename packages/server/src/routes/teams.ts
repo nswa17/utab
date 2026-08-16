@@ -16,7 +16,7 @@ const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   template: z.any().optional(),
   details: z.any().optional(),
   userDefinedData: z.any().optional(),
@@ -37,7 +37,7 @@ const updateSchema = {
   body: z
     .object({
       tournamentId: z.string().min(1),
-      name: z.string().min(1).optional(),
+      name: z.string().trim().min(1).optional(),
       template: z.any().optional(),
       details: z.any().optional(),
       userDefinedData: z.any().optional(),
@@ -58,7 +58,7 @@ const bulkUpdateSchema = {
       .object({
         id: z.string().min(1),
         tournamentId: z.string().min(1),
-        name: z.string().min(1).optional(),
+        name: z.string().trim().min(1).optional(),
         template: z.any().optional(),
         details: z.any().optional(),
         userDefinedData: z.any().optional(),
@@ -86,18 +86,8 @@ const bulkDeleteSchema = {
   }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listTeams
-)
-router.get(
-  '/:id',
-  requireTournamentView(),
-  validateRequest(getSchema),
-  getTeam
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listTeams)
+router.get('/:id', requireTournamentView(), validateRequest(getSchema), getTeam)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createTeam)
 router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateTeams)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateTeam)

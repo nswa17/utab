@@ -8,8 +8,8 @@ const router: Router = Router()
 
 const styleBodySchema = z.object({
   id: z.number().int(),
-  name: z.string().min(1),
-  team_num: z.number().int().optional(),
+  name: z.string().trim().min(1),
+  team_num: z.number().int().min(2).optional(),
   score_weights: z.any(),
   side_labels: z.any().optional(),
   side_labels_short: z.any().optional(),

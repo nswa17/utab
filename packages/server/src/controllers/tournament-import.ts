@@ -1,10 +1,12 @@
 import { Buffer } from 'node:buffer'
+import { isDeepStrictEqual } from 'node:util'
 import type { RequestHandler } from 'express'
 import { Types } from 'mongoose'
 import { getAuthenticatedActorId } from '../middleware/auth.js'
 import { AuditLogModel } from '../models/audit-log.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
+import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
@@ -83,6 +85,86 @@ function normalizeNumberArray(value: unknown, fallback: number[]): number[] {
   if (!Array.isArray(value)) return fallback
   const normalized = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
   return normalized.length > 0 ? normalized : fallback
+}
+
+const STYLE_SNAPSHOT_FIELDS = [
+  'name',
+  'team_num',
+  'score_weights',
+  'side_labels',
+  'side_labels_short',
+  'speaker_sequence',
+  'range',
+  'adjudicator_range',
+  'roles',
+  'user_defined_data',
+] as const
+
+function normalizeStyleSnapshot(value: unknown, expectedId: number): PlainObject {
+  const snapshot = requireRecord(value, 'json/style.json')
+  const snapshotId = Number(snapshot.id)
+  if (!Number.isInteger(snapshotId) || snapshotId !== expectedId) {
+    throw new TournamentImportError(400, 'Backup style does not match tournament style')
+  }
+  const name = normalizeString(snapshot.name)
+  if (!name) throw new TournamentImportError(400, 'Backup style name is required')
+  for (const field of ['score_weights', 'speaker_sequence', 'adjudicator_range', 'roles']) {
+    if (snapshot[field] === undefined) {
+      throw new TournamentImportError(400, `Backup style is missing ${field}`)
+    }
+  }
+  const normalized: PlainObject = { id: expectedId, name }
+  STYLE_SNAPSHOT_FIELDS.forEach((field) => {
+    if (field === 'name' || snapshot[field] === undefined) return
+    normalized[field] = snapshot[field]
+  })
+  return normalized
+}
+
+function comparableStyle(value: PlainObject): PlainObject {
+  const comparable: PlainObject = {}
+  STYLE_SNAPSHOT_FIELDS.forEach((field) => {
+    if (value[field] !== undefined) comparable[field] = JSON.parse(JSON.stringify(value[field]))
+  })
+  return comparable
+}
+
+async function ensureImportedStyle(
+  entryMap: Map<string, Buffer>,
+  sourceStyleId: number
+): Promise<{ styleId: number; createdStyleId: number | null }> {
+  const styleEntry = entryMap.get('json/style.json')
+  if (!styleEntry) {
+    const existing = await StyleModel.exists({ id: sourceStyleId }).exec()
+    if (!existing) {
+      throw new TournamentImportError(400, 'Backup bundle is missing json/style.json')
+    }
+    return { styleId: sourceStyleId, createdStyleId: null }
+  }
+
+  const snapshot = normalizeStyleSnapshot(
+    parseJsonEntry(styleEntry, 'json/style.json'),
+    sourceStyleId
+  )
+  const existing = await StyleModel.findOne({ id: sourceStyleId }).lean().exec()
+  if (!existing) {
+    await StyleModel.create(snapshot)
+    return { styleId: sourceStyleId, createdStyleId: sourceStyleId }
+  }
+  if (
+    isDeepStrictEqual(
+      comparableStyle(existing as PlainObject),
+      comparableStyle(snapshot)
+    )
+  ) {
+    return { styleId: sourceStyleId, createdStyleId: null }
+  }
+
+  const highest = await StyleModel.findOne().sort({ id: -1 }).select({ id: 1 }).lean().exec()
+  let candidateId = Math.max(sourceStyleId + 1, Number(highest?.id ?? 0) + 1, 1)
+  while (await StyleModel.exists({ id: candidateId }).exec()) candidateId += 1
+  await StyleModel.create({ ...snapshot, id: candidateId })
+  return { styleId: candidateId, createdStyleId: candidateId }
 }
 
 function deriveCollectionName(path: string): string {
@@ -238,7 +320,11 @@ async function attachOrganizerMembership(
   }
 }
 
-async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string): Promise<ImportSummary> {
+async function importTournamentFromBundle(
+  buffer: Buffer,
+  actorUserId?: string,
+  session?: Record<string, unknown>
+): Promise<ImportSummary> {
   let zipEntries
   try {
     zipEntries = extractZip(buffer)
@@ -280,10 +366,11 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
   if (mergedAuth.error) {
     throw new TournamentImportError(400, mergedAuth.error)
   }
+  const sourceStyleId = normalizeNumber(tournamentSnapshot.style, 1)
 
   const createdTournament = await TournamentModel.create({
     name: normalizeString(tournamentSnapshot.name, normalizeString(metadata.tournamentName, 'Tournament')),
-    style: normalizeNumber(tournamentSnapshot.style, 1),
+    style: sourceStyleId,
     options: asRecord(tournamentSnapshot.options),
     total_round_num: normalizeNumber(tournamentSnapshot.total_round_num, 4),
     current_round_num: normalizeNumber(tournamentSnapshot.current_round_num, 1),
@@ -294,8 +381,15 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
   })
 
   const tournamentId = String(createdTournament._id)
+  let createdStyleId: number | null = null
 
   try {
+    const importedStyle = await ensureImportedStyle(entryMap, sourceStyleId)
+    createdStyleId = importedStyle.createdStyleId
+    if (importedStyle.styleId !== sourceStyleId) {
+      createdTournament.style = importedStyle.styleId
+      await createdTournament.save()
+    }
     const connection = await getTournamentConnection(tournamentId)
     const db = connection.db
     if (!db) {
@@ -328,6 +422,8 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
       await AuditLogModel.insertMany(revivedAuditLogs, { ordered: true })
     }
 
+    await attachOrganizerMembership(session, tournamentId)
+
     return {
       tournament: createdTournament.toJSON() as Record<string, unknown>,
       sourceTournamentId: normalizeString(metadata.tournamentId) || null,
@@ -337,11 +433,24 @@ async function importTournamentFromBundle(buffer: Buffer, actorUserId?: string):
       importedAuditLogs: revivedAuditLogs.length,
     }
   } catch (error) {
-    await Promise.allSettled([
+    const cleanupTasks: Promise<unknown>[] = [
       TournamentModel.deleteOne({ _id: tournamentId }).exec(),
       AuditLogModel.deleteMany({ tournamentId }).exec(),
+      TournamentMemberModel.deleteMany({ tournamentId }).exec(),
       dropTournamentDatabase(tournamentId),
-    ])
+    ]
+    if (actorUserId) {
+      cleanupTasks.push(
+        UserModel.updateMany(
+          { _id: actorUserId },
+          { $pull: { tournaments: tournamentId } }
+        ).exec()
+      )
+    }
+    if (createdStyleId !== null) {
+      cleanupTasks.push(StyleModel.deleteOne({ id: createdStyleId }).exec())
+    }
+    await Promise.allSettled(cleanupTasks)
     throw error
   }
 }
@@ -354,10 +463,10 @@ export const importTournamentBundle: RequestHandler = async (req, res, next) => 
     }
 
     const actorUserId = getAuthenticatedActorId(req) ?? undefined
-    const data = await importTournamentFromBundle(req.body, actorUserId)
-    await attachOrganizerMembership(
-      req.session as unknown as Record<string, unknown> | undefined,
-      String(data.tournament._id)
+    const data = await importTournamentFromBundle(
+      req.body,
+      actorUserId,
+      req.session as unknown as Record<string, unknown> | undefined
     )
     res.status(201).json({ data, errors: [] })
   } catch (error) {

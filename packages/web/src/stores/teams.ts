@@ -124,12 +124,13 @@ export const useTeamsStore = defineStore('teams', () => {
     )
     if (normalizedIds.length === 0) return 0
 
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete('/teams', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       teams.value = teams.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
@@ -138,7 +139,7 @@ export const useTeamsStore = defineStore('teams', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete teams'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 

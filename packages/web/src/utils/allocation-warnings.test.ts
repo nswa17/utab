@@ -159,6 +159,78 @@ describe('allocation warnings', () => {
     expect(codes).not.toContain('adjudicator_even_count')
   })
 
+  it('flags rows that have trainees but no chair or panel', () => {
+    const traineeOnly = buildRowWarningStates({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { gov: 'team-1', opp: 'team-2' },
+          chairs: [],
+          panels: [],
+          trainees: ['adj-trainee-1'],
+        },
+      ],
+      isTeamAvailable: () => true,
+      isAdjudicatorAvailable: () => true,
+      isVenueAvailable: () => true,
+      teamInstitutions: () => [],
+      adjudicatorInstitutions: () => [],
+      institutionCategory: () => 'institution',
+      adjudicatorConflicts: () => [],
+      teamWin: () => undefined,
+      teamPastOpponents: () => [],
+      teamPastSides: () => [],
+      adjudicatorJudgedTeams: () => [],
+    })
+
+    expect(traineeOnly[0].warnings.map((warning) => warning.code)).toContain('adjudicator_none')
+  })
+
+  it('warns when sibling teams would repeat a school pairing', () => {
+    const schoolByTeam: Record<string, string> = {
+      A1: 'school-a',
+      A2: 'school-a',
+      B1: 'school-b',
+      B2: 'school-b',
+    }
+    const pastOpponents: Record<string, string[]> = {
+      A1: ['B1'],
+      B1: ['A1'],
+    }
+    const schoolPairWarnings = buildRowWarningStates({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { gov: 'A2', opp: 'B2' },
+          chairs: ['adj-1'],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      teamIds: Object.keys(schoolByTeam),
+      isTeamAvailable: () => true,
+      isAdjudicatorAvailable: () => true,
+      isVenueAvailable: () => true,
+      teamInstitutions: (teamId) => [schoolByTeam[teamId]].filter(Boolean),
+      adjudicatorInstitutions: () => [],
+      institutionCategory: () => 'institution',
+      adjudicatorConflicts: () => [],
+      teamWin: () => undefined,
+      teamPastOpponents: (teamId) => pastOpponents[teamId] ?? [],
+      teamPastSides: () => [],
+      adjudicatorJudgedTeams: () => [],
+    })
+
+    expect(
+      schoolPairWarnings[0].warnings.find(
+        (warning) => warning.code === 'team_past_match_same_institution'
+      )
+    ).toMatchObject({
+      targets: { teamIds: ['A2', 'B2'] },
+      params: { teamAId: 'A2', teamBId: 'B2', groupCategory: 'institution' },
+    })
+  })
+
   it('builds entity index with max severity and row references', () => {
     const index = buildEntityWarningIndex(warnings)
     const team1 = index.get(warningEntityKey('team', 'team-1'))
@@ -180,7 +252,9 @@ describe('allocation warnings', () => {
     const adjudicatorWarning = warnings[0].warnings.find(
       (warning) => warning.code === 'adjudicator_personal_conflict'
     )!
-    const venueWarning = warnings[0].warnings.find((warning) => warning.code === 'venue_unavailable')!
+    const venueWarning = warnings[0].warnings.find(
+      (warning) => warning.code === 'venue_unavailable'
+    )!
 
     const teamTargets = buildFocusedEntitySet(teamWarning)
     const adjudicatorTargets = buildFocusedEntitySet(adjudicatorWarning)

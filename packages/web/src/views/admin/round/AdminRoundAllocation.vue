@@ -85,10 +85,7 @@
                 <span>{{ item.name || $t('ラウンド {round}', { round: item.round }) }}</span>
               </label>
             </div>
-            <label
-              v-if="shouldTrackAdjudicatorReference"
-              class="row reference-round-scope-toggle"
-            >
+            <label v-if="shouldTrackAdjudicatorReference" class="row reference-round-scope-toggle">
               <input
                 v-model="useScopedReferenceRoundSelections"
                 type="checkbox"
@@ -139,7 +136,10 @@
             </div>
           </template>
           <section v-if="referenceSelectionConfirmed" class="stack reference-snapshot-select-block">
-            <div v-if="compiledSnapshotSelectOptions.length > 0" class="grid reference-snapshot-select-grid">
+            <div
+              v-if="compiledSnapshotSelectOptions.length > 0"
+              class="grid reference-snapshot-select-grid"
+            >
               <CompiledSnapshotSelect
                 v-if="!shouldTrackAdjudicatorReference || !useScopedReferenceRoundSelections"
                 :model-value="selectedDetailSnapshotId"
@@ -200,844 +200,859 @@
               <div class="warning-color-legend" :aria-label="$t('警告色の凡例')">
                 <strong class="warning-color-legend-title">{{ $t('警告色の凡例') }}</strong>
                 <span class="warning-color-legend-item">
-                  <span class="warning-color-legend-dot warning-color-legend-dot--critical" aria-hidden="true" />
+                  <span
+                    class="warning-color-legend-dot warning-color-legend-dot--critical"
+                    aria-hidden="true"
+                  />
                   {{ $t('赤: 同一機関・利用不可などの重大な競合') }}
                 </span>
                 <span class="warning-color-legend-item">
-                  <span class="warning-color-legend-dot warning-color-legend-dot--history" aria-hidden="true" />
+                  <span
+                    class="warning-color-legend-dot warning-color-legend-dot--history"
+                    aria-hidden="true"
+                  />
                   {{ $t('橙: 過去の対戦') }}
                 </span>
                 <span class="warning-color-legend-item">
-                  <span class="warning-color-legend-dot warning-color-legend-dot--caution" aria-hidden="true" />
+                  <span
+                    class="warning-color-legend-dot warning-color-legend-dot--caution"
+                    aria-hidden="true"
+                  />
                   {{ $t('黄: 過去に担当済み・サイド偏りなど') }}
                 </span>
                 <span class="warning-color-legend-item">
-                  <span class="warning-color-legend-dot warning-color-legend-dot--info" aria-hidden="true" />
+                  <span
+                    class="warning-color-legend-dot warning-color-legend-dot--info"
+                    aria-hidden="true"
+                  />
                   {{ $t('青: 同地域・同リーグなどの参考情報') }}
                 </span>
               </div>
             </div>
-          <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
-          <AllocationTableShell v-else>
-            <table class="allocation-table allocation-table--main">
-              <thead>
-                <tr>
-                  <th class="match-col">
-                    <SortHeaderButton
-                      label="#"
-                      compact
-                      :indicator="allocationSortIndicator('match')"
-                      :aria-label="$t('行番号をドラッグして並び替え')"
-                      @click="setAllocationSort('match')"
-                    />
-                  </th>
-                  <th class="venue-col">
-                    <SortHeaderButton
-                      :label="$t('会場')"
-                      compact
-                      :indicator="allocationSortIndicator('venue')"
-                      @click="setAllocationSort('venue')"
-                    />
-                  </th>
-                  <th class="team-col">
-                    <SortHeaderButton
-                      :label="govLabel"
-                      compact
-                      :indicator="allocationSortIndicator('gov')"
-                      @click="setAllocationSort('gov')"
-                    />
-                  </th>
-                  <th class="team-col">
-                    <SortHeaderButton
-                      :label="oppLabel"
-                      compact
-                      :indicator="allocationSortIndicator('opp')"
-                      @click="setAllocationSort('opp')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('チェア')"
-                      compact
-                      :indicator="allocationSortIndicator('chairs')"
-                      @click="setAllocationSort('chairs')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('パネル')"
-                      compact
-                      :indicator="allocationSortIndicator('panels')"
-                      @click="setAllocationSort('panels')"
-                    />
-                  </th>
-                  <th class="adjudicator-col">
-                    <SortHeaderButton
-                      :label="$t('トレーニー')"
-                      compact
-                      :indicator="allocationSortIndicator('trainees')"
-                      @click="setAllocationSort('trainees')"
-                    />
-                  </th>
-                  <th class="note-col">{{ $t('備考') }}</th>
-                  <th class="delete-col"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <template v-for="(row, index) in allocation" :key="`row-${index}`">
-                  <tr>
-                    <td
-                      class="match-col match-col-draggable"
-                      :class="{
-                        'row-drag-source': rowDragSourceIndex === index,
-                        'row-drag-target': rowDragTargetIndex === index,
-                      }"
-                      :title="$t('行番号をドラッグして並び替え')"
-                      :draggable="!locked"
-                      @dragstart="onRowDragStart(index, $event)"
-                      @dragover.prevent="onRowDragOver(index, $event)"
-                      @dragleave="onRowDragLeave(index)"
-                      @drop.prevent="onRowDrop(index, $event)"
-                      @dragend="onRowDragEnd"
-                    >
-                      {{ index + 1 }}
-                    </td>
-                    <td class="venue-col">
-                      <div
-                        class="drop-zone compact single-line"
-                        :class="dropZoneClasses('venue', [row.venue])"
-                        @dragover.prevent
-                        @drop="dropVenue(row)"
-                      >
-                        <span
-                          v-if="row.venue"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'truncate-pill',
-                            ...entityPillClasses('venue', row.venue),
-                          ]"
-                          :title="venueName(row.venue)"
-                          :draggable="canDragEntity('venue', row.venue)"
-                          @dragstart="onDragStart('venue', row.venue)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('venue', row.venue)"
-                          @mouseleave="onEntityHoverEnd('venue', row.venue)"
-                          @click.stop="selectDetail('venue', row.venue)"
-                        >
-                          {{ venueName(row.venue) }}
-                        </span>
-                        <span v-else class="muted small">{{ $t('会場をドロップ') }}</span>
-                      </div>
-                    </td>
-                    <td class="team-col">
-                      <div
-                        class="drop-zone compact single-line"
-                        :class="dropZoneClasses('team', [row.teams.gov])"
-                        @dragover.prevent
-                        @drop="dropTeam(row, 'gov')"
-                      >
-                        <span
-                          v-if="row.teams.gov"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'team-pill',
-                            ...entityPillClasses('team', row.teams.gov),
-                          ]"
-                          :title="teamPillTitle(row.teams.gov)"
-                          :draggable="canDragEntity('team', row.teams.gov)"
-                          @dragstart="onDragStart('team', row.teams.gov)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('team', row.teams.gov)"
-                          @mouseleave="onEntityHoverEnd('team', row.teams.gov)"
-                          @click.stop="selectDetail('team', row.teams.gov)"
-                        >
-                          <span class="team-pill-name">{{ teamName(row.teams.gov) }}</span>
-                          <span
-                            v-if="teamWinBadge(row.teams.gov)"
-                            :class="['team-win-badge', teamWinBadgeClass(row.teams.gov)]"
-                          >
-                            {{ teamWinBadge(row.teams.gov) }}
-                          </span>
-                        </span>
-                        <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
-                      </div>
-                    </td>
-                    <td class="team-col">
-                      <div
-                        class="drop-zone compact single-line"
-                        :class="dropZoneClasses('team', [row.teams.opp])"
-                        @dragover.prevent
-                        @drop="dropTeam(row, 'opp')"
-                      >
-                        <span
-                          v-if="row.teams.opp"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'team-pill',
-                            ...entityPillClasses('team', row.teams.opp),
-                          ]"
-                          :title="teamPillTitle(row.teams.opp)"
-                          :draggable="canDragEntity('team', row.teams.opp)"
-                          @dragstart="onDragStart('team', row.teams.opp)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('team', row.teams.opp)"
-                          @mouseleave="onEntityHoverEnd('team', row.teams.opp)"
-                          @click.stop="selectDetail('team', row.teams.opp)"
-                        >
-                          <span class="team-pill-name">{{ teamName(row.teams.opp) }}</span>
-                          <span
-                            v-if="teamWinBadge(row.teams.opp)"
-                            :class="['team-win-badge', teamWinBadgeClass(row.teams.opp)]"
-                          >
-                            {{ teamWinBadge(row.teams.opp) }}
-                          </span>
-                        </span>
-                        <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
-                      </div>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="dropZoneClasses('adjudicator', row.chairs)"
-                        @dragover.prevent
-                        @drop="dropAdjudicator(row, 'chairs')"
-                      >
-                        <span
-                          v-for="adjId in row.chairs"
-                          :key="`chair-${index}-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
-                        >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                          <span
-                            v-if="adjudicatorAverageBadge(adjId)"
-                            :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
-                            ]"
-                          >
-                            {{ adjudicatorAverageBadge(adjId) }}
-                          </span>
-                        </span>
-                        <span v-if="row.chairs.length === 0" class="muted small">{{
-                          $t('ジャッジをドロップ')
-                        }}</span>
-                      </div>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="dropZoneClasses('adjudicator', row.panels)"
-                        @dragover.prevent
-                        @drop="dropAdjudicator(row, 'panels')"
-                      >
-                        <span
-                          v-for="adjId in row.panels"
-                          :key="`panel-${index}-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
-                        >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                          <span
-                            v-if="adjudicatorAverageBadge(adjId)"
-                            :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
-                            ]"
-                          >
-                            {{ adjudicatorAverageBadge(adjId) }}
-                          </span>
-                        </span>
-                        <span v-if="row.panels.length === 0" class="muted small">{{
-                          $t('ジャッジをドロップ')
-                        }}</span>
-                      </div>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line allocation-drop-zone"
-                        :class="dropZoneClasses('adjudicator', row.trainees)"
-                        @dragover.prevent
-                        @drop="dropAdjudicator(row, 'trainees')"
-                      >
-                        <span
-                          v-for="adjId in row.trainees"
-                          :key="`trainee-${index}-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
-                        >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                          <span
-                            v-if="adjudicatorAverageBadge(adjId)"
-                            :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
-                            ]"
-                          >
-                            {{ adjudicatorAverageBadge(adjId) }}
-                          </span>
-                        </span>
-                        <span v-if="row.trainees.length === 0" class="muted small">{{
-                          $t('ジャッジをドロップ')
-                        }}</span>
-                      </div>
-                    </td>
-                    <td class="note-col">
-                      <div
-                        v-if="rowWarningState(index).warnings.length > 0"
-                        class="warning-inline"
-                        @mouseenter="openWarningPopover(index, $event)"
-                        @mouseleave="scheduleCloseWarningPopover"
-                        @focusin="openWarningPopover(index, $event)"
-                        @focusout="scheduleCloseWarningPopover"
-                      >
-                        <span class="warning-summary" tabindex="0">
-                          <span
-                            v-for="item in warningSummaryItems(rowWarningState(index).warnings)"
-                            :key="item.tone"
-                            :class="[
-                              'warning-summary-item',
-                              `warning-summary-item--${item.tone}`,
-                            ]"
-                            :title="`${item.label} ${item.count}`"
-                          >
-                            <span class="warning-summary-icon">{{
-                              warningDisplayToneIcon(item.tone)
-                            }}</span>
-                            <span class="warning-summary-count">{{ item.count }}</span>
-                          </span>
-                        </span>
-                      </div>
-                      <span v-else class="muted small">{{ $t('なし') }}</span>
-                    </td>
-                    <td class="delete-col">
-                      <button
-                        type="button"
-                        class="row-remove"
-                        :aria-label="$t('削除')"
-                        :title="$t('削除')"
-                        :disabled="locked"
-                        @click="removeRow(index)"
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </AllocationTableShell>
-
-          <div class="row add-row-wrap">
-            <button type="button" class="add-row-button" :disabled="locked" @click="addRow">
-              <span class="plus" aria-hidden="true">+</span>
-              <span>{{ $t('行追加') }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="stack waiting-area board-block">
-          <template v-if="useReferenceMatchupWaitingTeams">
-            <h4>{{ $t('前回対戦表') }}</h4>
-            <AllocationTableShell class="waiting-matchup-allocation-wrap">
-              <table class="allocation-table waiting-matchup-allocation-table">
+            <div v-if="allocation.length === 0" class="muted">{{ $t('まだ行がありません。') }}</div>
+            <AllocationTableShell v-else>
+              <table class="allocation-table allocation-table--main">
                 <thead>
                   <tr>
+                    <th class="match-col">
+                      <SortHeaderButton
+                        label="#"
+                        compact
+                        :indicator="allocationSortIndicator('match')"
+                        :aria-label="$t('行番号をドラッグして並び替え')"
+                        @click="setAllocationSort('match')"
+                      />
+                    </th>
                     <th class="venue-col">
                       <SortHeaderButton
                         :label="$t('会場')"
                         compact
-                        :indicator="referenceWaitingSortIndicator('venue')"
-                        @click="setReferenceWaitingSort('venue')"
+                        :indicator="allocationSortIndicator('venue')"
+                        @click="setAllocationSort('venue')"
                       />
                     </th>
                     <th class="team-col">
                       <SortHeaderButton
                         :label="govLabel"
                         compact
-                        :indicator="referenceWaitingSortIndicator('gov')"
-                        @click="setReferenceWaitingSort('gov')"
+                        :indicator="allocationSortIndicator('gov')"
+                        @click="setAllocationSort('gov')"
                       />
                     </th>
                     <th class="team-col">
                       <SortHeaderButton
                         :label="oppLabel"
                         compact
-                        :indicator="referenceWaitingSortIndicator('opp')"
-                        @click="setReferenceWaitingSort('opp')"
-                      />
-                    </th>
-                    <th class="waiting-win-col">
-                      <SortHeaderButton
-                        :label="$t('勝ち')"
-                        compact
-                        :indicator="referenceWaitingSortIndicator('win')"
-                        @click="setReferenceWaitingSort('win')"
+                        :indicator="allocationSortIndicator('opp')"
+                        @click="setAllocationSort('opp')"
                       />
                     </th>
                     <th class="adjudicator-col">
                       <SortHeaderButton
                         :label="$t('チェア')"
                         compact
-                        :indicator="referenceWaitingSortIndicator('chairs')"
-                        @click="setReferenceWaitingSort('chairs')"
+                        :indicator="allocationSortIndicator('chairs')"
+                        @click="setAllocationSort('chairs')"
                       />
                     </th>
                     <th class="adjudicator-col">
                       <SortHeaderButton
                         :label="$t('パネル')"
                         compact
-                        :indicator="referenceWaitingSortIndicator('panels')"
-                        @click="setReferenceWaitingSort('panels')"
+                        :indicator="allocationSortIndicator('panels')"
+                        @click="setAllocationSort('panels')"
                       />
                     </th>
                     <th class="adjudicator-col">
                       <SortHeaderButton
                         :label="$t('トレーニー')"
                         compact
-                        :indicator="referenceWaitingSortIndicator('trainees')"
-                        @click="setReferenceWaitingSort('trainees')"
+                        :indicator="allocationSortIndicator('trainees')"
+                        @click="setAllocationSort('trainees')"
                       />
                     </th>
+                    <th class="note-col">{{ $t('備考') }}</th>
+                    <th class="delete-col"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in sortedReferenceUnassignedTeamRows" :key="row.key">
-                    <td class="venue-col">
-                      <div
-                        class="drop-zone compact single-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('venue', [row.venueId])"
+                  <template v-for="(row, index) in allocation" :key="`row-${index}`">
+                    <tr>
+                      <td
+                        class="match-col match-col-draggable"
+                        :class="{
+                          'row-drag-source': rowDragSourceIndex === index,
+                          'row-drag-target': rowDragTargetIndex === index,
+                        }"
+                        :title="$t('行番号をドラッグして並び替え')"
+                        :draggable="!locked"
+                        @dragstart="onRowDragStart(index, $event)"
+                        @dragover.prevent="onRowDragOver(index, $event)"
+                        @dragleave="onRowDragLeave(index)"
+                        @drop.prevent="onRowDrop(index, $event)"
+                        @dragend="onRowDragEnd"
                       >
-                        <span
-                          v-if="row.venueId"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'truncate-pill',
-                            ...entityPillClasses('venue', row.venueId),
-                          ]"
-                          :title="venueName(row.venueId)"
-                          :draggable="canDragEntity('venue', row.venueId)"
-                          @dragstart="onDragStart('venue', row.venueId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('venue', row.venueId)"
-                          @mouseleave="onEntityHoverEnd('venue', row.venueId)"
-                          @click.stop="selectDetail('venue', row.venueId)"
+                        {{ index + 1 }}
+                      </td>
+                      <td class="venue-col">
+                        <div
+                          class="drop-zone compact single-line"
+                          :class="dropZoneClasses('venue', [row.venue])"
+                          @dragover.prevent
+                          @drop="dropVenue(row)"
                         >
-                          {{ venueName(row.venueId) }}
-                        </span>
-                      </div>
-                    </td>
-                    <td class="team-col">
-                      <div
-                        class="drop-zone compact single-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('team', row.govTeamIds)"
-                      >
-                        <span
-                          v-for="teamId in row.govTeamIds"
-                          :key="`${row.key}-gov-${teamId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'team-pill',
-                            ...entityPillClasses('team', teamId),
-                          ]"
-                          :title="teamPillTitle(teamId)"
-                          :draggable="canDragEntity('team', teamId)"
-                          @dragstart="onDragStart('team', teamId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('team', teamId)"
-                          @mouseleave="onEntityHoverEnd('team', teamId)"
-                          @click.stop="selectDetail('team', teamId)"
-                        >
-                          <span class="team-pill-name">{{ teamName(teamId) }}</span>
                           <span
-                            v-if="teamWinBadge(teamId)"
-                            :class="['team-win-badge', teamWinBadgeClass(teamId)]"
-                          >
-                            {{ teamWinBadge(teamId) }}
-                          </span>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="team-col">
-                      <div
-                        class="drop-zone compact single-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('team', row.oppTeamIds)"
-                      >
-                        <span
-                          v-for="teamId in row.oppTeamIds"
-                          :key="`${row.key}-opp-${teamId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'team-pill',
-                            ...entityPillClasses('team', teamId),
-                          ]"
-                          :title="teamPillTitle(teamId)"
-                          :draggable="canDragEntity('team', teamId)"
-                          @dragstart="onDragStart('team', teamId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('team', teamId)"
-                          @mouseleave="onEntityHoverEnd('team', teamId)"
-                          @click.stop="selectDetail('team', teamId)"
-                        >
-                          <span class="team-pill-name">{{ teamName(teamId) }}</span>
-                          <span
-                            v-if="teamWinBadge(teamId)"
-                            :class="['team-win-badge', teamWinBadgeClass(teamId)]"
-                          >
-                            {{ teamWinBadge(teamId) }}
-                          </span>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="waiting-win-col">
-                      <span class="waiting-win-label">{{ referenceWaitingWinLabel(row) }}</span>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('adjudicator', row.chairIds)"
-                      >
-                        <span
-                          v-for="adjId in row.chairIds"
-                          :key="`${row.key}-chair-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
-                        >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
-                          <span
-                            v-if="adjudicatorAverageBadge(adjId)"
+                            v-if="row.venue"
                             :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
+                              'pill',
+                              'draggable',
+                              'truncate-pill',
+                              ...entityPillClasses('venue', row.venue),
                             ]"
+                            :title="venueName(row.venue)"
+                            :draggable="canDragEntity('venue', row.venue)"
+                            @dragstart="onDragStart('venue', row.venue)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('venue', row.venue)"
+                            @mouseleave="onEntityHoverEnd('venue', row.venue)"
+                            @click.stop="selectDetail('venue', row.venue)"
                           >
-                            {{ adjudicatorAverageBadge(adjId) }}
+                            {{ venueName(row.venue) }}
                           </span>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('adjudicator', row.panelIds)"
-                      >
-                        <span
-                          v-for="adjId in row.panelIds"
-                          :key="`${row.key}-panel-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
+                          <span v-else class="muted small">{{ $t('会場をドロップ') }}</span>
+                        </div>
+                      </td>
+                      <td class="team-col">
+                        <div
+                          class="drop-zone compact single-line"
+                          :class="dropZoneClasses('team', [row.teams.gov])"
+                          @dragover.prevent
+                          @drop="dropTeam(row, 'gov')"
                         >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
                           <span
-                            v-if="adjudicatorAverageBadge(adjId)"
+                            v-if="row.teams.gov"
                             :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
+                              'pill',
+                              'draggable',
+                              'team-pill',
+                              ...entityPillClasses('team', row.teams.gov),
                             ]"
+                            :title="teamPillTitle(row.teams.gov)"
+                            :draggable="canDragEntity('team', row.teams.gov)"
+                            @dragstart="onDragStart('team', row.teams.gov)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('team', row.teams.gov)"
+                            @mouseleave="onEntityHoverEnd('team', row.teams.gov)"
+                            @click.stop="selectDetail('team', row.teams.gov)"
                           >
-                            {{ adjudicatorAverageBadge(adjId) }}
+                            <span class="team-pill-name">{{ teamName(row.teams.gov) }}</span>
+                            <span
+                              v-if="teamWinBadge(row.teams.gov)"
+                              :class="['team-win-badge', teamWinBadgeClass(row.teams.gov)]"
+                            >
+                              {{ teamWinBadge(row.teams.gov) }}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="adjudicator-col">
-                      <div
-                        class="drop-zone list compact multi-line waiting-placeholder-zone"
-                        :class="dropZoneClasses('adjudicator', row.traineeIds)"
-                      >
-                        <span
-                          v-for="adjId in row.traineeIds"
-                          :key="`${row.key}-trainee-${adjId}`"
-                          :class="[
-                            'pill',
-                            'draggable',
-                            'adjudicator-pill',
-                            ...entityPillClasses('adjudicator', adjId),
-                          ]"
-                          :title="adjudicatorPillTitle(adjId)"
-                          :draggable="canDragEntity('adjudicator', adjId)"
-                          @dragstart="onDragStart('adjudicator', adjId)"
-                          @dragend="onDragEnd"
-                          @mouseenter="onEntityHover('adjudicator', adjId)"
-                          @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
-                          @click.stop="selectDetail('adjudicator', adjId)"
+                          <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
+                        </div>
+                      </td>
+                      <td class="team-col">
+                        <div
+                          class="drop-zone compact single-line"
+                          :class="dropZoneClasses('team', [row.teams.opp])"
+                          @dragover.prevent
+                          @drop="dropTeam(row, 'opp')"
                         >
-                          <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
                           <span
-                            v-if="adjudicatorAverageBadge(adjId)"
+                            v-if="row.teams.opp"
                             :class="[
-                              'adjudicator-average-badge',
-                              adjudicatorAverageBadgeClass(adjId),
+                              'pill',
+                              'draggable',
+                              'team-pill',
+                              ...entityPillClasses('team', row.teams.opp),
                             ]"
+                            :title="teamPillTitle(row.teams.opp)"
+                            :draggable="canDragEntity('team', row.teams.opp)"
+                            @dragstart="onDragStart('team', row.teams.opp)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('team', row.teams.opp)"
+                            @mouseleave="onEntityHoverEnd('team', row.teams.opp)"
+                            @click.stop="selectDetail('team', row.teams.opp)"
                           >
-                            {{ adjudicatorAverageBadge(adjId) }}
+                            <span class="team-pill-name">{{ teamName(row.teams.opp) }}</span>
+                            <span
+                              v-if="teamWinBadge(row.teams.opp)"
+                              :class="['team-win-badge', teamWinBadgeClass(row.teams.opp)]"
+                            >
+                              {{ teamWinBadge(row.teams.opp) }}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
+                          <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
+                        </div>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line allocation-drop-zone"
+                          :class="dropZoneClasses('adjudicator', row.chairs)"
+                          @dragover.prevent
+                          @drop="dropAdjudicator(row, 'chairs')"
+                        >
+                          <span
+                            v-for="adjId in row.chairs"
+                            :key="`chair-${index}-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                          <span v-if="row.chairs.length === 0" class="muted small">{{
+                            $t('ジャッジをドロップ')
+                          }}</span>
+                        </div>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line allocation-drop-zone"
+                          :class="dropZoneClasses('adjudicator', row.panels)"
+                          @dragover.prevent
+                          @drop="dropAdjudicator(row, 'panels')"
+                        >
+                          <span
+                            v-for="adjId in row.panels"
+                            :key="`panel-${index}-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                          <span v-if="row.panels.length === 0" class="muted small">{{
+                            $t('ジャッジをドロップ')
+                          }}</span>
+                        </div>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line allocation-drop-zone"
+                          :class="dropZoneClasses('adjudicator', row.trainees)"
+                          @dragover.prevent
+                          @drop="dropAdjudicator(row, 'trainees')"
+                        >
+                          <span
+                            v-for="adjId in row.trainees"
+                            :key="`trainee-${index}-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                          <span v-if="row.trainees.length === 0" class="muted small">{{
+                            $t('ジャッジをドロップ')
+                          }}</span>
+                        </div>
+                      </td>
+                      <td class="note-col">
+                        <div
+                          v-if="rowWarningState(index).warnings.length > 0"
+                          class="warning-inline"
+                          @mouseenter="openWarningPopover(index, $event)"
+                          @mouseleave="scheduleCloseWarningPopover"
+                          @focusin="openWarningPopover(index, $event)"
+                          @focusout="scheduleCloseWarningPopover"
+                        >
+                          <span class="warning-summary" tabindex="0">
+                            <span
+                              v-for="item in warningSummaryItems(rowWarningState(index).warnings)"
+                              :key="item.tone"
+                              :class="[
+                                'warning-summary-item',
+                                `warning-summary-item--${item.tone}`,
+                              ]"
+                              :title="`${item.label} ${item.count}`"
+                            >
+                              <span class="warning-summary-icon">{{
+                                warningDisplayToneIcon(item.tone)
+                              }}</span>
+                              <span class="warning-summary-count">{{ item.count }}</span>
+                            </span>
+                          </span>
+                        </div>
+                        <span v-else class="muted small">{{ $t('なし') }}</span>
+                      </td>
+                      <td class="delete-col">
+                        <button
+                          type="button"
+                          class="row-remove"
+                          :aria-label="$t('削除')"
+                          :title="$t('削除')"
+                          :disabled="locked"
+                          @click="removeRow(index)"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </AllocationTableShell>
-          </template>
-          <h4>{{ $t('未配置リスト') }}</h4>
-          <div class="grid waiting-grid">
-            <div class="stack">
-              <span class="muted">{{ $t('会場') }} ({{ waitingLooseVenues.length }})</span>
-              <div
-                class="drop-zone list compact waiting-drop-zone"
-                :class="{ active: dragKind === 'venue' }"
-                @dragover.prevent
-                @drop="dropToWaiting('venue')"
-              >
-                <span v-if="waitingLooseVenues.length === 0" class="muted small">
-                  {{ $t('なし') }}
-                </span>
-                <span
-                  v-for="venue in waitingLooseVenues"
-                  :key="venue._id"
-                  :class="[
-                    'pill',
-                    'draggable',
-                    'truncate-pill',
-                    ...entityPillClasses('venue', venue._id),
-                  ]"
-                  :title="venue.name"
-                  :draggable="canDragEntity('venue', venue._id)"
-                  @dragstart="onDragStart('venue', venue._id)"
-                  @dragend="onDragEnd"
-                  @mouseenter="onEntityHover('venue', venue._id)"
-                  @mouseleave="onEntityHoverEnd('venue', venue._id)"
-                  @click.stop="selectDetail('venue', venue._id)"
-                >
-                  {{ venue.name }}
-                </span>
-              </div>
-            </div>
-            <div class="stack">
-              <span class="muted">{{ $t('チーム') }} ({{ waitingLooseTeams.length }})</span>
-              <div
-                class="drop-zone list compact waiting-drop-zone"
-                :class="{ active: dragKind === 'team' }"
-                @dragover.prevent
-                @drop="dropToWaiting('team')"
-              >
-                <span v-if="waitingLooseTeams.length === 0" class="muted small">
-                  {{ $t('なし') }}
-                </span>
-                <span
-                  v-for="team in waitingLooseTeams"
-                  :key="team._id"
-                  :class="[
-                    'pill',
-                    'draggable',
-                    'team-pill',
-                    ...entityPillClasses('team', team._id),
-                  ]"
-                  :title="teamPillTitle(team._id)"
-                  :draggable="canDragEntity('team', team._id)"
-                  @dragstart="onDragStart('team', team._id)"
-                  @dragend="onDragEnd"
-                  @mouseenter="onEntityHover('team', team._id)"
-                  @mouseleave="onEntityHoverEnd('team', team._id)"
-                  @click.stop="selectDetail('team', team._id)"
-                >
-                  <span class="team-pill-name">{{ team.name }}</span>
-                  <span
-                    v-if="teamWinBadge(team._id)"
-                    :class="['team-win-badge', teamWinBadgeClass(team._id)]"
-                  >
-                    {{ teamWinBadge(team._id) }}
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div class="stack">
-              <span class="muted"
-                >{{ $t('ジャッジ') }} ({{ waitingLooseAdjudicators.length }})</span
-              >
-              <div
-                class="drop-zone list compact waiting-drop-zone"
-                :class="{ active: dragKind === 'adjudicator' }"
-                @dragover.prevent
-                @drop="dropToWaiting('adjudicator')"
-              >
-                <span v-if="waitingLooseAdjudicators.length === 0" class="muted small">
-                  {{ $t('なし') }}
-                </span>
-                <span
-                  v-for="adj in waitingLooseAdjudicators"
-                  :key="adj._id"
-                  :class="[
-                    'pill',
-                    'draggable',
-                    'adjudicator-pill',
-                    ...entityPillClasses('adjudicator', adj._id),
-                  ]"
-                  :title="adjudicatorPillTitle(adj._id)"
-                  :draggable="canDragEntity('adjudicator', adj._id)"
-                  @dragstart="onDragStart('adjudicator', adj._id)"
-                  @dragend="onDragEnd"
-                  @mouseenter="onEntityHover('adjudicator', adj._id)"
-                  @mouseleave="onEntityHoverEnd('adjudicator', adj._id)"
-                  @click.stop="selectDetail('adjudicator', adj._id)"
-                >
-                  <span class="adjudicator-pill-name">{{ adj.name }}</span>
-                  <span
-                    v-if="adjudicatorAverageBadge(adj._id)"
-                    :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adj._id)]"
-                  >
-                    {{ adjudicatorAverageBadge(adj._id) }}
-                  </span>
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        <div class="row allocation-toolbar">
-          <div class="row action-row">
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="openAutoGenerateModal"
-              :disabled="isLoading || requestLoading || locked"
-            >
-              {{ $t('自動生成') }}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="openAllocationImportModal"
-              :disabled="isLoading || locked || isBreakRound"
-            >
-              {{ $t('対戦表組み合わせ取込') }}
-            </Button>
-            <span v-if="isBreakRound" class="muted small">
-              {{ $t('ブレイクラウンドのため取り込みできません。') }}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="clearAllocation"
-              :disabled="locked || allocation.length === 0"
-            >
-              {{ $t('クリア') }}
-            </Button>
-            <Button size="sm" @click="save" :disabled="isLoading || locked || !allocationChanged">{{
-              $t('保存')
-            }}</Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              @click="revertAllocation"
-              :disabled="locked || !allocationChanged"
-            >
-              {{ $t('元に戻す') }}
-            </Button>
-            <label v-if="savedDrawId" class="row lock-inline">
-              <span class="muted small">{{ $t('ドローをロック') }}</span>
-              <span class="switch">
-                <input v-model="locked" type="checkbox" />
-                <span class="switch-slider"></span>
-              </span>
-            </label>
-            <span class="action-spacer"></span>
-            <Button
-              variant="danger"
-              size="sm"
-              @click="openDeleteDrawModal"
-              :disabled="locked || !currentDraw"
-            >
-              {{ $t('削除') }}
-            </Button>
-          </div>
-        </div>
+            <div class="row add-row-wrap">
+              <button type="button" class="add-row-button" :disabled="locked" @click="addRow">
+                <span class="plus" aria-hidden="true">+</span>
+                <span>{{ $t('行追加') }}</span>
+              </button>
+            </div>
+          </section>
 
-        <section class="stack board-block">
-          <div class="row preview-head">
-            <h4>{{ $t('対戦表プレビュー') }}</h4>
-          </div>
-          <DrawPreviewTable
-            ref="drawPreviewTableRef"
-            :rows="previewRows"
-            :gov-label="govLabel"
-            :opp-label="oppLabel"
-          />
-          <div class="stack preview-download-stack">
-            <div class="row section-download-row">
+          <section class="stack waiting-area board-block">
+            <template v-if="useReferenceMatchupWaitingTeams">
+              <h4>{{ $t('前回対戦表') }}</h4>
+              <AllocationTableShell class="waiting-matchup-allocation-wrap">
+                <table class="allocation-table waiting-matchup-allocation-table">
+                  <thead>
+                    <tr>
+                      <th class="venue-col">
+                        <SortHeaderButton
+                          :label="$t('会場')"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('venue')"
+                          @click="setReferenceWaitingSort('venue')"
+                        />
+                      </th>
+                      <th class="team-col">
+                        <SortHeaderButton
+                          :label="govLabel"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('gov')"
+                          @click="setReferenceWaitingSort('gov')"
+                        />
+                      </th>
+                      <th class="team-col">
+                        <SortHeaderButton
+                          :label="oppLabel"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('opp')"
+                          @click="setReferenceWaitingSort('opp')"
+                        />
+                      </th>
+                      <th class="waiting-win-col">
+                        <SortHeaderButton
+                          :label="$t('勝ち')"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('win')"
+                          @click="setReferenceWaitingSort('win')"
+                        />
+                      </th>
+                      <th class="adjudicator-col">
+                        <SortHeaderButton
+                          :label="$t('チェア')"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('chairs')"
+                          @click="setReferenceWaitingSort('chairs')"
+                        />
+                      </th>
+                      <th class="adjudicator-col">
+                        <SortHeaderButton
+                          :label="$t('パネル')"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('panels')"
+                          @click="setReferenceWaitingSort('panels')"
+                        />
+                      </th>
+                      <th class="adjudicator-col">
+                        <SortHeaderButton
+                          :label="$t('トレーニー')"
+                          compact
+                          :indicator="referenceWaitingSortIndicator('trainees')"
+                          @click="setReferenceWaitingSort('trainees')"
+                        />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in sortedReferenceUnassignedTeamRows" :key="row.key">
+                      <td class="venue-col">
+                        <div
+                          class="drop-zone compact single-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('venue', [row.venueId])"
+                        >
+                          <span
+                            v-if="row.venueId"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'truncate-pill',
+                              ...entityPillClasses('venue', row.venueId),
+                            ]"
+                            :title="venueName(row.venueId)"
+                            :draggable="canDragEntity('venue', row.venueId)"
+                            @dragstart="onDragStart('venue', row.venueId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('venue', row.venueId)"
+                            @mouseleave="onEntityHoverEnd('venue', row.venueId)"
+                            @click.stop="selectDetail('venue', row.venueId)"
+                          >
+                            {{ venueName(row.venueId) }}
+                          </span>
+                        </div>
+                      </td>
+                      <td class="team-col">
+                        <div
+                          class="drop-zone compact single-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('team', row.govTeamIds)"
+                        >
+                          <span
+                            v-for="teamId in row.govTeamIds"
+                            :key="`${row.key}-gov-${teamId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'team-pill',
+                              ...entityPillClasses('team', teamId),
+                            ]"
+                            :title="teamPillTitle(teamId)"
+                            :draggable="canDragEntity('team', teamId)"
+                            @dragstart="onDragStart('team', teamId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('team', teamId)"
+                            @mouseleave="onEntityHoverEnd('team', teamId)"
+                            @click.stop="selectDetail('team', teamId)"
+                          >
+                            <span class="team-pill-name">{{ teamName(teamId) }}</span>
+                            <span
+                              v-if="teamWinBadge(teamId)"
+                              :class="['team-win-badge', teamWinBadgeClass(teamId)]"
+                            >
+                              {{ teamWinBadge(teamId) }}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="team-col">
+                        <div
+                          class="drop-zone compact single-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('team', row.oppTeamIds)"
+                        >
+                          <span
+                            v-for="teamId in row.oppTeamIds"
+                            :key="`${row.key}-opp-${teamId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'team-pill',
+                              ...entityPillClasses('team', teamId),
+                            ]"
+                            :title="teamPillTitle(teamId)"
+                            :draggable="canDragEntity('team', teamId)"
+                            @dragstart="onDragStart('team', teamId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('team', teamId)"
+                            @mouseleave="onEntityHoverEnd('team', teamId)"
+                            @click.stop="selectDetail('team', teamId)"
+                          >
+                            <span class="team-pill-name">{{ teamName(teamId) }}</span>
+                            <span
+                              v-if="teamWinBadge(teamId)"
+                              :class="['team-win-badge', teamWinBadgeClass(teamId)]"
+                            >
+                              {{ teamWinBadge(teamId) }}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="waiting-win-col">
+                        <span class="waiting-win-label">{{ referenceWaitingWinLabel(row) }}</span>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('adjudicator', row.chairIds)"
+                        >
+                          <span
+                            v-for="adjId in row.chairIds"
+                            :key="`${row.key}-chair-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('adjudicator', row.panelIds)"
+                        >
+                          <span
+                            v-for="adjId in row.panelIds"
+                            :key="`${row.key}-panel-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="adjudicator-col">
+                        <div
+                          class="drop-zone list compact multi-line waiting-placeholder-zone"
+                          :class="dropZoneClasses('adjudicator', row.traineeIds)"
+                        >
+                          <span
+                            v-for="adjId in row.traineeIds"
+                            :key="`${row.key}-trainee-${adjId}`"
+                            :class="[
+                              'pill',
+                              'draggable',
+                              'adjudicator-pill',
+                              ...entityPillClasses('adjudicator', adjId),
+                            ]"
+                            :title="adjudicatorPillTitle(adjId)"
+                            :draggable="canDragEntity('adjudicator', adjId)"
+                            @dragstart="onDragStart('adjudicator', adjId)"
+                            @dragend="onDragEnd"
+                            @mouseenter="onEntityHover('adjudicator', adjId)"
+                            @mouseleave="onEntityHoverEnd('adjudicator', adjId)"
+                            @click.stop="selectDetail('adjudicator', adjId)"
+                          >
+                            <span class="adjudicator-pill-name">{{ adjudicatorName(adjId) }}</span>
+                            <span
+                              v-if="adjudicatorAverageBadge(adjId)"
+                              :class="[
+                                'adjudicator-average-badge',
+                                adjudicatorAverageBadgeClass(adjId),
+                              ]"
+                            >
+                              {{ adjudicatorAverageBadge(adjId) }}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </AllocationTableShell>
+            </template>
+            <h4>{{ $t('未配置リスト') }}</h4>
+            <div class="grid waiting-grid">
+              <div class="stack">
+                <span class="muted">{{ $t('会場') }} ({{ waitingLooseVenues.length }})</span>
+                <div
+                  class="drop-zone list compact waiting-drop-zone"
+                  :class="{ active: dragKind === 'venue' }"
+                  @dragover.prevent
+                  @drop="dropToWaiting('venue')"
+                >
+                  <span v-if="waitingLooseVenues.length === 0" class="muted small">
+                    {{ $t('なし') }}
+                  </span>
+                  <span
+                    v-for="venue in waitingLooseVenues"
+                    :key="venue._id"
+                    :class="[
+                      'pill',
+                      'draggable',
+                      'truncate-pill',
+                      ...entityPillClasses('venue', venue._id),
+                    ]"
+                    :title="venue.name"
+                    :draggable="canDragEntity('venue', venue._id)"
+                    @dragstart="onDragStart('venue', venue._id)"
+                    @dragend="onDragEnd"
+                    @mouseenter="onEntityHover('venue', venue._id)"
+                    @mouseleave="onEntityHoverEnd('venue', venue._id)"
+                    @click.stop="selectDetail('venue', venue._id)"
+                  >
+                    {{ venue.name }}
+                  </span>
+                </div>
+              </div>
+              <div class="stack">
+                <span class="muted">{{ $t('チーム') }} ({{ waitingLooseTeams.length }})</span>
+                <div
+                  class="drop-zone list compact waiting-drop-zone"
+                  :class="{ active: dragKind === 'team' }"
+                  @dragover.prevent
+                  @drop="dropToWaiting('team')"
+                >
+                  <span v-if="waitingLooseTeams.length === 0" class="muted small">
+                    {{ $t('なし') }}
+                  </span>
+                  <span
+                    v-for="team in waitingLooseTeams"
+                    :key="team._id"
+                    :class="[
+                      'pill',
+                      'draggable',
+                      'team-pill',
+                      ...entityPillClasses('team', team._id),
+                    ]"
+                    :title="teamPillTitle(team._id)"
+                    :draggable="canDragEntity('team', team._id)"
+                    @dragstart="onDragStart('team', team._id)"
+                    @dragend="onDragEnd"
+                    @mouseenter="onEntityHover('team', team._id)"
+                    @mouseleave="onEntityHoverEnd('team', team._id)"
+                    @click.stop="selectDetail('team', team._id)"
+                  >
+                    <span class="team-pill-name">{{ team.name }}</span>
+                    <span
+                      v-if="teamWinBadge(team._id)"
+                      :class="['team-win-badge', teamWinBadgeClass(team._id)]"
+                    >
+                      {{ teamWinBadge(team._id) }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <div class="stack">
+                <span class="muted"
+                  >{{ $t('ジャッジ') }} ({{ waitingLooseAdjudicators.length }})</span
+                >
+                <div
+                  class="drop-zone list compact waiting-drop-zone"
+                  :class="{ active: dragKind === 'adjudicator' }"
+                  @dragover.prevent
+                  @drop="dropToWaiting('adjudicator')"
+                >
+                  <span v-if="waitingLooseAdjudicators.length === 0" class="muted small">
+                    {{ $t('なし') }}
+                  </span>
+                  <span
+                    v-for="adj in waitingLooseAdjudicators"
+                    :key="adj._id"
+                    :class="[
+                      'pill',
+                      'draggable',
+                      'adjudicator-pill',
+                      ...entityPillClasses('adjudicator', adj._id),
+                    ]"
+                    :title="adjudicatorPillTitle(adj._id)"
+                    :draggable="canDragEntity('adjudicator', adj._id)"
+                    @dragstart="onDragStart('adjudicator', adj._id)"
+                    @dragend="onDragEnd"
+                    @mouseenter="onEntityHover('adjudicator', adj._id)"
+                    @mouseleave="onEntityHoverEnd('adjudicator', adj._id)"
+                    @click.stop="selectDetail('adjudicator', adj._id)"
+                  >
+                    <span class="adjudicator-pill-name">{{ adj.name }}</span>
+                    <span
+                      v-if="adjudicatorAverageBadge(adj._id)"
+                      :class="['adjudicator-average-badge', adjudicatorAverageBadgeClass(adj._id)]"
+                    >
+                      {{ adjudicatorAverageBadge(adj._id) }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="row allocation-toolbar">
+            <div class="row action-row">
               <Button
                 variant="secondary"
-                class="section-download-button"
-                :disabled="previewRows.length === 0"
-                @click="downloadDrawPreviewCsv"
+                size="sm"
+                @click="openAutoGenerateModal"
+                :disabled="isLoading || requestLoading || locked"
               >
-                {{ $t('CSVダウンロード') }}
+                {{ $t('自動生成') }}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="openAllocationImportModal"
+                :disabled="isLoading || locked || isBreakRound"
+              >
+                {{ $t('対戦表組み合わせ取込') }}
+              </Button>
+              <span v-if="isBreakRound" class="muted small">
+                {{ $t('ブレイクラウンドのため取り込みできません。') }}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="clearAllocation"
+                :disabled="locked || allocation.length === 0"
+              >
+                {{ $t('クリア') }}
+              </Button>
+              <Button
+                size="sm"
+                @click="save"
+                :disabled="isLoading || locked || !allocationChanged"
+                >{{ $t('保存') }}</Button
+              >
+              <Button
+                variant="secondary"
+                size="sm"
+                @click="revertAllocation"
+                :disabled="locked || !allocationChanged"
+              >
+                {{ $t('元に戻す') }}
+              </Button>
+              <label v-if="savedDrawId" class="row lock-inline">
+                <span class="muted small">{{ $t('ドローをロック') }}</span>
+                <span class="switch">
+                  <input v-model="locked" type="checkbox" />
+                  <span class="switch-slider"></span>
+                </span>
+              </label>
+              <span class="action-spacer"></span>
+              <Button
+                variant="danger"
+                size="sm"
+                @click="openDeleteDrawModal"
+                :disabled="locked || !currentDraw"
+              >
+                {{ $t('削除') }}
               </Button>
             </div>
           </div>
-        </section>
+
+          <section class="stack board-block">
+            <div class="row preview-head">
+              <h4>{{ $t('対戦表プレビュー') }}</h4>
+            </div>
+            <DrawPreviewTable
+              ref="drawPreviewTableRef"
+              :rows="previewRows"
+              :gov-label="govLabel"
+              :opp-label="oppLabel"
+            />
+            <div class="stack preview-download-stack">
+              <div class="row section-download-row">
+                <Button
+                  variant="secondary"
+                  class="section-download-button"
+                  :disabled="previewRows.length === 0"
+                  @click="downloadDrawPreviewCsv"
+                >
+                  {{ $t('CSVダウンロード') }}
+                </Button>
+              </div>
+            </div>
+          </section>
         </template>
       </template>
     </section>
@@ -1064,7 +1079,10 @@
           @focusin="setFocusedWarning(warning)"
           @focusout="clearFocusedWarning"
         >
-          <span class="warning-severity" :class="`warning-severity--${warningDisplayTone(warning)}`">
+          <span
+            class="warning-severity"
+            :class="`warning-severity--${warningDisplayTone(warning)}`"
+          >
             {{ warningDisplayToneIcon(warningDisplayTone(warning)) }}
             {{ warningDisplayToneShortLabel(warningDisplayTone(warning)) }}
           </span>
@@ -1077,7 +1095,9 @@
     <ImportTextModal
       :open="showAllocationImportModal"
       :title="$t('対戦表組み合わせ取込')"
-      :help-text="$t('CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。ヘッダー行は必須です。')"
+      :help-text="
+        $t('CSV/TSVファイルを選択して、非空セルだけ対戦表へ反映します。ヘッダー行は必須です。')
+      "
       :description="
         $t(
           '空欄セルは現在値を保持します。名前/IDが未登録のチーム・ジャッジ・会場は反映できません（先に大会データ準備で取り込み）。'
@@ -1827,6 +1847,7 @@ import DrawPreviewTable from '@/components/common/DrawPreviewTable.vue'
 import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.vue'
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { normalizeTournamentTeamNum, resolveTournamentStyle } from '@/utils/tournament-style'
 import type { DrawPreviewRow } from '@/types/draw-preview'
 import type { BreakCutoffTiePolicy, BreakSeeding, RoundBreakConfig } from '@/types/round'
 import { formatCompiledSnapshotOptionLabel } from '@/utils/compiled-snapshot'
@@ -1876,6 +1897,7 @@ import {
 } from '@/utils/allocation-drag-highlights'
 import { formatAllocationRequestError } from '@/utils/allocation-request-errors'
 import { createLatestRequestGate } from '@/utils/latest-request'
+import { escapeCsvCell } from '@/utils/csv'
 import {
   estimateTeamWarningBaseline,
   type TeamBaselineSupportedFilter,
@@ -1886,6 +1908,7 @@ import {
   type AdjudicatorBaselineSupportedFilter,
   type AdjudicatorWarningBaselineResult,
 } from '@/utils/adjudicator-warning-baseline'
+import { resolveBallotSubmitterRoles } from '@/utils/submission-expectations'
 
 const route = useRoute()
 const teams = useTeamsStore()
@@ -2223,6 +2246,7 @@ const autoOptions = ref({
     'by_side',
     'by_past_opponent',
     'by_conflict_group',
+    'by_sibling_past_opponent_school',
     'spread_sides_by_school',
   ],
   teamPowerpairOddBracket: 'pullup_top',
@@ -2556,8 +2580,13 @@ const roundHeading = computed(() => {
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
-const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
-const isTwoTeamStyle = computed(() => Number(style.value?.team_num ?? 2) === 2)
+const style = computed(() =>
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
+)
+const isTwoTeamStyle = computed(() => normalizeTournamentTeamNum(style.value?.team_num) === 2)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const priorRounds = computed(() =>
@@ -2671,9 +2700,7 @@ const compiledSnapshotSelectOptions = computed<CompiledSnapshotSelectOption[]>((
 function resolveSnapshotById(compiledId: string): CompiledSnapshotOption | null {
   const normalizedId = String(compiledId ?? '').trim()
   if (!normalizedId) return null
-  return (
-    compiledSnapshotOptions.value.find((option) => option.compiledId === normalizedId) ?? null
-  )
+  return compiledSnapshotOptions.value.find((option) => option.compiledId === normalizedId) ?? null
 }
 
 function snapshotRecencyValue(option: CompiledSnapshotOption): number {
@@ -2900,20 +2927,25 @@ const requestScopeDescriptions = computed<Record<string, string>>(() => ({
 const requestScopeDescription = computed(
   () => requestScopeDescriptions.value[requestScope.value] ?? ''
 )
-const allocationMatchCount = computed(() =>
-  allocation.value.filter((row) => String(row.teams?.gov ?? '') && String(row.teams?.opp ?? '')).length
+const allocationMatchCount = computed(
+  () =>
+    allocation.value.filter((row) => String(row.teams?.gov ?? '') && String(row.teams?.opp ?? ''))
+      .length
 )
 const allocationHasAssignedAdjudicators = computed(() =>
   allocation.value.some(
     (row) =>
-      (row.chairs?.length ?? 0) > 0 || (row.panels?.length ?? 0) > 0 || (row.trainees?.length ?? 0) > 0
+      (row.chairs?.length ?? 0) > 0 ||
+      (row.panels?.length ?? 0) > 0 ||
+      (row.trainees?.length ?? 0) > 0
   )
 )
-const availableAdjudicatorCount = computed(() =>
-  adjudicators.adjudicators.filter((adj) => {
-    const detail = adj.details?.find((item) => Number(item.r) === round.value)
-    return detail?.available === true
-  }).length
+const availableAdjudicatorCount = computed(
+  () =>
+    adjudicators.adjudicators.filter((adj) => {
+      const detail = adj.details?.find((item) => Number(item.r) === round.value)
+      return detail?.available === true
+    }).length
 )
 const requestedAdjudicatorsPerMatch = computed(
   () =>
@@ -3265,7 +3297,7 @@ function syncFromDraw(
             ? savedTeamRounds
             : fallbackRounds.length > 0
               ? fallbackRounds
-            : defaultSelections,
+              : defaultSelections,
         defaultSelections
       )
       const confirmedReferenceSelection = hasConfirmedReferenceSelection(draw)
@@ -3412,7 +3444,11 @@ async function confirmReferenceRounds() {
     referenceConfirmError.value = t('チーム結果参照ラウンドを1つ以上選択してください。')
     return
   }
-  if (priorRounds.value.length > 0 && shouldTrackAdjudicatorReference.value && adjudicatorRounds.length === 0) {
+  if (
+    priorRounds.value.length > 0 &&
+    shouldTrackAdjudicatorReference.value &&
+    adjudicatorRounds.length === 0
+  ) {
     referenceConfirmError.value = t('ジャッジ結果参照ラウンドを1つ以上選択してください。')
     return
   }
@@ -3439,9 +3475,7 @@ async function confirmReferenceRounds() {
     const shouldCompileAdjudicatorSeparately =
       requiresAdjudicatorReference && !areRoundSetsEqual(teamRounds, adjudicatorRounds)
     const teamCompileScope =
-      requiresAdjudicatorReference && !shouldCompileAdjudicatorSeparately
-        ? 'adjudicators'
-        : 'teams'
+      requiresAdjudicatorReference && !shouldCompileAdjudicatorSeparately ? 'adjudicators' : 'teams'
     const teamCompiled = await compiledStore.saveCompiled(tournamentId.value, {
       source: 'submissions',
       rounds: teamRounds,
@@ -3722,6 +3756,7 @@ const TEAM_STANDARD_FILTER_DEFAULTS = [
   'by_side',
   'by_past_opponent',
   'by_conflict_group',
+  'by_sibling_past_opponent_school',
   TEAM_STANDARD_SIDE_SPREAD_FILTER,
 ] as const
 const TEAM_STRICT_PAIRING_VALUES = ['random', 'fold', 'slide', 'sort', 'adjusted'] as const
@@ -3800,7 +3835,7 @@ function estimatedAllocationSquareCountForRequest() {
   if (requestScope.value === 'adjudicators' || requestScope.value === 'venues') {
     return validAllocationRowCount()
   }
-  const teamNum = Math.max(1, Number(style.value?.team_num ?? 2))
+  const teamNum = normalizeTournamentTeamNum(style.value?.team_num)
   return Math.floor(availableTeams.value.length / teamNum)
 }
 
@@ -3891,51 +3926,51 @@ async function requestAllocation() {
           ? {
               filters: minWarningTeamFilters,
             }
-        : effectiveTeamAlgorithm === 'powerpair'
-          ? {
-              odd_bracket: normalizeEnumValue(
-                autoOptions.value.teamPowerpairOddBracket,
-                TEAM_POWERPAIR_ODD_BRACKET_VALUES,
-                'pullup_top'
-              ),
-              pairing_method: normalizeEnumValue(
-                autoOptions.value.teamPowerpairPairingMethod,
-                TEAM_POWERPAIR_PAIRING_VALUES,
-                'fold'
-              ),
-              avoid_conflicts: normalizeEnumValue(
-                autoOptions.value.teamPowerpairAvoidConflicts,
-                TEAM_CONFLICT_MODE_VALUES,
-                'one_up_one_down'
-              ),
-              conflict_weights: {
-                conflict_group: normalizeNonNegativeNumber(
-                  autoOptions.value.teamPowerpairConflictInstitutionWeight,
-                  1
+          : effectiveTeamAlgorithm === 'powerpair'
+            ? {
+                odd_bracket: normalizeEnumValue(
+                  autoOptions.value.teamPowerpairOddBracket,
+                  TEAM_POWERPAIR_ODD_BRACKET_VALUES,
+                  'pullup_top'
                 ),
-                past_opponent: normalizeNonNegativeNumber(
-                  autoOptions.value.teamPowerpairConflictPastOpponentWeight,
-                  1
+                pairing_method: normalizeEnumValue(
+                  autoOptions.value.teamPowerpairPairingMethod,
+                  TEAM_POWERPAIR_PAIRING_VALUES,
+                  'fold'
                 ),
-              },
-              max_swap_iterations: normalizeNonNegativeInteger(
-                autoOptions.value.teamPowerpairMaxSwapIterations,
-                24
-              ),
-            }
-          : effectiveTeamAlgorithm === 'break'
-            ? {}
-            : effectiveTeamAlgorithm === 'random'
-              ? {}
-            : {
-                method: normalizeEnumValue(
-                  autoOptions.value.teamMethod,
-                  TEAM_STANDARD_METHOD_VALUES,
-                  'original'
+                avoid_conflicts: normalizeEnumValue(
+                  autoOptions.value.teamPowerpairAvoidConflicts,
+                  TEAM_CONFLICT_MODE_VALUES,
+                  'one_up_one_down'
                 ),
-                filters: standardTeamFilters,
-                spread_sides_by_school: spreadSidesBySchool,
+                conflict_weights: {
+                  conflict_group: normalizeNonNegativeNumber(
+                    autoOptions.value.teamPowerpairConflictInstitutionWeight,
+                    1
+                  ),
+                  past_opponent: normalizeNonNegativeNumber(
+                    autoOptions.value.teamPowerpairConflictPastOpponentWeight,
+                    1
+                  ),
+                },
+                max_swap_iterations: normalizeNonNegativeInteger(
+                  autoOptions.value.teamPowerpairMaxSwapIterations,
+                  24
+                ),
               }
+            : effectiveTeamAlgorithm === 'break'
+              ? {}
+              : effectiveTeamAlgorithm === 'random'
+                ? {}
+                : {
+                    method: normalizeEnumValue(
+                      autoOptions.value.teamMethod,
+                      TEAM_STANDARD_METHOD_VALUES,
+                      'original'
+                    ),
+                    filters: standardTeamFilters,
+                    spread_sides_by_school: spreadSidesBySchool,
+                  }
     const numbersOfAdjudicators = {
       chairs: normalizeNonNegativeInteger(autoOptions.value.chairs, 1),
       panels: normalizeNonNegativeInteger(autoOptions.value.panels, 0),
@@ -3955,13 +3990,13 @@ async function requestAllocation() {
           ? {}
           : requestedAdjudicatorAlgorithm === 'random'
             ? {}
-          : {
-              filters: normalizeUniqueStringList(
-                autoOptions.value.adjudicatorFilters,
-                ADJUDICATOR_STANDARD_FILTER_VALUES,
-                ADJUDICATOR_STANDARD_FILTER_VALUES
-              ),
-            }
+            : {
+                filters: normalizeUniqueStringList(
+                  autoOptions.value.adjudicatorFilters,
+                  ADJUDICATOR_STANDARD_FILTER_VALUES,
+                  ADJUDICATOR_STANDARD_FILTER_VALUES
+                ),
+              }
     const useScopedOverrides = true
     const teamSnapshotId = resolveSnapshotIdForScope('teams', useScopedOverrides)
     const adjudicatorSnapshotId = resolveSnapshotIdForScope('adjudicators', useScopedOverrides)
@@ -4101,10 +4136,23 @@ function isEntityAvailableInRound(kind: 'team' | 'adjudicator' | 'venue', id: st
   return venueAvailableInRound(id)
 }
 
+function isEntityAssignedInAllocation(kind: 'team' | 'adjudicator' | 'venue', id: string) {
+  return allocation.value.some((row) => {
+    if (kind === 'team') return row.teams.gov === id || row.teams.opp === id
+    if (kind === 'venue') return row.venue === id
+    return (
+      row.chairs?.includes(id) === true ||
+      row.panels?.includes(id) === true ||
+      row.trainees?.includes(id) === true
+    )
+  })
+}
+
 function canDragEntity(kind: 'team' | 'adjudicator' | 'venue', id: string | null | undefined) {
   if (locked.value) return false
   const normalizedId = String(id ?? '').trim()
   if (!normalizedId) return false
+  if (kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)) return true
   return isEntityAvailableInRound(kind, normalizedId)
 }
 
@@ -4181,7 +4229,9 @@ function adjudicatorInstitutions(adj: any) {
 function adjudicatorConflicts(adj: any) {
   if (!adj) return []
   const detail = detailForRound(adj.details, round.value)
-  return ([] as any[]).concat(detail.conflict_teams ?? [], adj?.template?.conflict_teams ?? []).map((id: any) => String(id))
+  return ([] as any[])
+    .concat(detail.conflict_teams ?? [], adj?.template?.conflict_teams ?? [])
+    .map((id: any) => String(id))
 }
 
 function normalizeJudgeClass(value: unknown): '' | 'A' | 'B' | 'C' {
@@ -4267,7 +4317,10 @@ function teamPastSideHistory(teamId: string) {
 function adjudicatorJudgedTeamIds(adjudicatorId: string) {
   const result = compiledAdjMap.value.get(String(adjudicatorId))
   const compiledJudgedTeamIds = Array.isArray(result?.judged_teams) ? result.judged_teams : []
-  return uniqueEntityIds([...compiledJudgedTeamIds, ...historicalAdjudicatorJudgedTeamIds(adjudicatorId)])
+  return uniqueEntityIds([
+    ...compiledJudgedTeamIds,
+    ...historicalAdjudicatorJudgedTeamIds(adjudicatorId),
+  ])
 }
 
 function adjudicatorListLabel(ids: string[]) {
@@ -4402,13 +4455,6 @@ function formatPreviewCsvValue(value: unknown) {
   return String(value)
 }
 
-function escapeCsvValue(value: string) {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
 function downloadDrawPreviewCsv() {
   const displayRows = drawPreviewTableRef.value?.getDisplayRows() ?? previewRows.value
   if (displayRows.length === 0) return
@@ -4430,10 +4476,10 @@ function downloadDrawPreviewCsv() {
       row.chairsLabel,
       row.panelsLabel,
       row.traineesLabel,
-    ].map((cell) => escapeCsvValue(formatPreviewCsvValue(cell)))
+    ].map((cell) => escapeCsvCell(formatPreviewCsvValue(cell)))
   )
   const csv = [
-    headers.map((header) => escapeCsvValue(String(header))).join(','),
+    headers.map((header) => escapeCsvCell(String(header))).join(','),
     ...rows.map((row) => row.join(',')),
   ].join('\n')
   const bom = new Uint8Array([0xef, 0xbb, 0xbf])
@@ -4843,7 +4889,9 @@ const detailRows = computed<DetailRow[]>(() => {
       },
       {
         label: t('共同担当ジャッジ'),
-        value: coJudgeIds.length ? coJudgeIds.map((adjId) => adjudicatorNameById(adjId)).join(', ') : '—',
+        value: coJudgeIds.length
+          ? coJudgeIds.map((adjId) => adjudicatorNameById(adjId)).join(', ')
+          : '—',
         highlightEntityKeys: buildAdjudicatorEntityKeys(coJudgeIds),
       },
       { label: t('チェア担当回数'), value: result?.num_experienced_chair ?? '—' },
@@ -4879,6 +4927,7 @@ watch(displayDetail, () => {
 const rowWarningStates = computed<RowWarningState[]>(() =>
   buildRowWarningStates({
     allocation: allocation.value,
+    teamIds: teams.teams.map((team) => String(team?._id ?? '')),
     isTeamAvailable: (teamId) => {
       const team = teams.teams.find((item) => item._id === teamId)
       if (!team) return undefined
@@ -5251,7 +5300,8 @@ const teamWarningBaseline = computed<TeamWarningBaselineResult>(() => {
 
   return estimateTeamWarningBaseline({
     teamIds: availableTeams.value.map((team) => String(team?._id ?? '')),
-    teamNum: Math.max(1, Number(style.value?.team_num ?? 2)),
+    schoolHistoryTeamIds: teams.teams.map((team) => String(team?._id ?? '')),
+    teamNum: normalizeTournamentTeamNum(style.value?.team_num),
     filterOrder: normalizedTeamBaselineFilters.value,
     teamWin: (teamId) => {
       const result = compiledTeamMap.value.get(String(teamId))
@@ -5293,7 +5343,9 @@ const teamWarningBaselineUnpairedText = computed(() => {
 const teamWarningBaselineIgnoredFiltersText = computed(() => {
   if (teamWarningBaseline.value.ignoredFilters.length === 0) return ''
   const labels = teamWarningBaseline.value.ignoredFilters
-    .map((filter) => teamFilterOptions.value.find((option) => option.value === filter)?.label ?? filter)
+    .map(
+      (filter) => teamFilterOptions.value.find((option) => option.value === filter)?.label ?? filter
+    )
     .join(' / ')
   return t('次の基準は baseline 集計対象外です: {labels}', { labels })
 })
@@ -5347,7 +5399,9 @@ const adjudicatorWarningBaseline = computed<AdjudicatorWarningBaselineResult>(()
         slotCount: requestedAdjudicatorsPerMatch.value,
       }))
       .filter((row) => row.teamIds.every((teamId) => teamId.length > 0) && row.slotCount > 0),
-    adjudicatorIds: availableAdjudicators.value.map((adjudicator) => String(adjudicator?._id ?? '')),
+    adjudicatorIds: availableAdjudicators.value.map((adjudicator) =>
+      String(adjudicator?._id ?? '')
+    ),
     filterOrder: normalizedAdjudicatorBaselineFilters.value,
     teamInstitutions: (teamId) => {
       const team = teamRecordById.value.get(String(teamId))
@@ -5766,9 +5820,11 @@ const expectedTeamIds = computed(() => {
 
 const expectedBallotSubmitterIds = computed(() => {
   const set = new Set<string>()
+  const roles = new Set(resolveBallotSubmitterRoles(roundConfig.value?.userDefinedData))
   allocation.value.forEach((row) => {
-    ;(row.chairs ?? []).forEach((id) => set.add(id))
-    ;(row.panels ?? []).forEach((id) => set.add(id))
+    if (roles.has('chair')) (row.chairs ?? []).forEach((id) => set.add(id))
+    if (roles.has('panel')) (row.panels ?? []).forEach((id) => set.add(id))
+    if (roles.has('trainee')) (row.trainees ?? []).forEach((id) => set.add(id))
   })
   return set
 })
@@ -5874,7 +5930,7 @@ function onDragStart(kind: DragKind, id: string) {
   if (locked.value) return
   const normalizedId = String(id ?? '').trim()
   if (!normalizedId) return
-  if (!isEntityAvailableInRound(kind, normalizedId)) return
+  if (!canDragEntity(kind, normalizedId)) return
   hoverPayload.value = null
   dragPayload.value = { kind, id: normalizedId }
 }
@@ -5950,7 +6006,10 @@ function dropAdjudicator(row: DrawAllocationRow, role: 'chairs' | 'panels' | 'tr
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'adjudicator') return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !isEntityAssignedInAllocation(payload.kind, payload.id)
+  ) {
     onDragEnd()
     return
   }
@@ -5987,7 +6046,10 @@ function dropToWaiting(kind: DragKind) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== kind) return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !(kind === 'adjudicator' && isEntityAssignedInAllocation(kind, payload.id))
+  ) {
     onDragEnd()
     return
   }
@@ -6088,7 +6150,9 @@ watch(
     const commonSelections = sanitizeReferenceRoundSelectionStrings(
       commonReferenceRoundSelections.value
     )
-    const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
+    const teamSelections = sanitizeReferenceRoundSelectionStrings(
+      teamReferenceRoundSelections.value
+    )
     const adjudicatorSelections = sanitizeReferenceRoundSelectionStrings(
       adjudicatorReferenceRoundSelections.value
     )
@@ -6101,9 +6165,12 @@ watch(
       return
     }
 
-    teamReferenceRoundSelections.value = teamSelections.length > 0 ? teamSelections : [...nextCommon]
+    teamReferenceRoundSelections.value =
+      teamSelections.length > 0 ? teamSelections : [...nextCommon]
     adjudicatorReferenceRoundSelections.value =
-      adjudicatorSelections.length > 0 ? adjudicatorSelections : [...teamReferenceRoundSelections.value]
+      adjudicatorSelections.length > 0
+        ? adjudicatorSelections
+        : [...teamReferenceRoundSelections.value]
   },
   { immediate: true }
 )
@@ -6117,9 +6184,13 @@ watch(
     }
 
     const defaults = defaultReferenceRoundSelections()
-    const commonSelections = sanitizeReferenceRoundSelectionStrings(commonReferenceRoundSelections.value)
+    const commonSelections = sanitizeReferenceRoundSelectionStrings(
+      commonReferenceRoundSelections.value
+    )
     if (!enabled) {
-      const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
+      const teamSelections = sanitizeReferenceRoundSelectionStrings(
+        teamReferenceRoundSelections.value
+      )
       const adjudicatorSelections = sanitizeReferenceRoundSelectionStrings(
         adjudicatorReferenceRoundSelections.value
       )
@@ -6162,9 +6233,18 @@ watch(
     }
     useScopedReferenceRoundSelections.value = false
     const defaults = defaultReferenceRoundSelections()
-    const commonSelections = sanitizeReferenceRoundSelectionStrings(commonReferenceRoundSelections.value)
-    const teamSelections = sanitizeReferenceRoundSelectionStrings(teamReferenceRoundSelections.value)
-    const nextCommon = commonSelections.length > 0 ? commonSelections : teamSelections.length > 0 ? teamSelections : defaults
+    const commonSelections = sanitizeReferenceRoundSelectionStrings(
+      commonReferenceRoundSelections.value
+    )
+    const teamSelections = sanitizeReferenceRoundSelectionStrings(
+      teamReferenceRoundSelections.value
+    )
+    const nextCommon =
+      commonSelections.length > 0
+        ? commonSelections
+        : teamSelections.length > 0
+          ? teamSelections
+          : defaults
     commonReferenceRoundSelections.value = [...nextCommon]
     teamReferenceRoundSelections.value = [...nextCommon]
     adjudicatorReferenceRoundSelections.value = [...nextCommon]
@@ -6210,7 +6290,10 @@ watch(
     )
 
     if (hasSavedDraw && referenceSelectionConfirmed.value) {
-      const savedTeamSelections = resolveSavedReferenceRoundSelections(draw?.userDefinedData, 'teams')
+      const savedTeamSelections = resolveSavedReferenceRoundSelections(
+        draw?.userDefinedData,
+        'teams'
+      )
       const savedAdjudicatorSelections = resolveSavedReferenceRoundSelections(
         draw?.userDefinedData,
         'adjudicators'
@@ -6233,7 +6316,7 @@ watch(
             ? savedTeamSelections
             : fallbackSelections.length > 0
               ? fallbackSelections
-            : defaultReferenceRoundSelections(),
+              : defaultReferenceRoundSelections(),
         defaultReferenceRoundSelections()
       )
     }
@@ -7489,7 +7572,10 @@ ol.list.compact {
   background: #f1f5f9;
 }
 
-.allocation-board:not(.allocation-board--break) .waiting-matchup-allocation-table td .drop-zone.active,
+.allocation-board:not(.allocation-board--break)
+  .waiting-matchup-allocation-table
+  td
+  .drop-zone.active,
 .allocation-board--break .waiting-matchup-allocation-table td .drop-zone.active {
   border-color: var(--color-primary);
   background:

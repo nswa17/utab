@@ -117,8 +117,10 @@ export async function copyTournamentWithData(
       copiedDocuments,
     }
   } catch (error) {
-    await TournamentModel.deleteOne({ _id: targetTournamentId }).exec()
-    await dropTournamentDatabase(targetTournamentId)
+    await Promise.allSettled([
+      TournamentModel.deleteOne({ _id: targetTournamentId }).exec(),
+      dropTournamentDatabase(targetTournamentId),
+    ])
     throw error
   }
 }

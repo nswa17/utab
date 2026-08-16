@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getResultModel } from '../models/result.js'
+import { getRoundModel } from '../models/round.js'
 import { sanitizeResultForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { notFound } from './shared/http-errors.js'
@@ -28,7 +29,7 @@ export const getResult: RequestHandler = async (req, res, next) => {
     if (!ensureObjectId(res, id, 'Invalid result id')) return
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
-    const result = await ResultModel.findById(id).lean().exec()
+    const result = await ResultModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!result) {
       notFound(res, 'Result not found')
       return
@@ -52,6 +53,11 @@ export const createResult: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
+    const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
+    if (!roundExists) {
+      notFound(res, 'Round not found')
+      return
+    }
     const created = await ResultModel.create({
       tournamentId,
       round,
@@ -82,6 +88,13 @@ export const updateResult: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
+    if (round !== undefined) {
+      const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
+      if (!roundExists) {
+        notFound(res, 'Round not found')
+        return
+      }
+    }
     const updated = await ResultModel.findOneAndUpdate(
       { _id: id, tournamentId },
       { $set: update },

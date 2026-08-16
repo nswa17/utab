@@ -30,6 +30,7 @@ import {
   hasSufficientAdjudicators,
   normalizeInstitutionPriority,
   normalizeScoreWeights,
+  normalizeTeamNum,
   type IdMaps,
 } from './shared/allocation-support.js'
 import {
@@ -111,7 +112,11 @@ function preconditionFailed(res: Response, err: any): void {
   })
 }
 
-function precheckTeamAllocation(context: AllocationContext, round: number, teamAlgorithm: string): void {
+function precheckTeamAllocation(
+  context: AllocationContext,
+  round: number,
+  teamAlgorithm: string
+): void {
   if (teamAlgorithm === 'break') return
   allocations.teams.precheck(context.teamInstances, [], context.config.style, round)
 }
@@ -158,9 +163,7 @@ function ensureTournamentId(
 
 function mapIdList(ids: unknown, map: Map<string, number>): number[] {
   if (!Array.isArray(ids)) return []
-  return ids
-    .map((id) => map.get(String(id)))
-    .filter((id): id is number => typeof id === 'number')
+  return ids.map((id) => map.get(String(id))).filter((id): id is number => typeof id === 'number')
 }
 
 function mapCompiledTeamResultsFromSnapshot(
@@ -285,7 +288,10 @@ function normalizeDrawAllocationTeamId(teamId: unknown, teamMaps: IdMaps): strin
   return token
 }
 
-function extractBreakTeamsFromAllocationRow(square: unknown, teamMaps: IdMaps): [string, string] | null {
+function extractBreakTeamsFromAllocationRow(
+  square: unknown,
+  teamMaps: IdMaps
+): [string, string] | null {
   if (!square || typeof square !== 'object') return null
   const source = square as Record<string, unknown>
   const teamsSource = source.teams
@@ -345,7 +351,9 @@ function buildBreakStageFromSavedAllocation(params: {
 
   const byeMap = new Map<string, BreakParticipant>()
   if (participants.length > 0) {
-    const inferredByes = participants.filter((participant) => !matchedTeamIds.has(participant.teamId))
+    const inferredByes = participants.filter(
+      (participant) => !matchedTeamIds.has(participant.teamId)
+    )
     if (inferredByes.length === expectedBreakByeCount(participants.length)) {
       inferredByes.forEach((participant) => {
         byeMap.set(participant.teamId, {
@@ -456,7 +464,9 @@ type TeamSideCounts = {
 }
 
 function normalizeTwoTeamSide(value: unknown): 'gov' | 'opp' | null {
-  const token = String(value ?? '').trim().toLowerCase()
+  const token = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (!token) return null
   if (
     token === 'gov' ||
@@ -479,7 +489,10 @@ function normalizeTwoTeamSide(value: unknown): 'gov' | 'opp' | null {
   return null
 }
 
-function buildTeamSideCounts(compiledTeamResults: any[], round: number): Map<number, TeamSideCounts> {
+function buildTeamSideCounts(
+  compiledTeamResults: any[],
+  round: number
+): Map<number, TeamSideCounts> {
   const countsByTeam = new Map<number, TeamSideCounts>()
   ;(compiledTeamResults || []).forEach((result: any) => {
     const teamId = Number(result?.id)
@@ -773,10 +786,7 @@ function applyRandomWithinTieGroupSeeding(
     const base = sorted[index]
     const group: BreakParticipant[] = [base.participant]
     index += 1
-    while (
-      index < sorted.length &&
-      sorted[index].ranking === base.ranking
-    ) {
+    while (index < sorted.length && sorted[index].ranking === base.ranking) {
       group.push(sorted[index].participant)
       index += 1
     }
@@ -830,7 +840,9 @@ async function buildBreakTeamDraw(
     dedupeParticipants: true,
   })
   const effectiveBreakPolicy = {
-    source_rounds: hasTournamentBreak ? tournamentBreakConfig.source_rounds : breakConfig.source_rounds,
+    source_rounds: hasTournamentBreak
+      ? tournamentBreakConfig.source_rounds
+      : breakConfig.source_rounds,
     size: hasTournamentBreak ? tournamentBreakConfig.size : breakConfig.size,
     cutoff_tie_policy: hasTournamentBreak
       ? tournamentBreakConfig.cutoff_tie_policy
@@ -854,9 +866,12 @@ async function buildBreakTeamDraw(
   if (previousRoundNumber >= 1) {
     const previousDraw = drawDocs.find((doc: any) => Number(doc.round) === previousRoundNumber)
     const previousBreakMeta = asRecord(asRecord((previousDraw as any)?.userDefinedData).break)
-    const previousStageParticipantsRaw = normalizeBreakParticipants(previousBreakMeta.stage_participants, {
-      dedupeParticipants: true,
-    })
+    const previousStageParticipantsRaw = normalizeBreakParticipants(
+      previousBreakMeta.stage_participants,
+      {
+        dedupeParticipants: true,
+      }
+    )
     const previousStageParticipants =
       previousStageParticipantsRaw.length > 0
         ? previousStageParticipantsRaw
@@ -891,7 +906,9 @@ async function buildBreakTeamDraw(
           stageParticipants = fixedOrdered
           fixedBracketOrderForStage = fixedOrdered
         } else {
-          stageParticipants = [...previousByes, ...winners].sort((left, right) => left.seed - right.seed)
+          stageParticipants = [...previousByes, ...winners].sort(
+            (left, right) => left.seed - right.seed
+          )
         }
         validateBreakParticipants(stageParticipants, validTeamIds)
       } catch (err) {
@@ -909,10 +926,16 @@ async function buildBreakTeamDraw(
     }
     const previousRoundDoc = roundDocs.find((doc: any) => Number(doc.round) === previousRoundNumber)
     const previousBreakEnabled = previousRoundDoc
-      ? isRoundBreakEnabled(previousRoundNumber, asRecord((previousRoundDoc as any).userDefinedData))
+      ? isRoundBreakEnabled(
+          previousRoundNumber,
+          asRecord((previousRoundDoc as any).userDefinedData)
+        )
       : false
     if (previousBreakEnabled) {
-      throw toHttpError(400, 'No previous break stage metadata found. Configure participants manually.')
+      throw toHttpError(
+        400,
+        'No previous break stage metadata found. Configure participants manually.'
+      )
     }
     stageParticipants = await deriveBreakParticipantsFromStandings({
       tournamentId,
@@ -976,7 +999,9 @@ async function buildBreakTeamDraw(
     }
   })
 
-  const stageParticipantsForMeta = [...stageParticipants].sort((left, right) => left.seed - right.seed)
+  const stageParticipantsForMeta = [...stageParticipants].sort(
+    (left, right) => left.seed - right.seed
+  )
 
   const userDefinedData = {
     team_allocation_algorithm: 'break',
@@ -1100,13 +1125,13 @@ async function buildAllocationContext(
       ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
       : null
   const scoreWeights = normalizeScoreWeights(styleOption?.score_weights ?? styleDoc?.score_weights)
-  const teamNum = styleOption?.team_num ?? styleDoc?.team_num ?? 2
+  const teamNum = normalizeTeamNum(styleOption?.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
   const config = {
     name: tournament.name,
     style,
-    preev_weights:
-      (tournament as any).preev_weights ?? (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
+    preev_weights: (tournament as any).preev_weights ??
+      (tournament.options as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0],
     institution_priority_map: {} as Record<number, number>,
     institution_category_map: {} as Record<number, string>,
   }
@@ -1138,7 +1163,11 @@ async function buildAllocationContext(
   const roundsNeeded = Array.from(new Set([...roundsForCompile, round])).sort((a, b) => a - b)
 
   teams.forEach((team) => {
-    validateEntityDetailsShape('team', `${String((team as any)._id ?? '') || 'unknown team'}`, (team as any).details)
+    validateEntityDetailsShape(
+      'team',
+      `${String((team as any)._id ?? '') || 'unknown team'}`,
+      (team as any).details
+    )
   })
   adjudicators.forEach((adj) => {
     validateEntityDetailsShape(
@@ -1181,7 +1210,10 @@ async function buildAllocationContext(
     preev: (adj as any).preev ?? 0,
     user_defined_data:
       (adj as any).userDefinedData && typeof (adj as any).userDefinedData === 'object'
-        ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<string, unknown>)
+        ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<
+            string,
+            unknown
+          >)
         : {},
     details: buildDetailsForRounds(
       (adj as any).details,
@@ -1315,10 +1347,16 @@ function mapAllocationOut(
     return {
       ...square,
       teams: mappedTeams,
-      chairs: (square.chairs || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-      panels: (square.panels || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-      trainees: (square.trainees || []).map((id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)),
-      venue: square.venue ? venueMaps.reverse.get(square.venue) ?? String(square.venue) : null,
+      chairs: (square.chairs || []).map(
+        (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+      ),
+      panels: (square.panels || []).map(
+        (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+      ),
+      trainees: (square.trainees || []).map(
+        (id: number) => adjudicatorMaps.reverse.get(id) ?? String(id)
+      ),
+      venue: square.venue ? (venueMaps.reverse.get(square.venue) ?? String(square.venue)) : null,
     }
   })
 }
@@ -1406,44 +1444,44 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, context)).draw
         : teamAlgorithm === 'min_warnings'
-        ? allocations.teams.min_warnings.get(
-            round,
-            context.teamInstances,
-            context.compiledTeamResults,
-            teamAlgorithmOptions,
-            context.config
-          )
-        : teamAlgorithm === 'strict'
-        ? allocations.teams.strict.get(
-            round,
-            context.teamInstances,
-            context.compiledTeamResults,
-            context.config,
-            teamAlgorithmOptions
-          )
-        : teamAlgorithm === 'powerpair'
-          ? allocations.teams.powerpair.get(
+          ? allocations.teams.min_warnings.get(
               round,
               context.teamInstances,
               context.compiledTeamResults,
               teamAlgorithmOptions,
               context.config
             )
-          : teamAlgorithm === 'random'
-            ? allocations.teams.random.get(
+          : teamAlgorithm === 'strict'
+            ? allocations.teams.strict.get(
                 round,
                 context.teamInstances,
                 context.compiledTeamResults,
-                teamAlgorithmOptions,
-                context.config
+                context.config,
+                teamAlgorithmOptions
               )
-          : allocations.teams.standard.get(
-              round,
-              context.teamInstances,
-              context.compiledTeamResults,
-              teamAlgorithmOptions,
-              context.config
-            )
+            : teamAlgorithm === 'powerpair'
+              ? allocations.teams.powerpair.get(
+                  round,
+                  context.teamInstances,
+                  context.compiledTeamResults,
+                  teamAlgorithmOptions,
+                  context.config
+                )
+              : teamAlgorithm === 'random'
+                ? allocations.teams.random.get(
+                    round,
+                    context.teamInstances,
+                    context.compiledTeamResults,
+                    teamAlgorithmOptions,
+                    context.config
+                  )
+                : allocations.teams.standard.get(
+                    round,
+                    context.teamInstances,
+                    context.compiledTeamResults,
+                    teamAlgorithmOptions,
+                    context.config
+                  )
     if (teamAlgorithm !== 'break' && (await isBreakRoundEnabled(tournamentId, round))) {
       draw = rebalanceBreakRoundTeamSides(draw, context.compiledTeamResults, round)
     }
@@ -1456,7 +1494,11 @@ export const createTeamAllocation: RequestHandler = async (req, res, next) => {
     )
     const userDefinedData = extractDrawUserDefinedData(draw)
     res.json({
-      data: { r: round, allocation: mappedAllocation, ...(userDefinedData ? { userDefinedData } : {}) },
+      data: {
+        r: round,
+        allocation: mappedAllocation,
+        ...(userDefinedData ? { userDefinedData } : {}),
+      },
       errors: [],
     })
   } catch (err: any) {
@@ -1590,7 +1632,13 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
     const numbersOfAdjudicators = validatedOptions.numbers_of_adjudicators
     const allocationSquares = baseDraw.allocation?.length ?? 0
     const availableAdjudicators = filterAvailable(context.adjudicatorInstances, round)
-    if (!hasSufficientAdjudicators(availableAdjudicators.length, allocationSquares, numbersOfAdjudicators)) {
+    if (
+      !hasSufficientAdjudicators(
+        availableAdjudicators.length,
+        allocationSquares,
+        numbersOfAdjudicators
+      )
+    ) {
       const mappedAllocation = mapAllocationOut(
         baseDraw.allocation || [],
         context.teamMaps,
@@ -1641,17 +1689,17 @@ export const createAdjudicatorAllocation: RequestHandler = async (req, res, next
                 context.config,
                 adjudicatorOptions
               )
-          : allocations.adjudicators.standard.get(
-              round,
-              baseDraw,
-              context.adjudicatorInstances,
-              context.teamInstances,
-              context.compiledTeamResults,
-              context.compiledAdjudicatorResults,
-              numbersOfAdjudicators,
-              context.config,
-              adjudicatorOptions
-            )
+            : allocations.adjudicators.standard.get(
+                round,
+                baseDraw,
+                context.adjudicatorInstances,
+                context.teamInstances,
+                context.compiledTeamResults,
+                context.compiledAdjudicatorResults,
+                numbersOfAdjudicators,
+                context.config,
+                adjudicatorOptions
+              )
 
     const mappedAllocation = mapAllocationOut(
       adjudicatorDraw.allocation || [],
@@ -1703,7 +1751,11 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
     }
 
     const context = await buildAllocationContext(tournamentId, round, rounds, snapshotId)
-    const normalized = normalizeAllocationWithAdjudicators(allocation, context.teamMaps, context.adjudicatorMaps)
+    const normalized = normalizeAllocationWithAdjudicators(
+      allocation,
+      context.teamMaps,
+      context.adjudicatorMaps
+    )
     const validatedOptions = validateAllocationOptions(options)
     const venueOptions = validatedOptions.venue_allocation_algorithm_options
 
@@ -1762,8 +1814,15 @@ export const createVenueAllocation: RequestHandler = async (req, res, next) => {
 
 export const createAllocation: RequestHandler = async (req, res, next) => {
   try {
-    const { tournamentId, round, options, rounds, snapshotId, snapshotIdTeams, snapshotIdAdjudicators } =
-      req.body as {
+    const {
+      tournamentId,
+      round,
+      options,
+      rounds,
+      snapshotId,
+      snapshotIdTeams,
+      snapshotIdAdjudicators,
+    } = req.body as {
       tournamentId: string
       round: number
       options?: Record<string, any>
@@ -1788,7 +1847,12 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
     const adjudicatorContext =
       adjudicatorSnapshotId === teamSnapshotId
         ? teamContext
-        : await buildAllocationContext(tournamentId, round, rounds, adjudicatorSnapshotId || undefined)
+        : await buildAllocationContext(
+            tournamentId,
+            round,
+            rounds,
+            adjudicatorSnapshotId || undefined
+          )
     const validatedOptions = validateAllocationOptions(options)
 
     const teamAlgorithm = validatedOptions.team_allocation_algorithm
@@ -1802,44 +1866,44 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
       teamAlgorithm === 'break'
         ? (await buildBreakTeamDraw(tournamentId, round, teamContext)).draw
         : teamAlgorithm === 'min_warnings'
-        ? allocations.teams.min_warnings.get(
-            round,
-            teamContext.teamInstances,
-            teamContext.compiledTeamResults,
-            teamAlgorithmOptions,
-            teamContext.config
-          )
-        : teamAlgorithm === 'strict'
-        ? allocations.teams.strict.get(
-            round,
-            teamContext.teamInstances,
-            teamContext.compiledTeamResults,
-            teamContext.config,
-            teamAlgorithmOptions
-          )
-        : teamAlgorithm === 'powerpair'
-          ? allocations.teams.powerpair.get(
+          ? allocations.teams.min_warnings.get(
               round,
               teamContext.teamInstances,
               teamContext.compiledTeamResults,
               teamAlgorithmOptions,
               teamContext.config
             )
-          : teamAlgorithm === 'random'
-            ? allocations.teams.random.get(
+          : teamAlgorithm === 'strict'
+            ? allocations.teams.strict.get(
                 round,
                 teamContext.teamInstances,
                 teamContext.compiledTeamResults,
-                teamAlgorithmOptions,
-                teamContext.config
+                teamContext.config,
+                teamAlgorithmOptions
               )
-          : allocations.teams.standard.get(
-              round,
-              teamContext.teamInstances,
-              teamContext.compiledTeamResults,
-              teamAlgorithmOptions,
-              teamContext.config
-            )
+            : teamAlgorithm === 'powerpair'
+              ? allocations.teams.powerpair.get(
+                  round,
+                  teamContext.teamInstances,
+                  teamContext.compiledTeamResults,
+                  teamAlgorithmOptions,
+                  teamContext.config
+                )
+              : teamAlgorithm === 'random'
+                ? allocations.teams.random.get(
+                    round,
+                    teamContext.teamInstances,
+                    teamContext.compiledTeamResults,
+                    teamAlgorithmOptions,
+                    teamContext.config
+                  )
+                : allocations.teams.standard.get(
+                    round,
+                    teamContext.teamInstances,
+                    teamContext.compiledTeamResults,
+                    teamAlgorithmOptions,
+                    teamContext.config
+                  )
     if (teamAlgorithm !== 'break' && (await isBreakRoundEnabled(tournamentId, round))) {
       draw = rebalanceBreakRoundTeamSides(draw, teamContext.compiledTeamResults, round)
     }
@@ -1853,7 +1917,11 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
     const availableAdjudicators = filterAvailable(adjudicatorContext.adjudicatorInstances, round)
     if (
       adjudicatorContext.adjudicatorInstances.length > 0 &&
-      hasSufficientAdjudicators(availableAdjudicators.length, allocationSquares, numbersOfAdjudicators)
+      hasSufficientAdjudicators(
+        availableAdjudicators.length,
+        allocationSquares,
+        numbersOfAdjudicators
+      )
     ) {
       adjudicatorDraw =
         adjudicatorAlgorithm === 'traditional'
@@ -1892,17 +1960,17 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
                   adjudicatorContext.config,
                   adjudicatorOptions
                 )
-            : allocations.adjudicators.standard.get(
-                round,
-                draw,
-                adjudicatorContext.adjudicatorInstances,
-                adjudicatorContext.teamInstances,
-                adjudicatorContext.compiledTeamResults,
-                adjudicatorContext.compiledAdjudicatorResults,
-                numbersOfAdjudicators,
-                adjudicatorContext.config,
-                adjudicatorOptions
-              )
+              : allocations.adjudicators.standard.get(
+                  round,
+                  draw,
+                  adjudicatorContext.adjudicatorInstances,
+                  adjudicatorContext.teamInstances,
+                  adjudicatorContext.compiledTeamResults,
+                  adjudicatorContext.compiledAdjudicatorResults,
+                  numbersOfAdjudicators,
+                  adjudicatorContext.config,
+                  adjudicatorOptions
+                )
     }
 
     const venueOptions = validatedOptions.venue_allocation_algorithm_options
@@ -1926,7 +1994,11 @@ export const createAllocation: RequestHandler = async (req, res, next) => {
     )
     const userDefinedData = extractDrawUserDefinedData(draw)
     res.json({
-      data: { r: round, allocation: mappedAllocation, ...(userDefinedData ? { userDefinedData } : {}) },
+      data: {
+        r: round,
+        allocation: mappedAllocation,
+        ...(userDefinedData ? { userDefinedData } : {}),
+      },
       errors: [],
     })
   } catch (err: any) {

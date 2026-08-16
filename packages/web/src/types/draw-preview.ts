@@ -1,9 +1,11 @@
 export type DrawPreviewSubmissionRow = {
   key: string
   submissionId?: string
+  submittedById?: string
   submittedByLabel: string
   summaryLabel: string
   submittedAtLabel: string
+  submissionSpeedLabel?: string
 }
 
 export type DrawPreviewSubmissionDetail = {

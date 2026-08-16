@@ -5,6 +5,7 @@ import { StyleModel } from '../models/style.js'
 import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { buildZip } from '../services/zip.js'
+import { escapeCsvCell } from '../services/csv.service.js'
 import { badRequest, notFound } from './shared/http-errors.js'
 
 type CsvRecord = Record<string, string>
@@ -21,13 +22,6 @@ function toCsvScalar(value: unknown): string {
   if (value instanceof Date) return value.toISOString()
   if (Array.isArray(value) || isPlainObject(value)) return JSON.stringify(value)
   return String(value)
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
 }
 
 function flattenObject(value: Record<string, unknown>, prefix = '', out: CsvRecord = {}): CsvRecord {
@@ -65,7 +59,7 @@ function buildCsv(rows: unknown[]): string {
     lines.push(
       headers
         .map((header) => {
-          return escapeCsv(record[header] ?? '')
+          return escapeCsvCell(record[header] ?? '')
         })
         .join(',')
     )

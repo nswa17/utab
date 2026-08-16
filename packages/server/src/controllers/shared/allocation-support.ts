@@ -35,6 +35,13 @@ export function normalizeScoreWeights(scoreWeights: unknown): number[] {
   return [1]
 }
 
+export function normalizeTeamNum(value: unknown, fallback = 2): number {
+  const parsed = Number(value)
+  if (Number.isInteger(parsed) && parsed >= 2) return parsed
+  const parsedFallback = Number(fallback)
+  return Number.isInteger(parsedFallback) && parsedFallback >= 2 ? parsedFallback : 2
+}
+
 export function normalizeInstitutionPriority(value: unknown): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0) return 1

@@ -1189,6 +1189,7 @@ import {
   validateAwardSelectionCounts,
 } from '@/utils/award-selection'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { resolveTournamentStyle } from '@/utils/tournament-style'
 import { toBooleanArray, toStringArray } from '@/utils/array-coercion'
 import { createLatestRequestGate } from '@/utils/latest-request'
 import { numericInputText } from '@/utils/numeric-input'
@@ -1342,7 +1343,12 @@ const sortedRounds = computed(() => rounds.rounds.slice().sort((a, b) => a.round
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
-const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const style = computed(() =>
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
+)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 const contextRoundLabel = computed(() => {
@@ -2232,7 +2238,7 @@ function roundScoreSettings(roundNumber: number) {
   return {
     noSpeakerScore: found?.userDefinedData?.no_speaker_score === true,
     scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
-    allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false,
+    allowLowTieWin: found?.userDefinedData?.allow_low_tie_win === true,
     allowWinnerScoreMismatch: roundAllowsWinnerScoreMismatch(found?.userDefinedData),
     awardSelectionRules: resolveRoundAwardSelectionValidationRules(found?.userDefinedData),
   }

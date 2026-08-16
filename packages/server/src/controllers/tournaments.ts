@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { TournamentModel } from '../models/tournament.js'
+import { StyleModel } from '../models/style.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
 import { getAuthenticatedActorId, getAuthenticatedActorRole } from '../middleware/auth.js'
@@ -187,6 +188,11 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       res.status(400).json({ data: null, errors: [{ name: 'ValidationError', message: mergedAuth.error }] })
       return
     }
+    const styleExists = await StyleModel.exists({ id: style }).exec()
+    if (!styleExists) {
+      badRequest(res, 'Style not found')
+      return
+    }
 
     const created = await TournamentModel.create({
       name,
@@ -201,14 +207,38 @@ export const createTournament: RequestHandler = async (req, res, next) => {
     })
     if (req.session?.userId) {
       const tournamentId = created._id.toString()
-      await Promise.all([
-        UserModel.updateOne({ _id: req.session.userId }, { $addToSet: { tournaments: tournamentId } }).exec(),
-        TournamentMemberModel.updateOne(
-          { tournamentId, userId: req.session.userId },
-          { $setOnInsert: { role: 'organizer' } },
-          { upsert: true }
-        ).exec(),
-      ])
+      try {
+        await Promise.all([
+          UserModel.updateOne(
+            { _id: req.session.userId },
+            { $addToSet: { tournaments: tournamentId } }
+          ).exec(),
+          TournamentMemberModel.updateOne(
+            { tournamentId, userId: req.session.userId },
+            { $setOnInsert: { role: 'organizer' } },
+            { upsert: true }
+          ).exec(),
+        ])
+      } catch (membershipError) {
+        const cleanupResults = await Promise.allSettled([
+          TournamentModel.deleteOne({ _id: tournamentId }).exec(),
+          UserModel.updateMany(
+            { _id: req.session.userId },
+            { $pull: { tournaments: tournamentId } }
+          ).exec(),
+          TournamentMemberModel.deleteMany({ tournamentId }).exec(),
+        ])
+        const cleanupErrors = cleanupResults
+          .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+          .map((result) => result.reason)
+        if (cleanupErrors.length > 0) {
+          throw new AggregateError(
+            [membershipError, ...cleanupErrors],
+            `Failed to create and roll back tournament ${tournamentId}`
+          )
+        }
+        throw membershipError
+      }
       const current = req.session.tournaments ?? []
       if (!current.includes(tournamentId)) {
         req.session.tournaments = [...current, tournamentId]
@@ -239,6 +269,13 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
       }
       update.auth = mergedAuth.auth
     }
+    if (Object.prototype.hasOwnProperty.call(update, 'style')) {
+      const styleExists = await StyleModel.exists({ id: Number(update.style) }).exec()
+      if (!styleExists) {
+        badRequest(res, 'Style not found')
+        return
+      }
+    }
 
     const updated = await TournamentModel.findOneAndUpdate(
       { _id: id },
@@ -261,21 +298,95 @@ export const deleteTournament: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
     if (!ensureTournamentId(res, id)) return
-    const deleted = await TournamentModel.findOneAndDelete({ _id: id }).lean().exec()
-    if (!deleted) {
+    const tournament = await TournamentModel.findById(id).lean().exec()
+    if (!tournament) {
       notFound(res, 'Tournament not found')
       return
     }
-    const deletedId = String(deleted._id)
-    await Promise.all([
-      UserModel.updateMany({}, { $pull: { tournaments: deletedId } }).exec(),
+    const deletedId = String(tournament._id)
+    const [memberships, affectedUsers] = await Promise.all([
+      TournamentMemberModel.find({ tournamentId: deletedId }).lean().exec(),
+      UserModel.find({ tournaments: deletedId }).select({ _id: 1 }).lean().exec(),
+    ])
+
+    const restoreCentralMetadata = async () => {
+      const restoreTasks: Promise<unknown>[] = [
+        TournamentModel.replaceOne({ _id: tournament._id }, tournament, { upsert: true }).exec(),
+      ]
+      const affectedUserIds = affectedUsers.map((user: any) => user._id)
+      if (affectedUserIds.length > 0) {
+        restoreTasks.push(
+          UserModel.updateMany(
+            { _id: { $in: affectedUserIds } },
+            { $addToSet: { tournaments: deletedId } }
+          ).exec()
+        )
+      }
+      if (memberships.length > 0) {
+        restoreTasks.push(
+          TournamentMemberModel.bulkWrite(
+            memberships.map((membership: any) => ({
+              replaceOne: {
+                filter: { _id: membership._id },
+                replacement: membership,
+                upsert: true,
+              },
+            })),
+            { ordered: true }
+          )
+        )
+      }
+      const restoreResults = await Promise.allSettled(restoreTasks)
+      const restoreErrors = restoreResults
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (restoreErrors.length > 0) {
+        throw new AggregateError(restoreErrors, `Failed to restore tournament ${deletedId}`)
+      }
+    }
+
+    const tournamentDeleteResult = await TournamentModel.deleteOne({ _id: tournament._id }).exec()
+    if (Number(tournamentDeleteResult.deletedCount ?? 0) !== 1) {
+      notFound(res, 'Tournament not found')
+      return
+    }
+
+    const cleanupResults = await Promise.allSettled([
+      UserModel.updateMany(
+        { _id: { $in: affectedUsers.map((user: any) => user._id) } },
+        { $pull: { tournaments: deletedId } }
+      ).exec(),
       TournamentMemberModel.deleteMany({ tournamentId: deletedId }).exec(),
     ])
+    const cleanupErrors = cleanupResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (cleanupErrors.length > 0) {
+      try {
+        await restoreCentralMetadata()
+      } catch (restoreError) {
+        cleanupErrors.push(restoreError)
+      }
+      throw new AggregateError(cleanupErrors, `Failed to delete tournament ${deletedId}`)
+    }
+
+    try {
+      await dropTournamentDatabase(deletedId)
+    } catch (dropError) {
+      try {
+        await restoreCentralMetadata()
+      } catch (restoreError) {
+        throw new AggregateError(
+          [dropError, restoreError],
+          `Failed to drop and restore tournament ${deletedId}`
+        )
+      }
+      throw dropError
+    }
     if (req.session?.tournaments) {
       req.session.tournaments = req.session.tournaments.filter((t) => String(t) !== deletedId)
     }
-    await dropTournamentDatabase(deletedId)
-    res.json({ data: sanitizeTournamentForAdmin(deleted), errors: [] })
+    res.json({ data: sanitizeTournamentForAdmin(tournament), errors: [] })
   } catch (err) {
     next(err)
   }

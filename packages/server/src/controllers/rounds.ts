@@ -1,7 +1,14 @@
 import type { RequestHandler } from 'express'
+import type { Connection } from 'mongoose'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { getDrawModel } from '../models/draw.js'
+import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
+import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
+import { getRawTeamResultModel } from '../models/raw-team-result.js'
+import { getResultModel } from '../models/result.js'
 import { getRoundModel } from '../models/round.js'
+import { getSubmissionModel } from '../models/submission.js'
 import { getTeamModel } from '../models/team.js'
 import { getVenueModel } from '../models/venue.js'
 import { TournamentModel } from '../models/tournament.js'
@@ -46,6 +53,7 @@ type RoundDefaults = {
     poi_min_count: number
     poi_max_count: number
     allow_low_tie_win: boolean
+    ballot_submitter_roles: BallotSubmitterRole[]
   }
   break: {
     source: 'submissions' | 'raw'
@@ -60,9 +68,41 @@ type RoundDefaults = {
   }
 }
 
+type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
+}
+
+function normalizeBallotSubmitterRoles(
+  value: unknown,
+  fallback: BallotSubmitterRole[] = DEFAULT_BALLOT_SUBMITTER_ROLES
+): BallotSubmitterRole[] {
+  if (!Array.isArray(value)) return [...fallback]
+  const roles: BallotSubmitterRole[] = []
+  value.forEach((entry) => {
+    const role = String(entry ?? '')
+      .trim()
+      .toLowerCase()
+    if (role !== 'chair' && role !== 'panel' && role !== 'trainee') return
+    if (!roles.includes(role)) roles.push(role)
+  })
+  return roles
+}
+
+function resolveBallotSubmitterRolesFromRecord(
+  source: Record<string, unknown>,
+  fallback: BallotSubmitterRole[] = DEFAULT_BALLOT_SUBMITTER_ROLES
+): BallotSubmitterRole[] {
+  if (Array.isArray(source.ballot_submitter_roles)) {
+    return normalizeBallotSubmitterRoles(source.ballot_submitter_roles, fallback)
+  }
+  if (typeof source.allow_panel_ballot_submission === 'boolean') {
+    return source.allow_panel_ballot_submission ? ['chair', 'panel'] : ['chair']
+  }
+  return [...fallback]
 }
 
 function isRoundHidden(round: unknown): boolean {
@@ -74,11 +114,7 @@ function isRoundHidden(round: unknown): boolean {
 function asRoundList(value: unknown): number[] {
   if (!Array.isArray(value)) return []
   return Array.from(
-    new Set(
-      value
-        .map((item) => Number(item))
-        .filter((item) => Number.isInteger(item) && item >= 1)
-    )
+    new Set(value.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 1))
   ).sort((left, right) => left - right)
 }
 
@@ -139,7 +175,8 @@ function defaultRoundDefaults(): RoundDefaults {
       poi: true,
       best: true,
       ...awardSelection,
-      allow_low_tie_win: true,
+      allow_low_tie_win: false,
+      ballot_submitter_roles: [...DEFAULT_BALLOT_SUBMITTER_ROLES],
     },
     break: {
       source: 'submissions',
@@ -189,13 +226,23 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
         typeof userDefinedSource.score_by_matter_manner === 'boolean'
           ? userDefinedSource.score_by_matter_manner
           : fallback.userDefinedData.score_by_matter_manner,
-      poi: typeof userDefinedSource.poi === 'boolean' ? userDefinedSource.poi : fallback.userDefinedData.poi,
-      best: typeof userDefinedSource.best === 'boolean' ? userDefinedSource.best : fallback.userDefinedData.best,
+      poi:
+        typeof userDefinedSource.poi === 'boolean'
+          ? userDefinedSource.poi
+          : fallback.userDefinedData.poi,
+      best:
+        typeof userDefinedSource.best === 'boolean'
+          ? userDefinedSource.best
+          : fallback.userDefinedData.best,
       ...awardSelection,
       allow_low_tie_win:
         typeof userDefinedSource.allow_low_tie_win === 'boolean'
           ? userDefinedSource.allow_low_tie_win
           : fallback.userDefinedData.allow_low_tie_win,
+      ballot_submitter_roles: resolveBallotSubmitterRolesFromRecord(
+        userDefinedSource,
+        fallback.userDefinedData.ballot_submitter_roles
+      ),
     },
     break: {
       source: breakSource.source === 'raw' ? 'raw' : fallback.break.source,
@@ -222,12 +269,19 @@ function normalizeRoundDefaults(input: unknown): RoundDefaults {
   }
 }
 
-function buildRoundUserDefinedFromDefaults(defaults: RoundDefaults, input: unknown): Record<string, unknown> {
+function buildRoundUserDefinedFromDefaults(
+  defaults: RoundDefaults,
+  input: unknown
+): Record<string, unknown> {
   const current = asRecord(input)
   const merged: Record<string, unknown> = {
     ...defaults.userDefinedData,
     ...current,
   }
+  merged.ballot_submitter_roles = resolveBallotSubmitterRolesFromRecord(
+    merged,
+    defaults.userDefinedData.ballot_submitter_roles
+  )
   Object.assign(merged, buildAwardSelectionUserDefinedData(merged))
   const breakRoundEnabled = merged.break_round === true
   merged.break_round = breakRoundEnabled
@@ -268,6 +322,7 @@ function applyBreakConstraintsToUserDefined(input: unknown): Record<string, unkn
     ...current,
     break_round: breakRoundEnabled,
     break: sanitizeRoundBreakConfig(current.break),
+    ballot_submitter_roles: resolveBallotSubmitterRolesFromRecord(current),
   }
   if (Object.prototype.hasOwnProperty.call(current, 'compile')) {
     next.compile = sanitizeRoundCompileConfig(current.compile)
@@ -336,7 +391,9 @@ function normalizeVenueTemplate(value: unknown): VenueTemplate {
 }
 
 function sortDetailsByRound(details: Array<Record<string, unknown>>) {
-  return details.sort((left, right) => Number((left as any)?.r ?? 0) - Number((right as any)?.r ?? 0))
+  return details.sort(
+    (left, right) => Number((left as any)?.r ?? 0) - Number((right as any)?.r ?? 0)
+  )
 }
 
 function upsertTeamRoundDetail(
@@ -346,14 +403,18 @@ function upsertTeamRoundDetail(
   availableOverride?: boolean
 ) {
   const template = normalizeTeamTemplate(templateValue)
-  const list = Array.isArray(details) ? details.map((detail) => ({ ...(detail as Record<string, unknown>) })) : []
+  const list = Array.isArray(details)
+    ? details.map((detail) => ({ ...(detail as Record<string, unknown>) }))
+    : []
   const index = list.findIndex((detail) => Number((detail as any)?.r) === roundNumber)
   const current = index >= 0 ? asRecord(list[index]) : {}
   const currentConflicts = normalizeStringIdList(current.conflicts)
   const currentSpeakers = normalizeStringIdList(current.speakers)
   const payload = {
     r: roundNumber,
-    available: availableOverride ?? (typeof current.available === 'boolean' ? current.available : template.available),
+    available:
+      availableOverride ??
+      (typeof current.available === 'boolean' ? current.available : template.available),
     conflicts: currentConflicts.length > 0 ? currentConflicts : [...template.conflicts],
     speakers: currentSpeakers.length > 0 ? currentSpeakers : [...template.speakers],
   }
@@ -365,9 +426,15 @@ function upsertTeamRoundDetail(
   return sortDetailsByRound(list)
 }
 
-function upsertAdjudicatorRoundDetail(details: unknown, roundNumber: number, templateValue: unknown) {
+function upsertAdjudicatorRoundDetail(
+  details: unknown,
+  roundNumber: number,
+  templateValue: unknown
+) {
   const template = normalizeAdjudicatorTemplate(templateValue)
-  const list = Array.isArray(details) ? details.map((detail) => ({ ...(detail as Record<string, unknown>) })) : []
+  const list = Array.isArray(details)
+    ? details.map((detail) => ({ ...(detail as Record<string, unknown>) }))
+    : []
   const index = list.findIndex((detail) => Number((detail as any)?.r) === roundNumber)
   const current = index >= 0 ? asRecord(list[index]) : {}
   const currentConflicts = normalizeStringIdList(current.conflicts)
@@ -376,7 +443,8 @@ function upsertAdjudicatorRoundDetail(details: unknown, roundNumber: number, tem
     r: roundNumber,
     available: typeof current.available === 'boolean' ? current.available : template.available,
     conflicts: currentConflicts.length > 0 ? currentConflicts : [...template.conflicts],
-    conflict_teams: currentConflictTeams.length > 0 ? currentConflictTeams : [...template.conflict_teams],
+    conflict_teams:
+      currentConflictTeams.length > 0 ? currentConflictTeams : [...template.conflict_teams],
   }
   if (index >= 0) {
     list[index] = payload
@@ -388,7 +456,9 @@ function upsertAdjudicatorRoundDetail(details: unknown, roundNumber: number, tem
 
 function upsertVenueRoundDetail(details: unknown, roundNumber: number, templateValue: unknown) {
   const template = normalizeVenueTemplate(templateValue)
-  const list = Array.isArray(details) ? details.map((detail) => ({ ...(detail as Record<string, unknown>) })) : []
+  const list = Array.isArray(details)
+    ? details.map((detail) => ({ ...(detail as Record<string, unknown>) }))
+    : []
   const index = list.findIndex((detail) => Number((detail as any)?.r) === roundNumber)
   const current = index >= 0 ? asRecord(list[index]) : {}
   const priorityRaw = Number(current.priority)
@@ -416,7 +486,9 @@ async function syncEntityRoundDetailsForCreate(
   tournamentId: string,
   createdRounds: number[]
 ): Promise<void> {
-  const uniqueRounds = Array.from(new Set(createdRounds.filter((round) => Number.isInteger(round) && round >= 1)))
+  const uniqueRounds = Array.from(
+    new Set(createdRounds.filter((round) => Number.isInteger(round) && round >= 1))
+  )
   if (uniqueRounds.length === 0) return
 
   const connection = await getTournamentConnection(tournamentId)
@@ -544,6 +616,214 @@ async function syncEntityRoundDetailsForDelete(
   ])
 }
 
+async function deleteRoundDependencies(
+  connection: Connection,
+  tournamentId: string,
+  rounds: number[]
+): Promise<void> {
+  const uniqueRounds = Array.from(
+    new Set(rounds.filter((round) => Number.isInteger(round) && round >= 1))
+  )
+  if (uniqueRounds.length === 0) return
+
+  await Promise.all([
+    getDrawModel(connection)
+      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+      .exec(),
+    getSubmissionModel(connection)
+      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+      .exec(),
+    getResultModel(connection)
+      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+      .exec(),
+    getRawTeamResultModel(connection)
+      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+      .exec(),
+    getRawSpeakerResultModel(connection)
+      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+      .exec(),
+    getRawAdjudicatorResultModel(connection)
+      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+      .exec(),
+  ])
+}
+
+type RoundMove = { from: number; to: number }
+
+type RoundReferenceRewrite = {
+  movedRoundByNumber: ReadonlyMap<number, number>
+  deletedRounds: ReadonlySet<number>
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function rewriteSourceRoundList(
+  value: unknown[],
+  rewrite: RoundReferenceRewrite
+): { value: number[]; changed: boolean } {
+  const original = asRoundList(value)
+  const next = Array.from(
+    new Set(
+      original
+        .filter((round) => !rewrite.deletedRounds.has(round))
+        .map((round) => rewrite.movedRoundByNumber.get(round) ?? round)
+        .filter((round) => Number.isInteger(round) && round >= 1)
+    )
+  ).sort((left, right) => left - right)
+  const changed =
+    original.length !== next.length || original.some((round, index) => round !== next[index])
+  return { value: next, changed }
+}
+
+function rewriteNestedRoundReferences(
+  value: unknown,
+  rewrite: RoundReferenceRewrite
+): { value: unknown; changed: boolean } {
+  if (Array.isArray(value)) {
+    let changed = false
+    const next = value.map((item) => {
+      const rewritten = rewriteNestedRoundReferences(item, rewrite)
+      changed ||= rewritten.changed
+      return rewritten.value
+    })
+    return changed ? { value: next, changed: true } : { value, changed: false }
+  }
+  if (!isPlainRecord(value)) return { value, changed: false }
+
+  let changed = false
+  const next: Record<string, unknown> = { ...value }
+  for (const [key, child] of Object.entries(value)) {
+    const rewritten =
+      key === 'source_rounds' && Array.isArray(child)
+        ? rewriteSourceRoundList(child, rewrite)
+        : rewriteNestedRoundReferences(child, rewrite)
+    if (!rewritten.changed) continue
+    next[key] = rewritten.value
+    changed = true
+  }
+  return changed ? { value: next, changed: true } : { value, changed: false }
+}
+
+async function rewriteStoredRoundReferences(
+  connection: Connection,
+  tournamentId: string,
+  moves: RoundMove[] = [],
+  deletedRounds: number[] = []
+): Promise<void> {
+  const rewrite: RoundReferenceRewrite = {
+    movedRoundByNumber: new Map(moves.map((move) => [move.from, move.to])),
+    deletedRounds: new Set(deletedRounds),
+  }
+  if (rewrite.movedRoundByNumber.size === 0 && rewrite.deletedRounds.size === 0) return
+
+  const RoundModel = getRoundModel(connection)
+  const DrawModel = getDrawModel(connection)
+  const [rounds, draws, tournament] = await Promise.all([
+    RoundModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
+    DrawModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
+    TournamentModel.findById(tournamentId).select({ user_defined_data: 1 }).lean().exec(),
+  ])
+
+  const roundOps = rounds.flatMap((round: any) => {
+    const rewritten = rewriteNestedRoundReferences(round?.userDefinedData, rewrite)
+    return rewritten.changed
+      ? [
+          {
+            updateOne: {
+              filter: { _id: round._id, tournamentId },
+              update: { $set: { userDefinedData: rewritten.value } },
+            },
+          },
+        ]
+      : []
+  })
+  const drawOps = draws.flatMap((draw: any) => {
+    const rewritten = rewriteNestedRoundReferences(draw?.userDefinedData, rewrite)
+    return rewritten.changed
+      ? [
+          {
+            updateOne: {
+              filter: { _id: draw._id, tournamentId },
+              update: { $set: { userDefinedData: rewritten.value }, $inc: { __v: 1 } },
+            },
+          },
+        ]
+      : []
+  })
+  const tournamentRewrite = rewriteNestedRoundReferences(
+    (tournament as any)?.user_defined_data,
+    rewrite
+  )
+
+  await Promise.all([
+    roundOps.length > 0 ? RoundModel.bulkWrite(roundOps, { ordered: true }) : Promise.resolve(),
+    drawOps.length > 0 ? DrawModel.bulkWrite(drawOps, { ordered: true }) : Promise.resolve(),
+    tournament && tournamentRewrite.changed
+      ? TournamentModel.updateOne(
+          { _id: tournamentId },
+          { $set: { user_defined_data: tournamentRewrite.value } }
+        ).exec()
+      : Promise.resolve(),
+  ])
+}
+
+async function moveRoundReferences(
+  connection: Connection,
+  tournamentId: string,
+  moves: RoundMove[]
+): Promise<void> {
+  for (const move of moves) {
+    await Promise.all([
+      getDrawModel(connection)
+        .updateMany(
+          { tournamentId, round: move.from },
+          { $set: { round: move.to }, $inc: { __v: 1 } }
+        )
+        .exec(),
+      getSubmissionModel(connection)
+        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
+        .exec(),
+      getResultModel(connection)
+        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
+        .exec(),
+      getRawTeamResultModel(connection)
+        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .exec(),
+      getRawSpeakerResultModel(connection)
+        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .exec(),
+      getRawAdjudicatorResultModel(connection)
+        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .exec(),
+      getTeamModel(connection)
+        .updateMany(
+          { tournamentId, 'details.r': move.from },
+          { $set: { 'details.$[detail].r': move.to } },
+          { arrayFilters: [{ 'detail.r': move.from }] }
+        )
+        .exec(),
+      getAdjudicatorModel(connection)
+        .updateMany(
+          { tournamentId, 'details.r': move.from },
+          { $set: { 'details.$[detail].r': move.to } },
+          { arrayFilters: [{ 'detail.r': move.from }] }
+        )
+        .exec(),
+      getVenueModel(connection)
+        .updateMany(
+          { tournamentId, 'details.r': move.from },
+          { $set: { 'details.$[detail].r': move.to } },
+          { arrayFilters: [{ 'detail.r': move.from }] }
+        )
+        .exec(),
+    ])
+  }
+}
+
 function ensureTournamentId(
   res: Parameters<RequestHandler>[1],
   tournamentId?: string
@@ -588,11 +868,16 @@ export const listRounds: RequestHandler = async (req, res, next) => {
     const rounds = await RoundModel.find({ tournamentId }).sort({ round: 1 }).lean().exec()
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const forcePublic =
-      publicParam === '1' || publicParam === 'true' || publicParam === 'yes' || publicParam === 'public'
+      publicParam === '1' ||
+      publicParam === 'true' ||
+      publicParam === 'yes' ||
+      publicParam === 'public'
     const data =
       isAdmin && !forcePublic
         ? rounds
-        : rounds.filter((round) => !isRoundHidden(round)).map((round) => sanitizeRoundForPublic(round))
+        : rounds
+            .filter((round) => !isRoundHidden(round))
+            .map((round) => sanitizeRoundForPublic(round))
     res.json({ data, errors: [] })
   } catch (err) {
     next(err)
@@ -610,14 +895,17 @@ export const getRound: RequestHandler = async (req, res, next) => {
     if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const round = await RoundModel.findById(id).lean().exec()
+    const round = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!round) {
       notFound(res, 'Round not found')
       return
     }
     const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
     const forcePublic =
-      publicParam === '1' || publicParam === 'true' || publicParam === 'yes' || publicParam === 'public'
+      publicParam === '1' ||
+      publicParam === 'true' ||
+      publicParam === 'yes' ||
+      publicParam === 'public'
     if ((!isAdmin || forcePublic) && isRoundHidden(round)) {
       notFound(res, 'Round not found')
       return
@@ -653,6 +941,23 @@ export const createRound: RequestHandler = async (req, res, next) => {
       const roundDefaults = normalizeRoundDefaults(tournamentUserDefined.round_defaults)
       const connection = await getTournamentConnection(tournamentId)
       const RoundModel = getRoundModel(connection)
+      const proposedRounds = payload.map((item) => Number(item.round))
+      if (new Set(proposedRounds).size !== proposedRounds.length) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+        return
+      }
+      const existingConflict = await RoundModel.exists({
+        tournamentId,
+        round: { $in: proposedRounds },
+      }).exec()
+      if (existingConflict) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+        return
+      }
       const preparedPayload = payload.map((item) => {
         const normalizedTournamentBreak = normalizeTournamentBreakConfig(
           Number(item.round),
@@ -674,7 +979,7 @@ export const createRound: RequestHandler = async (req, res, next) => {
           ),
         }
       })
-      const created = await RoundModel.insertMany(preparedPayload, { ordered: false })
+      const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
       await syncEntityRoundDetailsForCreate(
         tournamentId,
         preparedPayload.map((item) => Number(item.round))
@@ -710,7 +1015,10 @@ export const createRound: RequestHandler = async (req, res, next) => {
     const tournament = await TournamentModel.findById(tournamentId).lean().exec()
     const tournamentUserDefined = asRecord((tournament as any)?.user_defined_data)
     const roundDefaults = normalizeRoundDefaults(tournamentUserDefined.round_defaults)
-    const normalizedTournamentBreak = normalizeTournamentBreakConfig(round, tournamentUserDefined.break)
+    const normalizedTournamentBreak = normalizeTournamentBreakConfig(
+      round,
+      tournamentUserDefined.break
+    )
     const defaultsWithTournamentBreak: RoundDefaults = {
       ...roundDefaults,
       break: {
@@ -769,26 +1077,94 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
     }>
     const tournamentId = requireSingleTournamentPayload(res, payload)
     if (!tournamentId) return
+    if (payload.some((item) => !isValidObjectId(item.id))) {
+      badRequest(res, 'Invalid round id')
+      return
+    }
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const ids = payload.map((item) => item.id)
-    const beforeDocs = await RoundModel.find({ _id: { $in: ids }, tournamentId })
+    const ids = payload.map((item) => String(item.id))
+    if (new Set(ids).size !== ids.length) {
+      badRequest(res, 'Bulk update ids must be unique')
+      return
+    }
+    const allRoundDocs = await RoundModel.find({ tournamentId })
       .select({ _id: 1, round: 1 })
       .lean()
       .exec()
+    const beforeDocs = allRoundDocs.filter((doc: any) => ids.includes(String(doc?._id ?? '')))
+    if (beforeDocs.length !== ids.length) {
+      notFound(res, 'Round not found')
+      return
+    }
     const beforeRoundById = new Map<string, number>(
       beforeDocs.map((doc: any) => [String(doc?._id ?? ''), Number(doc?.round)])
     )
+    const requestedRoundById = new Map(
+      payload
+        .filter((item) => item.round !== undefined)
+        .map((item) => [String(item.id), Number(item.round)])
+    )
+    const finalRoundOwners = new Map<number, string>()
+    for (const doc of allRoundDocs as any[]) {
+      const id = String(doc?._id ?? '')
+      const finalRound = requestedRoundById.get(id) ?? Number(doc?.round)
+      const existingOwner = finalRoundOwners.get(finalRound)
+      if (existingOwner && existingOwner !== id) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+        return
+      }
+      finalRoundOwners.set(finalRound, id)
+    }
+    const changes = payload
+      .map((item, index) => {
+        const previousRound = Number(beforeRoundById.get(String(item.id)))
+        const nextRound = item.round === undefined ? previousRound : Number(item.round)
+        if (previousRound === nextRound) return null
+        return {
+          id: String(item.id),
+          previousRound,
+          nextRound,
+          temporaryRound: -1_000_000_000 - index,
+        }
+      })
+      .filter((change): change is NonNullable<typeof change> => change !== null)
+
+    if (changes.length > 0) {
+      await RoundModel.bulkWrite(
+        changes.map((change) => ({
+          updateOne: {
+            filter: { _id: change.id, tournamentId, round: change.previousRound },
+            update: { $set: { round: change.temporaryRound } },
+          },
+        })),
+        { ordered: true }
+      )
+      await moveRoundReferences(
+        connection,
+        tournamentId,
+        changes.map((change) => ({ from: change.previousRound, to: change.temporaryRound }))
+      )
+      await moveRoundReferences(
+        connection,
+        tournamentId,
+        changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
+      )
+    }
     const ops = payload.map((item) => {
       const update: Record<string, unknown> = {}
       if (item.round !== undefined) update.round = item.round
       if (item.name !== undefined) update.name = item.name
       if (item.motions !== undefined) update.motions = item.motions
       if (item.motionOpened !== undefined) update.motionOpened = item.motionOpened
-      if (item.teamAllocationOpened !== undefined) update.teamAllocationOpened = item.teamAllocationOpened
+      if (item.teamAllocationOpened !== undefined)
+        update.teamAllocationOpened = item.teamAllocationOpened
       if (item.adjudicatorAllocationOpened !== undefined)
         update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
-      if (item.weightsOfAdjudicators !== undefined) update.weightsOfAdjudicators = item.weightsOfAdjudicators
+      if (item.weightsOfAdjudicators !== undefined)
+        update.weightsOfAdjudicators = item.weightsOfAdjudicators
       if (item.userDefinedData !== undefined) {
         update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
       }
@@ -799,25 +1175,17 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
         },
       }
     })
-    await RoundModel.bulkWrite(ops, { ordered: false })
-    const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId }).lean().exec()
-    const addedRounds: number[] = []
-    const removedRounds: number[] = []
-    payload.forEach((item) => {
-      if (item.round === undefined) return
-      const previousRound = Number(beforeRoundById.get(String(item.id)))
-      const nextRound = Number(item.round)
-      if (!Number.isInteger(nextRound) || nextRound < 1) return
-      if (!Number.isInteger(previousRound) || previousRound === nextRound) return
-      removedRounds.push(previousRound)
-      addedRounds.push(nextRound)
-    })
-    if (addedRounds.length > 0) {
-      await syncEntityRoundDetailsForCreate(tournamentId, addedRounds)
+    await RoundModel.bulkWrite(ops, { ordered: true })
+    if (changes.length > 0) {
+      await rewriteStoredRoundReferences(
+        connection,
+        tournamentId,
+        changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
+      )
     }
-    if (removedRounds.length > 0) {
-      await syncEntityRoundDetailsForDelete(tournamentId, removedRounds)
-    }
+    const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
+      .lean()
+      .exec()
     res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
@@ -856,9 +1224,11 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const deletedRounds = targets
       .map((item: any) => Number(item?.round))
       .filter((value) => Number.isInteger(value) && value >= 1)
+    await deleteRoundDependencies(connection, tournamentId, deletedRounds)
     const result = await RoundModel.deleteMany(filter).exec()
     if (deletedRounds.length > 0) {
       await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
+      await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
     }
     res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
   } catch (err) {
@@ -914,18 +1284,45 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       notFound(res, 'Round not found')
       return
     }
-    const updated = await RoundModel.findOneAndUpdate({ _id: id, tournamentId }, { $set: update }, { new: true })
+    const previousRound = Number((before as any)?.round)
+    const nextRound = round === undefined ? previousRound : Number(round)
+    if (previousRound !== nextRound) {
+      const conflict = await RoundModel.exists({
+        tournamentId,
+        round: nextRound,
+        _id: { $ne: id },
+      }).exec()
+      if (conflict) {
+        res
+          .status(409)
+          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+        return
+      }
+      const temporaryRound = -2_000_000_000
+      await RoundModel.updateOne(
+        { _id: id, tournamentId, round: previousRound },
+        { $set: { round: temporaryRound } }
+      ).exec()
+      await moveRoundReferences(connection, tournamentId, [
+        { from: previousRound, to: temporaryRound },
+      ])
+      await moveRoundReferences(connection, tournamentId, [{ from: temporaryRound, to: nextRound }])
+    }
+    const updated = await RoundModel.findOneAndUpdate(
+      { _id: id, tournamentId },
+      { $set: update },
+      { new: true }
+    )
       .lean()
       .exec()
     if (!updated) {
       notFound(res, 'Round not found')
       return
     }
-    const previousRound = Number((before as any)?.round)
-    const nextRound = Number((updated as any)?.round)
-    if (Number.isInteger(previousRound) && Number.isInteger(nextRound) && previousRound !== nextRound) {
-      await syncEntityRoundDetailsForCreate(tournamentId, [nextRound])
-      await syncEntityRoundDetailsForDelete(tournamentId, [previousRound])
+    if (previousRound !== nextRound) {
+      await rewriteStoredRoundReferences(connection, tournamentId, [
+        { from: previousRound, to: nextRound },
+      ])
     }
     res.json({ data: updated, errors: [] })
   } catch (err) {
@@ -942,7 +1339,12 @@ export const updateRound: RequestHandler = async (req, res, next) => {
 export const previewBreakCandidates: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
-    const { tournamentId, source = 'submissions', sourceRounds, size } = req.body as {
+    const {
+      tournamentId,
+      source = 'submissions',
+      sourceRounds,
+      size,
+    } = req.body as {
       tournamentId: string
       source?: 'submissions' | 'raw'
       sourceRounds?: number[]
@@ -977,7 +1379,8 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
         ? normalizedSourceRounds
         : Array.from({ length: roundNumber - 1 }, (_, index) => index + 1)
     const requestedSizeRaw = Number(size)
-    const requestedSize = Number.isInteger(requestedSizeRaw) && requestedSizeRaw >= 1 ? requestedSizeRaw : null
+    const requestedSize =
+      Number.isInteger(requestedSizeRaw) && requestedSizeRaw >= 1 ? requestedSizeRaw : null
 
     const { payload } = await buildCompiledPayload(
       tournamentId,
@@ -1029,7 +1432,11 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
 export const updateRoundBreak: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
-    const { tournamentId, break: breakInput, syncTeamAvailability = true } = req.body as {
+    const {
+      tournamentId,
+      break: breakInput,
+      syncTeamAvailability = true,
+    } = req.body as {
       tournamentId: string
       break: unknown
       syncTeamAvailability?: boolean
@@ -1059,9 +1466,7 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     const explicitBreakEnabled =
       typeof breakInputRecord.enabled === 'boolean' ? breakInputRecord.enabled : undefined
     const roundBreakEnabled =
-      typeof explicitBreakEnabled === 'boolean'
-        ? explicitBreakEnabled
-        : currentRoundBreakEnabled
+      typeof explicitBreakEnabled === 'boolean' ? explicitBreakEnabled : currentRoundBreakEnabled
     if (!roundBreakEnabled && !currentRoundBreakEnabled) {
       badRequest(res, 'Break round is not enabled for this round')
       return
@@ -1133,7 +1538,12 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
             filter: { _id: team._id, tournamentId },
             update: {
               $set: {
-                details: upsertTeamRoundDetail(team.details, roundNumber, team.template, available) as any,
+                details: upsertTeamRoundDetail(
+                  team.details,
+                  roundNumber,
+                  team.template,
+                  available
+                ) as any,
                 template: normalizeTeamTemplate(team.template),
               },
             },
@@ -1167,14 +1577,21 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
     if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+    const existing = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
+      notFound(res, 'Round not found')
+      return
+    }
+    const deletedRound = Number((existing as any)?.round)
+    await deleteRoundDependencies(connection, tournamentId, [deletedRound])
     const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
     if (!deleted) {
       notFound(res, 'Round not found')
       return
     }
-    const deletedRound = Number((deleted as any)?.round)
     if (Number.isInteger(deletedRound) && deletedRound >= 1) {
       await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
+      await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
     }
     res.json({ data: deleted, errors: [] })
   } catch (err) {

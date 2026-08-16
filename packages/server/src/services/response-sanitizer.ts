@@ -23,6 +23,17 @@ const RESULT_BLOCKED_KEYS = new Set([
   'snapshot_memo',
 ])
 
+const PUBLIC_TOURNAMENT_STYLE_OPTION_KEYS = [
+  'team_num',
+  'score_weights',
+  'side_labels',
+  'side_labels_short',
+  'speaker_sequence',
+  'range',
+  'adjudicator_range',
+  'roles',
+]
+
 function asRecord(value: unknown): PlainRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {}
@@ -66,7 +77,9 @@ function toStringToken(value: unknown): string {
   return ''
 }
 
-function parseWinnerPolicyToken(value: unknown): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
+function parseWinnerPolicyToken(
+  value: unknown
+): 'winner_id_then_score' | 'score_only' | 'draw_on_missing' | undefined {
   if (typeof value !== 'string') return undefined
   if (value === 'winner_id_then_score' || value === 'score_only' || value === 'draw_on_missing') {
     return value
@@ -88,6 +101,22 @@ function allowWinnerScoreMismatchForRound(userDefinedData: PlainRecord): boolean
     DEFAULT_COMPILE_OPTIONS
   )
   return compileOptions.winner_policy !== 'score_only'
+}
+
+function ballotSubmitterRolesForRound(userDefinedData: PlainRecord): string[] {
+  if (Array.isArray(userDefinedData.ballot_submitter_roles)) {
+    return Array.from(
+      new Set(
+        userDefinedData.ballot_submitter_roles.filter(
+          (value): value is string => value === 'chair' || value === 'panel' || value === 'trainee'
+        )
+      )
+    )
+  }
+  if (typeof userDefinedData.allow_panel_ballot_submission === 'boolean') {
+    return userDefinedData.allow_panel_ballot_submission ? ['chair', 'panel'] : ['chair']
+  }
+  return ['chair', 'panel']
 }
 
 function normalizeDrawTeams(value: unknown): PlainRecord {
@@ -199,12 +228,13 @@ export function sanitizeRoundForPublic(round: unknown): PlainRecord {
       evaluate_from_teams: userDefinedData.evaluate_from_teams !== false,
       chairs_always_evaluated: userDefinedData.chairs_always_evaluated === true,
       no_speaker_score: userDefinedData.no_speaker_score === true,
-      allow_low_tie_win: userDefinedData.allow_low_tie_win !== false,
+      allow_low_tie_win: userDefinedData.allow_low_tie_win === true,
       allow_score_winner_mismatch: allowWinnerScoreMismatchForRound(userDefinedData),
       score_by_matter_manner: userDefinedData.score_by_matter_manner !== false,
       poi: userDefinedData.poi !== false,
       best: userDefinedData.best !== false,
       evaluator_in_team: userDefinedData.evaluator_in_team === 'speaker' ? 'speaker' : 'team',
+      ballot_submitter_roles: ballotSubmitterRolesForRound(userDefinedData),
     },
   }
 }
@@ -254,8 +284,15 @@ export function sanitizeTournamentForPublic(tournament: unknown): PlainRecord {
   const source = asRecord(tournament)
   const access = asRecord(asRecord(source.auth).access)
   const userDefinedData = asRecord(source.user_defined_data)
+  const publicStyleOptions = pick(
+    asRecord(asRecord(source.options).style),
+    PUBLIC_TOURNAMENT_STYLE_OPTION_KEYS
+  )
   return {
     ...pick(source, ['_id', 'name', 'style', 'total_round_num', 'current_round_num']),
+    ...(Object.keys(publicStyleOptions).length > 0
+      ? { options: { style: publicStyleOptions } }
+      : {}),
     hidden: userDefinedData.hidden === true,
     auth: {
       access: {

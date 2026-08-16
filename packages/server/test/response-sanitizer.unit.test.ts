@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeDrawForPublic } from '../src/services/response-sanitizer.js'
+import {
+  sanitizeDrawForPublic,
+  sanitizeRoundForPublic,
+  sanitizeTournamentForPublic,
+} from '../src/services/response-sanitizer.js'
 
 describe('sanitizeDrawForPublic', () => {
   it('keeps gov/opp teams when draw is opened', () => {
@@ -95,5 +99,46 @@ describe('sanitizeDrawForPublic', () => {
     }) as any
 
     expect(sanitized.allocation).toEqual([])
+  })
+})
+
+describe('sanitizeTournamentForPublic', () => {
+  it('exposes only participant-facing style overrides', () => {
+    const sanitized = sanitizeTournamentForPublic({
+      _id: 't1',
+      name: 'Open',
+      style: 1,
+      options: {
+        privateFlag: 'hidden',
+        style: {
+          team_num: 4,
+          score_weights: [1, 1, 1, 1],
+          privateStyleFlag: 'hidden',
+        },
+      },
+    }) as any
+
+    expect(sanitized.options).toEqual({
+      style: { team_num: 4, score_weights: [1, 1, 1, 1] },
+    })
+    expect(sanitized.privateFlag).toBeUndefined()
+  })
+})
+
+describe('sanitizeRoundForPublic', () => {
+  it('keeps draw submission opt-in while exposing explicit enablement', () => {
+    const defaultRound = sanitizeRoundForPublic({
+      tournamentId: 't1',
+      round: 1,
+      userDefinedData: {},
+    }) as any
+    const drawEnabledRound = sanitizeRoundForPublic({
+      tournamentId: 't1',
+      round: 2,
+      userDefinedData: { allow_low_tie_win: true },
+    }) as any
+
+    expect(defaultRound.userDefinedData.allow_low_tie_win).toBe(false)
+    expect(drawEnabledRound.userDefinedData.allow_low_tie_win).toBe(true)
   })
 })

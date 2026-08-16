@@ -136,7 +136,7 @@ export async function fillTournamentSetupData(
         score_by_matter_manner: true,
         poi: true,
         best: true,
-        allow_low_tie_win: true,
+        allow_low_tie_win: false,
         __devtools: { source: 'fill-setup' },
       },
     })

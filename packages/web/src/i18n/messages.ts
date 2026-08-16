@@ -171,6 +171,8 @@ const en = {
   '現在の合計: {gov} {govScore} / {opp} {oppScore}':
     'Current total: {gov} {govScore} / {opp} {oppScore}',
   'ロール {current} / {total}': 'Role {current} / {total}',
+  '全スピーカーのスコアと賞をこの画面でまとめて入力できます。':
+    'Enter scores and awards for every speaker on this screen.',
   'このラウンドでは引き分けは選択できません。': 'A draw cannot be selected in this round.',
   'スピーカー別内訳': 'Speaker breakdown',
   '入力ステップ': 'Entry steps',

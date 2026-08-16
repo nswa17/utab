@@ -42,6 +42,7 @@ const DEFAULT_FILTERS: SupportedFilter[] = [
   'by_side',
   'by_past_opponent',
   'by_conflict_group',
+  'by_sibling_past_opponent_school',
 ]
 const EXACT_TEAM_THRESHOLD = 18
 const CONFLICT_CATEGORY_ORDER = ['institution', 'region', 'league'] as const
@@ -64,7 +65,9 @@ function uniqueNumbers(values: unknown): number[] {
 }
 
 function normalizeInstitutionCategory(value: unknown): string {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   return normalized.length > 0 ? normalized : 'institution'
 }
 
@@ -127,11 +130,7 @@ function normalizeFilters(filters: unknown): SupportedFilter[] {
   return out
 }
 
-function buildLexWeights(
-  filters: SupportedFilter[],
-  pairPlans: PairPlan[][],
-  pairCount: number
-) {
+function buildLexWeights(filters: SupportedFilter[], pairPlans: PairPlan[][], pairCount: number) {
   const maxTotals = filters.map((filter) => {
     let maxPairCost = 0
     for (let left = 0; left < pairPlans.length; left += 1) {
@@ -150,10 +149,7 @@ function buildLexWeights(
   return weights
 }
 
-function buildSeedOrders(
-  teamIds: number[],
-  getProfile: (teamId: number) => TeamProfile
-) {
+function buildSeedOrders(teamIds: number[], getProfile: (teamId: number) => TeamProfile) {
   const baseIndexes = teamIds.map((_teamId, index) => index)
   const stableCompare = (left: number, right: number) => teamIds[left] - teamIds[right]
   const hash = (value: number, salt: string) => {
@@ -350,54 +346,77 @@ function pairWarningCounts(
     by_side: 0,
     by_past_opponent:
       teamA.pastOpponents.includes(teamBId) || teamB.pastOpponents.includes(teamAId) ? 1 : 0,
-    by_conflict_group: overlapConflictCategories(teamA.institutions, teamB.institutions, config).length,
+    by_conflict_group: overlapConflictCategories(teamA.institutions, teamB.institutions, config)
+      .length,
     by_sibling_past_opponent_school: 0,
   }
 
-  const siblingPastCategories = new Set<string>()
-  teamA.pastOpponents
-    .filter((pastTeamId) => pastTeamId !== teamBId)
-    .forEach((pastTeamId) => {
-      siblingPastCategoriesForPair(
-        pastTeamId,
-        teamBId,
-        teamById,
-        getProfile,
-        config
-      ).forEach((category) => siblingPastCategories.add(category))
-    })
-  teamB.pastOpponents
-    .filter((pastTeamId) => pastTeamId !== teamAId)
-    .forEach((pastTeamId) => {
-      siblingPastCategoriesForPair(
-        pastTeamId,
-        teamAId,
-        teamById,
-        getProfile,
-        config
-      ).forEach((category) => siblingPastCategories.add(category))
-    })
-  counts.by_sibling_past_opponent_school = CONFLICT_CATEGORY_ORDER.filter((category) =>
-    siblingPastCategories.has(category)
-  ).length
+  counts.by_sibling_past_opponent_school = hasPastSchoolPair(
+    teamAId,
+    teamBId,
+    teamById,
+    getProfile,
+    config
+  )
+    ? 1
+    : 0
 
   return counts
 }
 
-function siblingPastCategoriesForPair(
-  pastTeamId: number,
-  currentOpponentId: number,
+function schoolIdsForTeam(
+  teamId: number,
+  getProfile: (teamId: number) => TeamProfile,
+  config: AllocationConfig
+) {
+  const institutions = getProfile(teamId).institutions
+  const categoryMap = config.institution_category_map
+  if (!categoryMap || Object.keys(categoryMap).length === 0) return institutions
+  return institutions.filter(
+    (institutionId) => normalizeInstitutionCategory(categoryMap[institutionId]) === 'institution'
+  )
+}
+
+function schoolsOverlap(left: number[], right: number[]) {
+  if (left.length === 0 || right.length === 0) return false
+  const rightSet = new Set(right)
+  return left.some((schoolId) => rightSet.has(schoolId))
+}
+
+function schoolHasFacedSchool(
+  sourceSchoolIds: number[],
+  targetSchoolIds: number[],
   teamById: Map<number, TeamEntity>,
   getProfile: (teamId: number) => TeamProfile,
   config: AllocationConfig
 ) {
-  const pastTeam = teamById.get(pastTeamId)
-  const currentOpponent = teamById.get(currentOpponentId)
-  if (!pastTeam || !currentOpponent) return []
-  return overlapConflictCategories(
-    getProfile(pastTeam.id).institutions,
-    getProfile(currentOpponent.id).institutions,
-    config
+  if (sourceSchoolIds.length === 0 || targetSchoolIds.length === 0) return false
+  for (const schoolTeam of teamById.values()) {
+    if (!schoolsOverlap(schoolIdsForTeam(schoolTeam.id, getProfile, config), sourceSchoolIds)) {
+      continue
+    }
+    for (const opponentId of getProfile(schoolTeam.id).pastOpponents) {
+      if (!teamById.has(opponentId)) continue
+      if (schoolsOverlap(schoolIdsForTeam(opponentId, getProfile, config), targetSchoolIds)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function hasPastSchoolPair(
+  teamAId: number,
+  teamBId: number,
+  teamById: Map<number, TeamEntity>,
+  getProfile: (teamId: number) => TeamProfile,
+  config: AllocationConfig
+) {
+  const teamASchoolIds = schoolIdsForTeam(teamAId, getProfile, config)
+  const teamBSchoolIds = schoolIdsForTeam(teamBId, getProfile, config)
+  return (
+    schoolHasFacedSchool(teamASchoolIds, teamBSchoolIds, teamById, getProfile, config) ||
+    schoolHasFacedSchool(teamBSchoolIds, teamASchoolIds, teamById, getProfile, config)
   )
 }
 
@@ -409,7 +428,10 @@ function sideOrderingForPair(
   config: AllocationConfig,
   filters: SupportedFilter[]
 ): SideOrderingDecision {
-  const defaultOrder = decidePositions([leftId, rightId], compiledTeamResults, config) as [number, number]
+  const defaultOrder = decidePositions([leftId, rightId], compiledTeamResults, config) as [
+    number,
+    number,
+  ]
   const leftProfile = getProfile(leftId)
   const rightProfile = getProfile(rightId)
   const forwardCount =
@@ -462,7 +484,8 @@ function buildAllocation(
     if (left.topWin !== right.topWin) return right.topWin - left.topWin
     if (left.totalWin !== right.totalWin) return right.totalWin - left.totalWin
     if (left.totalSum !== right.totalSum) return right.totalSum - left.totalSum
-    if (left.orderedTeams[0] !== right.orderedTeams[0]) return left.orderedTeams[0] - right.orderedTeams[0]
+    if (left.orderedTeams[0] !== right.orderedTeams[0])
+      return left.orderedTeams[0] - right.orderedTeams[0]
     return left.orderedTeams[1] - right.orderedTeams[1]
   })
 

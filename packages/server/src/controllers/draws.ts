@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import { isDeepStrictEqual } from 'node:util'
 import {
   teams as teamAllocations,
   adjudicators as adjudicatorAllocations,
@@ -30,6 +31,7 @@ import {
   hasSufficientAdjudicators,
   normalizeInstitutionPriority,
   normalizeScoreWeights,
+  normalizeTeamNum,
 } from './shared/allocation-support.js'
 import { isValidObjectId, badRequest, notFound } from './shared/http-errors.js'
 import {
@@ -43,7 +45,7 @@ const allocations = {
   venues: venueAllocations,
 }
 
-async function saveDrawWithRetry(params: {
+async function saveDrawWithOptimisticLock(params: {
   DrawModel: ReturnType<typeof getDrawModel>
   tournamentId: string
   round: number
@@ -53,35 +55,44 @@ async function saveDrawWithRetry(params: {
   allocationOpened?: boolean
   locked?: boolean
   createdBy?: string
+  expected?: { id: string; version: number | null }
 }) {
-  const update = {
-    $set: {
-      allocation: params.allocation,
-      ...(params.userDefinedData !== undefined ? { userDefinedData: params.userDefinedData } : {}),
-      drawOpened: params.drawOpened ?? false,
-      allocationOpened: params.allocationOpened ?? false,
-      locked: params.locked ?? false,
-    },
-    $setOnInsert: { createdBy: params.createdBy },
+  const values = {
+    tournamentId: params.tournamentId,
+    round: params.round,
+    allocation: params.allocation,
+    ...(params.userDefinedData !== undefined ? { userDefinedData: params.userDefinedData } : {}),
+    drawOpened: params.drawOpened ?? false,
+    allocationOpened: params.allocationOpened ?? false,
+    locked: params.locked ?? false,
   }
 
-  try {
+  if (params.expected) {
     return await params.DrawModel.findOneAndUpdate(
-      { tournamentId: params.tournamentId, round: params.round },
-      update,
-      { new: true, upsert: true }
-    )
-      .lean()
-      .exec()
-  } catch (err) {
-    if (!isDuplicateKeyError(err)) throw err
-    return await params.DrawModel.findOneAndUpdate(
-      { tournamentId: params.tournamentId, round: params.round },
-      { $set: update.$set },
+      {
+        _id: params.expected.id,
+        tournamentId: params.tournamentId,
+        round: params.round,
+        ...(params.expected.version === null
+          ? { __v: { $exists: false } }
+          : { __v: params.expected.version }),
+      },
+      { $set: values, $inc: { __v: 1 } },
       { new: true }
     )
       .lean()
       .exec()
+  }
+
+  try {
+    const created = await params.DrawModel.create({
+      ...values,
+      createdBy: params.createdBy,
+    })
+    return created.toObject()
+  } catch (err) {
+    if (isDuplicateKeyError(err)) return null
+    throw err
   }
 }
 
@@ -94,7 +105,7 @@ type AllocationEntityRef = {
 
 function normalizeIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
+  return value.map((item) => String(item ?? '').trim()).filter(Boolean)
 }
 
 function isRoundHidden(round: unknown): boolean {
@@ -103,25 +114,33 @@ function isRoundHidden(round: unknown): boolean {
   return !!userDefinedData && userDefinedData.hidden === true
 }
 
-function normalizeDrawTeamsForValidation(teams: unknown): { gov: string; opp: string } | null {
-  let gov = ''
-  let opp = ''
+function normalizeDrawTeamIds(teams: unknown): string[] {
   if (Array.isArray(teams)) {
-    gov = String(teams[0] ?? '').trim()
-    opp = String(teams[1] ?? '').trim()
-  } else if (teams && typeof teams === 'object') {
-    const source = teams as Record<string, unknown>
-    gov = String(source.gov ?? '').trim()
-    opp = String(source.opp ?? '').trim()
+    return teams.map((team) => String(team ?? '').trim()).filter(Boolean)
   }
-  if (!gov || !opp || gov === opp) return null
-  return { gov, opp }
+  if (teams && typeof teams === 'object') {
+    const source = teams as Record<string, unknown>
+    if (source.cg !== undefined || source.co !== undefined) {
+      return [
+        String(source.og ?? source.gov ?? '').trim(),
+        String(source.oo ?? source.opp ?? '').trim(),
+        String(source.cg ?? '').trim(),
+        String(source.co ?? '').trim(),
+      ].filter(Boolean)
+    }
+    return [String(source.gov ?? '').trim(), String(source.opp ?? '').trim()].filter(Boolean)
+  }
+  return []
 }
 
-function detailAvailableForRound(details: unknown, round: number): boolean {
-  if (!Array.isArray(details)) return true
+function detailAvailableForRound(
+  details: unknown,
+  round: number,
+  defaultAvailable: boolean
+): boolean {
+  if (!Array.isArray(details)) return defaultAvailable
   const detail = details.find((item: any) => Number(item?.r) === round)
-  return detail?.available !== false
+  return detail ? detail.available !== false : defaultAvailable
 }
 
 function collectAllocationEntityRefs(allocation: unknown): AllocationEntityRef[] {
@@ -136,11 +155,7 @@ function collectAllocationEntityRefs(allocation: unknown): AllocationEntityRef[]
   allocation.forEach((row) => {
     if (!row || typeof row !== 'object') return
     const source = row as Record<string, unknown>
-    const teams = normalizeDrawTeamsForValidation(source.teams)
-    if (teams) {
-      addRef('team', teams.gov)
-      addRef('team', teams.opp)
-    }
+    normalizeDrawTeamIds(source.teams).forEach((id) => addRef('team', id))
     addRef('venue', source.venue)
     normalizeIdList(source.chairs).forEach((id) => addRef('adjudicator', id))
     normalizeIdList(source.panels).forEach((id) => addRef('adjudicator', id))
@@ -148,6 +163,60 @@ function collectAllocationEntityRefs(allocation: unknown): AllocationEntityRef[]
   })
 
   return Array.from(refs.values())
+}
+
+function validateAllocationStructure(allocation: unknown, expectedTeamNum: number): string | null {
+  if (!Array.isArray(allocation)) return 'allocation must be an array'
+  const assignedTeams = new Set<string>()
+  const assignedAdjudicators = new Set<string>()
+  const assignedVenues = new Set<string>()
+
+  for (let index = 0; index < allocation.length; index += 1) {
+    const row = allocation[index]
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      return `allocation row ${index + 1} must be an object`
+    }
+    const source = row as Record<string, unknown>
+    const teamIds = normalizeDrawTeamIds(source.teams)
+    if (teamIds.length !== expectedTeamNum) {
+      return `allocation row ${index + 1} must contain exactly ${expectedTeamNum} teams`
+    }
+    if (new Set(teamIds).size !== teamIds.length) {
+      return `allocation row ${index + 1} contains duplicate teams`
+    }
+    for (const teamId of teamIds) {
+      if (assignedTeams.has(teamId)) return `team ${teamId} is assigned more than once`
+      assignedTeams.add(teamId)
+    }
+
+    const adjudicatorIds = [
+      ...normalizeIdList(source.chairs),
+      ...normalizeIdList(source.panels),
+      ...normalizeIdList(source.trainees),
+    ]
+    for (const adjudicatorId of adjudicatorIds) {
+      if (assignedAdjudicators.has(adjudicatorId)) {
+        return `adjudicator ${adjudicatorId} is assigned more than once`
+      }
+      assignedAdjudicators.add(adjudicatorId)
+    }
+
+    const venueId = String(source.venue ?? '').trim()
+    if (venueId) {
+      if (assignedVenues.has(venueId)) return `venue ${venueId} is assigned more than once`
+      assignedVenues.add(venueId)
+    }
+  }
+  return null
+}
+
+function toComparableValue(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value ?? null))
+}
+
+function readDrawVersion(draw: unknown): number | null {
+  const version = (draw as { __v?: unknown } | null)?.__v
+  return typeof version === 'number' && Number.isInteger(version) ? version : null
 }
 
 function formatUnavailableEntityMessage(round: number, refs: AllocationEntityRef[]): string {
@@ -202,10 +271,16 @@ export const listDraws: RequestHandler = async (req, res, next) => {
       .lean()
       .exec()
     const hiddenRounds = new Set(
-      rounds.filter((roundDoc) => isRoundHidden(roundDoc)).map((roundDoc: any) => Number(roundDoc.round))
+      rounds
+        .filter((roundDoc) => isRoundHidden(roundDoc))
+        .map((roundDoc: any) => Number(roundDoc.round))
     )
+    const existingRounds = new Set(rounds.map((roundDoc: any) => Number(roundDoc.round)))
     const data = draws
-      .filter((draw: any) => !hiddenRounds.has(Number(draw.round)))
+      .filter(
+        (draw: any) =>
+          existingRounds.has(Number(draw.round)) && !hiddenRounds.has(Number(draw.round))
+      )
       .map((draw) => sanitizeDrawForPublic(draw))
     res.json({ data, errors: [] })
   } catch (err) {
@@ -239,30 +314,70 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
-    const [teamDocs, adjudicatorDocs, venueDocs] = await Promise.all([
+    const [tournament, roundDoc, teamDocs, adjudicatorDocs, venueDocs] = await Promise.all([
+      TournamentModel.findById(tournamentId).lean().exec(),
+      getRoundModel(connection).findOne({ tournamentId, round }).lean().exec(),
       getTeamModel(connection).find({ tournamentId }).lean().exec(),
       getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
       getVenueModel(connection).find({ tournamentId }).lean().exec(),
     ])
+    if (!tournament) {
+      notFound(res, 'Tournament not found')
+      return
+    }
+    if (!roundDoc) {
+      notFound(res, 'Round not found')
+      return
+    }
+    const styleDoc = await StyleModel.findOne({ id: Number(tournament.style) })
+      .lean()
+      .exec()
+    const expectedTeamNum = normalizeTeamNum(
+      (tournament.options as any)?.style?.team_num ?? styleDoc?.team_num ?? 2
+    )
+    const structureError = validateAllocationStructure(allocation, expectedTeamNum)
+    if (structureError) {
+      badRequest(res, structureError)
+      return
+    }
     const teamAvailabilityById = new Map<string, boolean>(
       teamDocs.map((team: any) => [
         String(team?._id ?? ''),
-        detailAvailableForRound(team?.details, round),
+        detailAvailableForRound(team?.details, round, team?.template?.available !== false),
       ])
     )
     const adjudicatorAvailabilityById = new Map<string, boolean>(
       adjudicatorDocs.map((adjudicator: any) => [
         String(adjudicator?._id ?? ''),
-        detailAvailableForRound(adjudicator?.details, round),
+        detailAvailableForRound(
+          adjudicator?.details,
+          round,
+          adjudicator?.template?.available !== false
+        ),
       ])
     )
     const venueAvailabilityById = new Map<string, boolean>(
       venueDocs.map((venue: any) => [
         String(venue?._id ?? ''),
-        detailAvailableForRound(venue?.details, round),
+        detailAvailableForRound(venue?.details, round, venue?.template?.available !== false),
       ])
     )
-    const unavailableRefs = collectAllocationEntityRefs(allocation).filter((ref) => {
+    const allocationRefs = collectAllocationEntityRefs(allocation)
+    const unknownRefs = allocationRefs.filter((ref) => {
+      if (ref.kind === 'team') return !teamAvailabilityById.has(ref.id)
+      if (ref.kind === 'adjudicator') return !adjudicatorAvailabilityById.has(ref.id)
+      return !venueAvailabilityById.has(ref.id)
+    })
+    if (unknownRefs.length > 0) {
+      badRequest(
+        res,
+        `allocation contains unknown entities: ${unknownRefs
+          .map((ref) => `${ref.kind}:${ref.id}`)
+          .join(', ')}`
+      )
+      return
+    }
+    const unavailableRefs = allocationRefs.filter((ref) => {
       if (ref.kind === 'team') return teamAvailabilityById.get(ref.id) === false
       if (ref.kind === 'adjudicator') return adjudicatorAvailabilityById.get(ref.id) === false
       return venueAvailabilityById.get(ref.id) === false
@@ -273,8 +388,27 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     }
 
     const DrawModel = getDrawModel(connection)
+    const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
+    if (
+      existingDraw?.locked === true &&
+      (!isDeepStrictEqual(
+        toComparableValue(existingDraw.allocation),
+        toComparableValue(allocation)
+      ) ||
+        (userDefinedData !== undefined &&
+          !isDeepStrictEqual(
+            toComparableValue(existingDraw.userDefinedData),
+            toComparableValue(userDefinedData)
+          )))
+    ) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Draw is locked' }],
+      })
+      return
+    }
 
-    const updated = await saveDrawWithRetry({
+    const updated = await saveDrawWithOptimisticLock({
       DrawModel,
       tournamentId,
       round,
@@ -284,7 +418,17 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       allocationOpened,
       locked,
       createdBy: req.session?.userId,
+      expected: existingDraw
+        ? { id: String(existingDraw._id), version: readDrawVersion(existingDraw) }
+        : undefined,
     })
+    if (!updated) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Draw is locked or changed' }],
+      })
+      return
+    }
 
     res.status(201).json({ data: updated, errors: [] })
   } catch (err) {
@@ -312,6 +456,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
+    const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+    if (!roundDoc) {
+      notFound(res, 'Round not found')
+      return
+    }
     const [
       tournament,
       teams,
@@ -347,7 +496,7 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     const scoreWeights = normalizeScoreWeights(
       styleOption?.score_weights ?? styleDoc?.score_weights
     )
-    const teamNum = styleOption?.team_num ?? styleDoc?.team_num ?? 2
+    const teamNum = normalizeTeamNum(styleOption?.team_num ?? styleDoc?.team_num)
     const style = { team_num: teamNum, score_weights: scoreWeights }
     const config = {
       name: tournament.name,
@@ -415,7 +564,10 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       preev: (adj as any).preev ?? 0,
       user_defined_data:
         (adj as any).userDefinedData && typeof (adj as any).userDefinedData === 'object'
-          ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<string, unknown>)
+          ? ({ ...((adj as any).userDefinedData as Record<string, unknown>) } as Record<
+              string,
+              unknown
+            >)
           : {},
       details: buildDetailsForRounds(
         (adj as any).details,
@@ -543,36 +695,36 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
             config
           )
         : teamAlgorithm === 'strict'
-        ? allocations.teams.strict.get(
-            round,
-            teamInstances,
-            compiledTeamResults,
-            config,
-            teamAlgorithmOptions
-          )
-        : teamAlgorithm === 'powerpair'
-          ? allocations.teams.powerpair.get(
+          ? allocations.teams.strict.get(
               round,
               teamInstances,
               compiledTeamResults,
-              teamAlgorithmOptions,
-              config
+              config,
+              teamAlgorithmOptions
             )
-          : teamAlgorithm === 'random'
-            ? allocations.teams.random.get(
+          : teamAlgorithm === 'powerpair'
+            ? allocations.teams.powerpair.get(
                 round,
                 teamInstances,
                 compiledTeamResults,
                 teamAlgorithmOptions,
                 config
               )
-          : allocations.teams.standard.get(
-              round,
-              teamInstances,
-              compiledTeamResults,
-              teamAlgorithmOptions,
-              config
-            )
+            : teamAlgorithm === 'random'
+              ? allocations.teams.random.get(
+                  round,
+                  teamInstances,
+                  compiledTeamResults,
+                  teamAlgorithmOptions,
+                  config
+                )
+              : allocations.teams.standard.get(
+                  round,
+                  teamInstances,
+                  compiledTeamResults,
+                  teamAlgorithmOptions,
+                  config
+                )
     const teamUserDefinedData = extractDrawUserDefinedData(draw)
 
     const numbersOfAdjudicators = validatedOptions.numbers_of_adjudicators
@@ -627,17 +779,17 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
                   config,
                   adjudicatorOptions
                 )
-            : allocations.adjudicators.standard.get(
-                round,
-                draw,
-                adjudicatorInstances,
-                teamInstances,
-                compiledTeamResults,
-                compiledAdjudicatorResults,
-                numbersOfAdjudicators,
-                config,
-                adjudicatorOptions
-              )
+              : allocations.adjudicators.standard.get(
+                  round,
+                  draw,
+                  adjudicatorInstances,
+                  teamInstances,
+                  compiledTeamResults,
+                  compiledAdjudicatorResults,
+                  numbersOfAdjudicators,
+                  config,
+                  adjudicatorOptions
+                )
     }
 
     const venueOptions = validatedOptions.venue_allocation_algorithm_options
@@ -684,22 +836,38 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
 
     if (save) {
       const DrawModel = getDrawModel(connection)
-      const updated = await DrawModel.findOneAndUpdate(
-        { tournamentId, round },
-        {
-          $set: {
-            allocation: mappedAllocation,
-            drawOpened: false,
-            allocationOpened: false,
-            locked: false,
-            ...(teamUserDefinedData ? { userDefinedData: teamUserDefinedData } : {}),
-          },
-          $setOnInsert: { createdBy: req.session?.userId },
-        },
-        { new: true, upsert: true }
-      )
+      const existingDraw = await DrawModel.findOne({ tournamentId, round })
+        .select({ locked: 1, __v: 1 })
         .lean()
         .exec()
+      if (existingDraw?.locked === true) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Draw is locked' }],
+        })
+        return
+      }
+      const updated = await saveDrawWithOptimisticLock({
+        DrawModel,
+        tournamentId,
+        round,
+        allocation: mappedAllocation,
+        drawOpened: false,
+        allocationOpened: false,
+        locked: false,
+        userDefinedData: teamUserDefinedData,
+        createdBy: req.session?.userId,
+        expected: existingDraw
+          ? { id: String(existingDraw._id), version: readDrawVersion(existingDraw) }
+          : undefined,
+      })
+      if (!updated) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Draw is locked or changed' }],
+        })
+        return
+      }
       res.status(201).json({ data: updated, errors: [] })
       return
     }
@@ -733,9 +901,33 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const DrawModel = getDrawModel(connection)
-    const deleted = await DrawModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-    if (!deleted) {
+    const existing = await DrawModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
       notFound(res, 'Draw not found')
+      return
+    }
+    if (existing.locked === true) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Draw is locked' }],
+      })
+      return
+    }
+    const deleted = await DrawModel.findOneAndDelete({
+      _id: id,
+      tournamentId,
+      locked: { $ne: true },
+      ...(readDrawVersion(existing) === null
+        ? { __v: { $exists: false } }
+        : { __v: readDrawVersion(existing) }),
+    })
+      .lean()
+      .exec()
+    if (!deleted) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Draw is locked or changed' }],
+      })
       return
     }
     res.json({ data: deleted, errors: [] })

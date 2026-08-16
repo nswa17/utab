@@ -1,4 +1,5 @@
 import type { Submission } from '@/types/submission'
+import { escapeCsvCell } from './csv'
 
 export type DetailedResultsExportRow = {
   record_type: 'ballot_speaker' | 'ballot_summary' | 'feedback'
@@ -289,20 +290,15 @@ export function buildDetailedResultsExportRows(
   return rows.sort(compareRows)
 }
 
-function escapeCsv(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
 export function buildDetailedResultsExportCsv(
   rows: DetailedResultsExportRow[],
   labels: DetailedResultsExportLabels = DEFAULT_DETAILED_RESULTS_EXPORT_LABELS
 ): string {
-  const header = DETAILED_RESULTS_EXPORT_COLUMNS.map((key) => escapeCsv(labels[key] ?? key)).join(',')
+  const header = DETAILED_RESULTS_EXPORT_COLUMNS.map((key) =>
+    escapeCsvCell(labels[key] ?? key)
+  ).join(',')
   const body = rows.map((row) =>
-    DETAILED_RESULTS_EXPORT_COLUMNS.map((key) => escapeCsv(String(row[key] ?? ''))).join(',')
+    DETAILED_RESULTS_EXPORT_COLUMNS.map((key) => escapeCsvCell(String(row[key] ?? ''))).join(',')
   )
   return [header, ...body].join('\n')
 }

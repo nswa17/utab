@@ -92,4 +92,14 @@ describe('detailed results export', () => {
     expect(csv).toContain('Judge One')
     expect(csv).toContain('Useful feedback')
   })
+
+  it('neutralizes formulas supplied through ballot comments', () => {
+    const unsafe = structuredClone(submissions)
+    unsafe[0].payload.comment = '=HYPERLINK("https://example.test")'
+
+    const csv = buildDetailedResultsExportCsv(buildDetailedResultsExportRows(unsafe, resolvers))
+
+    expect(csv).toContain("'=HYPERLINK")
+    expect(csv).not.toContain(',=HYPERLINK')
+  })
 })

@@ -7,6 +7,10 @@ export type FeedbackExpectationSettings = {
   chairsAlwaysEvaluated: boolean
 }
 
+export type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+
+const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
+
 export type SubmissionExpectationRow = {
   govTeamId: string
   oppTeamId: string
@@ -48,14 +52,40 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+/**
+ * Resolve the generic role policy for ballot submissions.  The absent-value
+ * default preserves the historical chair + panel behaviour, while an empty
+ * configured list intentionally means that no adjudicator role is expected to
+ * submit a ballot.
+ */
+export function resolveBallotSubmitterRoles(userDefinedData: unknown): BallotSubmitterRole[] {
+  const userDefined = asRecord(userDefinedData)
+  if (Array.isArray(userDefined.ballot_submitter_roles)) {
+    const roles: BallotSubmitterRole[] = []
+    userDefined.ballot_submitter_roles.forEach((value) => {
+      const role = String(value ?? '')
+        .trim()
+        .toLowerCase()
+      if (role !== 'chair' && role !== 'panel' && role !== 'trainee') return
+      if (!roles.includes(role)) roles.push(role)
+    })
+    return roles
+  }
+
+  // Compatibility for rounds saved before the role-set setting existed.
+  if (typeof userDefined.allow_panel_ballot_submission === 'boolean') {
+    return userDefined.allow_panel_ballot_submission
+      ? [...DEFAULT_BALLOT_SUBMITTER_ROLES]
+      : ['chair']
+  }
+
+  return [...DEFAULT_BALLOT_SUBMITTER_ROLES]
+}
+
 export function normalizeIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return Array.from(
-    new Set(
-      value
-        .map((item) => normalizeToken(item))
-        .filter((item) => item.length > 0)
-    )
+    new Set(value.map((item) => normalizeToken(item)).filter((item) => item.length > 0))
   )
 }
 
@@ -67,7 +97,9 @@ export function normalizeTeamPairKey(teamAId: string, teamBId: string): string {
   return `${pair[0]}::${pair[1]}`
 }
 
-export function resolveFeedbackExpectationSettings(userDefinedData: unknown): FeedbackExpectationSettings {
+export function resolveFeedbackExpectationSettings(
+  userDefinedData: unknown
+): FeedbackExpectationSettings {
   const userDefined = asRecord(userDefinedData)
   return {
     fromTeams: userDefined.evaluate_from_teams !== false,
@@ -77,8 +109,12 @@ export function resolveFeedbackExpectationSettings(userDefinedData: unknown): Fe
   }
 }
 
-export function normalizeSubmissionExpectationRows(allocation: unknown): SubmissionExpectationRow[] {
+export function normalizeSubmissionExpectationRows(
+  allocation: unknown,
+  userDefinedData?: unknown
+): SubmissionExpectationRow[] {
   if (!Array.isArray(allocation)) return []
+  const ballotRoles = new Set(resolveBallotSubmitterRoles(userDefinedData))
   return allocation.map((raw) => {
     const row = asRecord(raw)
     const teams = asRecord(row.teams)
@@ -88,7 +124,11 @@ export function normalizeSubmissionExpectationRows(allocation: unknown): Submiss
     const chairIds = normalizeIdList(row.chairs)
     const panelIds = normalizeIdList(row.panels)
     const traineeIds = normalizeIdList(row.trainees)
-    const ballotSubmitterIds = normalizeIdList([...chairIds, ...panelIds])
+    const ballotSubmitterIds = normalizeIdList([
+      ...(ballotRoles.has('chair') ? chairIds : []),
+      ...(ballotRoles.has('panel') ? panelIds : []),
+      ...(ballotRoles.has('trainee') ? traineeIds : []),
+    ])
     const adjudicatorIds = normalizeIdList([...chairIds, ...panelIds, ...traineeIds])
     return {
       govTeamId,
@@ -247,8 +287,10 @@ function analyzeSubmissionCoverage(params: {
   }
 }
 
-export function buildRoundSubmissionCoverage(input: RoundSubmissionCoverageInput): RoundSubmissionCoverage {
-  const rows = normalizeSubmissionExpectationRows(input.allocation)
+export function buildRoundSubmissionCoverage(
+  input: RoundSubmissionCoverageInput
+): RoundSubmissionCoverage {
+  const rows = normalizeSubmissionExpectationRows(input.allocation, input.userDefinedData)
   const settings = resolveFeedbackExpectationSettings(input.userDefinedData)
   const ballotKeys = expectedBallotKeys(rows)
   const feedbackKeys = expectedFeedbackKeys({

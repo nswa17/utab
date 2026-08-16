@@ -48,6 +48,11 @@ function normalizeReason(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
+function normalizeExecutionErrorMessage(value: unknown): string {
+  const message = value instanceof Error ? value.message.trim() : String(value ?? '').trim()
+  return (message || 'Personal data erasure failed').slice(0, 500)
+}
+
 function decodeCursor(value: string): ErasureRequestCursorPayload | null {
   try {
     const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as ErasureRequestCursorPayload
@@ -416,48 +421,73 @@ export const executeErasureRequest: RequestHandler = async (req, res, next) => {
           : 'anonymize',
     }
 
-    const result =
-      existing.targetType === 'speaker'
-        ? await executeSpeakerPersonalDataErase(eraseInput)
-        : await executeAdjudicatorPersonalDataErase(eraseInput)
+    try {
+      const result =
+        existing.targetType === 'speaker'
+          ? await executeSpeakerPersonalDataErase(eraseInput)
+          : await executeAdjudicatorPersonalDataErase(eraseInput)
 
-    if (!result) {
-      await ErasureRequestModel.updateOne(
-        { _id: id, tournamentId },
+      if (!result) {
+        await ErasureRequestModel.updateOne(
+          { _id: id, tournamentId, status: 'running' },
+          {
+            $set: {
+              status: 'failed',
+              executedBy: actorUserId,
+              executedAt: new Date(),
+              errorMessage: `${existing.targetType} target not found`,
+            },
+          }
+        ).exec()
+        notFound(res, `${existing.targetType} target not found`)
+        return
+      }
+
+      const completed = await ErasureRequestModel.findOneAndUpdate(
+        { _id: id, tournamentId, status: 'running' },
         {
           $set: {
-            status: 'failed',
+            status: 'completed',
             executedBy: actorUserId,
             executedAt: new Date(),
-            errorMessage: `${existing.targetType} target not found`,
+            result,
+            errorMessage: undefined,
           },
-        }
-      ).exec()
-      notFound(res, `${existing.targetType} target not found`)
-      return
-    }
-
-    const completed = await ErasureRequestModel.findOneAndUpdate(
-      { _id: id, tournamentId },
-      {
-        $set: {
-          status: 'completed',
-          executedBy: actorUserId,
-          executedAt: new Date(),
-          result,
-          errorMessage: undefined,
         },
-      },
-      { new: true }
-    )
-      .lean()
-      .exec()
-    if (!completed) {
-      notFound(res, 'Erasure request not found')
-      return
-    }
+        { new: true }
+      )
+        .lean()
+        .exec()
+      if (!completed) {
+        conflict(res, 'Erasure request changed while completing execution')
+        return
+      }
 
-    res.json({ data: completed, errors: [] })
+      res.json({ data: completed, errors: [] })
+    } catch (executionError) {
+      try {
+        await ErasureRequestModel.updateOne(
+          { _id: id, tournamentId, status: 'running' },
+          {
+            $set: {
+              status: 'failed',
+              executedBy: actorUserId,
+              executedAt: new Date(),
+              errorMessage: normalizeExecutionErrorMessage(executionError),
+            },
+          }
+        ).exec()
+      } catch (statusError) {
+        next(
+          new AggregateError(
+            [executionError, statusError],
+            'Personal data erasure failed and the request status could not be updated'
+          )
+        )
+        return
+      }
+      next(executionError)
+    }
   } catch (err) {
     next(err)
   }

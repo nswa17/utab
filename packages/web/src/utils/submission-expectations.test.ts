@@ -4,10 +4,28 @@ import {
   buildRoundSubmissionCoverage,
   expectedFeedbackCountForRow,
   normalizeSubmissionExpectationRows,
+  resolveBallotSubmitterRoles,
   resolveFeedbackExpectationSettings,
 } from './submission-expectations'
 
 describe('submission expectation helpers', () => {
+  it('uses the configured ballot submitter roles for expectations', () => {
+    const [row] = normalizeSubmissionExpectationRows(
+      [
+        {
+          teams: { gov: 'team-gov', opp: 'team-opp' },
+          chairs: ['adj-chair'],
+          panels: ['adj-panel'],
+          trainees: ['adj-trainee'],
+        },
+      ],
+      { ballot_submitter_roles: ['chair'] }
+    )
+    expect(row.ballotSubmitterIds).toEqual(['adj-chair'])
+    expect(resolveBallotSubmitterRoles({ ballot_submitter_roles: [] })).toEqual([])
+    expect(resolveBallotSubmitterRoles({ allow_panel_ballot_submission: false })).toEqual(['chair'])
+  })
+
   it('counts expected feedback submissions for a single row with speaker evaluators', () => {
     const [row] = normalizeSubmissionExpectationRows([
       {

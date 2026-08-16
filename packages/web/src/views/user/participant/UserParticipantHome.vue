@@ -19,290 +19,331 @@
 
         <div v-else class="stack">
           <div class="stack audience-rounds">
-        <div class="card stack audience-tools">
-          <input
-            v-model.trim="audienceTeamQuery"
-            type="search"
-            class="audience-team-input"
-            :placeholder="$t('チーム名またはジャッジ名で検索')"
-          />
-        </div>
-
-        <div v-if="hasAudienceTeamQuery && audienceVisibleRounds.length === 0" class="card">
-          <p class="muted">{{ $t('一致 {count}件', { count: 0 }) }}</p>
-        </div>
-
-        <div
-          v-for="round in audienceVisibleRounds"
-          :key="round._id"
-          class="card stack compact-round"
-          :class="{
-            'focused-round': isFocusedRound(round.round),
-            'focused-round-ballot': isFocusedRound(round.round) && focusedRoundType === 'ballot',
-            'focused-round-feedback': isFocusedRound(round.round) && focusedRoundType === 'feedback',
-          }"
-          :id="`round-card-${round.round}`"
-        >
-          <button
-            type="button"
-            class="round-toggle"
-            :aria-expanded="isRoundExpanded(round.round)"
-            @click="toggleRound(round.round)"
-          >
-            <span
-              class="toggle-icon"
-              :class="{ open: isRoundExpanded(round.round) }"
-              aria-hidden="true"
-            >
-              <svg viewBox="0 0 20 20" width="14" height="14">
-                <path
-                  d="M7 4l6 6-6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </span>
-            <div class="stack tight">
-              <strong>{{ round.name ?? $t('ラウンド {round}', { round: round.round }) }}</strong>
-              <span v-if="roundMotion(round.round)" class="muted small">
-                {{ $t('モーション') }}: {{ roundMotion(round.round) }}
-              </span>
+            <div class="card stack audience-tools">
+              <input
+                v-model.trim="audienceTeamQuery"
+                type="search"
+                class="audience-team-input"
+                :placeholder="$t('チーム名またはジャッジ名で検索')"
+              />
             </div>
-          </button>
 
-          <div v-show="isRoundExpanded(round.round)" class="stack">
+            <div v-if="hasAudienceTeamQuery && audienceVisibleRounds.length === 0" class="card">
+              <p class="muted">{{ $t('一致 {count}件', { count: 0 }) }}</p>
+            </div>
+
             <div
-              v-if="roundHasPartialAllocation(round.round)"
-              class="row round-visibility-note"
-              role="status"
-              aria-live="polite"
+              v-for="round in audienceVisibleRounds"
+              :key="round._id"
+              class="card stack compact-round"
+              :class="{
+                'focused-round': isFocusedRound(round.round),
+                'focused-round-ballot':
+                  isFocusedRound(round.round) && focusedRoundType === 'ballot',
+                'focused-round-feedback':
+                  isFocusedRound(round.round) && focusedRoundType === 'feedback',
+              }"
+              :id="`round-card-${round.round}`"
             >
-              <span class="round-visibility-title">{{ $t('対戦表は一部のみ公開されています。') }}</span>
-              <div class="row round-visibility-chip-list">
-                <span class="round-visibility-chip" :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
-                  {{ $t('チーム') }}: {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
-                </span>
-                <span class="round-visibility-chip" :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
-                  {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
-                </span>
-              </div>
-            </div>
-            <div
-              v-if="!drawForRound(round.round) || !roundHasVisibleAllocation(round.round)"
-              class="row round-visibility-note"
-              role="status"
-              aria-live="polite"
-            >
-              <span class="round-visibility-title">{{ $t('ドローは未公開です。') }}</span>
-              <div class="row round-visibility-chip-list">
-                <span class="round-visibility-chip" :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
-                  {{ $t('チーム') }}: {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
-                </span>
-                <span class="round-visibility-chip" :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'">
-                  {{ $t('ジャッジ') }}: {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
-                </span>
-              </div>
-            </div>
-            <div v-else-if="sortedAllocation(round.round).length === 0" class="muted">
-              {{ $t('ドローが登録されていません。') }}
-            </div>
-            <div v-else-if="audienceViewMode === 'card'" class="stack compact-draw-list">
-              <div
-                v-for="(row, index) in filteredAudienceAllocation(round.round)"
-                :key="`${round.round}-${index}`"
-                class="draw-row"
-                :class="{ 'match-hit': isAudienceRowMatched(row) }"
-                :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
+              <button
+                type="button"
+                class="round-toggle"
+                :aria-expanded="isRoundExpanded(round.round)"
+                @click="toggleRound(round.round)"
               >
-                <div class="row draw-main">
-                  <span class="muted small">{{ venueName(row.venue) }}</span>
+                <span
+                  class="toggle-icon"
+                  :class="{ open: isRoundExpanded(round.round) }"
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 20 20" width="14" height="14">
+                    <path
+                      d="M7 4l6 6-6 6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <div class="stack tight">
+                  <strong>{{
+                    round.name ?? $t('ラウンド {round}', { round: round.round })
+                  }}</strong>
+                  <span v-if="roundMotion(round.round)" class="muted small">
+                    {{ $t('モーション') }}: {{ roundMotion(round.round) }}
+                  </span>
                 </div>
-                <div v-if="teamAllocationVisible(round.round)" class="match-sides">
-                  <div class="side-card gov-card">
-                    <span class="side-chip gov-chip">{{ govLabel }}</span>
-                    <strong>{{ teamName(row.teams.gov) }}</strong>
-                  </div>
-                  <span class="vs-chip">{{ $t('vs') }}</span>
-                  <div class="side-card opp-card">
-                    <span class="side-chip opp-chip">{{ oppLabel }}</span>
-                    <strong>{{ teamName(row.teams.opp) }}</strong>
+              </button>
+
+              <div v-show="isRoundExpanded(round.round)" class="stack">
+                <div
+                  v-if="roundHasPartialAllocation(round.round)"
+                  class="row round-visibility-note"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="round-visibility-title">{{
+                    $t('対戦表は一部のみ公開されています。')
+                  }}</span>
+                  <div class="row round-visibility-chip-list">
+                    <span
+                      class="round-visibility-chip"
+                      :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'"
+                    >
+                      {{ $t('チーム') }}:
+                      {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                    </span>
+                    <span
+                      class="round-visibility-chip"
+                      :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'"
+                    >
+                      {{ $t('ジャッジ') }}:
+                      {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                    </span>
                   </div>
                 </div>
-                <div v-if="adjudicatorAllocationVisible(round.round)" class="stack draw-judge-list">
-                  <div class="draw-judge-line">
-                    <span class="draw-judge-label">{{ $t('チェア:') }}</span>
-                    <span class="draw-judge-names">{{ adjudicatorNames(row.chairs) }}</span>
-                  </div>
-                  <div class="draw-judge-line">
-                    <span class="draw-judge-label">{{ $t('パネル:') }}</span>
-                    <span class="draw-judge-names">{{ adjudicatorNames(row.panels) }}</span>
-                  </div>
-                  <div class="draw-judge-line">
-                    <span class="draw-judge-label">{{ $t('トレーニー:') }}</span>
-                    <span class="draw-judge-names">{{ adjudicatorNames(row.trainees) }}</span>
+                <div
+                  v-if="!drawForRound(round.round) || !roundHasVisibleAllocation(round.round)"
+                  class="row round-visibility-note"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="round-visibility-title">{{ $t('ドローは未公開です。') }}</span>
+                  <div class="row round-visibility-chip-list">
+                    <span
+                      class="round-visibility-chip"
+                      :class="teamAllocationVisible(round.round) ? 'is-open' : 'is-closed'"
+                    >
+                      {{ $t('チーム') }}:
+                      {{ teamAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                    </span>
+                    <span
+                      class="round-visibility-chip"
+                      :class="adjudicatorAllocationVisible(round.round) ? 'is-open' : 'is-closed'"
+                    >
+                      {{ $t('ジャッジ') }}:
+                      {{ adjudicatorAllocationVisible(round.round) ? $t('公開') : $t('非公開') }}
+                    </span>
                   </div>
                 </div>
-                <div class="row draw-actions">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    class="draw-action-button draw-action-button--team"
-                    :to="teamEvaluationPath(round.round, row)"
-                  >
-                    {{ $t('チーム評価') }}
-                  </Button>
-                  <Button
-                    v-if="judgeEvaluationEnabled(round.round)"
-                    variant="secondary"
-                    size="sm"
-                    class="draw-action-button draw-action-button--judge"
-                    :to="judgeEvaluationPath(round.round, row)"
-                  >
-                    {{ $t('ジャッジ評価') }}
-                  </Button>
+                <div v-else-if="sortedAllocation(round.round).length === 0" class="muted">
+                  {{ $t('ドローが登録されていません。') }}
                 </div>
-              </div>
-            </div>
-            <div v-else class="table-wrap">
-              <table class="draw-table">
-                <thead>
-                  <tr>
-                    <th>
-                      <button
-                        type="button"
-                        class="table-sort"
-                        @click="setAudienceTableSort(round.round, 'venue')"
-                      >
-                        {{ $t('会場') }}
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'venue')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th v-if="teamAllocationVisible(round.round)" class="side-column-heading side-column-heading--gov">
-                      <button
-                        type="button"
-                        class="table-sort table-sort--gov"
-                        @click="setAudienceTableSort(round.round, 'gov')"
-                      >
-                        <span class="table-side-heading table-side-heading--gov">{{ govLabel }}</span>
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'gov')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th v-if="teamAllocationVisible(round.round)" class="side-column-heading side-column-heading--opp">
-                      <button
-                        type="button"
-                        class="table-sort table-sort--opp"
-                        @click="setAudienceTableSort(round.round, 'opp')"
-                      >
-                        <span class="table-side-heading table-side-heading--opp">{{ oppLabel }}</span>
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'opp')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th v-if="adjudicatorAllocationVisible(round.round)">
-                      <button
-                        type="button"
-                        class="table-sort"
-                        @click="setAudienceTableSort(round.round, 'chair')"
-                      >
-                        {{ $t('チェア') }}
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'chair')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th v-if="adjudicatorAllocationVisible(round.round)">
-                      <button
-                        type="button"
-                        class="table-sort"
-                        @click="setAudienceTableSort(round.round, 'panel')"
-                      >
-                        {{ $t('パネル') }}
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'panel')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th v-if="adjudicatorAllocationVisible(round.round)">
-                      <button
-                        type="button"
-                        class="table-sort"
-                        @click="setAudienceTableSort(round.round, 'trainee')"
-                      >
-                        {{ $t('トレーニー') }}
-                        <span class="sort-indicator">{{
-                          audienceSortIndicator(round.round, 'trainee')
-                        }}</span>
-                      </button>
-                    </th>
-                    <th class="draw-actions-header">{{ $t('操作') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(row, index) in sortedAudienceTableAllocation(round.round)"
-                    :key="`table-${round.round}-${index}`"
+                <div v-else-if="audienceViewMode === 'card'" class="stack compact-draw-list">
+                  <div
+                    v-for="(row, index) in filteredAudienceAllocation(round.round)"
+                    :key="`${round.round}-${index}`"
+                    class="draw-row"
                     :class="{ 'match-hit': isAudienceRowMatched(row) }"
                     :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
                   >
-                    <td>{{ venueName(row.venue) }}</td>
-                    <td v-if="teamAllocationVisible(round.round)">{{ teamName(row.teams.gov) }}</td>
-                    <td v-if="teamAllocationVisible(round.round)">{{ teamName(row.teams.opp) }}</td>
-                    <td v-if="adjudicatorAllocationVisible(round.round)">
-                      {{ adjudicatorNames(row.chairs) }}
-                    </td>
-                    <td v-if="adjudicatorAllocationVisible(round.round)">
-                      {{ adjudicatorNames(row.panels) }}
-                    </td>
-                    <td v-if="adjudicatorAllocationVisible(round.round)">
-                      {{ adjudicatorNames(row.trainees) }}
-                    </td>
-                    <td class="draw-actions-cell">
-                      <div class="row draw-actions">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          class="draw-action-button draw-action-button--team"
-                          :to="teamEvaluationPath(round.round, row)"
-                        >
-                          {{ $t('チーム評価') }}
-                        </Button>
-                        <Button
-                          v-if="judgeEvaluationEnabled(round.round)"
-                          variant="secondary"
-                          size="sm"
-                          class="draw-action-button draw-action-button--judge"
-                          :to="judgeEvaluationPath(round.round, row)"
-                        >
-                          {{ $t('ジャッジ評価') }}
-                        </Button>
+                    <div class="row draw-main">
+                      <span class="muted small">{{ venueName(row.venue) }}</span>
+                    </div>
+                    <div v-if="teamAllocationVisible(round.round)" class="match-sides">
+                      <div class="side-card gov-card">
+                        <span class="side-chip gov-chip">{{ govLabel }}</span>
+                        <strong>{{ teamName(row.teams.gov) }}</strong>
                       </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      <span class="vs-chip">{{ $t('vs') }}</span>
+                      <div class="side-card opp-card">
+                        <span class="side-chip opp-chip">{{ oppLabel }}</span>
+                        <strong>{{ teamName(row.teams.opp) }}</strong>
+                      </div>
+                    </div>
+                    <div
+                      v-if="adjudicatorAllocationVisible(round.round)"
+                      class="stack draw-judge-list"
+                    >
+                      <div class="draw-judge-line">
+                        <span class="draw-judge-label">{{ $t('チェア:') }}</span>
+                        <span class="draw-judge-names">{{ adjudicatorNames(row.chairs) }}</span>
+                      </div>
+                      <div class="draw-judge-line">
+                        <span class="draw-judge-label">{{ $t('パネル:') }}</span>
+                        <span class="draw-judge-names">{{ adjudicatorNames(row.panels) }}</span>
+                      </div>
+                      <div class="draw-judge-line">
+                        <span class="draw-judge-label">{{ $t('トレーニー:') }}</span>
+                        <span class="draw-judge-names">{{ adjudicatorNames(row.trainees) }}</span>
+                      </div>
+                    </div>
+                    <div v-if="roundSubmissionsEnabled(round.round)" class="row draw-actions">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        class="draw-action-button draw-action-button--team"
+                        :to="teamEvaluationPath(round.round, row)"
+                      >
+                        {{ $t('チーム評価') }}
+                      </Button>
+                      <Button
+                        v-if="judgeEvaluationEnabled(round.round)"
+                        variant="secondary"
+                        size="sm"
+                        class="draw-action-button draw-action-button--judge"
+                        :to="judgeEvaluationPath(round.round, row)"
+                      >
+                        {{ $t('ジャッジ評価') }}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="table-wrap">
+                  <table class="draw-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <button
+                            type="button"
+                            class="table-sort"
+                            @click="setAudienceTableSort(round.round, 'venue')"
+                          >
+                            {{ $t('会場') }}
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'venue')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th
+                          v-if="teamAllocationVisible(round.round)"
+                          class="side-column-heading side-column-heading--gov"
+                        >
+                          <button
+                            type="button"
+                            class="table-sort table-sort--gov"
+                            @click="setAudienceTableSort(round.round, 'gov')"
+                          >
+                            <span class="table-side-heading table-side-heading--gov">{{
+                              govLabel
+                            }}</span>
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'gov')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th
+                          v-if="teamAllocationVisible(round.round)"
+                          class="side-column-heading side-column-heading--opp"
+                        >
+                          <button
+                            type="button"
+                            class="table-sort table-sort--opp"
+                            @click="setAudienceTableSort(round.round, 'opp')"
+                          >
+                            <span class="table-side-heading table-side-heading--opp">{{
+                              oppLabel
+                            }}</span>
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'opp')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th v-if="adjudicatorAllocationVisible(round.round)">
+                          <button
+                            type="button"
+                            class="table-sort"
+                            @click="setAudienceTableSort(round.round, 'chair')"
+                          >
+                            {{ $t('チェア') }}
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'chair')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th v-if="adjudicatorAllocationVisible(round.round)">
+                          <button
+                            type="button"
+                            class="table-sort"
+                            @click="setAudienceTableSort(round.round, 'panel')"
+                          >
+                            {{ $t('パネル') }}
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'panel')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th v-if="adjudicatorAllocationVisible(round.round)">
+                          <button
+                            type="button"
+                            class="table-sort"
+                            @click="setAudienceTableSort(round.round, 'trainee')"
+                          >
+                            {{ $t('トレーニー') }}
+                            <span class="sort-indicator">{{
+                              audienceSortIndicator(round.round, 'trainee')
+                            }}</span>
+                          </button>
+                        </th>
+                        <th v-if="roundSubmissionsEnabled(round.round)" class="draw-actions-header">
+                          {{ $t('操作') }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, index) in sortedAudienceTableAllocation(round.round)"
+                        :key="`table-${round.round}-${index}`"
+                        :class="{ 'match-hit': isAudienceRowMatched(row) }"
+                        :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
+                      >
+                        <td>{{ venueName(row.venue) }}</td>
+                        <td v-if="teamAllocationVisible(round.round)">
+                          {{ teamName(row.teams.gov) }}
+                        </td>
+                        <td v-if="teamAllocationVisible(round.round)">
+                          {{ teamName(row.teams.opp) }}
+                        </td>
+                        <td v-if="adjudicatorAllocationVisible(round.round)">
+                          {{ adjudicatorNames(row.chairs) }}
+                        </td>
+                        <td v-if="adjudicatorAllocationVisible(round.round)">
+                          {{ adjudicatorNames(row.panels) }}
+                        </td>
+                        <td v-if="adjudicatorAllocationVisible(round.round)">
+                          {{ adjudicatorNames(row.trainees) }}
+                        </td>
+                        <td v-if="roundSubmissionsEnabled(round.round)" class="draw-actions-cell">
+                          <div class="row draw-actions">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              class="draw-action-button draw-action-button--team"
+                              :to="teamEvaluationPath(round.round, row)"
+                            >
+                              {{ $t('チーム評価') }}
+                            </Button>
+                            <Button
+                              v-if="judgeEvaluationEnabled(round.round)"
+                              variant="secondary"
+                              size="sm"
+                              class="draw-action-button draw-action-button--judge"
+                              :to="judgeEvaluationPath(round.round, row)"
+                            >
+                              {{ $t('ジャッジ評価') }}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
-          </div>
+        </div>
+        <div
+          v-if="hasLoaded && isLoading"
+          class="reload-overlay"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <LoadingState />
         </div>
       </div>
-      <div
-        v-if="hasLoaded && isLoading"
-        class="reload-overlay"
-        role="status"
-        aria-live="polite"
-        aria-busy="true"
-      >
-        <LoadingState />
-      </div>
-    </div>
     </div>
   </section>
 </template>
@@ -329,6 +370,7 @@ import {
   type ParticipantMode,
 } from '@/composables/useParticipantMode'
 import { getSideShortLabel } from '@/utils/side-labels'
+import { normalizeTournamentTeamNum, resolveTournamentStyle } from '@/utils/tournament-style'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
 
 const route = useRoute()
@@ -399,7 +441,15 @@ const judgeEvaluationActorMode = computed<'team' | 'adjudicator'>({
 const tournament = computed(() =>
   tournamentStore.tournaments.find((item) => item._id === tournamentId.value)
 )
-const style = computed(() => stylesStore.styles.find((item) => item.id === tournament.value?.style))
+const style = computed(() =>
+  resolveTournamentStyle(
+    stylesStore.styles.find((item) => item.id === tournament.value?.style),
+    tournament.value
+  )
+)
+const supportsParticipantSubmissions = computed(
+  () => normalizeTournamentTeamNum(style.value?.team_num) === 2
+)
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 
@@ -499,7 +549,9 @@ function normalizeAudienceSearchText(value: unknown) {
     .toLowerCase()
 }
 
-const normalizedAudienceTeamQuery = computed(() => normalizeAudienceSearchText(audienceTeamQuery.value))
+const normalizedAudienceTeamQuery = computed(() =>
+  normalizeAudienceSearchText(audienceTeamQuery.value)
+)
 const hasAudienceTeamQuery = computed(() => normalizedAudienceTeamQuery.value.length > 0)
 const audienceVisibleRounds = computed(() => {
   if (!isAudience.value || !hasAudienceTeamQuery.value) return visibleRounds.value
@@ -652,7 +704,10 @@ function supportsAdjudicatorToAdjudicatorFeedback(row: DrawAllocationRow) {
 
 function findPendingFeedbackRow() {
   if (!pendingFeedbackContext.value) return null
-  const expected = [pendingFeedbackContext.value.teamGov, pendingFeedbackContext.value.teamOpp].sort()
+  const expected = [
+    pendingFeedbackContext.value.teamGov,
+    pendingFeedbackContext.value.teamOpp,
+  ].sort()
   return (
     sortedAllocation(pendingFeedbackContext.value.round).find((row) => {
       const gov = String(row?.teams?.gov ?? '')
@@ -678,7 +733,9 @@ const pendingFeedbackHasAdjudicatorPeerCandidate = computed(() => {
   return supportsAdjudicatorToAdjudicatorFeedback(row)
 })
 
-const judgeEvaluationActorOptions = computed<Array<{ value: 'team' | 'adjudicator'; label: string }>>(() => {
+const judgeEvaluationActorOptions = computed<
+  Array<{ value: 'team' | 'adjudicator'; label: string }>
+>(() => {
   if (!isAdjudicator.value) return []
   if (pendingFeedbackRoundConfig.value) {
     const options: Array<{ value: 'team' | 'adjudicator'; label: string }> = []
@@ -808,6 +865,7 @@ const selectedFeedbackAdjudicatorAllowed = computed(() => {
 
 const pendingTaskReady = computed(() => {
   if (!pendingTaskContext.value) return false
+  if (!roundSubmissionsEnabled(pendingTaskContext.value.round)) return false
   if (pendingTaskContext.value.kind === 'ballot') {
     return isSpeaker.value && selectedBallotSubmitterAllowed.value
   }
@@ -823,6 +881,12 @@ const pendingTaskReady = computed(() => {
 
 const pendingTaskHint = computed(() => {
   if (!pendingTaskContext.value) return ''
+  if (!supportsParticipantSubmissions.value) {
+    return t('この方式では参加者画面から提出できません。')
+  }
+  if (!roundSubmissionsEnabled(pendingTaskContext.value.round)) {
+    return t('ドローは未公開です。')
+  }
   if (pendingTaskContext.value.kind === 'ballot') {
     return t('先に提出者を選択すると入力ボタンが表示されます。')
   }
@@ -962,13 +1026,19 @@ function teamEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   if (ballotSubmitterIds.length > 0) {
     query.set('submitters', encodeList(ballotSubmitterIds))
   }
-  return withModePath(`/user/${tournamentId.value}/rounds/${roundNumber}/ballot/entry`, 'speaker', query)
+  return withModePath(
+    `/user/${tournamentId.value}/rounds/${roundNumber}/ballot/entry`,
+    'speaker',
+    query
+  )
 }
 
 function judgeEvaluationPath(roundNumber: number, row: DrawAllocationRow) {
   const teamGov = String(row?.teams?.gov ?? '')
   const teamOpp = String(row?.teams?.opp ?? '')
-  const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(Boolean)
+  const targetIds = Array.from(new Set([...(row.chairs ?? []), ...(row.panels ?? [])])).filter(
+    Boolean
+  )
   const homePath = withModePath(`/user/${tournamentId.value}/home`, 'adjudicator')
   if (!teamGov || !teamOpp || targetIds.length === 0) {
     return homePath
@@ -1064,6 +1134,14 @@ function adjudicatorAllocationVisible(roundNumber: number) {
   return draw?.allocationOpened === true
 }
 
+function roundSubmissionsEnabled(roundNumber: number) {
+  return (
+    supportsParticipantSubmissions.value &&
+    teamAllocationVisible(roundNumber) &&
+    adjudicatorAllocationVisible(roundNumber)
+  )
+}
+
 function roundHasVisibleAllocation(roundNumber: number) {
   return teamAllocationVisible(roundNumber) || adjudicatorAllocationVisible(roundNumber)
 }
@@ -1109,15 +1187,20 @@ function sortedAudienceTableAllocation(roundNumber: number) {
   const state = audienceSortState(roundNumber)
   return filteredAudienceAllocation(roundNumber)
     .map((row: DrawAllocationRow, index: number) => ({ row, index }))
-    .sort((a: { row: DrawAllocationRow; index: number }, b: { row: DrawAllocationRow; index: number }) => {
-      const left = audienceSortValue(a.row, state.key)
-      const right = audienceSortValue(b.row, state.key)
-      const diff = audienceSortCollator.compare(left, right)
-      if (diff !== 0) {
-        return state.direction === 'asc' ? diff : -diff
+    .sort(
+      (
+        a: { row: DrawAllocationRow; index: number },
+        b: { row: DrawAllocationRow; index: number }
+      ) => {
+        const left = audienceSortValue(a.row, state.key)
+        const right = audienceSortValue(b.row, state.key)
+        const diff = audienceSortCollator.compare(left, right)
+        if (diff !== 0) {
+          return state.direction === 'asc' ? diff : -diff
+        }
+        return a.index - b.index
       }
-      return a.index - b.index
-    })
+    )
     .map((entry: { row: DrawAllocationRow; index: number }) => entry.row)
 }
 
@@ -1314,7 +1397,12 @@ watch(
 )
 
 watch(
-  [judgeFeedbackTeamIdentityId, judgeFeedbackSelectableSpeakers, speakerSelectionRequired, judgeEvaluationActorMode],
+  [
+    judgeFeedbackTeamIdentityId,
+    judgeFeedbackSelectableSpeakers,
+    speakerSelectionRequired,
+    judgeEvaluationActorMode,
+  ],
   () => {
     if (!isAdjudicator.value || judgeEvaluationActorMode.value !== 'team') return
     if (!speakerSelectionRequired.value) {
@@ -1338,7 +1426,11 @@ watch(
 watch(
   [participantMode, judgeEvaluationActorMode, judgeFeedbackTeamOptions],
   () => {
-    if (isAdjudicator.value && judgeEvaluationActorMode.value === 'team' && judgeFeedbackTeamIdentityId.value) {
+    if (
+      isAdjudicator.value &&
+      judgeEvaluationActorMode.value === 'team' &&
+      judgeFeedbackTeamIdentityId.value
+    ) {
       const exists = judgeFeedbackTeamOptions.value.some(
         (team) => team._id === judgeFeedbackTeamIdentityId.value
       )
@@ -1353,7 +1445,11 @@ watch(
 watch(
   [participantMode, judgeEvaluationActorMode, adjudicatorIdentityOptions],
   () => {
-    if (!isSpeaker.value && !(isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator')) return
+    if (
+      !isSpeaker.value &&
+      !(isAdjudicator.value && judgeEvaluationActorMode.value === 'adjudicator')
+    )
+      return
     if (!teamIdentityId.value) return
     const exists = adjudicatorIdentityOptions.value.some((adj) => adj._id === teamIdentityId.value)
     if (!exists) {
@@ -1610,7 +1706,10 @@ select {
   padding: 8px 10px;
   display: grid;
   gap: 6px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .draw-row.match-hit {

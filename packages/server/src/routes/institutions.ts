@@ -16,7 +16,7 @@ const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string().min(1),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   category: z.string().trim().min(1).optional(),
   priority: z.number().finite().min(0).optional(),
   userDefinedData: z.any().optional(),
@@ -37,7 +37,7 @@ const updateSchema = {
   body: z
     .object({
       tournamentId: z.string().min(1),
-      name: z.string().min(1).optional(),
+      name: z.string().trim().min(1).optional(),
       category: z.string().trim().min(1).optional(),
       priority: z.number().finite().min(0).optional(),
       userDefinedData: z.any().optional(),
@@ -49,7 +49,7 @@ const updateSchema = {
         data.priority !== undefined ||
         data.userDefinedData !== undefined,
       {
-      message: 'update payload is required',
+        message: 'update payload is required',
       }
     ),
 }
@@ -60,7 +60,7 @@ const bulkUpdateSchema = {
       .object({
         id: z.string().min(1),
         tournamentId: z.string().min(1),
-        name: z.string().min(1).optional(),
+        name: z.string().trim().min(1).optional(),
         category: z.string().trim().min(1).optional(),
         priority: z.number().finite().min(0).optional(),
         userDefinedData: z.any().optional(),
@@ -90,22 +90,22 @@ const bulkDeleteSchema = {
   }),
 }
 
-router.get(
-  '/',
-  requireTournamentView(),
-  validateRequest(listSchema),
-  listInstitutions
-)
-router.get(
-  '/:id',
-  requireTournamentView(),
-  validateRequest(getSchema),
-  getInstitution
-)
+router.get('/', requireTournamentView(), validateRequest(listSchema), listInstitutions)
+router.get('/:id', requireTournamentView(), validateRequest(getSchema), getInstitution)
 router.post('/', requireTournamentAdmin(), validateRequest(createSchema), createInstitution)
-router.patch('/', requireTournamentAdmin(), validateRequest(bulkUpdateSchema), bulkUpdateInstitutions)
+router.patch(
+  '/',
+  requireTournamentAdmin(),
+  validateRequest(bulkUpdateSchema),
+  bulkUpdateInstitutions
+)
 router.patch('/:id', requireTournamentAdmin(), validateRequest(updateSchema), updateInstitution)
-router.delete('/', requireTournamentAdmin(), validateRequest(bulkDeleteSchema), bulkDeleteInstitutions)
+router.delete(
+  '/',
+  requireTournamentAdmin(),
+  validateRequest(bulkDeleteSchema),
+  bulkDeleteInstitutions
+)
 router.delete('/:id', requireTournamentAdmin(), validateRequest(deleteSchema), deleteInstitution)
 
 export { router as institutionRouter }

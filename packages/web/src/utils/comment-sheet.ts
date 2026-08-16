@@ -1,4 +1,5 @@
 import type { Submission } from '@/types/submission'
+import { escapeCsvCell } from './csv'
 
 export type CommentSheetRow = {
   round: number
@@ -79,13 +80,6 @@ function normalizeSubmittedEntityType(payload: Record<string, unknown>): string 
     return 'adjudicator'
   }
   return legacyRole
-}
-
-function escapeCsv(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
 }
 
 function compareRows(left: CommentSheetRow, right: CommentSheetRow): number {
@@ -172,9 +166,9 @@ export function buildCommentSheetCsv(
   rows: CommentSheetRow[],
   labels: CommentSheetCsvLabels = DEFAULT_COMMENT_SHEET_CSV_LABELS
 ): string {
-  const header = COMMENT_SHEET_CSV_KEYS.map((key) => escapeCsv(labels[key] ?? key)).join(',')
+  const header = COMMENT_SHEET_CSV_KEYS.map((key) => escapeCsvCell(labels[key] ?? key)).join(',')
   const body = rows.map((row) =>
-    COMMENT_SHEET_CSV_KEYS.map((key) => escapeCsv(String(row[key] ?? ''))).join(',')
+    COMMENT_SHEET_CSV_KEYS.map((key) => escapeCsvCell(String(row[key] ?? ''))).join(',')
   )
   return [header, ...body].join('\n')
 }

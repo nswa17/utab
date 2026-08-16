@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { StyleModel } from '../models/style.js'
+import { TournamentModel } from '../models/tournament.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { badRequest, notFound } from './shared/http-errors.js'
 
@@ -40,6 +41,17 @@ export const updateStyle: RequestHandler = async (req, res, next) => {
       return
     }
     const update = req.body as Record<string, unknown>
+    const nextStyleId = update.id === undefined ? styleId : Number(update.id)
+    if (nextStyleId !== styleId) {
+      const referenced = await TournamentModel.exists({ style: styleId }).exec()
+      if (referenced) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Style is used by a tournament' }],
+        })
+        return
+      }
+    }
     const updated = await StyleModel.findOneAndUpdate(
       { id: styleId },
       { $set: update },
@@ -67,6 +79,14 @@ export const deleteStyle: RequestHandler = async (req, res, next) => {
     const styleId = parseStyleId(id)
     if (styleId === null) {
       badRequest(res, 'Invalid style id')
+      return
+    }
+    const referenced = await TournamentModel.exists({ style: styleId }).exec()
+    if (referenced) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Style is used by a tournament' }],
+      })
       return
     }
     const deleted = await StyleModel.findOneAndDelete({ id: styleId }).lean().exec()

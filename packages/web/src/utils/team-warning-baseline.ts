@@ -8,8 +8,7 @@ export const TEAM_BASELINE_SUPPORTED_FILTERS = [
   'by_sibling_past_opponent_school',
 ] as const
 
-export type TeamBaselineSupportedFilter =
-  (typeof TEAM_BASELINE_SUPPORTED_FILTERS)[number]
+export type TeamBaselineSupportedFilter = (typeof TEAM_BASELINE_SUPPORTED_FILTERS)[number]
 
 export type TeamWarningBaselineEntry = {
   filter: TeamBaselineSupportedFilter
@@ -35,6 +34,7 @@ export type TeamWarningBaselineResult =
 
 export type EstimateTeamWarningBaselineInput = {
   teamIds: string[]
+  schoolHistoryTeamIds?: string[]
   teamNum: number
   filterOrder: string[]
   teamWin: (teamId: string) => number | undefined
@@ -72,7 +72,9 @@ function normalizeIdList(values: unknown): string[] {
 }
 
 function normalizeConflictGroupCategory(value: unknown): ConflictGroupCategory {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'region') return 'region'
   if (normalized === 'league') return 'league'
   return 'institution'
@@ -91,6 +93,61 @@ function overlapConflictCategories(
     overlaps.add(normalizeConflictGroupCategory(categoryOf(institutionId)))
   })
   return conflictCategoryOrder.filter((category) => overlaps.has(category))
+}
+
+function schoolIdsForProfile(
+  profile: TeamProfile,
+  categoryOf: (institutionId: string) => ConflictGroupCategory
+) {
+  return profile.institutions.filter(
+    (institutionId) => normalizeConflictGroupCategory(categoryOf(institutionId)) === 'institution'
+  )
+}
+
+function schoolsOverlap(left: string[], right: string[]) {
+  if (left.length === 0 || right.length === 0) return false
+  const rightSet = new Set(right)
+  return left.some((schoolId) => rightSet.has(schoolId))
+}
+
+function schoolHasFacedSchool(
+  sourceSchoolIds: string[],
+  targetSchoolIds: string[],
+  historyTeamIds: string[],
+  getProfile: (teamId: string) => TeamProfile,
+  categoryOf: (institutionId: string) => ConflictGroupCategory
+) {
+  if (sourceSchoolIds.length === 0 || targetSchoolIds.length === 0) return false
+  for (const schoolTeamId of historyTeamIds) {
+    if (
+      !schoolsOverlap(schoolIdsForProfile(getProfile(schoolTeamId), categoryOf), sourceSchoolIds)
+    ) {
+      continue
+    }
+    for (const opponentId of getProfile(schoolTeamId).pastOpponents) {
+      if (
+        schoolsOverlap(schoolIdsForProfile(getProfile(opponentId), categoryOf), targetSchoolIds)
+      ) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function hasPastSchoolPair(
+  leftId: string,
+  rightId: string,
+  historyTeamIds: string[],
+  getProfile: (teamId: string) => TeamProfile,
+  categoryOf: (institutionId: string) => ConflictGroupCategory
+) {
+  const leftSchoolIds = schoolIdsForProfile(getProfile(leftId), categoryOf)
+  const rightSchoolIds = schoolIdsForProfile(getProfile(rightId), categoryOf)
+  return (
+    schoolHasFacedSchool(leftSchoolIds, rightSchoolIds, historyTeamIds, getProfile, categoryOf) ||
+    schoolHasFacedSchool(rightSchoolIds, leftSchoolIds, historyTeamIds, getProfile, categoryOf)
+  )
 }
 
 function checkSided(pastSides: string[], side: 'gov' | 'opp') {
@@ -364,8 +421,10 @@ function improveMatching(
       outerSkip: for (let pairIndex = 0; pairIndex < pairs.length; pairIndex += 1) {
         const [a, b] = pairs[pairIndex]
         const currentCost = pairPlans[pairKey(a, b)[0]][pairKey(a, b)[1]].scalarCost
-        const altWithA = pairPlans[pairKey(skippedIndex, a)[0]][pairKey(skippedIndex, a)[1]].scalarCost
-        const altWithB = pairPlans[pairKey(skippedIndex, b)[0]][pairKey(skippedIndex, b)[1]].scalarCost
+        const altWithA =
+          pairPlans[pairKey(skippedIndex, a)[0]][pairKey(skippedIndex, a)[1]].scalarCost
+        const altWithB =
+          pairPlans[pairKey(skippedIndex, b)[0]][pairKey(skippedIndex, b)[1]].scalarCost
 
         if (compareCosts(altWithA, currentCost) < 0 && compareCosts(altWithA, altWithB) <= 0) {
           pairs[pairIndex] = [skippedIndex, a]
@@ -500,6 +559,7 @@ export function estimateTeamWarningBaseline(
     profileCache.set(normalizedId, profile)
     return profile
   }
+  const schoolHistoryTeamIds = normalizeIdList(input.schoolHistoryTeamIds ?? normalizedTeamIds)
 
   const pairPlans = normalizedTeamIds.map(() => new Array<PairPlan>(normalizedTeamIds.length))
   const pairCount = Math.floor(normalizedTeamIds.length / 2)
@@ -531,28 +591,15 @@ export function estimateTeamWarningBaseline(
         by_sibling_past_opponent_school: 0,
       }
 
-      const sameInstitutionPastCategories = new Set<ConflictGroupCategory>()
-      leftProfile.pastOpponents
-        .filter((pastTeamId) => pastTeamId !== rightId)
-        .forEach((pastTeamId) => {
-          overlapConflictCategories(
-            getProfile(pastTeamId).institutions,
-            rightProfile.institutions,
-            input.institutionCategory
-          ).forEach((category) => sameInstitutionPastCategories.add(category))
-        })
-      rightProfile.pastOpponents
-        .filter((pastTeamId) => pastTeamId !== leftId)
-        .forEach((pastTeamId) => {
-          overlapConflictCategories(
-            getProfile(pastTeamId).institutions,
-            leftProfile.institutions,
-            input.institutionCategory
-          ).forEach((category) => sameInstitutionPastCategories.add(category))
-        })
-      counts.by_sibling_past_opponent_school = conflictCategoryOrder.filter((category) =>
-        sameInstitutionPastCategories.has(category)
-      ).length
+      counts.by_sibling_past_opponent_school = hasPastSchoolPair(
+        leftId,
+        rightId,
+        schoolHistoryTeamIds,
+        getProfile,
+        input.institutionCategory
+      )
+        ? 1
+        : 0
 
       const sideForward =
         (checkSided(leftProfile.pastSides, 'gov') ? 1 : 0) +
@@ -581,7 +628,10 @@ export function estimateTeamWarningBaseline(
     }
   }
 
-  const exactTeamThreshold = Math.max(2, Number(input.exactTeamThreshold ?? DEFAULT_EXACT_TEAM_THRESHOLD))
+  const exactTeamThreshold = Math.max(
+    2,
+    Number(input.exactTeamThreshold ?? DEFAULT_EXACT_TEAM_THRESHOLD)
+  )
   const useExact = normalizedTeamIds.length <= exactTeamThreshold
 
   const solved = useExact
@@ -589,9 +639,7 @@ export function estimateTeamWarningBaseline(
     : (() => {
         const orders = buildSeedOrders(normalizedTeamIds, getProfile, supportedFilters)
         const skipCandidates =
-          normalizedTeamIds.length % 2 === 1
-            ? normalizedTeamIds.map((_, index) => index)
-            : [null]
+          normalizedTeamIds.length % 2 === 1 ? normalizedTeamIds.map((_, index) => index) : [null]
         let bestPairs: Array<[number, number]> = []
         let bestSkippedIndex: number | null = normalizedTeamIds.length % 2 === 1 ? 0 : null
         let bestCost = Number.POSITIVE_INFINITY

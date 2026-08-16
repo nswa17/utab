@@ -141,7 +141,109 @@ describe('allocations/teams', () => {
     )
 
     expect(draw.allocation).toHaveLength(2)
-    expect(draw.allocation.some((row) => row.teams.includes(1) && row.teams.includes(2))).toBe(false)
+    expect(draw.allocation.some((row) => row.teams.includes(1) && row.teams.includes(2))).toBe(
+      false
+    )
+  })
+
+  it('avoids repeating a school pairing across sibling teams', () => {
+    const teams = [
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 5, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
+      { id: 6, details: [{ r: 1, available: true, conflicts: [3], speakers: [] }] },
+      { id: 7, details: [{ r: 1, available: true, conflicts: [4], speakers: [] }] },
+      { id: 8, details: [{ r: 1, available: true, conflicts: [4], speakers: [] }] },
+    ]
+    const compiledTeamResults = teams.map((team) => ({
+      id: team.id,
+      win: 1,
+      sum: 10,
+      past_sides: [],
+      past_opponents: team.id === 1 ? [3] : team.id === 3 ? [1] : [],
+    }))
+
+    const draw = min_warnings.get(
+      1,
+      teams,
+      compiledTeamResults,
+      { filters: ['by_conflict_group', 'by_sibling_past_opponent_school'] },
+      {
+        style: { team_num: 2 },
+        institution_category_map: {
+          1: 'institution',
+          2: 'institution',
+          3: 'institution',
+          4: 'institution',
+        },
+      }
+    )
+
+    const schoolByTeam = new Map(teams.map((team) => [team.id, team.details[0].conflicts[0]]))
+    draw.allocation.forEach((row) => {
+      const schoolA = schoolByTeam.get(row.teams[0])
+      const schoolB = schoolByTeam.get(row.teams[1])
+      expect(schoolA).not.toBe(schoolB)
+      expect(new Set([schoolA, schoolB])).not.toEqual(new Set([1, 2]))
+    })
+  })
+
+  it('avoids repeated school pairings in a 34-team field', () => {
+    const schoolCount = 17
+    const teams = Array.from({ length: schoolCount * 2 }, (_, index) => ({
+      id: index + 1,
+      details: [
+        {
+          r: 1,
+          available: true,
+          conflicts: [Math.floor(index / 2) + 1],
+          speakers: [],
+        },
+      ],
+    }))
+    const pastOpponents = new Map<number, number[]>()
+    const forbiddenSchoolPairs = new Set<string>()
+    for (let school = 1; school <= schoolCount; school += 1) {
+      const nextSchool = school === schoolCount ? 1 : school + 1
+      const teamId = (school - 1) * 2 + 1
+      const nextTeamId = (nextSchool - 1) * 2 + 1
+      pastOpponents.set(teamId, [...(pastOpponents.get(teamId) ?? []), nextTeamId])
+      pastOpponents.set(nextTeamId, [...(pastOpponents.get(nextTeamId) ?? []), teamId])
+      forbiddenSchoolPairs.add([school, nextSchool].sort((left, right) => left - right).join('-'))
+    }
+    const compiledTeamResults = teams.map((team) => ({
+      id: team.id,
+      win: 1,
+      sum: 10,
+      past_sides: [],
+      past_opponents: pastOpponents.get(team.id) ?? [],
+    }))
+    const institutionCategoryMap = Object.fromEntries(
+      Array.from({ length: schoolCount }, (_, index) => [index + 1, 'institution'])
+    )
+
+    const draw = min_warnings.get(
+      1,
+      teams,
+      compiledTeamResults,
+      { filters: ['by_conflict_group', 'by_sibling_past_opponent_school'] },
+      {
+        style: { team_num: 2 },
+        institution_category_map: institutionCategoryMap,
+      }
+    )
+
+    expect(draw.allocation).toHaveLength(17)
+    draw.allocation.forEach((row) => {
+      const schoolA = Math.floor((row.teams[0] - 1) / 2) + 1
+      const schoolB = Math.floor((row.teams[1] - 1) / 2) + 1
+      expect(schoolA).not.toBe(schoolB)
+      expect(
+        forbiddenSchoolPairs.has([schoolA, schoolB].sort((left, right) => left - right).join('-'))
+      ).toBe(false)
+    })
   })
 
   it('rejects min_warnings for non-two-team styles', () => {

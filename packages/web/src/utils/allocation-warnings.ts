@@ -65,6 +65,7 @@ export type DrawAllocationRowLike = {
 
 export type BuildRowWarningStatesInput = {
   allocation: DrawAllocationRowLike[]
+  teamIds?: string[]
   isTeamAvailable: (teamId: string) => boolean | undefined
   isAdjudicatorAvailable: (adjudicatorId: string) => boolean | undefined
   isVenueAvailable: (venueId: string) => boolean | undefined
@@ -96,7 +97,9 @@ function normalizeIdList(values: unknown): string[] {
 }
 
 function normalizeConflictGroupCategory(value: unknown): ConflictGroupCategory {
-  const normalized = String(value ?? '').trim().toLowerCase()
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'region') return 'region'
   if (normalized === 'league') return 'league'
   return 'institution'
@@ -122,6 +125,39 @@ function checkSided(pastSides: string[], side: 'gov' | 'opp') {
   const govCount = sides.filter((value) => value === 'gov').length
   const oppCount = sides.filter((value) => value === 'opp').length
   return Math.abs(govCount - oppCount) > 1
+}
+
+function schoolIdsForTeam(teamId: string, input: BuildRowWarningStatesInput) {
+  return normalizeIdList(input.teamInstitutions(teamId)).filter(
+    (institutionId) =>
+      normalizeConflictGroupCategory(input.institutionCategory(institutionId)) === 'institution'
+  )
+}
+
+function schoolsOverlap(left: string[], right: string[]) {
+  if (left.length === 0 || right.length === 0) return false
+  const rightSet = new Set(right)
+  return left.some((schoolId) => rightSet.has(schoolId))
+}
+
+function hasRelatedPastSchoolPair(
+  sourceTeamId: string,
+  targetTeamId: string,
+  input: BuildRowWarningStatesInput
+) {
+  const historyTeamIds = normalizeIdList(input.teamIds ?? [sourceTeamId, targetTeamId])
+  const sourceSchoolIds = schoolIdsForTeam(sourceTeamId, input)
+  const targetSchoolIds = schoolIdsForTeam(targetTeamId, input)
+  if (sourceSchoolIds.length === 0 || targetSchoolIds.length === 0) return false
+
+  for (const schoolTeamId of historyTeamIds) {
+    if (!schoolsOverlap(schoolIdsForTeam(schoolTeamId, input), sourceSchoolIds)) continue
+    for (const opponentId of normalizeIdList(input.teamPastOpponents(schoolTeamId))) {
+      if (schoolTeamId === sourceTeamId && opponentId === targetTeamId) continue
+      if (schoolsOverlap(schoolIdsForTeam(opponentId, input), targetSchoolIds)) return true
+    }
+  }
+  return false
 }
 
 function createTargets(
@@ -176,10 +212,7 @@ export function warningDisplayTone(warning: AllocationWarning): WarningDisplayTo
     return 'info'
   }
 
-  if (
-    warning.code === 'team_past_match' ||
-    warning.code === 'team_past_match_same_institution'
-  ) {
+  if (warning.code === 'team_past_match' || warning.code === 'team_past_match_same_institution') {
     return 'history'
   }
 
@@ -211,10 +244,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
     const oppId = normalizeId(row.teams?.opp)
     const teamIds = [govId, oppId].filter((id) => id.length > 0)
     const debateAdjudicatorIds = normalizeIdList([...(row.chairs ?? []), ...(row.panels ?? [])])
-    const adjudicatorIds = normalizeIdList([
-      ...debateAdjudicatorIds,
-      ...(row.trainees ?? []),
-    ])
+    const adjudicatorIds = normalizeIdList([...debateAdjudicatorIds, ...(row.trainees ?? [])])
     const venueId = normalizeId(row.venue)
 
     if (govId.length > 0 && input.isTeamAvailable(govId) === false) {
@@ -350,6 +380,12 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
             input.institutionCategory
           ).forEach((category) => pastSameInstitutionCategories.add(category))
         })
+      if (
+        hasRelatedPastSchoolPair(govId, oppId, input) ||
+        hasRelatedPastSchoolPair(oppId, govId, input)
+      ) {
+        pastSameInstitutionCategories.add('institution')
+      }
       const sortedPastSameInstitutionCategories = conflictCategoryOrder.filter((category) =>
         pastSameInstitutionCategories.has(category)
       )
@@ -466,7 +502,7 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
       }
     }
 
-    if (adjudicatorIds.length === 0) {
+    if (debateAdjudicatorIds.length === 0) {
       warnings.push(
         createWarning(
           rowIndex,

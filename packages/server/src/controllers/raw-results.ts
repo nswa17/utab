@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
+import { Types } from 'mongoose'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
@@ -12,9 +13,18 @@ import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
-import { buildDetailsForRounds, buildIdMaps, normalizeScoreWeights } from './shared/allocation-support.js'
+import {
+  buildDetailsForRounds,
+  buildIdMaps,
+  normalizeScoreWeights,
+  normalizeTeamNum,
+} from './shared/allocation-support.js'
 import { notFound } from './shared/http-errors.js'
-import { ensureObjectId, ensureTournamentId, requireSingleTournamentPayload } from './shared/request-validators.js'
+import {
+  ensureObjectId,
+  ensureTournamentId,
+  requireSingleTournamentPayload,
+} from './shared/request-validators.js'
 
 function buildRawFilter(
   tournamentId: string,
@@ -31,7 +41,10 @@ async function isTournamentAdmin(req: Request, tournamentId: string): Promise<bo
   return hasTournamentAdminAccess(req, tournamentId)
 }
 
-function resolveRounds(requestedRound: number | undefined, ...rawLists: Array<Array<{ r?: number }>>) {
+function resolveRounds(
+  requestedRound: number | undefined,
+  ...rawLists: Array<Array<{ r?: number }>>
+) {
   if (Number.isFinite(requestedRound)) {
     return [Number(requestedRound)]
   }
@@ -53,10 +66,7 @@ function restoreMappedId(value: unknown, reverse: Map<number, string>): string {
   return String(value ?? '')
 }
 
-function remapCompiledTeamResults(
-  teamResults: any[],
-  teamReverse: Map<number, string>
-): any[] {
+function remapCompiledTeamResults(teamResults: any[], teamReverse: Map<number, string>): any[] {
   return teamResults.map((result: any) => ({
     ...result,
     id: restoreMappedId(result?.id, teamReverse),
@@ -143,16 +153,35 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
 } {
   const create: RequestHandler = async (req, res, next) => {
     try {
-      const payload = Array.isArray(req.body) ? req.body : [req.body]
+      const isBulk = Array.isArray(req.body)
+      const payload = isBulk ? req.body : [req.body]
       const tournamentId = requireSingleTournamentPayload(res, payload)
       if (!tournamentId) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const created = await Model.insertMany(
-        payload.map((item: any) => ({ ...item, tournamentId })),
-        { ordered: false }
-      )
-      res.status(201).json({ data: created, errors: [] })
+      const docs: Array<PlainRecord & { _id: Types.ObjectId }> = payload.map((item: any) => ({
+        _id: new Types.ObjectId(),
+        ...item,
+        tournamentId,
+      }))
+      let created: unknown[]
+      try {
+        created = await Model.insertMany(docs, { ordered: true })
+      } catch (createError) {
+        try {
+          await Model.deleteMany({
+            tournamentId,
+            _id: { $in: docs.map((doc) => doc._id) },
+          }).exec()
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [createError, rollbackError],
+            'Failed to roll back raw result creation'
+          )
+        }
+        throw createError
+      }
+      res.status(201).json({ data: isBulk ? created : created[0], errors: [] })
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
@@ -302,16 +331,15 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
       typeof tournament.style === 'number'
         ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
         : null
-    const scoreWeights = normalizeScoreWeights(styleOptions.score_weights ?? styleDoc?.score_weights)
-    const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
+    const scoreWeights = normalizeScoreWeights(
+      styleOptions.score_weights ?? styleDoc?.score_weights
+    )
+    const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
     const style = { team_num: teamNum, score_weights: scoreWeights }
 
     const teamMaps = buildIdMaps(teams)
     const speakerMaps = buildIdMaps(speakers)
-    const mapFromId = (id: string): number =>
-      speakerMaps.map.get(id) ??
-      teamMaps.map.get(id) ??
-      0
+    const mapFromId = (id: string): number => speakerMaps.map.get(id) ?? teamMaps.map.get(id) ?? 0
 
     const mappedRawTeamResults = (rawTeamResults as any[])
       .map((result: any) => {
@@ -434,8 +462,10 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
       typeof tournament.style === 'number'
         ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
         : null
-    const scoreWeights = normalizeScoreWeights(styleOptions.score_weights ?? styleDoc?.score_weights)
-    const teamNum = styleOptions.team_num ?? styleDoc?.team_num ?? 2
+    const scoreWeights = normalizeScoreWeights(
+      styleOptions.score_weights ?? styleDoc?.score_weights
+    )
+    const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
     const style = { team_num: teamNum, score_weights: scoreWeights }
 
     const speakerMaps = buildIdMaps(speakers)
@@ -497,14 +527,8 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
     }
 
     const [adjudicators, teams] = await Promise.all([
-      getAdjudicatorModel(connection)
-        .find({ tournamentId })
-        .lean()
-        .exec(),
-      getTeamModel(connection)
-        .find({ tournamentId })
-        .lean()
-        .exec(),
+      getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
+      getTeamModel(connection).find({ tournamentId }).lean().exec(),
     ])
     const rounds = resolveRounds(round !== undefined ? Number(round) : undefined, rawAdjResults)
     if (rounds.length === 0) {
@@ -576,4 +600,5 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
 export const createRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.create
 export const updateRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.update
 export const deleteRawAdjudicatorResult: RequestHandler = rawAdjudicatorResultCrudHandlers.deleteOne
-export const deleteRawAdjudicatorResults: RequestHandler = rawAdjudicatorResultCrudHandlers.deleteMany
+export const deleteRawAdjudicatorResults: RequestHandler =
+  rawAdjudicatorResultCrudHandlers.deleteMany

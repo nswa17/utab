@@ -126,6 +126,7 @@ import { useAdjudicatorsStore } from '@/stores/adjudicators'
 import { useSpeakersStore } from '@/stores/speakers'
 import { useDrawsStore } from '@/stores/draws'
 import { useVenuesStore } from '@/stores/venues'
+import { escapeCsvCell } from '@/utils/csv'
 
 const route = useRoute()
 const raw = useRawResultsStore()
@@ -381,10 +382,7 @@ async function confirmDeleteAll() {
 function csvEscape(value: any) {
   if (value === null || value === undefined) return ''
   const text = Array.isArray(value) ? value.join(';') : String(value)
-  if (text.includes('"') || text.includes(',') || text.includes('\n')) {
-    return `"${text.replace(/\"/g, '""')}"`
-  }
-  return text
+  return escapeCsvCell(text)
 }
 
 function downloadCsv() {

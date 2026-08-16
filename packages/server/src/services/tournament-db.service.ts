@@ -158,13 +158,13 @@ export async function dropTournamentDatabase(tournamentId: string): Promise<void
   const connection = await getTournamentConnection(tournamentId)
   try {
     if (!connection.db) {
-      logger.warn({ tournamentId }, 'tournament mongodb db not ready')
-      return
+      throw new Error(`Tournament database is not ready: ${tournamentId}`)
     }
     await connection.db.dropDatabase()
     logger.info({ tournamentId }, 'tournament mongodb dropped')
   } catch (err) {
     logger.error({ err, tournamentId }, 'tournament mongodb drop error')
+    throw err
   } finally {
     try {
       await connection.close()

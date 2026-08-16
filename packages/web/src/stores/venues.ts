@@ -126,12 +126,13 @@ export const useVenuesStore = defineStore('venues', () => {
     )
     if (normalizedIds.length === 0) return 0
 
-    loading.value = true
+    beginRequest()
     error.value = null
     try {
       const res = await api.delete('/venues', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       venues.value = venues.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
@@ -140,7 +141,7 @@ export const useVenuesStore = defineStore('venues', () => {
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete venues'
       return null
     } finally {
-      loading.value = false
+      endRequest()
     }
   }
 
