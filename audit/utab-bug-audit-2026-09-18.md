@@ -5984,3 +5984,288 @@ The three Phase 6 findings selected for this re-audit now have executable closur
 - **P6-01: closed** — selected drawn matchups cannot silently disappear in either submission or raw compilation under the missing-data contract;
 - **P6-02: closed** — scoreless rounds remain nullable for score-derived metrics and do not contribute artificial zeroes;
 - **P6-04: closed** — average duplicate normalization rejects inconsistent speaker identity instead of misattributing averaged scores.
+
+
+## Phase 40 — Phase 8 findings final re-audit / closure (P8-02 / P8-03 / P8-04 / P8-05 / P8-06 / P8-08)
+
+This phase re-audited the remaining recent-change findings from Phase 8 against the cumulative audit branch rather than assuming earlier local fixes still held.
+
+### P8-02 — institution priority direction in class-based adjudicator allocation
+
+**Status: closed; fix and executable regression remain intact.**
+
+The current class-based allocator no longer minimizes the raw sum of institution priority numbers.
+
+`buildRolePenalty()` now builds a lexicographic institution-conflict penalty vector ordered by ascending priority number. Therefore a conflict at priority 1 is examined before a conflict at priority 10, matching the documented meaning:
+
+    smaller number = stronger avoidance priority
+
+The core regression in `allocations-adjudicators-class-based.test.ts` constructs two otherwise equal adjudicators:
+
+- adjudicator 50 conflicts with institution priority 1;
+- adjudicator 51 conflicts with institution priority 10;
+
+and requires the allocator to choose adjudicator 51.
+
+The current CI run still passes this regression.
+
+Earlier repair commits recorded by the audit:
+
+- `481f27e2f45d3e0cbb3539515a1fad8f68d9c71b`;
+- `46ed25e42f1d7a595856430eca089deed4b3a159`.
+
+**P8-02 remains closed.**
+
+### P8-03 — cross-tournament stale-fetch invalidation in entity stores
+
+**Status before this phase: still open.**
+
+The cumulative branch still used one store-global `latestFetchSequence` for each current-scope entity store:
+
+- Teams;
+- Speakers;
+- Adjudicators;
+- Venues;
+- Institutions.
+
+That protected the same-tournament case introduced by PR #33, but it preserved the original counterexample:
+
+1. mutation for tournament A is in flight;
+2. user navigates to B;
+3. B fetch starts;
+4. A mutation completes;
+5. A mutation increments the global sequence;
+6. B response is incorrectly discarded as stale.
+
+The same implementation also explained the branch's persistent Web failures in the bulk-delete regression suite after tournament scoping had been added: mutation-only tests could hold valid local state before an explicit fetch established the active scope.
+
+#### Repair
+
+`createTournamentStoreScope()` now owns fetch generations **per tournament id**, not globally.
+
+It exposes:
+
+- `beginFetch(tournamentId)`;
+- `invalidateFetches(tournamentId)`;
+- `isFetchCurrent(token)`;
+- `claimIfEmpty(tournamentId)`.
+
+Each of the five stores now follows the same contract:
+
+- first use can claim an otherwise unscoped local store;
+- a fetch token contains both tournament id and that tournament's generation;
+- a fetch may commit only if:
+  - its tournament is still the active scope, and
+  - its generation is still current for that tournament;
+- a successful mutation invalidates only fetches for its own tournament;
+- a late mutation for A does not mutate visible B state;
+- a mutation error from inactive A does not overwrite B's visible error state.
+
+This preserves the original same-tournament stale-read invariant while removing cross-tournament invalidation.
+
+Core helper commit:
+
+- `2cfbc3e2b2a2c0079554a28aadab1c31aacf3d3b` — scope entity fetch generations by tournament.
+
+Store conversions:
+
+- Teams: `eeee11db6fa4f2531cdc14f62a00b6d2c949792b`;
+- Speakers: `1fd4e5845ff3e5d617ae485478c8d0e953b5a6ab`;
+- Adjudicators: `5ff6de0c9eba6435d6c03ea015048d9f5a515e14`;
+- Venues: `85d7e35657107a87f1ad215b2b9f241b89aaddbb`;
+- Institutions: `266e271a4722c1b810b7ee60a28a780f5f1efa2e`.
+
+Compatibility follow-up for first-use local state:
+
+- Teams: `e1bfbf781c8bd88c9a2d285cd66dfd0838927acf`;
+- Speakers: `b70763ef8052d7ea66b7da88e8c23a2977df53e4`;
+- Adjudicators: `8c77097f2d5cfe278a87a71f4c665ad963241d51`;
+- Venues: `a07701b89a2d79c43ec9f634c5605ec5476558aa`;
+- Institutions: `5382ab111005192b8523171945bcc1d17df89819`.
+
+#### Regression
+
+`entity-bulk-delete.test.ts` now covers the exact A-mutation/B-fetch counterexample for all five stores.
+
+For each store it:
+
+1. loads A;
+2. starts a delayed bulk delete in A;
+3. starts a delayed fetch in B;
+4. lets the A mutation complete after the B fetch has started;
+5. resolves B;
+6. requires B's data to commit.
+
+Commit:
+
+- `a1c9a7e94433ec1c2851088a7f41566ec33fe647`.
+
+The pre-existing `entity-stores-race.test.ts` continues to cover:
+
+- out-of-order A/B fetches;
+- same-tournament fetch vs create;
+- mutation from previous tournament completing after navigation;
+- inactive-tournament mutation errors;
+- clearing previous scope when a new tournament fetch starts.
+
+Final Web verification on CI run `35402513922`:
+
+- `entity-stores-race.test.ts`: **6/6 passed**;
+- `entity-bulk-delete.test.ts`: **15/15 passed**;
+- `institutions.test.ts`: **2/2 passed**;
+- complete Web suite: **66/66 files, 342/342 tests passed**.
+
+**P8-03 is closed.**
+
+### P8-04 — legacy missing allow_low_tie_win reinterpretation
+
+**Status: closed; compatibility behavior remains intact.**
+
+The re-audit checked the cumulative branch rather than relying on the Phase 11 closure entry.
+
+Current effective semantics remain:
+
+    missing allow_low_tie_win => legacy true
+    explicit false => false
+    explicit true => true
+
+The critical surfaces all preserve absence as allowed:
+
+- server ballot validation uses `allow_low_tie_win !== false`;
+- public round sanitization uses `allow_low_tie_win !== false`;
+- participant ballot UI uses `!== false`;
+- admin submission editor uses `!== false`.
+
+New-round defaults may still explicitly choose a product default; the compatibility rule here is specifically for historical/imported documents where the field is absent.
+
+The server unit regression `sanitizeRoundForPublic` explicitly verifies that an empty `userDefinedData` object produces public `allow_low_tie_win=true`.
+
+Earlier compatibility commits remain in the branch:
+
+- `6e2ade7d6a216a0cdd2c9042d0a2af93886f6131`;
+- `fbb92ae769a63a2fda303ea8f04a6cc8d3ec9409`;
+- `6240f8aa15bdc7ccc8f582f5f667c3dfbd272d3f`;
+- `10aebb1850cfe8b204741f76ca828347d98e1929`.
+
+**P8-04 remains closed.**
+
+### P8-05 — historical compiled snapshot mixed with live ballot detail
+
+**Status: closed by an explicit mixed-provenance export contract, not by pretending live detail is historical.**
+
+The current bulk ZIP intentionally distinguishes stored compiled snapshot files from live/current attachments.
+
+Live data is no longer presented as if it were the historical snapshot's ballot provenance:
+
+- participant attachment is named `current_participants.csv`;
+- detailed ballot/result attachment is named `current_snapshot_round_results.csv`;
+- detailed rows are restricted to rounds represented in the displayed compiled snapshot;
+- the ZIP includes `report_provenance.txt`.
+
+The provenance manifest explicitly states:
+
+- ranking CSVs are stored compiled snapshot data;
+- `current_*` files are current entity/submission/draw metadata at export time;
+- those files may reflect corrections or metadata edits made after the compiled snapshot was saved.
+
+This implements one of the remedies explicitly allowed by the original finding: if historical submission provenance is not stored with the snapshot, the live attachment must be **clearly named and documented as live/current** rather than silently mixed.
+
+`AdminTournamentCompiledV2.test.ts` asserts the current filenames, provenance file, and correction warning.
+
+**P8-05 is closed under this explicit mixed-provenance contract.**
+
+Boundary: the ZIP is not a bit-for-bit reconstruction of all source data as of snapshot creation. Consumers needing that property would require submission/entity/draw snapshots to be stored with the compiled object. The UI/export no longer claims that stronger property.
+
+### P8-06 — detailed export omitted correction timestamps
+
+**Status: closed; fix and regression remain intact.**
+
+`DetailedResultsExportRow` now contains both:
+
+- `submitted_at` from `createdAt`;
+- `updated_at` from `updatedAt`.
+
+`updated_at` is included in the CSV column list and localized export labels.
+
+`detailed-results-export.test.ts` uses a ballot with different creation and update timestamps and verifies:
+
+- the row contains both timestamps;
+- the generated CSV contains the correction timestamp.
+
+The current Web suite passes all three detailed-export tests.
+
+**P8-06 remains closed.**
+
+### P8-08 — round lifecycle success-only tests / missing mid-operation failure injection
+
+**Status: closed as a test-gap finding.**
+
+The original finding did not claim a separate production defect beyond P8-01/P4-05; it identified the absence of fault injection around destructive multi-collection round lifecycle orchestration.
+
+The cumulative branch now has explicit failure-injection coverage from Phases 14 and 36.
+
+Round create/delete fault injection covers:
+
+- single create failure during Team-detail synchronization;
+- bulk create partial failure;
+- single delete failure during dependency deletion;
+- late single delete failure after dependencies were removed;
+- bulk delete failure after destructive work began;
+- restoration of Round, Draw/Result, entity details and affected metadata;
+- successful retry after compensation.
+
+Relevant regression commits recorded in Phase 14:
+
+- `9b90843ac035332b81d0889923278de872caefc5`;
+- `e41f9793b56af1f9c2b9dae78d6b2445feeef49e`;
+- `d420008a674418e570a8afb6d73db36acbeebeea`.
+
+Round renumber fault injection from Phase 36 covers:
+
+- early single-renumber dependency failure;
+- late metadata-rewrite failure;
+- bulk-renumber dependency failure;
+- namespace contention across create/renumber/delete.
+
+Relevant regression commits:
+
+- `e82c2f7c373cc66c8af8904f2de7bbcfb529d9bf`;
+- `f0d14e5a0c3712cd8f8cd5c00a2c843bc5d8be51`;
+- `e10b7b55fd3c0314f047e3e5d142722e1338b3be`.
+
+Thus the invariant called out by P8-08 —
+
+    request failure after destructive work starts
+    => persistent logical state is restored
+
+— is now exercised as an explicit regression category rather than inferred from success-path tests.
+
+The crash/host-kill boundary documented in Phases 14 and 36 remains: compensation handles ordinary caught failures, not a process death that prevents rollback code from running.
+
+**P8-08 is closed.**
+
+### Final cumulative verification for this re-audit
+
+CI run `35402513922` at `5382ab111005192b8523171945bcc1d17df89819`:
+
+- lint/server typecheck: success;
+- Web typecheck: success;
+- core: **24/24 files, 118/118 tests passed**;
+- Web: **66/66 files, 342/342 tests passed**;
+- server: **163 passed / 1 failed**.
+
+The only server failure is the pre-existing participant-history authorization-message assertion:
+
+    expected "Tournament admin access required"
+    to contain "does not match the authenticated participant identity"
+
+No Phase 8 closure regression failed.
+
+### Phase 8 closure result
+
+- **P8-02: closed** — class-based institution conflict ordering matches smaller-number-higher-priority semantics.
+- **P8-03: closed in this phase** — entity store stale-fetch generations are tournament-scoped; A mutations cannot invalidate B reads.
+- **P8-04: closed** — historical absence of `allow_low_tie_win` retains legacy draw-allowed behavior.
+- **P8-05: closed under an explicit mixed-provenance ZIP contract** — current attachments are named and documented as current rather than historical.
+- **P8-06: closed** — detailed result exports carry both creation and correction timestamps.
+- **P8-08: closed** — destructive Round lifecycle paths now have mid-operation failure-injection/compensation regressions.
