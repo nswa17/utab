@@ -765,7 +765,11 @@ describe('Server integration', () => {
 
     const tournamentRes = await agent
       .post('/api/v1/tournaments')
-      .send({ name: 'Raw Update Validation Open', style: 1, options: {} })
+      .send({
+        name: 'Raw Update Validation Open',
+        style: 1,
+        options: { style: { score_weights: [1, 1] } },
+      })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = tournamentRes.body.data._id as string
 
@@ -1078,15 +1082,7 @@ describe('Server integration', () => {
   })
 
   it('validates all four team references in British Parliamentary draw objects', async () => {
-    const agent = request.agent(app)
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'bp-draw-reference-guard', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'bp-draw-reference-guard', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent } = await createSuperuserAgent('bp-draw-reference-superuser')
 
     const styleId = 9204
     const styleRes = await agent.post('/api/styles').send({
@@ -1172,17 +1168,7 @@ describe('Server integration', () => {
   })
 
   it('maps style update conflicts to 409 and rejects invalid style ids with 400', async () => {
-    const agent = request.agent(app)
-
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'style-conflict-user', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'style-conflict-user', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent } = await createSuperuserAgent('style-conflict-superuser')
 
     const baseStyle = {
       team_num: 2,
@@ -1223,17 +1209,7 @@ describe('Server integration', () => {
   })
 
   it('rejects malformed style updates before partial numeric values can be stored', async () => {
-    const agent = request.agent(app)
-
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'style-validation-user', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'style-validation-user', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent } = await createSuperuserAgent('style-validation-superuser')
 
     const createStyleRes = await agent.post('/api/styles').send({
       id: 901,
@@ -1310,15 +1286,7 @@ describe('Server integration', () => {
   })
 
   it('keeps tournament style references valid across create, renumber, and delete operations', async () => {
-    const agent = request.agent(app)
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'style-reference-guard', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'style-reference-guard', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent } = await createSuperuserAgent('style-reference-superuser')
 
     const styleId = 9202
     const createStyleRes = await agent.post('/api/styles').send({
@@ -2926,6 +2894,12 @@ describe('Server integration', () => {
     })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
+    const participant = request.agent(app)
+    const accessRes = await participant
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'skip' })
+    expect(accessRes.status).toBe(200)
+
     const roundRes = await agent.post('/api/rounds').send({
       tournamentId,
       round: 1,
@@ -2954,7 +2928,7 @@ describe('Server integration', () => {
     const adjudicatorId = String(adjudicatorRes.body.data._id)
     const unassignedAdjudicatorId = String(unassignedAdjudicatorRes.body.data._id)
 
-    const ballotRes = await request(app).post('/api/submissions/ballots').send({
+    const ballotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -2969,7 +2943,7 @@ describe('Server integration', () => {
       'submittedEntityId or authenticated user is required'
     )
 
-    const feedbackRes = await request(app).post('/api/submissions/feedback').send({
+    const feedbackRes = await participant.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
       adjudicatorId,
@@ -2980,7 +2954,7 @@ describe('Server integration', () => {
       'submittedEntityId or authenticated user is required'
     )
 
-    const forgedActorRes = await request(app).post('/api/submissions/feedback').send({
+    const forgedActorRes = await participant.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
       adjudicatorId,
@@ -2992,7 +2966,7 @@ describe('Server integration', () => {
       'submittedEntityId must reference a tournament entity'
     )
 
-    const unpublishedBallotRes = await request(app).post('/api/submissions/ballots').send({
+    const unpublishedBallotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3005,7 +2979,7 @@ describe('Server integration', () => {
     expect(unpublishedBallotRes.status).toBe(400)
     expect(unpublishedBallotRes.body.errors?.[0]?.message).toBe('draw allocation is not published')
 
-    const unpublishedFeedbackRes = await request(app).post('/api/submissions/feedback').send({
+    const unpublishedFeedbackRes = await participant.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
       adjudicatorId,
@@ -3050,7 +3024,7 @@ describe('Server integration', () => {
     expect(partialDrawRes.status).toBe(201)
     expect(partialDrawRes.body.data.allocation[0].chairs).toEqual([adjudicatorId])
 
-    const partialDrawBallotRes = await request(app).post('/api/submissions/ballots').send({
+    const partialDrawBallotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3081,7 +3055,7 @@ describe('Server integration', () => {
     expect(publishedDrawRes.status).toBe(201)
     expect(publishedDrawRes.body.data.allocation[0].chairs).toEqual([adjudicatorId])
 
-    const publishedBallotRes = await request(app).post('/api/submissions/ballots').send({
+    const publishedBallotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3093,7 +3067,7 @@ describe('Server integration', () => {
     })
     expect(publishedBallotRes.status).toBe(201)
 
-    const publishedFeedbackRes = await request(app).post('/api/submissions/feedback').send({
+    const publishedFeedbackRes = await participant.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
       adjudicatorId,
@@ -3102,7 +3076,7 @@ describe('Server integration', () => {
     })
     expect(publishedFeedbackRes.status).toBe(201)
 
-    const unassignedPublicBallotRes = await request(app).post('/api/submissions/ballots').send({
+    const unassignedPublicBallotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3148,15 +3122,7 @@ describe('Server integration', () => {
   })
 
   it('enforces configured score ranges and round-specific speaker ownership', async () => {
-    const agent = request.agent(app)
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'speaker-ownership-guard', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'speaker-ownership-guard', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent } = await createSuperuserAgent('speaker-ownership-superuser')
 
     const styleId = 9201
     const styleRes = await agent.post('/api/styles').send({
