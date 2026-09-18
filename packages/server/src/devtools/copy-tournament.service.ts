@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
+import { ROUND_NAMESPACE_LOCK_COLLECTION } from '../services/round-namespace-guard.service.js'
 import {
   DevToolsServiceError,
   type CopiedCollectionSummary,
@@ -22,7 +23,20 @@ function normalizeCollectionName(value: unknown): string {
 }
 
 function shouldSkipCollection(name: string): boolean {
-  return !name || name.startsWith('system.')
+  return !name || name.startsWith('system.') || name === ROUND_NAMESPACE_LOCK_COLLECTION
+}
+
+function sanitizeCopiedDocument(
+  collectionName: string,
+  document: Record<string, unknown>
+): Record<string, unknown> {
+  if (collectionName !== 'rounds') return document
+  const next = { ...document }
+  delete next.roundActiveWriteCount
+  delete next.roundActiveWriteTouchedAt
+  delete next.roundMutationLocked
+  delete next.roundMutationEpoch
+  return next
 }
 
 function remapTournamentId(value: unknown, targetTournamentId: string): unknown {
@@ -71,7 +85,10 @@ async function copyTournamentCollections(
     }
 
     const targetDocuments = sourceDocuments.map((document) =>
-      remapDocumentTournamentId(document, targetTournamentId)
+      sanitizeCopiedDocument(
+        name,
+        remapDocumentTournamentId(document, targetTournamentId)
+      )
     )
 
     await targetCollection.insertMany(targetDocuments, { ordered: true })
