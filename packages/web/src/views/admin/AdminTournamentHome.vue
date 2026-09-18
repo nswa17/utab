@@ -1920,8 +1920,6 @@ const isLoading = computed(
     submissions.loading
 )
 const roundPublicationBusy = computed(() => rounds.loading || draws.loading || sectionLoading.value)
-const DEFAULT_TOURNAMENT_ACCESS_PASSWORD = 'password'
-
 const tournamentForm = reactive({
   name: '',
   style: 1,
@@ -3215,8 +3213,9 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     if (passwordInput.length > 0) {
       authPayload.access.password = passwordInput
     } else if (!currentHasPassword) {
-      // Keep compatibility with server-side validation that requires a password when enabling access.
-      authPayload.access.password = DEFAULT_TOURNAMENT_ACCESS_PASSWORD
+      tournamentAutosaveStatus.value = 'error'
+      tournamentAutosaveError.value = t('パスワードを入力してください。')
+      return false
     }
   } else {
     if (passwordInput.length > 0) {
