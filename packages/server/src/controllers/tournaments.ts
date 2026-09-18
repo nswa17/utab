@@ -9,6 +9,7 @@ import { verifyPassword } from '../services/hash.service.js'
 import {
   getTournamentAccessConfig,
   mergeTournamentAuth,
+  TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS,
 } from '../services/tournament-access.service.js'
 import {
   sanitizeTournamentForAdmin,
@@ -413,10 +414,11 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
 
     if (!access.required) {
       const grantedAt = Date.now()
-      const expiresAt = grantedAt + 24 * 60 * 60 * 1000
+      const expiresAt = grantedAt + TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS
       const entry = {
         grantedAt,
         expiresAt,
+        lastActivityAt: grantedAt,
         version: access.version,
       }
       req.session.tournamentAccess = {
@@ -459,10 +461,11 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
     }
 
     const grantedAt = Date.now()
-    const expiresAt = grantedAt + 24 * 60 * 60 * 1000
+    const expiresAt = grantedAt + TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS
     const entry = {
       grantedAt,
       expiresAt,
+      lastActivityAt: grantedAt,
       version: access.version,
     }
     req.session.tournamentAccess = {
