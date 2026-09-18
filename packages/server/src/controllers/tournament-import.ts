@@ -450,7 +450,16 @@ async function importTournamentFromBundle(
     if (createdStyleId !== null) {
       cleanupTasks.push(StyleModel.deleteOne({ id: createdStyleId }).exec())
     }
-    await Promise.allSettled(cleanupTasks)
+    const cleanupResults = await Promise.allSettled(cleanupTasks)
+    const cleanupErrors = cleanupResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        `Failed to roll back tournament import ${tournamentId}`
+      )
+    }
     throw error
   }
 }
