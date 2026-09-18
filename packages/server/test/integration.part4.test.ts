@@ -3536,6 +3536,34 @@ describe('Server integration', () => {
     expect(teamAResult).toBeTruthy()
     expect(teamAResult.institutions).toContain('new-inst')
     expect(teamAResult.institutions).not.toContain('old-inst')
+
+    let churnFindCalls = 0
+    let churnWrites = 0
+    const churnFindSpy = vi.spyOn(TeamModel as any, 'find').mockImplementation((...args: any[]) => {
+      churnFindCalls += 1
+      const query = originalFind(...args)
+      if ([2, 5, 8, 11, 14].includes(churnFindCalls)) {
+        const originalExec = query.exec.bind(query)
+        query.exec = async () => {
+          const rows = await originalExec()
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          churnWrites += 1
+          await TeamModel.updateOne(
+            { _id: teamAId, tournamentId },
+            { $set: { 'template.conflicts': [`churn-${churnWrites}`] } }
+          ).exec()
+          return rows
+        }
+      }
+      return query as any
+    })
+
+    await expect(buildCompiledPayload(tournamentId, 'raw', [1])).rejects.toMatchObject({
+      name: 'CompileUnstable',
+      status: 409,
+    })
+    churnFindSpy.mockRestore()
+    expect(churnWrites).toBe(5)
   })
 
 })
