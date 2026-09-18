@@ -3430,4 +3430,112 @@ describe('Server integration', () => {
     expect((storedDraw2 as any)?.userDefinedData?.custom?.source_rounds).toEqual([2])
   })
 
+
+  it('retries compilation when a source collection changes during the read set', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'compile-stable-read-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'compile-stable-read-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Compile Stable Read Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Compile Team A',
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Compile Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const rawTeamsRes = await organizer.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamAId,
+        from_id: 'compile-seed',
+        r: 1,
+        weight: 1,
+        win: 1,
+        side: 'gov',
+        opponents: [teamBId],
+      },
+      {
+        tournamentId,
+        id: teamBId,
+        from_id: 'compile-seed',
+        r: 1,
+        weight: 1,
+        win: 0,
+        side: 'opp',
+        opponents: [teamAId],
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const { buildCompiledPayload } = await import('../src/controllers/compiled.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+
+    await TeamModel.updateOne(
+      { _id: teamAId, tournamentId },
+      { $set: { 'template.conflicts': ['old-inst'] } }
+    ).exec()
+
+    const originalFind = TeamModel.find.bind(TeamModel)
+    let teamFindCalls = 0
+    let injected = false
+    const teamFindSpy = vi.spyOn(TeamModel as any, 'find').mockImplementation((...args: any[]) => {
+      teamFindCalls += 1
+      const query = originalFind(...args)
+      if (!injected && teamFindCalls === 2) {
+        const originalExec = query.exec.bind(query)
+        query.exec = async () => {
+          const rows = await originalExec()
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          await TeamModel.updateOne(
+            { _id: teamAId, tournamentId },
+            { $set: { 'template.conflicts': ['new-inst'] } }
+          ).exec()
+          injected = true
+          return rows
+        }
+      }
+      return query as any
+    })
+
+    const built = await buildCompiledPayload(tournamentId, 'raw', [1])
+    teamFindSpy.mockRestore()
+
+    expect(injected).toBe(true)
+    expect(teamFindCalls).toBeGreaterThanOrEqual(6)
+    const teamAResult = built.payload.compiled_team_results.find(
+      (row: any) => String(row?.id ?? '') === teamAId
+    )
+    expect(teamAResult).toBeTruthy()
+    expect(teamAResult.institutions).toContain('new-inst')
+    expect(teamAResult.institutions).not.toContain('old-inst')
+  })
+
 })
