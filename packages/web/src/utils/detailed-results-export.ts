@@ -7,6 +7,7 @@ export type DetailedResultsExportRow = {
   round_name: string
   submission_id: string
   submitted_at: string
+  updated_at: string
   voted_by_id: string
   voted_by_name: string
   matchup: string
@@ -42,6 +43,7 @@ export const DETAILED_RESULTS_EXPORT_COLUMNS = [
   'round_name',
   'submission_id',
   'submitted_at',
+  'updated_at',
   'voted_by_id',
   'voted_by_name',
   'matchup',
@@ -73,6 +75,7 @@ export const DEFAULT_DETAILED_RESULTS_EXPORT_LABELS: DetailedResultsExportLabels
   round_name: 'Round name',
   submission_id: 'Submission ID',
   submitted_at: 'Submitted at',
+  updated_at: 'Updated at',
   voted_by_id: 'Voted by ID',
   voted_by_name: 'Voted by',
   matchup: 'Match',
@@ -163,6 +166,7 @@ function createBaseRow(
     round_name: text(resolvers.resolveRoundName(Number(submission.round))),
     submission_id: text(submission._id),
     submitted_at: text(submission.createdAt),
+    updated_at: text(submission.updatedAt),
     voted_by_id: votedById,
     voted_by_name: votedById ? resolveOrFallback(resolvers.resolveEntityName, votedById) : '',
     comment: text(payload.comment),
