@@ -67,8 +67,9 @@ describe('draws store', () => {
     await store.fetchDraws('t1', 3)
 
     expect(store.draws.map((item) => item._id)).toEqual(
-      expect.arrayContaining(['draw-r1', 'draw-r2', 'draw-r3', 'draw-other'])
+      expect.arrayContaining(['draw-r1', 'draw-r2', 'draw-r3'])
     )
+    expect(store.draws.some((item) => item._id === 'draw-other').toBe(false)
     expect(store.draws.some((item) => item._id === 'draw-r1' && item.drawOpened)).toBe(true)
   })
 
@@ -271,4 +272,65 @@ describe('draws store', () => {
       },
     ] as any)
   })
+  it('does not let an old-tournament upsert invalidate or contaminate a new-tournament fetch', async () => {
+    const store = useDrawsStore()
+    let resolveUpsert: (value: any) => void = () => {}
+    let resolveFetch: (value: any) => void = () => {}
+
+    mockedApi.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpsert = resolve
+        })
+    )
+    mockedApi.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+    )
+
+    const upsertPromise = store.upsertDraw({
+      tournamentId: 'tournament-a',
+      round: 1,
+      allocation: [],
+    })
+    const fetchPromise = store.fetchDraws('tournament-b')
+
+    resolveUpsert({
+      data: {
+        data: {
+          _id: 'draw-a-late',
+          tournamentId: 'tournament-a',
+          round: 1,
+          allocation: [],
+        },
+      },
+    })
+    await upsertPromise
+
+    resolveFetch({
+      data: {
+        data: [
+          {
+            _id: 'draw-b-current',
+            tournamentId: 'tournament-b',
+            round: 1,
+            allocation: [],
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.draws).toEqual([
+      {
+        _id: 'draw-b-current',
+        tournamentId: 'tournament-b',
+        round: 1,
+        allocation: [],
+      },
+    ] as any)
+  })
+
 })
