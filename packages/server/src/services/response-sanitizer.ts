@@ -228,7 +228,7 @@ export function sanitizeRoundForPublic(round: unknown): PlainRecord {
       evaluate_from_teams: userDefinedData.evaluate_from_teams !== false,
       chairs_always_evaluated: userDefinedData.chairs_always_evaluated === true,
       no_speaker_score: userDefinedData.no_speaker_score === true,
-      allow_low_tie_win: userDefinedData.allow_low_tie_win === true,
+      allow_low_tie_win: userDefinedData.allow_low_tie_win !== false,
       allow_score_winner_mismatch: allowWinnerScoreMismatchForRound(userDefinedData),
       score_by_matter_manner: userDefinedData.score_by_matter_manner !== false,
       poi: userDefinedData.poi !== false,
