@@ -320,7 +320,7 @@
                   {{ $t('表示中の順位表CSVをダウンロード') }}
                 </Button>
               </article>
-              <article v-if="detailedResultsExportRows.length > 0" class="individual-download-card">
+              <article v-if="snapshotScopedDetailedResultsExportRows.length > 0" class="individual-download-card">
                 <div class="individual-download-card-content">
                   <strong>{{ $t('選択ラウンドの投票詳細') }}</strong>
                   <p class="muted small">
@@ -345,7 +345,7 @@
                 </Button>
               </article>
               <article
-                v-if="detailedResultsExportRows.length > 0"
+                v-if="snapshotScopedDetailedResultsExportRows.length > 0"
                 class="individual-download-card individual-download-card--all-rounds"
               >
                 <div class="individual-download-card-content">
@@ -357,7 +357,7 @@
                 <Button
                   variant="secondary"
                   class="individual-download-button"
-                  :disabled="detailedResultsExportRows.length === 0"
+                  :disabled="snapshotScopedDetailedResultsExportRows.length === 0"
                   @click="downloadDetailedResultsCsv('all')"
                 >
                   {{ $t('全ラウンドの投票詳細CSV') }}
