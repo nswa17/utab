@@ -1206,11 +1206,13 @@ describe('Server integration', () => {
     const TeamModel = getTeamModel(connection)
     const RoundModel = getRoundModel(connection)
 
+    const isoLookingUserText = '2026-09-18T12:34:56.000Z'
     const createdTeam = await TeamModel.create({
       tournamentId,
       name: 'Team Restore A',
       template: { speakers: ['sp1', 'sp2'] },
       details: [{ r: 1, available: true, conflicts: [], speakers: ['sp1', 'sp2'] }],
+      userDefinedData: { isoLookingUserText },
     })
     await RoundModel.create({
       tournamentId,
@@ -1307,6 +1309,8 @@ describe('Server integration', () => {
     expect(restoredTeams).toHaveLength(1)
     expect(restoredTeams[0]?.name).toBe('Team Restore A')
     expect(String(restoredTeams[0]?.tournamentId)).toBe(restoredTournamentId)
+    expect(restoredTeams[0]?.userDefinedData?.isoLookingUserText).toBe(isoLookingUserText)
+    expect(typeof restoredTeams[0]?.userDefinedData?.isoLookingUserText).toBe('string')
 
     const restoredRounds = await RestoredRoundModel.find({ tournamentId: restoredTournamentId }).lean().exec()
     expect(restoredRounds).toHaveLength(1)
