@@ -3216,6 +3216,225 @@ describe('Server integration', () => {
   })
 
 
+  it('rolls back single and bulk round renumber failures and serializes round namespace changes', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'round-renumber-atomic-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'round-renumber-atomic-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Renumber Atomic Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamA = await organizer.post('/api/teams').send({ tournamentId, name: 'Renumber Team A' })
+    const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'Renumber Team B' })
+    expect(teamA.status).toBe(201)
+    expect(teamB.status).toBe(201)
+    const teamAId = String(teamA.body.data._id)
+    const teamBId = String(teamB.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getRoundModel } = await import('../src/models/round.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const { getResultModel } = await import('../src/models/result.js')
+    const {
+      acquireRoundNamespaceLease,
+      releaseRoundNamespaceLease,
+    } = await import('../src/services/round-namespace-guard.service.js')
+
+    const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
+    const TeamModel = getTeamModel(connection)
+    const DrawModel = getDrawModel(connection)
+    const ResultModel = getResultModel(connection)
+
+    const roundOne = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Renumber Round 1',
+    })
+    expect(roundOne.status).toBe(201)
+    const roundOneId = String(roundOne.body.data._id)
+
+    const drawOne = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawOne.status).toBe(201)
+    expect(
+      (
+        await organizer.post('/api/results').send({
+          tournamentId,
+          round: 1,
+          payload: { marker: 'single-renumber' },
+        })
+      ).status
+    ).toBe(201)
+
+    const singleFailureSpy = vi
+      .spyOn(TeamModel as any, 'updateMany')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected single renumber dependency failure')
+        },
+      }))
+
+    const failedSingleRenumber = await organizer.patch(`/api/rounds/${roundOneId}`).send({
+      tournamentId,
+      round: 2,
+      name: 'Should Roll Back',
+    })
+    expect(failedSingleRenumber.status).toBe(500)
+    singleFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ _id: roundOneId, tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await RoundModel.findOne({ tournamentId, round: 2 }).lean().exec()).toBeNull()
+    expect(await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await DrawModel.findOne({ tournamentId, round: 2 }).lean().exec()).toBeNull()
+    expect(await ResultModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    const teamsAfterSingleRollback = await TeamModel.find({ tournamentId }).lean().exec()
+    expect(
+      teamsAfterSingleRollback.every(
+        (team: any) =>
+          team.details.some((detail: any) => Number(detail?.r) === 1) &&
+          !team.details.some((detail: any) => Number(detail?.r) === 2)
+      )
+    ).toBe(true)
+
+    const successfulSingleRenumber = await organizer.patch(`/api/rounds/${roundOneId}`).send({
+      tournamentId,
+      round: 2,
+      name: 'Renumbered Round 2',
+    })
+    expect(successfulSingleRenumber.status).toBe(200)
+    expect(successfulSingleRenumber.body.data.round).toBe(2)
+    expect(await DrawModel.findOne({ tournamentId, round: 2 }).lean().exec()).toBeTruthy()
+    expect(await ResultModel.findOne({ tournamentId, round: 2 }).lean().exec()).toBeTruthy()
+
+    const bulkCreated = await organizer.post('/api/rounds').send([
+      { tournamentId, round: 3, name: 'Bulk Renumber 3' },
+      { tournamentId, round: 4, name: 'Bulk Renumber 4' },
+    ])
+    expect(bulkCreated.status).toBe(201)
+    const bulkIds = new Map(
+      (bulkCreated.body.data as Array<{ _id: string; round: number }>).map((item) => [
+        Number(item.round),
+        String(item._id),
+      ])
+    )
+    expect(bulkIds.get(3)).toBeTruthy()
+    expect(bulkIds.get(4)).toBeTruthy()
+
+    for (const roundNumber of [3, 4]) {
+      expect(
+        (
+          await organizer.post('/api/results').send({
+            tournamentId,
+            round: roundNumber,
+            payload: { marker: `bulk-renumber-${roundNumber}` },
+          })
+        ).status
+      ).toBe(201)
+    }
+
+    const bulkFailureSpy = vi
+      .spyOn(TeamModel as any, 'updateMany')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected bulk renumber dependency failure')
+        },
+      }))
+
+    const failedBulkRenumber = await organizer.patch('/api/rounds').send([
+      { id: bulkIds.get(3), tournamentId, round: 5, name: 'Should Roll Back 5' },
+      { id: bulkIds.get(4), tournamentId, round: 6, name: 'Should Roll Back 6' },
+    ])
+    expect(failedBulkRenumber.status).toBe(500)
+    bulkFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ _id: bulkIds.get(3), tournamentId, round: 3 }).lean().exec()).toBeTruthy()
+    expect(await RoundModel.findOne({ _id: bulkIds.get(4), tournamentId, round: 4 }).lean().exec()).toBeTruthy()
+    expect(await RoundModel.countDocuments({ tournamentId, round: { $in: [5, 6] } }).exec()).toBe(0)
+    expect(await ResultModel.countDocuments({ tournamentId, round: { $in: [3, 4] } }).exec()).toBe(2)
+    expect(await ResultModel.countDocuments({ tournamentId, round: { $in: [5, 6] } }).exec()).toBe(0)
+
+    const teamsAfterBulkRollback = await TeamModel.find({ tournamentId }).lean().exec()
+    expect(
+      teamsAfterBulkRollback.every(
+        (team: any) =>
+          [3, 4].every((roundNumber) =>
+            team.details.some((detail: any) => Number(detail?.r) === roundNumber)
+          ) &&
+          [5, 6].every(
+            (roundNumber) =>
+              !team.details.some((detail: any) => Number(detail?.r) === roundNumber)
+          )
+      )
+    ).toBe(true)
+
+    const successfulBulkRenumber = await organizer.patch('/api/rounds').send([
+      { id: bulkIds.get(3), tournamentId, round: 5, name: 'Renumbered 5' },
+      { id: bulkIds.get(4), tournamentId, round: 6, name: 'Renumbered 6' },
+    ])
+    expect(successfulBulkRenumber.status).toBe(200)
+    expect(await ResultModel.countDocuments({ tournamentId, round: { $in: [5, 6] } }).exec()).toBe(2)
+
+    const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    expect(namespaceLease).toBeTruthy()
+    if (!namespaceLease) throw new Error('failed to acquire namespace lease in test')
+    try {
+      const blockedCreate = await organizer.post('/api/rounds').send({
+        tournamentId,
+        round: 7,
+        name: 'Blocked During Namespace Mutation',
+      })
+      expect(blockedCreate.status).toBe(409)
+      expect(blockedCreate.body.errors?.[0]?.message).toContain('namespace')
+
+      const blockedRenumber = await organizer.patch(`/api/rounds/${roundOneId}`).send({
+        tournamentId,
+        round: 7,
+      })
+      expect(blockedRenumber.status).toBe(409)
+      expect(blockedRenumber.body.errors?.[0]?.message).toContain('namespace')
+    } finally {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+    }
+
+    const createAfterRelease = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 7,
+      name: 'Created After Namespace Release',
+    })
+    expect(createAfterRelease.status).toBe(201)
+  })
+
+
   it('preserves unrelated concurrent edits during privacy reference cleanup', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
