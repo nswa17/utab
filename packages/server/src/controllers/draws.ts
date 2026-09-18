@@ -45,26 +45,6 @@ const allocations = {
   venues: venueAllocations,
 }
 
-async function syncRoundPublicationFlags(
-  connection: Awaited<ReturnType<typeof getTournamentConnection>>,
-  tournamentId: string,
-  round: number,
-  drawOpened: boolean,
-  allocationOpened: boolean
-): Promise<void> {
-  await getRoundModel(connection)
-    .updateOne(
-      { tournamentId, round },
-      {
-        $set: {
-          teamAllocationOpened: drawOpened,
-          adjudicatorAllocationOpened: allocationOpened,
-        },
-      }
-    )
-    .exec()
-}
-
 async function saveDrawWithOptimisticLock(params: {
   DrawModel: ReturnType<typeof getDrawModel>
   tournamentId: string
@@ -450,13 +430,6 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       return
     }
 
-    await syncRoundPublicationFlags(
-      connection,
-      tournamentId,
-      round,
-      updated.drawOpened === true,
-      updated.allocationOpened === true
-    )
     res.status(201).json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
@@ -895,13 +868,6 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
         })
         return
       }
-      await syncRoundPublicationFlags(
-        connection,
-        tournamentId,
-        round,
-        updated.drawOpened === true,
-        updated.allocationOpened === true
-      )
       res.status(201).json({ data: updated, errors: [] })
       return
     }
@@ -964,7 +930,6 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
       })
       return
     }
-    await syncRoundPublicationFlags(connection, tournamentId, Number(deleted.round), false, false)
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
