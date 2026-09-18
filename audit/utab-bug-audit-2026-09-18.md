@@ -4891,3 +4891,300 @@ This behavior was already introduced by the earlier compilation-attribution repa
 ### P6-06 status
 
 **P6-06 is closed on the current audit branch.**
+
+
+## Phase 28 — Tournament-scoped entity stores (P7-02 / P7-09)
+
+P7-02 and the entity-store portion of P7-09 were repaired.
+
+### Previous behavior
+
+The team/speaker/adjudicator/venue/institution/round stores used a global fetch sequence but did not bind that sequence to a tournament.
+
+A mutation started in tournament A could finish after navigation to B and:
+
+- advance the global fetch sequence, invalidating B's in-flight fetch;
+- inject A's mutation result into the currently displayed list;
+- surface an A mutation error in B;
+- leave A's rows visible while B was loading or after B failed to load.
+
+### Repair
+
+A shared `createTournamentStoreScope()` helper now records the store's active tournament.
+
+The six single-active-tournament stores now:
+
+1. activate the requested tournament before fetch;
+2. immediately clear rows when the tournament scope changes;
+3. accept fetch completion only for the active tournament and current sequence;
+4. apply mutation results/errors only when the mutation's tournament is still active;
+5. advance fetch invalidation sequences only for mutations in the active tournament.
+
+Files:
+
+- `packages/web/src/utils/tournament-store-scope.ts`;
+- `packages/web/src/stores/teams.ts`;
+- `speakers.ts`;
+- `adjudicators.ts`;
+- `venues.ts`;
+- `institutions.ts`;
+- `rounds.ts`.
+
+Implementation commits:
+
+- `01cfa9bc2702a62bf30d54d37c3f9a55bef2018c`;
+- `f25988e29a3f072ad03f05c9795d4ceb55c4560f`;
+- `da12841a25ac9a7a6fdd01f9a1a0616a7920a3d4`;
+- `fc80f51999e40c7d9e13ca5187109f45ff7e2ce6`;
+- `cd5036c65f5179505cb9d8868185ffa6225b4591`;
+- `dc4a2cb94efd6c2789cd059323dc811d975cba5a`;
+- `3be79088dc6cfff032eac77def3ea05819df75f6`.
+
+Regression coverage in `entity-stores-race.test.ts` verifies:
+
+- late mutation A cannot contaminate fetched tournament B;
+- late mutation A failure cannot replace B's error state;
+- switching to B clears A rows immediately;
+- failed B fetch leaves no stale A rows.
+
+Regression commit:
+
+- `142d75afde7adaaea7ab5d8b830692befd320910`.
+
+### Status
+
+**P7-02 is closed.**
+**P7-09 is closed for the audited entity/round stores.**
+
+## Phase 29 — Participant-home route refresh gating (P7-03)
+
+P7-03 was repaired.
+
+`UserParticipantHome.vue` now captures the tournament id at refresh start and uses `createLatestRequestGate()` to ensure only the latest route refresh may mark the screen loaded.
+
+A stale refresh from tournament A can no longer finish after navigation to B and expose stale controls as though B were ready.
+
+The reload overlay now intercepts pointer events while a route refresh is active.
+
+Implementation:
+
+- `6bb3e776e2eb66ce76d767b6f03649d9543e9c58`;
+- regression/source assertions: `db4b4618ab337e16501f04c793103b16cdc01028`.
+
+### Status
+
+**P7-03 is closed.**
+
+## P7-04 re-check — raw-result mutation errors
+
+The current audit branch already contains the required failure guards in `AdminRoundResult.vue`.
+
+Create/update/delete flows check the raw-result store return value before performing the follow-up refresh or closing the editor:
+
+    const updated = await raw.updateRawResult(...)
+    if (updated === null) return
+
+The bulk-delete path similarly preserves the failure message.
+
+Therefore the original sequence in which a failed mutation was immediately followed by a GET that cleared `raw.error` is no longer present.
+
+### Status
+
+**P7-04 is closed on the current audit branch; no additional production patch was required in this continuation.**
+
+## Phase 30 — Tournament-settings mutation route scoping (P7-06)
+
+P7-06 was repaired.
+
+`AdminTournamentHome.vue` now captures the target tournament id before each settings mutation and discards all local completion effects if the route has changed before the request finishes.
+
+This applies to:
+
+- generic tournament settings save;
+- notice save;
+- autosave flush;
+- break settings;
+- team ranking settings;
+- adjudicator ranking settings.
+
+The generic save also snapshots the target tournament object before awaiting instead of reading mutable `tournament.value` after navigation.
+
+Implementation:
+
+- `286054ac4ef3823175ba6c6e9e87a5868f60639b`.
+
+Source-level regression assertions:
+
+- `01fc8ebd8c786eff7a9502f93ff82958078ab6ff`.
+
+### Status
+
+**P7-06 is closed.**
+
+## Phase 31 — Participant submission-history identity boundary (new P7-10)
+
+A new authorization defect was found while repairing P7-05.
+
+### Finding
+
+`GET /submissions/mine` accepted caller-selected `submittedEntityId` and filtered the tournament submission collection by that value, but did not verify that the authenticated participant was bound to that entity.
+
+A participant with valid tournament access could therefore request another participant's entity id and potentially read that participant's ballot/feedback history.
+
+This bypassed the entity-binding protections previously added to submission creation.
+
+### Repair
+
+Participant submission-history reads now use the same server-side tournament-member identity model as writes.
+
+For non-admin callers:
+
+- a logged-in tournament member is required;
+- a valid participant entity binding is required;
+- exact bound entity id is accepted;
+- a speaker-bound account may read its Team alias only for a concrete round in which server-side roster data proves membership;
+- another participant's entity id is rejected with 403.
+
+Admin callers retain the administrative read behavior.
+
+Implementation:
+
+- `606c0ef30607657729171056170dab5b0b7b311b`.
+
+Integration regression:
+
+- judge1-bound account cannot query judge2 history;
+- judge1 can query its own ballot;
+- speakerA-bound account can query Team A feedback for the round;
+- the same account cannot query Team B.
+
+Regression commit:
+
+- `a90f6522ccc05b6c5470ee6a849398d753528a58`.
+
+### Status
+
+**P7-10 is closed.**
+
+## Phase 32 — Ambiguous participant submission outcomes (P7-05)
+
+P7-05 was repaired at the browser contract layer.
+
+### Previous behavior
+
+The submissions store imposed its own 15-second `AbortController` deadline.
+
+Client cancellation does not roll back a server request, so the browser could report a timeout even when the server had already committed the ballot/feedback. A retry would then receive the semantic duplicate 409 and appear to fail again.
+
+### Repair
+
+The artificial browser-side 15-second abort was removed.
+
+Participant POSTs now wait for the HTTP request to resolve according to the underlying network/client behavior.
+
+If a submission attempt returns a duplicate 409, or an ambiguous network failure without an HTTP response, the client attempts a secured reconciliation query through `/submissions/mine`.
+
+Ballot reconciliation matches:
+
+- tournament;
+- round;
+- authenticated submitted entity;
+- unordered team pair.
+
+Feedback reconciliation matches:
+
+- tournament;
+- round;
+- authenticated submitted entity;
+- adjudicator id.
+
+If the matching row exists, the store returns that row as the successful result and clears the error.
+
+If a network failure cannot be reconciled, the UI no longer claims that the submission definitely failed. It reports that the result could not be confirmed and explains that a retry will automatically reconcile an already-stored submission.
+
+Implementation:
+
+- `c1222e258935dbd8b9f33bf7423e9121e0034be5`.
+
+Regression coverage:
+
+- duplicate ballot retry resolves to the existing ballot;
+- ambiguous network error with no stored match remains explicitly uncertain;
+- normal feedback submission no longer carries an AbortSignal deadline;
+- duplicate feedback resolves to the existing feedback.
+
+Regression commit:
+
+- `d6d00927a4eb8b7b7fbc87da05d91a8e4b7fca2b`.
+
+### Status
+
+**P7-05 is closed for the identified client-imposed timeout ambiguity.**
+
+Server-side semantic duplicate protection remains the final integrity backstop.
+
+## Phase 33 — Round break type contract (P7-08)
+
+P7-08 was repaired.
+
+The Web `RoundBreakConfig` type now includes the server-required:
+
+    enabled: boolean
+
+The existing workflow call already supplied `enabled: true`; the type definition was the stale part.
+
+Implementation:
+
+- `ae0a705e5cb1a98f4a51e135ee628d35f09c527f`.
+
+### Status
+
+**P7-08 is closed.**
+
+## Phase 34 — Multi-team draw editor fail-closed boundary (P7-07)
+
+P7-07 was addressed conservatively without removing Server/Core multi-team support.
+
+### Previous behavior
+
+Server/Core can represent allocation rows with more than two teams, while the Web draw editor is structurally built around:
+
+    teams.gov
+    teams.opp
+
+Entering a 4-team/BP-style draw in the editor could therefore cause array-shaped team assignments to be read as missing Gov/Opp fields and later be collapsed or overwritten by two-team-only editing logic.
+
+### Repair
+
+The current Web allocation editor now explicitly fails closed whenever the resolved tournament style has `team_num != 2`.
+
+For non-two-team styles:
+
+- the two-team allocation board is not rendered;
+- unsubmitted calculations tied to the two-team editor are not shown;
+- save is rejected;
+- auto-generation is rejected;
+- allocation CSV import/open/apply is rejected;
+- a visible explanation states that Server/Core can preserve the format but this Web editor is not yet safe for editing it.
+
+The Server/Core allocation API remains unchanged and continues to support broader team shapes for compatible clients.
+
+Implementation:
+
+- `f304968b1f1c307065d9a360b36b4b606e4b0010`;
+- localized explanation: `08c420f7acd1683b5e02d6cfd9fe42eb38e0c65c`;
+- regression/source assertions: `6e1d012198d1e651497479a6fc14c52b3b94ba5c`.
+
+### Status and boundary
+
+**The silent data-loss/misrepresentation path in P7-07 is closed.**
+
+This is not a claim that the Web editor now supports BP/4-team editing. It deliberately exposes the limitation instead of silently corrupting a shape it cannot faithfully represent.
+
+Full generic position-aware Web draw editing remains a future feature.
+
+### Phase 7 status
+
+All numbered Phase-7 findings P7-01 through P7-09 are either fixed on the current branch or explicitly fail-closed, and the newly discovered P7-10 submission-history authorization defect is fixed.
+
+The next audit work should re-check later phase findings against the accumulated branch rather than assuming the original findings still reproduce.
