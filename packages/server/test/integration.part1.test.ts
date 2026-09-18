@@ -509,6 +509,220 @@ describe('Server integration', () => {
     expect(rowsAfterFreshKey).toHaveLength(1)
   })
 
+  it('does not expose a service-account terminal response before idempotency completion is durable', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer.post('/api/v1/auth/register').send({
+          username: 'service-idempotency-durable-owner',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/v1/auth/login')
+          .send({ username: 'service-idempotency-durable-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/v1/tournaments')
+      .send({ name: 'Service Idempotency Durable Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const actorId = 'ops-service-idempotency-durable'
+    const idempotencyKey = 'service-team-durable-before-response'
+    const token = createServiceToken({
+      sub: actorId,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const payload = {
+      tournamentId,
+      name: 'Durable Before Response Team',
+    }
+
+    const originalUpdateOne = (ServiceAccountIdempotencyModel as any).updateOne.bind(
+      ServiceAccountIdempotencyModel
+    )
+    let releaseCompletion!: () => void
+    const completionGate = new Promise<void>((resolve) => {
+      releaseCompletion = resolve
+    })
+    let signalCompletionStarted!: () => void
+    const completionStarted = new Promise<void>((resolve) => {
+      signalCompletionStarted = resolve
+    })
+
+    const completionSpy = vi
+      .spyOn(ServiceAccountIdempotencyModel as any, 'updateOne')
+      .mockImplementation((filter: any, update: any, ...args: any[]) => {
+        const query = originalUpdateOne(filter, update, ...args)
+        const isCompletion =
+          filter?.actorId === actorId &&
+          filter?.idempotencyKey === idempotencyKey &&
+          filter?.status === 'in_progress' &&
+          update?.$set?.status === 'completed'
+        if (!isCompletion) return query
+        return {
+          exec: async () => {
+            signalCompletionStarted()
+            await completionGate
+            return await query.exec()
+          },
+        }
+      })
+
+    let responseSettled = false
+    const pendingResponse = request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+      .then((response) => {
+        responseSettled = true
+        return response
+      })
+
+    await completionStarted
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(responseSettled).toBe(false)
+
+    const whileBlocked = await ServiceAccountIdempotencyModel.findOne({
+      actorId,
+      idempotencyKey,
+    })
+      .lean()
+      .exec()
+    expect(whileBlocked?.status).toBe('in_progress')
+
+    releaseCompletion()
+    const first = await pendingResponse
+    completionSpy.mockRestore()
+
+    expect(first.status).toBe(201)
+    const stored = await ServiceAccountIdempotencyModel.findOne({
+      actorId,
+      idempotencyKey,
+    })
+      .lean()
+      .exec()
+    expect(stored?.status).toBe('completed')
+    expect(stored?.responseStatus).toBe(201)
+    expect((stored?.responseBody as any)?.data?._id).toBe(first.body.data._id)
+
+    const replay = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+    expect(replay.status).toBe(201)
+    expect(replay.headers['idempotency-replayed']).toBe('true')
+    expect(replay.body.data._id).toBe(first.body.data._id)
+  })
+
+  it('fails closed when terminal idempotency persistence cannot be made durable', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer.post('/api/v1/auth/register').send({
+          username: 'service-idempotency-persist-failure-owner',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer.post('/api/v1/auth/login').send({
+          username: 'service-idempotency-persist-failure-owner',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/v1/tournaments')
+      .send({ name: 'Service Idempotency Persist Failure Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const actorId = 'ops-service-idempotency-persist-failure'
+    const idempotencyKey = 'service-team-persist-failure'
+    const token = createServiceToken({
+      sub: actorId,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const payload = {
+      tournamentId,
+      name: 'Persist Failure Team',
+    }
+
+    const originalUpdateOne = (ServiceAccountIdempotencyModel as any).updateOne.bind(
+      ServiceAccountIdempotencyModel
+    )
+    let injectedAttempts = 0
+    const completionSpy = vi
+      .spyOn(ServiceAccountIdempotencyModel as any, 'updateOne')
+      .mockImplementation((filter: any, update: any, ...args: any[]) => {
+        const isCompletion =
+          filter?.actorId === actorId &&
+          filter?.idempotencyKey === idempotencyKey &&
+          filter?.status === 'in_progress' &&
+          update?.$set?.status === 'completed'
+        if (!isCompletion) return originalUpdateOne(filter, update, ...args)
+        return {
+          exec: async () => {
+            injectedAttempts += 1
+            throw new Error('injected idempotency completion persistence failure')
+          },
+        }
+      })
+
+    const first = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+    completionSpy.mockRestore()
+
+    expect(first.status).toBe(503)
+    expect(first.body.errors?.[0]?.message).toContain('durably record')
+    expect(injectedAttempts).toBe(3)
+
+    const stored = await ServiceAccountIdempotencyModel.findOne({
+      actorId,
+      idempotencyKey,
+    })
+      .lean()
+      .exec()
+    expect(stored?.status).toBe('in_progress')
+    expect(stored?.responseStatus).toBeUndefined()
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+    const rows = await TeamModel.find({ tournamentId, name: payload.name }).lean().exec()
+    expect(rows).toHaveLength(1)
+
+    const replay = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+    expect(replay.status).toBe(409)
+    expect(replay.body.errors?.[0]?.message).toContain('still in progress')
+
+    const rowsAfterReplay = await TeamModel.find({ tournamentId, name: payload.name }).lean().exec()
+    expect(rowsAfterReplay).toHaveLength(1)
+  })
+
   it('revokes service-account tokens by jti and denies further use', async () => {
     const agent = request.agent(app)
 
