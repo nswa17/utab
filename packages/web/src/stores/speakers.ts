@@ -56,7 +56,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/speakers', payload)
       const created = res.data?.data
@@ -82,7 +82,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/speakers/${payload.speakerId}`, {
         tournamentId: payload.tournamentId,
@@ -107,7 +107,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
 
   async function deleteSpeaker(tournamentId: string, speakerId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
@@ -132,7 +132,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     if (normalizedIds.length === 0) return 0
 
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete('/speakers', {
         params: { tournamentId, ids: normalizedIds.join(',') },
