@@ -3899,7 +3899,11 @@ function normalizeNonNegativeInteger(value: unknown, fallback: number): number {
 }
 
 function validAllocationRowCount(rows: DrawAllocationRow[] = allocation.value) {
-  return rows.filter((row) => row.teams.gov && row.teams.opp).length
+  const teamNum = currentEditableTeamNum()
+  const positions = drawTeamPositions(teamNum)
+  return rows.filter((row) =>
+    positions.every((position) => drawTeamId(row.teams, position, teamNum))
+  ).length
 }
 
 function normalizedRequestedAdjudicatorCounts() {
@@ -4221,7 +4225,7 @@ function isEntityAvailableInRound(kind: 'team' | 'adjudicator' | 'venue', id: st
 
 function isEntityAssignedInAllocation(kind: 'team' | 'adjudicator' | 'venue', id: string) {
   return allocation.value.some((row) => {
-    if (kind === 'team') return row.teams.gov === id || row.teams.opp === id
+    if (kind === 'team') return drawTeamIds(row.teams, currentEditableTeamNum()).includes(id)
     if (kind === 'venue') return row.venue === id
     return (
       row.chairs?.includes(id) === true ||
@@ -4615,8 +4619,10 @@ const rowDragTargetIndex = ref<number | null>(null)
 
 function allocationSortValue(row: DrawAllocationRow, key: AllocationSortKey) {
   if (key === 'venue') return row.venue ? venueName(row.venue) : ''
-  if (key === 'gov') return row.teams.gov ? teamName(row.teams.gov) : ''
-  if (key === 'opp') return row.teams.opp ? teamName(row.teams.opp) : ''
+  if (['gov', 'opp', 'og', 'oo', 'cg', 'co'].includes(key)) {
+    const teamId = drawTeamId(row.teams, key as DrawTeamPosition, currentEditableTeamNum())
+    return teamId ? teamName(teamId) : ''
+  }
   if (key === 'chairs') return adjudicatorListLabel(row.chairs ?? [])
   if (key === 'panels') return adjudicatorListLabel(row.panels ?? [])
   if (key === 'trainees') return adjudicatorListLabel(row.trainees ?? [])
@@ -5084,6 +5090,8 @@ function warningSideLabel(value: unknown): string {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase()
+  const column = teamPositionColumns.value.find((item) => item.key === normalized)
+  if (column) return column.label
   if (normalized === 'gov') return govLabel.value
   if (normalized === 'opp') return oppLabel.value
   return ''
@@ -5532,8 +5540,7 @@ const adjudicatorWarningBaselineIgnoredFiltersText = computed(() => {
 const unassignedTeams = computed(() => {
   const assigned = new Set<string>()
   allocation.value.forEach((row) => {
-    if (row.teams.gov) assigned.add(row.teams.gov)
-    if (row.teams.opp) assigned.add(row.teams.opp)
+    drawTeamIds(row.teams, currentEditableTeamNum()).forEach((teamId) => assigned.add(teamId))
   })
   return availableTeams.value.filter((team) => !assigned.has(team._id))
 })
@@ -5895,8 +5902,7 @@ const feedbackSubmissions = computed(() =>
 const expectedTeamIds = computed(() => {
   const set = new Set<string>()
   allocation.value.forEach((row) => {
-    if (row.teams.gov) set.add(row.teams.gov)
-    if (row.teams.opp) set.add(row.teams.opp)
+    drawTeamIds(row.teams, currentEditableTeamNum()).forEach((teamId) => set.add(teamId))
   })
   return set
 })
@@ -6024,16 +6030,26 @@ function onDragEnd() {
 }
 
 function removeTeamFromAllocation(id: string) {
+  const teamNum = currentEditableTeamNum()
   allocation.value.forEach((row) => {
-    if (row.teams.gov === id) row.teams.gov = ''
-    if (row.teams.opp === id) row.teams.opp = ''
+    drawTeamPositions(teamNum).forEach((position) => {
+      if (drawTeamId(row.teams, position, teamNum) === id) {
+        setDrawTeamId(row.teams, position, '', teamNum)
+      }
+    })
   })
 }
 
-function findTeamPlacement(id: string): { row: DrawAllocationRow; side: 'gov' | 'opp' } | null {
+function findTeamPlacement(
+  id: string
+): { row: DrawAllocationRow; side: DrawTeamPosition } | null {
+  const teamNum = currentEditableTeamNum()
   for (const row of allocation.value) {
-    if (row.teams.gov === id) return { row, side: 'gov' }
-    if (row.teams.opp === id) return { row, side: 'opp' }
+    for (const position of drawTeamPositions(teamNum)) {
+      if (drawTeamId(row.teams, position, teamNum) === id) {
+        return { row, side: position }
+      }
+    }
   }
   return null
 }
@@ -6059,7 +6075,7 @@ function findVenuePlacement(id: string): { row: DrawAllocationRow } | null {
   return null
 }
 
-function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
+function dropTeam(row: DrawAllocationRow, side: DrawTeamPosition) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
@@ -6067,7 +6083,8 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
     onDragEnd()
     return
   }
-  const targetTeamId = String(row.teams[side] ?? '')
+  const teamNum = currentEditableTeamNum()
+  const targetTeamId = drawTeamId(row.teams, side, teamNum)
   if (targetTeamId === payload.id) {
     onDragEnd()
     return
@@ -6075,13 +6092,9 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
   const source = findTeamPlacement(payload.id)
   removeTeamFromAllocation(payload.id)
   if (source && targetTeamId.length > 0 && targetTeamId !== payload.id) {
-    source.row.teams[source.side] = targetTeamId
+    setDrawTeamId(source.row.teams, source.side, targetTeamId, teamNum)
   }
-  row.teams[side] = payload.id
-  const other = side === 'gov' ? 'opp' : 'gov'
-  if (row.teams[other] === payload.id) {
-    row.teams[other] = ''
-  }
+  setDrawTeamId(row.teams, side, payload.id, teamNum)
   onDragEnd()
 }
 
