@@ -7,17 +7,21 @@ import { getTeamModel } from '../models/team.js'
 import { hashPassword } from '../services/hash.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
-function sanitizeTournamentUserResponse(user: {
-  _id: unknown
-  username?: string
-  role?: string
-  tournaments?: unknown[]
-}, membershipRole?: string, entityBinding?: { entityType?: string; entityId?: string }) {
+function sanitizeTournamentUserResponse(
+  user: {
+    _id: unknown
+    username?: string
+    role?: string
+  },
+  membershipRole?: string,
+  entityBinding?: { entityType?: string; entityId?: string },
+  scopedTournamentIds: string[] = []
+) {
   return {
     userId: String(user._id),
     username: user.username,
     role: membershipRole ?? user.role,
-    tournaments: Array.isArray(user.tournaments) ? user.tournaments.map((id) => String(id)) : [],
+    tournaments: scopedTournamentIds,
     entityType: entityBinding?.entityType,
     entityId: entityBinding?.entityId,
   }
@@ -125,7 +129,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
         )
       }
       res.status(201).json({
-        data: sanitizeTournamentUserResponse(created.toJSON(), role, entityBinding),
+        data: sanitizeTournamentUserResponse(created.toJSON(), role, entityBinding, [tournamentId]),
         errors: [],
       })
       return
@@ -200,7 +204,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       )
     }
     res.status(200).json({
-      data: sanitizeTournamentUserResponse(saved.toJSON(), role, entityBinding),
+      data: sanitizeTournamentUserResponse(saved.toJSON(), role, entityBinding, [tournamentId]),
       errors: [],
     })
   } catch (err) {
@@ -291,10 +295,15 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     }
 
     res.json({
-      data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role, {
-        entityType: membership?.entityType ?? undefined,
-        entityId: membership?.entityId ?? undefined,
-      }),
+      data: sanitizeTournamentUserResponse(
+        saved.toJSON(),
+        membership?.role,
+        {
+          entityType: membership?.entityType ?? undefined,
+          entityId: membership?.entityId ?? undefined,
+        },
+        []
+      ),
       errors: [],
     })
   } catch (err) {
