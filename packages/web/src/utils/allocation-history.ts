@@ -1,5 +1,12 @@
+import {
+  drawTeamId,
+  drawTeamIds,
+  drawTeamPositions,
+  inferDrawTeamNum,
+} from './draw-teams'
+
 export type AllocationHistoryRowLike = {
-  teams?: { gov?: unknown; opp?: unknown }
+  teams?: unknown
   chairs?: unknown[]
   panels?: unknown[]
   trainees?: unknown[]
@@ -42,6 +49,10 @@ function allocationRowChairPanelIds(row: AllocationHistoryRowLike): string[] {
   return uniqueIds([...(row.chairs ?? []), ...(row.panels ?? [])])
 }
 
+function rowTeamIds(row: AllocationHistoryRowLike): string[] {
+  return drawTeamIds(row.teams)
+}
+
 export function pastOpponentIdsFromAllocation(
   rows: AllocationHistoryRowLike[],
   teamId: string
@@ -50,10 +61,9 @@ export function pastOpponentIdsFromAllocation(
   if (!normalizedTeamId) return []
   const opponents: string[] = []
   rows.forEach((row) => {
-    const govId = normalizedId(row.teams?.gov)
-    const oppId = normalizedId(row.teams?.opp)
-    if (govId === normalizedTeamId && oppId) opponents.push(oppId)
-    if (oppId === normalizedTeamId && govId) opponents.push(govId)
+    const ids = rowTeamIds(row)
+    if (!ids.includes(normalizedTeamId)) return
+    opponents.push(...ids.filter((id) => id !== normalizedTeamId))
   })
   return uniqueIds(opponents)
 }
@@ -63,8 +73,12 @@ export function pastSidesFromAllocation(rows: AllocationHistoryRowLike[], teamId
   if (!normalizedTeamId) return []
   const sides: string[] = []
   rows.forEach((row) => {
-    if (normalizedId(row.teams?.gov) === normalizedTeamId) sides.push('gov')
-    if (normalizedId(row.teams?.opp) === normalizedTeamId) sides.push('opp')
+    const teamNum = inferDrawTeamNum(row.teams)
+    drawTeamPositions(teamNum).forEach((position) => {
+      if (drawTeamId(row.teams, position, teamNum) === normalizedTeamId) {
+        sides.push(position)
+      }
+    })
   })
   return sides
 }
@@ -76,10 +90,9 @@ export function teamAdjudicatorIdsFromAllocation(
   const normalizedTeamId = normalizedId(teamId)
   if (!normalizedTeamId) return []
   return uniqueIds(
-    rows.flatMap((row) => {
-      const teamIds = [normalizedId(row.teams?.gov), normalizedId(row.teams?.opp)]
-      return teamIds.includes(normalizedTeamId) ? allocationRowAdjudicatorIds(row) : []
-    })
+    rows.flatMap((row) =>
+      rowTeamIds(row).includes(normalizedTeamId) ? allocationRowAdjudicatorIds(row) : []
+    )
   )
 }
 
@@ -91,9 +104,7 @@ export function adjudicatorJudgedTeamIdsFromAllocation(
   if (!normalizedAdjudicatorId) return []
   return uniqueIds(
     rows.flatMap((row) =>
-      allocationRowAdjudicatorIds(row).includes(normalizedAdjudicatorId)
-        ? [row.teams?.gov, row.teams?.opp]
-        : []
+      allocationRowAdjudicatorIds(row).includes(normalizedAdjudicatorId) ? rowTeamIds(row) : []
     )
   )
 }
