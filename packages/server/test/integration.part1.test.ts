@@ -774,7 +774,10 @@ describe('Server integration', () => {
       score: 6,
       submittedEntityId: teamId,
     })
-    expect(publicSubmission.status).toBe(201)
+    expect(publicSubmission.status).toBe(401)
+    expect(publicSubmission.body.errors?.[0]?.message).toContain(
+      'Authenticated participant identity'
+    )
   })
 
   it('supports idempotent logout even after session is already destroyed', async () => {
