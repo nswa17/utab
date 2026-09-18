@@ -261,4 +261,47 @@ describe('allocations/adjudicators class_based', () => {
     expect(result.allocation[0].chairs).toEqual([40])
     expect(result.allocation[0].panels).toEqual([42])
   })
+
+  it('avoids lower-numbered institution-priority conflicts first', () => {
+    const draw: Draw = {
+      r: 1,
+      allocation: [{ id: 1, teams: [1, 2], chairs: [], panels: [], trainees: [] }],
+    }
+    const priorityTeams = [
+      { id: 1, details: [{ r: 1, available: true, conflicts: [101], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [], speakers: [] }] },
+    ]
+    const adjudicators = [
+      {
+        id: 50,
+        preev: 8,
+        user_defined_data: { judge_class: 'A' },
+        details: [{ r: 1, available: true, conflicts: [101], conflict_teams: [] }],
+      },
+      {
+        id: 51,
+        preev: 8,
+        user_defined_data: { judge_class: 'A' },
+        details: [{ r: 1, available: true, conflicts: [102], conflict_teams: [] }],
+      },
+    ]
+    const compiled = compiledAdjudicatorResults([50, 51], [8, 8])
+
+    const result = class_based.get(
+      1,
+      draw,
+      adjudicators,
+      priorityTeams,
+      compiledTeamResults.slice(0, 2),
+      compiled,
+      { chairs: 1, panels: 0, trainees: 0 },
+      {
+        ...config,
+        institution_priority_map: { 101: 1, 102: 10 },
+      }
+    )
+
+    expect(result.allocation[0].chairs).toEqual([51])
+  })
+
 })
