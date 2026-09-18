@@ -4658,3 +4658,48 @@ Regression commit:
 **P5-06 is closed.**
 
 The documented 24-hour absolute lifetime and two-hour sliding inactivity lifetime are now both enforced server-side. Existing sessions created before this change fail safely using `grantedAt` as their last-activity baseline until they are refreshed or expire.
+
+
+## Phase 22 — Tournament-user response membership scoping (P5-07)
+
+P5-07 was confirmed and repaired.
+
+### Previous behavior
+
+The tournament-user management controller serialized `User.tournaments` directly in add/remove responses.
+
+For an existing global user, that legacy field can contain memberships in unrelated tournaments. An organizer administering tournament A could therefore add a known username to A and receive tournament IDs for B/C/etc., even though those memberships were outside the organizer's scope.
+
+The remove response similarly exposed all remaining tournament IDs.
+
+### Repair
+
+Tournament-user management responses no longer derive their `tournaments` field from the global User document.
+
+Instead:
+
+- successful add/create responses return only `[currentTournamentId]`;
+- successful removal responses return `[]`;
+- username, current membership role, and current participant entity binding remain available.
+
+Global membership summaries remain available through user/self or appropriately privileged surfaces rather than a tournament-scoped administration response.
+
+Implementation commit:
+
+- `e6c0d4f8f9ff526ef8d9cbd703a7b0d5486e461a` — scope tournament-user membership responses.
+
+### Regression coverage
+
+Added to `packages/server/test/tournament-users.controller.test.ts`.
+
+The regression constructs an existing User with two unrelated tournament IDs, adds that user to the administered tournament, and verifies the response contains only the current tournament ID.
+
+Regression commit:
+
+- `d7f7bb1eb91b151ecbbb2a7b65a774f10db0c0b9`.
+
+### P5-07 status
+
+**P5-07 is closed.**
+
+Tournament-scoped user administration no longer discloses unrelated tournament membership identifiers.
