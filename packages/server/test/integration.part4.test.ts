@@ -2967,6 +2967,27 @@ describe('Server integration', () => {
       )
     ).toBe(true)
 
+    const bulkCreateFailureSpy = vi
+      .spyOn(TeamModel as any, 'bulkWrite')
+      .mockRejectedValueOnce(new Error('injected bulk round-detail create failure'))
+    const failedBulkCreate = await organizer.post('/api/rounds').send([
+      { tournamentId, round: 1, name: 'Bulk Round 1' },
+      { tournamentId, round: 2, name: 'Bulk Round 2' },
+    ])
+    expect(failedBulkCreate.status).toBe(500)
+    bulkCreateFailureSpy.mockRestore()
+    expect(
+      await RoundModel.countDocuments({ tournamentId, round: { $in: [1, 2] } }).exec()
+    ).toBe(0)
+    const teamsAfterFailedBulkCreate = await TeamModel.find({ tournamentId }).lean().exec()
+    expect(
+      teamsAfterFailedBulkCreate.every(
+        (team: any) =>
+          !Array.isArray(team.details) ||
+          team.details.every((detail: any) => ![1, 2].includes(Number(detail?.r)))
+      )
+    ).toBe(true)
+
     const roundRes = await organizer.post('/api/rounds').send({
       tournamentId,
       round: 1,
