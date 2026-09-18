@@ -112,7 +112,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      speakers.value = speakers.value.filter((item) => item._id !== speakerId)
+        speakers.value = speakers.value.filter((item) => item._id !== speakerId)
       }
       return true
     } catch (err: any) {
@@ -137,11 +137,11 @@ export const useSpeakersStore = defineStore('speakers', () => {
       const res = await api.delete('/speakers', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      const deletedCount = Number(res.data?.data?.deletedCount)
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
+        const deletedIds = new Set(normalizedIds)
       speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
-      const deletedCount = Number(res.data?.data?.deletedCount)
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
