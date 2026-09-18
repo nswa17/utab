@@ -89,11 +89,13 @@ export const useDrawsStore = defineStore('draws', () => {
       const updated = res.data?.data
       if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
+        draws.value = draws.value.filter(
+          (item) => String(item.tournamentId) === String(updated.tournamentId)
+        )
         const index = draws.value.findIndex(
           (item) =>
             item._id === updated._id ||
-            (String(item.tournamentId) === String(updated.tournamentId) &&
-              Number(item.round) === Number(updated.round))
+            Number(item.round) === Number(updated.round)
         )
         if (index >= 0) {
           draws.value.splice(index, 1, updated)
