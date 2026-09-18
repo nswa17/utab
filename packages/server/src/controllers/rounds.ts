@@ -105,6 +105,13 @@ async function releaseRoundMutationLeases(
 ): Promise<void> {
   await Promise.all(leases.map((lease) => releaseRoundMutationLease(connection, lease)))
 }
+
+function temporaryRoundNumber(roundId: string): number {
+  const suffix = roundId.slice(-12)
+  const parsed = Number.parseInt(suffix, 16)
+  const stableSuffix = Number.isSafeInteger(parsed) ? parsed : 0
+  return -(1_000_000_000_000_000 + stableSuffix)
+}
 const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
 
 function asRecord(value: unknown): Record<string, unknown> {
