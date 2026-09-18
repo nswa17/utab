@@ -107,13 +107,19 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     error.value = null
     try {
       const res = await api.get('/submissions', { params })
-      if (sequence !== adminFetchSequence.value) {
+      if (
+        sequence !== adminFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
-      if (sequence !== adminFetchSequence.value) {
+      if (
+        sequence !== adminFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
@@ -135,13 +141,19 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     error.value = null
     try {
       const res = await api.get('/submissions/mine', { params })
-      if (sequence !== participantFetchSequence.value) {
+      if (
+        sequence !== participantFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
-      if (sequence !== participantFetchSequence.value) {
+      if (
+        sequence !== participantFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
