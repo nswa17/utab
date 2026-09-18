@@ -404,7 +404,7 @@ function resolveTournamentId(req: Request, event: AuditEvent, responseBody: unkn
 
   const fromRequest =
     getRequestValue(req, 'tournamentId') ??
-    getRequestValue(req, 'id') // /tournaments/:id mutation endpoints
+    getRequestValue(req, 'id') ?? // /tournaments/:id mutation endpoints
     getResponseDataValue(responseBody, 'tournamentId')
   if (fromRequest) return truncate(fromRequest, 128)
 
