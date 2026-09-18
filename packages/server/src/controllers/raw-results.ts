@@ -234,8 +234,8 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       const tournamentId = requireSingleTournamentPayload(res, payload)
       if (!tournamentId) return
 
-      const rounds = payload.map((item: any) => Number(item?.r))
-      if (rounds.some((round) => !Number.isInteger(round) || round < 1)) {
+      const rounds: number[] = payload.map((item: any) => Number(item?.r))
+      if (rounds.some((round: number) => !Number.isInteger(round) || round < 1)) {
         badRequest(res, 'Raw results must reference a valid round')
         return
       }
