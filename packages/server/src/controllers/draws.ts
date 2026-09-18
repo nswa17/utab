@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import type { Connection } from 'mongoose'
 import { isDeepStrictEqual } from 'node:util'
 import {
   teams as teamAllocations,
@@ -21,6 +22,11 @@ import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { sanitizeDrawForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  acquireRoundWriteLease,
+  releaseRoundWriteLease,
+  type RoundWriteLease,
+} from '../services/round-write-guard.service.js'
 import { getRoundModel } from '../models/round.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import {
@@ -289,6 +295,8 @@ export const listDraws: RequestHandler = async (req, res, next) => {
 }
 
 export const upsertDraw: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const {
       tournamentId,
@@ -329,6 +337,20 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       notFound(res, 'Round not found')
       return
     }
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      round,
+      String((roundDoc as any)?._id ?? '')
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry draw save' }],
+      })
+      return
+    }
+    leaseConnection = connection
     const styleDoc = await StyleModel.findOne({ id: Number(tournament.style) })
       .lean()
       .exec()
@@ -433,10 +455,20 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     res.status(201).json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
 export const generateDraw: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const {
       tournamentId,
@@ -460,6 +492,22 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     if (!roundDoc) {
       notFound(res, 'Round not found')
       return
+    }
+    if (save) {
+      roundWriteLease = await acquireRoundWriteLease(
+        connection,
+        tournamentId,
+        round,
+        String((roundDoc as any)?._id ?? '')
+      )
+      if (!roundWriteLease) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry draw generation' }],
+        })
+        return
+      }
+      leaseConnection = connection
     }
     const [
       tournament,
@@ -920,6 +968,14 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       return
     }
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
