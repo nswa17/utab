@@ -3326,6 +3326,50 @@ describe('Server integration', () => {
       )
     ).toBe(true)
 
+    const referenceRound = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 9,
+      name: 'Renumber Reference Round',
+    })
+    expect(referenceRound.status).toBe(201)
+    const referenceRoundId = String(referenceRound.body.data._id)
+    await RoundModel.updateOne(
+      { _id: referenceRoundId, tournamentId },
+      { $set: { userDefinedData: { audit: { source_rounds: [1] } } } }
+    ).exec()
+    await TournamentModel.updateOne(
+      { _id: tournamentId },
+      { $set: { user_defined_data: { audit: { source_rounds: [1] } } } }
+    ).exec()
+
+    const lateFailureSpy = vi
+      .spyOn(TournamentModel as any, 'updateOne')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected renumber metadata failure')
+        },
+      }))
+    const failedLateRenumber = await organizer.patch(`/api/rounds/${roundOneId}`).send({
+      tournamentId,
+      round: 2,
+      name: 'Should Also Roll Back',
+    })
+    expect(failedLateRenumber.status).toBe(500)
+    lateFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ _id: roundOneId, tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await ResultModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    const referenceAfterRollback = await RoundModel.findOne({
+      _id: referenceRoundId,
+      tournamentId,
+    })
+      .lean()
+      .exec()
+    expect((referenceAfterRollback as any)?.userDefinedData?.audit?.source_rounds).toEqual([1])
+    const tournamentAfterRollback = await TournamentModel.findById(tournamentId).lean().exec()
+    expect((tournamentAfterRollback as any)?.user_defined_data?.audit?.source_rounds).toEqual([1])
+
     const successfulSingleRenumber = await organizer.patch(`/api/rounds/${roundOneId}`).send({
       tournamentId,
       round: 2,
