@@ -4,7 +4,11 @@ export function createTournamentStoreScope() {
   const activeTournamentId = ref<string | null>(null)
 
   function activate(tournamentId: string) {
-    activeTournamentId.value = String(tournamentId)
+    const normalized = String(tournamentId)
+    const changed =
+      activeTournamentId.value !== null && activeTournamentId.value !== normalized
+    activeTournamentId.value = normalized
+    return changed
   }
 
   function isActive(tournamentId: string) {
