@@ -2336,7 +2336,12 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
 export const updateRound: RequestHandler = async (req, res, next) => {
   let mutationLease: RoundMutationLease | null = null
   let mutationConnection: Connection | null = null
+  let namespaceLease: RoundNamespaceLease | null = null
+  let namespaceConnection: Connection | null = null
   let mutationStarted = false
+  let movePlans: RoundMovePlan[] = []
+  let roundSnapshots: any[] = []
+  let referenceSnapshot: RoundReferenceRewriteSnapshot | null = null
   try {
     const { id } = req.params
     const {
@@ -2379,6 +2384,19 @@ export const updateRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+
+    if (round !== undefined) {
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry round change' }],
+        })
+        return
+      }
+      namespaceConnection = connection
+    }
+
     const before = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!before) {
       notFound(res, 'Round not found')
@@ -2415,7 +2433,30 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       }
       mutationConnection = connection
 
+      roundSnapshots = await RoundModel.find({
+        _id: id,
+        tournamentId,
+        roundMutationLocked: true,
+        roundMutationEpoch: mutationLease.epoch,
+      })
+        .select(
+          '+roundActiveWriteCount +roundActiveWriteTouchedAt +roundMutationLocked +roundMutationEpoch'
+        )
+        .lean()
+        .exec()
+      if (roundSnapshots.length !== 1) {
+        const conflictError = Object.assign(new Error('Round changed concurrently'), {
+          roundRenumberConflict: true,
+        })
+        throw conflictError
+      }
+
       const temporaryRound = temporaryRoundNumber(id)
+      movePlans = await captureRoundMovePlans(connection, tournamentId, [
+        { from: previousRound, to: nextRound, temporary: temporaryRound },
+      ])
+
+      mutationStarted = true
       const claimed = await RoundModel.updateOne(
         {
           _id: id,
@@ -2427,20 +2468,14 @@ export const updateRound: RequestHandler = async (req, res, next) => {
         { $set: { round: temporaryRound } }
       ).exec()
       if (claimed.matchedCount !== 1) {
-        await releaseRoundMutationLease(connection, mutationLease)
-        mutationLease = null
-        res.status(409).json({
-          data: null,
-          errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+        const conflictError = Object.assign(new Error('Round changed concurrently'), {
+          roundRenumberConflict: true,
         })
-        return
+        throw conflictError
       }
-      mutationStarted = true
 
-      await moveRoundReferences(connection, tournamentId, [
-        { from: previousRound, to: temporaryRound },
-      ])
-      await moveRoundReferences(connection, tournamentId, [{ from: temporaryRound, to: nextRound }])
+      await moveRoundPlansToTemporary(connection, tournamentId, movePlans)
+      await moveRoundPlansToTarget(connection, tournamentId, movePlans)
 
       const updated = await RoundModel.findOneAndUpdate(
         {
@@ -2456,18 +2491,22 @@ export const updateRound: RequestHandler = async (req, res, next) => {
         .lean()
         .exec()
       if (!updated) {
-        res.status(409).json({
-          data: null,
-          errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+        const conflictError = Object.assign(new Error('Round changed concurrently'), {
+          roundRenumberConflict: true,
         })
-        return
+        throw conflictError
       }
 
-      await rewriteStoredRoundReferences(connection, tournamentId, [
-        { from: previousRound, to: nextRound },
-      ])
+      const referenceMoves = [{ from: previousRound, to: nextRound }]
+      referenceSnapshot = await captureRoundReferenceRewriteSnapshot(
+        connection,
+        tournamentId,
+        referenceMoves
+      )
+      await rewriteStoredRoundReferences(connection, tournamentId, referenceMoves)
       await releaseRoundMutationLease(connection, mutationLease)
       mutationLease = null
+      mutationStarted = false
       res.json({ data: updated, errors: [] })
       return
     }
@@ -2494,12 +2533,56 @@ export const updateRound: RequestHandler = async (req, res, next) => {
 
     res.json({ data: updated, errors: [] })
   } catch (err) {
-    if (mutationLease && mutationConnection && !mutationStarted) {
+    const rollbackErrors: unknown[] = []
+    const tournamentId = mutationLease?.tournamentId ?? namespaceLease?.tournamentId ?? ''
+
+    if (mutationStarted && mutationConnection) {
+      if (referenceSnapshot) {
+        try {
+          await restoreRoundReferenceRewriteSnapshot(
+            mutationConnection,
+            tournamentId,
+            referenceSnapshot
+          )
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+      if (movePlans.length > 0) {
+        try {
+          await restoreRoundMovePlans(mutationConnection, tournamentId, movePlans)
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+      if (roundSnapshots.length > 0) {
+        try {
+          await restoreRoundDocuments(getRoundModel(mutationConnection), roundSnapshots)
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+    }
+
+    if (mutationLease && mutationConnection) {
       try {
         await releaseRoundMutationLease(mutationConnection, mutationLease)
-      } catch {
-        // If release fails, the mutation lock fails closed.
+        mutationLease = null
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
       }
+    }
+
+    if (rollbackErrors.length > 0) {
+      next(new AggregateError([err, ...rollbackErrors], 'Failed to roll back round renumber'))
+      return
+    }
+    if ((err as any)?.roundRenumberConflict === true) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+      })
+      return
     }
     if (isDuplicateKeyError(err)) {
       res
@@ -2508,6 +2591,14 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       return
     }
     next(err)
+  } finally {
+    if (namespaceLease && namespaceConnection) {
+      try {
+        await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
   }
 }
 
