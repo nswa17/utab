@@ -261,12 +261,6 @@ export function requireTournamentRole(
         return
       }
 
-      const userDefinedData = asRecord((tournament as any).user_defined_data)
-      if (userDefinedData.hidden === true) {
-        respondNotFound(res)
-        return
-      }
-
       if (membershipRole && sessionRoles.includes(membershipRole) && isPublic) {
         next()
         return
