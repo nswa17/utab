@@ -4443,3 +4443,155 @@ All numbered Phase 4 findings P4-01 through P4-10 have now been addressed or clo
 
 The next unresolved high-value audit family is Phase 5 security/identity, beginning with **P5-02: participant submission authorization is tournament-scoped but not cryptographically bound to the claimed participant entity**.
 
+## Phase 20 — Authenticated participant/entity submission binding (P5-02)
+
+P5-02 was addressed by separating **tournament access** from **participant identity**.
+
+A shared tournament access password/session can still authorize access to participant-facing tournament data, but it is no longer accepted as proof that the caller controls an arbitrary Team, Speaker, or Adjudicator id.
+
+### Tournament-scoped identity binding
+
+`TournamentMember` now supports an optional participant binding:
+
+- `entityType: 'team' | 'speaker' | 'adjudicator'`;
+- `entityId`.
+
+The binding is scoped by `tournamentId + userId`; global User role alone is not treated as participant identity.
+
+Commit:
+
+- `4a1fdab3aca855f636e8319ef9b68c27864b0cad` — add participant entity binding to TournamentMember.
+
+The tournament-user management API now accepts `entityType/entityId` together and validates the binding before persisting it.
+
+Role constraints:
+
+- `adjudicator` user -> Adjudicator entity only;
+- `speaker` user -> Speaker or Team entity;
+- `organizer` / `audience` -> no participant entity binding.
+
+The referenced entity must exist inside the target tournament.
+
+Updating an existing tournament user also updates/removes the binding explicitly, and rollback restores the prior binding state.
+
+Relevant commits:
+
+- `5823b9bca1057bd2619acb9b44869087c439da69` — validate tournament-user binding input;
+- `bf8fffc17dc866327efc3c892ed53f955a11fd31` — persist and roll back validated bindings;
+- `9b22d00b8f06997a89a541c3bff9bc3a6f3227b4` / `7cbd1034d6ce2609699067cede958638f4c5ef5d` — type reconciliation;
+- `b7602af57dea32121cc010d2dd5ea3825339c8f6` — avoid eager tournament-db configuration evaluation in controller unit tests.
+
+### Submission authorization
+
+For non-admin ballot and feedback creation, the server now requires:
+
+1. a logged-in session user;
+2. a TournamentMember for the target tournament;
+3. a valid `entityType/entityId` binding on that membership;
+4. the claimed `submittedEntityId` to match the authenticated binding.
+
+Admin/superuser submission flows retain the existing administrative bypass.
+
+Exact binding is accepted directly:
+
+    bound adjudicator A -> submittedEntityId adjudicator A
+    bound team A        -> submittedEntityId team A
+    bound speaker A     -> submittedEntityId speaker A
+
+A Speaker binding may additionally submit as its Team **only when the server verifies that the bound Speaker belongs to that Team for the requested round**. The round-specific Team detail is authoritative when present; the Team template is used only when that round has no detail.
+
+Thus a Speaker account cannot simply choose another Team id in the request body.
+
+Core enforcement commit:
+
+- `50fb36b89db7c3f062184a79849604f37207d04e` — enforce authenticated participant/entity binding in ballot and feedback creation.
+
+The pre-existing missing-actor check remains early so anonymous blank-actor requests still fail before draw/publication details are evaluated:
+
+- `5103d3420028de8649bb486f6e978256934bbf48`;
+- `2908843762c8f527c1786ee3245c43116b6fc5c6`.
+
+### Shared access is no longer identity proof
+
+A caller that only has a tournament access session — including a passwordless/public tournament access session — may still access participant-facing data according to the existing access rules, but cannot create participant submissions.
+
+Responses are fail-closed:
+
+- no logged-in participant identity -> 401;
+- logged-in tournament member without an entity binding -> 403;
+- claimed entity does not match the authenticated binding -> 403.
+
+This closes the original attack:
+
+    attacker knows shared tournament access password
+    attacker chooses victim adjudicator/team id
+    attacker submits first
+    dedupe key blocks legitimate victim submission
+
+The attacker can no longer acquire authority over the victim entity merely by putting its id in `submittedEntityId`.
+
+### Regression coverage
+
+New integration regression:
+
+- `packages/server/test/integration.part4.test.ts`;
+- commit `26137eaa30af8e087887ff7e1f9fecccfb57b47a`.
+
+It verifies:
+
+1. an anonymous caller with a valid tournament access session cannot submit a ballot as an Adjudicator;
+2. an organizer can create a tournament user bound to a concrete Adjudicator;
+3. that authenticated bound user cannot submit as a different Adjudicator;
+4. the same user can submit as its own bound Adjudicator;
+5. a Speaker-bound account can submit feedback as the Team containing that Speaker in the round roster;
+6. the same Speaker account cannot submit as another Team.
+
+The final speaker/team impersonation case was adjusted so the request is semantically valid under draw feedback rules before the identity check; this proves the 403 comes from identity binding rather than an unrelated draw-rule rejection:
+
+- `e0d0381d9abb9e5ba97bea0fde1f0f18b85e2246`.
+
+Existing tests that encoded the old insecure behavior were reconciled:
+
+- `ae93168ad521bfcb9d47f06fa1cb86823f1a5c9f` — an unbound Audience member does not gain submission authority merely by entering the tournament password;
+- `663ea37da7e5f4adaf8290c2358db68af781598e` — public/passwordless tournament access alone does not authorize feedback submission;
+- `304edb2158f5841269cb3846fae57520d25c7c87` — published Draw visibility does not turn an access-only session into an authenticated participant identity;
+- `86a1342e2cf350d7a796c7fc58c8bc1e1ae4d607` — tournament-member rollback tests now include participant-binding cleanup.
+
+### CI
+
+Final implementation/test head before this log update:
+
+- `304edb2158f5841269cb3846fae57520d25c7c87`
+
+GitHub Actions:
+
+- run `35388172009`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P5-02 status and migration boundary
+
+**P5-02 is closed for the supported participant ballot/feedback creation routes.**
+
+The authoritative submitter principal is now an authenticated tournament member bound server-side to a tournament entity; `submittedEntityId` is no longer sufficient authority by itself.
+
+Intentional rollout boundary:
+
+- existing participant memberships created before this change may have no `entityType/entityId`;
+- those accounts fail closed for participant submissions until an organizer assigns a concrete binding;
+- the server does not guess a binding from role/name because doing so would recreate an identity-confusion risk;
+- clients that provision participant users must therefore supply the binding explicitly.
+
+A tournament access credential and a participant account have different purposes:
+
+- access credential/session -> permission to enter/read the tournament participant surface;
+- authenticated bound TournamentMember -> authority to submit on behalf of a specific participant entity.
+
+The next unresolved Phase 5 finding is **P5-06: the documented two-hour inactivity expiry for tournament access sessions is not implemented**.
+
