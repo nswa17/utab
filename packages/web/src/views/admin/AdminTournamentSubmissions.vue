@@ -2238,7 +2238,7 @@ function roundScoreSettings(roundNumber: number) {
   return {
     noSpeakerScore: found?.userDefinedData?.no_speaker_score === true,
     scoreByMatterManner: found?.userDefinedData?.score_by_matter_manner !== false,
-    allowLowTieWin: found?.userDefinedData?.allow_low_tie_win === true,
+    allowLowTieWin: found?.userDefinedData?.allow_low_tie_win !== false,
     allowWinnerScoreMismatch: roundAllowsWinnerScoreMismatch(found?.userDefinedData),
     awardSelectionRules: resolveRoundAwardSelectionValidationRules(found?.userDefinedData),
   }
