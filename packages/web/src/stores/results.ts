@@ -54,7 +54,7 @@ export const useResultsStore = defineStore('results', () => {
     payload: Record<string, unknown>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/results', payload)
       const created = res.data?.data
@@ -80,7 +80,7 @@ export const useResultsStore = defineStore('results', () => {
     payload?: Record<string, unknown>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/results/${payload.resultId}`, {
         tournamentId: payload.tournamentId,
@@ -105,7 +105,7 @@ export const useResultsStore = defineStore('results', () => {
 
   async function deleteResult(tournamentId: string, resultId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/results/${resultId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
