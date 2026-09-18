@@ -13,7 +13,7 @@ export function createTournamentStoreScope() {
   }
 
   function clear() {
-    activeTournamentId.value = null
+    activeTournamentId.value = ''
   }
 
   return {
