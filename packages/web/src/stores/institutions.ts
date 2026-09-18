@@ -22,6 +22,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   }
 
   async function fetchInstitutions(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
     if (scopeChanged) institutions.value = []
     beginRequest()
