@@ -1,7 +1,12 @@
 import { clone } from 'lodash-es'
 import { sillyLogger } from '../../general/loggers.js'
 import { shuffle, combinations, isin, countCommon } from '../../general/math.js'
-import { decidePositions, findOne as findOneResult } from '../sys.js'
+import {
+  decidePositions,
+  findOne as findOneResult,
+  squareOneSided,
+  squareOneSidedBp,
+} from '../sys.js'
 import {
   buildInstitutionPriorityHistogram,
   compareInstitutionPriorityHistograms,
@@ -171,33 +176,52 @@ function pairingFuncSlide(
   return matched
 }
 
+function adjustedPairingSideCost(
+  match: number[],
+  config: StrictConfig,
+  compiledTeamResults: CompiledTeamResultLike[]
+): number {
+  const positioned = decidePositions(match, compiledTeamResults, config)
+  const pastSidesList = positioned.map(
+    (teamId) => findOneResult(compiledTeamResults, teamId).past_sides ?? []
+  )
+
+  if (config.style.team_num === 2) {
+    return squareOneSided(pastSidesList)
+  }
+  if (config.style.team_num === 4) {
+    return squareOneSidedBp(pastSidesList)
+  }
+  return 0
+}
+
 function pairingFuncAdjusted(
   teams: number[],
   config: StrictConfig,
   compiledTeamResults: CompiledTeamResultLike[]
 ): number[][] {
-  const allCs = divideComb(teams, config.style.team_num)
-  const allDivs = allCs.map((c) => divideInto(c, teams.length / config.style.team_num))
-  const measures: number[] = []
-
-  for (const divs of allDivs) {
-    let measure = 0
-    for (const div of divs) {
-      const cs = combinations(div, div.length)
-      const pastSidesListList = cs.map((c) =>
-        c.map((teamId) => findOneResult(compiledTeamResults, teamId).past_sides ?? [])
-      )
-      measure += Math.min(
-        ...pastSidesListList.map((pastSidesList) =>
-          pastSidesList.reduce((acc, curr) => acc + curr.length, 0)
-        )
-      )
-    }
-    measures.push(measure)
+  // "Adjusted" pairing minimizes the total side-history imbalance that would
+  // remain after each candidate matchup receives its best adjusted positions.
+  // The side-balance metric is only defined for the 2-team and 4-team formats
+  // supported by decidePositions; keep deterministic sort behavior otherwise.
+  if (config.style.team_num !== 2 && config.style.team_num !== 4) {
+    return pairingFuncSort(teams, config, compiledTeamResults)
   }
+
+  const allCs = divideComb(teams, config.style.team_num)
+  const allDivs = allCs.map((candidate) =>
+    divideInto(candidate, teams.length / config.style.team_num)
+  )
   if (allDivs.length === 0) return []
-  const maxIndex = measures.indexOf(Math.max(...measures))
-  return allDivs[maxIndex]
+
+  const measures = allDivs.map((divs) =>
+    divs.reduce(
+      (total, match) => total + adjustedPairingSideCost(match, config, compiledTeamResults),
+      0
+    )
+  )
+  const minIndex = measures.indexOf(Math.min(...measures))
+  return allDivs[minIndex]
 }
 
 const pairingFuncs: Record<
