@@ -1,7 +1,11 @@
 import type { RequestHandler } from 'express'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
+import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { getSpeakerModel } from '../models/speaker.js'
+import { getTeamModel } from '../models/team.js'
 import { hashPassword } from '../services/hash.service.js'
+import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function sanitizeTournamentUserResponse(user: {
@@ -9,13 +13,44 @@ function sanitizeTournamentUserResponse(user: {
   username?: string
   role?: string
   tournaments?: unknown[]
-}, membershipRole?: string) {
+}, membershipRole?: string, entityBinding?: { entityType?: string; entityId?: string }) {
   return {
     userId: String(user._id),
     username: user.username,
     role: membershipRole ?? user.role,
     tournaments: Array.isArray(user.tournaments) ? user.tournaments.map((id) => String(id)) : [],
+    entityType: entityBinding?.entityType,
+    entityId: entityBinding?.entityId,
   }
+}
+
+async function validateParticipantEntityBinding(
+  tournamentId: string,
+  role: 'organizer' | 'adjudicator' | 'speaker' | 'audience',
+  entityType?: 'team' | 'speaker' | 'adjudicator',
+  entityId?: string
+): Promise<{ entityType?: 'team' | 'speaker' | 'adjudicator'; entityId?: string } | null> {
+  if (!entityType && !entityId) return {}
+  if (!entityType || !entityId || !isValidObjectId(entityId)) return null
+
+  const connection = await getTournamentConnection(tournamentId)
+  if (role === 'adjudicator') {
+    if (entityType !== 'adjudicator') return null
+    const exists = await getAdjudicatorModel(connection).exists({ _id: entityId, tournamentId }).exec()
+    return exists ? { entityType, entityId } : null
+  }
+  if (role === 'speaker') {
+    if (entityType === 'speaker') {
+      const exists = await getSpeakerModel(connection).exists({ _id: entityId, tournamentId }).exec()
+      return exists ? { entityType, entityId } : null
+    }
+    if (entityType === 'team') {
+      const exists = await getTeamModel(connection).exists({ _id: entityId, tournamentId }).exec()
+      return exists ? { entityType, entityId } : null
+    }
+    return null
+  }
+  return null
 }
 
 async function throwAfterRollback(
@@ -36,14 +71,27 @@ async function throwAfterRollback(
 export const addTournamentUser: RequestHandler = async (req, res, next) => {
   try {
     const { id: tournamentId } = req.params
-    const { username, password, role } = req.body as {
+    const { username, password, role, entityType, entityId } = req.body as {
       username: string
       password: string
       role: 'organizer' | 'adjudicator' | 'speaker' | 'audience'
+      entityType?: 'team' | 'speaker' | 'adjudicator'
+      entityId?: string
     }
 
     if (!isValidObjectId(tournamentId)) {
       badRequest(res, 'Invalid tournament id')
+      return
+    }
+
+    const entityBinding = await validateParticipantEntityBinding(
+      tournamentId,
+      role,
+      entityType,
+      entityId
+    )
+    if (entityBinding === null) {
+      badRequest(res, 'Invalid participant entity binding')
       return
     }
 
@@ -61,6 +109,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
           tournamentId,
           userId: String(created._id),
           role,
+          ...entityBinding,
         })
       } catch (membershipError) {
         await throwAfterRollback(
@@ -75,7 +124,10 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
           `Failed to add and roll back tournament user ${String(created._id)}`
         )
       }
-      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON(), role), errors: [] })
+      res.status(201).json({
+        data: sanitizeTournamentUserResponse(created.toJSON(), role, entityBinding),
+        errors: [],
+      })
       return
     }
 
@@ -84,7 +136,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       tournamentId,
       userId: String(existing._id),
     })
-      .select({ role: 1, _id: 0 })
+      .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
       .lean()
       .exec()
     const tournaments = new Set<string>(originalTournaments)
@@ -95,14 +147,40 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       saved = await existing.save()
       await TournamentMemberModel.updateOne(
         { tournamentId, userId: String(existing._id) },
-        { $set: { role } },
+        {
+          $set: {
+            role,
+            ...(entityBinding.entityType && entityBinding.entityId
+              ? {
+                  entityType: entityBinding.entityType,
+                  entityId: entityBinding.entityId,
+                }
+              : {}),
+          },
+          ...(!entityBinding.entityType
+            ? { $unset: { entityType: '', entityId: '' } }
+            : {}),
+        },
         { upsert: true }
       ).exec()
     } catch (membershipError) {
       const membershipRollback = previousMembership
         ? TournamentMemberModel.updateOne(
             { tournamentId, userId: String(existing._id) },
-            { $set: { role: previousMembership.role } },
+            {
+              $set: {
+                role: previousMembership.role,
+                ...(previousMembership.entityType && previousMembership.entityId
+                  ? {
+                      entityType: previousMembership.entityType,
+                      entityId: previousMembership.entityId,
+                    }
+                  : {}),
+              },
+              ...(!previousMembership.entityType
+                ? { $unset: { entityType: '', entityId: '' } }
+                : {}),
+            },
             { upsert: true }
           ).exec()
         : TournamentMemberModel.deleteOne({
@@ -121,7 +199,10 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
         `Failed to add and roll back tournament user ${String(existing._id)}`
       )
     }
-    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON(), role), errors: [] })
+    res.status(200).json({
+      data: sanitizeTournamentUserResponse(saved.toJSON(), role, entityBinding),
+      errors: [],
+    })
   } catch (err) {
     next(err)
   }
@@ -158,7 +239,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       tournamentId,
       userId: String(user._id),
     })
-      .select({ role: 1, _id: 0 })
+      .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
       .lean()
       .exec()
     const tournaments = originalTournaments.filter((id) => id !== tournamentId)
@@ -181,7 +262,17 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
         rollbackTasks.push(
           TournamentMemberModel.updateOne(
             { tournamentId, userId: String(user._id) },
-            { $set: { role: membership.role } },
+            {
+              $set: {
+                role: membership.role,
+                ...(membership.entityType && membership.entityId
+                  ? { entityType: membership.entityType, entityId: membership.entityId }
+                  : {}),
+              },
+              ...(!membership.entityType
+                ? { $unset: { entityType: '', entityId: '' } }
+                : {}),
+            },
             { upsert: true }
           ).exec()
         )
@@ -200,7 +291,10 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     }
 
     res.json({
-      data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role),
+      data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role, {
+        entityType: membership?.entityType,
+        entityId: membership?.entityId,
+      }),
       errors: [],
     })
   } catch (err) {
