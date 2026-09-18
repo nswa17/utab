@@ -22,6 +22,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
   }
 
   async function fetchSpeakers(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
     if (scopeChanged) speakers.value = []
     beginRequest()
