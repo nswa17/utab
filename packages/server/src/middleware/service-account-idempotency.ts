@@ -249,7 +249,7 @@ export const handleServiceAccountIdempotency: RequestHandler = async (req, res, 
               {
                 name: 'ServiceUnavailable',
                 message:
-                  'Unable to durably record the idempotent response; retry with the same key later',
+                  'Unable to durably record the idempotent response; the request may have been applied and this key is blocked',
               },
             ],
           })
