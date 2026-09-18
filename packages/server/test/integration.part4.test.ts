@@ -2629,4 +2629,82 @@ describe('Server integration', () => {
     expect(statuses).not.toContain(429)
     expect(statuses.every((status) => status === 401)).toBe(true)
   })
+  it('coordinates round-scoped writes with renumber and delete mutations', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'round-write-guard-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'round-write-guard-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Write Guard Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+    expect(roundRes.body.data.roundActiveWriteCount).toBeUndefined()
+    expect(roundRes.body.data.roundMutationLocked).toBeUndefined()
+    expect(roundRes.body.data.roundMutationEpoch).toBeUndefined()
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundMutationLease,
+      acquireRoundWriteLease,
+      releaseRoundMutationLease,
+      releaseRoundWriteLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+
+    const writeLease = await acquireRoundWriteLease(connection, tournamentId, 1, roundId)
+    expect(writeLease).toBeTruthy()
+    if (!writeLease) throw new Error('expected round write lease')
+
+    const blockedRenumber = await organizer.patch(`/api/rounds/${roundId}`).send({
+      tournamentId,
+      round: 2,
+    })
+    expect(blockedRenumber.status).toBe(409)
+    expect(blockedRenumber.body.errors?.[0]?.message).toContain('active writes')
+
+    const blockedDelete = await organizer.delete(
+      `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+    )
+    expect(blockedDelete.status).toBe(409)
+    expect(blockedDelete.body.errors?.[0]?.message).toContain('active writes')
+
+    await releaseRoundWriteLease(connection, writeLease)
+
+    const mutationLease = await acquireRoundMutationLease(connection, tournamentId, roundId, 1)
+    expect(mutationLease).toBeTruthy()
+    if (!mutationLease) throw new Error('expected round mutation lease')
+
+    const blockedWriter = await acquireRoundWriteLease(connection, tournamentId, 1, roundId)
+    expect(blockedWriter).toBeNull()
+    await releaseRoundMutationLease(connection, mutationLease)
+
+    const renumberRes = await organizer.patch(`/api/rounds/${roundId}`).send({
+      tournamentId,
+      round: 2,
+    })
+    expect(renumberRes.status).toBe(200)
+    expect(renumberRes.body.data.round).toBe(2)
+
+    const deleteRes = await organizer.delete(
+      `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+    )
+    expect(deleteRes.status).toBe(200)
+  })
+
+
 })
