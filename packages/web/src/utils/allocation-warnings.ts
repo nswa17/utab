@@ -1,3 +1,5 @@
+import { drawTeamId, drawTeamIds, drawTeamPositions, inferDrawTeamNum } from './draw-teams'
+
 export type WarningSeverity = 'critical' | 'warn' | 'info'
 export type WarningDisplayTone = 'critical' | 'history' | 'caution' | 'info'
 export type WarningCategory = 'team' | 'adjudicator' | 'venue'
@@ -54,10 +56,7 @@ export type EntityWarningIndexEntry = {
 
 export type DrawAllocationRowLike = {
   venue?: string | null
-  teams: {
-    gov?: string | null
-    opp?: string | null
-  }
+  teams: unknown
   chairs?: string[]
   panels?: string[]
   trainees?: string[]
@@ -120,11 +119,17 @@ function overlapConflictCategories(
   return conflictCategoryOrder.filter((category) => overlaps.has(category))
 }
 
-function checkSided(pastSides: string[], side: 'gov' | 'opp') {
+function checkPositionImbalance(
+  pastSides: string[],
+  side: string,
+  positions: string[]
+) {
   const sides = normalizeIdList([...pastSides, side])
-  const govCount = sides.filter((value) => value === 'gov').length
-  const oppCount = sides.filter((value) => value === 'opp').length
-  return Math.abs(govCount - oppCount) > 1
+  const counts = positions.map(
+    (position) => sides.filter((value) => value === position).length
+  )
+  if (counts.length <= 1) return false
+  return Math.max(...counts) - Math.min(...counts) > 1
 }
 
 function schoolIdsForTeam(teamId: string, input: BuildRowWarningStatesInput) {
@@ -240,37 +245,47 @@ export function warningSeverityCounts(warnings: AllocationWarning[]): WarningSev
 export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWarningState[] {
   return input.allocation.map((row, rowIndex) => {
     const warnings: AllocationWarning[] = []
-    const govId = normalizeId(row.teams?.gov)
-    const oppId = normalizeId(row.teams?.opp)
-    const teamIds = [govId, oppId].filter((id) => id.length > 0)
+    const teamNum = inferDrawTeamNum(row.teams)
+    const teamPositions = drawTeamPositions(teamNum)
+    const positionedTeams = teamPositions
+      .map((position) => ({
+        position,
+        teamId: drawTeamId(row.teams, position, teamNum),
+      }))
+      .filter((entry) => entry.teamId.length > 0)
+    const teamIds = drawTeamIds(row.teams, teamNum)
     const debateAdjudicatorIds = normalizeIdList([...(row.chairs ?? []), ...(row.panels ?? [])])
     const adjudicatorIds = normalizeIdList([...debateAdjudicatorIds, ...(row.trainees ?? [])])
     const venueId = normalizeId(row.venue)
 
-    if (govId.length > 0 && input.isTeamAvailable(govId) === false) {
-      warnings.push(
-        createWarning(
-          rowIndex,
-          'team_unavailable',
-          'critical',
-          'team',
-          createTargets(rowIndex, [govId]),
-          { teamId: govId }
+    for (const { position, teamId } of positionedTeams) {
+      if (input.isTeamAvailable(teamId) === false) {
+        warnings.push(
+          createWarning(
+            rowIndex,
+            'team_unavailable',
+            'critical',
+            'team',
+            createTargets(rowIndex, [teamId]),
+            { teamId }
+          )
         )
-      )
-    }
-    if (oppId.length > 0 && input.isTeamAvailable(oppId) === false) {
-      warnings.push(
-        createWarning(
-          rowIndex,
-          'team_unavailable',
-          'critical',
-          'team',
-          createTargets(rowIndex, [oppId]),
-          { teamId: oppId }
+      }
+
+      if (checkPositionImbalance(input.teamPastSides(teamId), position, teamPositions)) {
+        warnings.push(
+          createWarning(
+            rowIndex,
+            'team_side_imbalance',
+            'info',
+            'team',
+            createTargets(rowIndex, [teamId]),
+            { teamId, side: position }
+          )
         )
-      )
+      }
     }
+
     if (venueId.length > 0 && input.isVenueAvailable(venueId) === false) {
       warnings.push(
         createWarning(
@@ -284,127 +299,108 @@ export function buildRowWarningStates(input: BuildRowWarningStatesInput): RowWar
       )
     }
 
-    if (govId.length > 0 && checkSided(input.teamPastSides(govId), 'gov')) {
-      warnings.push(
-        createWarning(
-          rowIndex,
-          'team_side_imbalance',
-          'info',
-          'team',
-          createTargets(rowIndex, [govId]),
-          { teamId: govId, side: 'gov' }
-        )
-      )
-    }
-    if (oppId.length > 0 && checkSided(input.teamPastSides(oppId), 'opp')) {
-      warnings.push(
-        createWarning(
-          rowIndex,
-          'team_side_imbalance',
-          'info',
-          'team',
-          createTargets(rowIndex, [oppId]),
-          { teamId: oppId, side: 'opp' }
-        )
-      )
-    }
+    for (let leftIndex = 0; leftIndex < teamIds.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < teamIds.length; rightIndex += 1) {
+        const teamAId = teamIds[leftIndex]
+        const teamBId = teamIds[rightIndex]
+        const teamAInstitutionIds = input.teamInstitutions(teamAId)
+        const teamBInstitutionIds = input.teamInstitutions(teamBId)
 
-    if (govId.length > 0 && oppId.length > 0) {
-      const govInstitutionIds = input.teamInstitutions(govId)
-      const oppInstitutionIds = input.teamInstitutions(oppId)
-      const sameTeamConflictCategories = overlapConflictCategories(
-        govInstitutionIds,
-        oppInstitutionIds,
-        input.institutionCategory
-      )
-      sameTeamConflictCategories.forEach((conflictCategory) => {
-        warnings.push(
-          createWarning(
-            rowIndex,
-            'team_same_institution',
-            'warn',
-            'team',
-            createTargets(rowIndex, [govId, oppId]),
-            {
-              teamAId: govId,
-              teamBId: oppId,
-              groupCategory: conflictCategory,
-            }
+        overlapConflictCategories(
+          teamAInstitutionIds,
+          teamBInstitutionIds,
+          input.institutionCategory
+        ).forEach((conflictCategory) => {
+          warnings.push(
+            createWarning(
+              rowIndex,
+              'team_same_institution',
+              'warn',
+              'team',
+              createTargets(rowIndex, [teamAId, teamBId]),
+              {
+                teamAId,
+                teamBId,
+                groupCategory: conflictCategory,
+              }
+            )
           )
-        )
-      })
-      const winGov = input.teamWin(govId)
-      const winOpp = input.teamWin(oppId)
-      if (Number.isFinite(winGov) && Number.isFinite(winOpp) && winGov !== winOpp) {
-        warnings.push(
-          createWarning(
-            rowIndex,
-            'team_different_win',
-            'info',
-            'team',
-            createTargets(rowIndex, [govId, oppId]),
-            { teamAId: govId, teamBId: oppId }
-          )
-        )
-      }
-      const pastGov = input.teamPastOpponents(govId)
-      const pastOpp = input.teamPastOpponents(oppId)
-      if (pastGov.includes(oppId) || pastOpp.includes(govId)) {
-        warnings.push(
-          createWarning(
-            rowIndex,
-            'team_past_match',
-            'warn',
-            'team',
-            createTargets(rowIndex, [govId, oppId]),
-            { teamAId: govId, teamBId: oppId }
-          )
-        )
-      }
-      const pastSameInstitutionCategories = new Set<ConflictGroupCategory>()
-      pastGov
-        .filter((pastTeamId) => pastTeamId !== oppId)
-        .forEach((pastTeamId) => {
-          overlapConflictCategories(
-            input.teamInstitutions(pastTeamId),
-            oppInstitutionIds,
-            input.institutionCategory
-          ).forEach((category) => pastSameInstitutionCategories.add(category))
         })
-      pastOpp
-        .filter((pastTeamId) => pastTeamId !== govId)
-        .forEach((pastTeamId) => {
-          overlapConflictCategories(
-            input.teamInstitutions(pastTeamId),
-            govInstitutionIds,
-            input.institutionCategory
-          ).forEach((category) => pastSameInstitutionCategories.add(category))
-        })
-      if (
-        hasRelatedPastSchoolPair(govId, oppId, input) ||
-        hasRelatedPastSchoolPair(oppId, govId, input)
-      ) {
-        pastSameInstitutionCategories.add('institution')
-      }
-      const sortedPastSameInstitutionCategories = conflictCategoryOrder.filter((category) =>
-        pastSameInstitutionCategories.has(category)
-      )
-      sortedPastSameInstitutionCategories.forEach((conflictCategory) => {
-        warnings.push(
-          createWarning(
-            rowIndex,
-            'team_past_match_same_institution',
-            'warn',
-            'team',
-            createTargets(rowIndex, [govId, oppId]),
-            {
-              teamAId: govId,
-              teamBId: oppId,
-              groupCategory: conflictCategory,
-            }
+
+        const winA = input.teamWin(teamAId)
+        const winB = input.teamWin(teamBId)
+        if (Number.isFinite(winA) && Number.isFinite(winB) && winA !== winB) {
+          warnings.push(
+            createWarning(
+              rowIndex,
+              'team_different_win',
+              'info',
+              'team',
+              createTargets(rowIndex, [teamAId, teamBId]),
+              { teamAId, teamBId }
+            )
           )
-        )
-      })
+        }
+
+        const pastA = input.teamPastOpponents(teamAId)
+        const pastB = input.teamPastOpponents(teamBId)
+        if (pastA.includes(teamBId) || pastB.includes(teamAId)) {
+          warnings.push(
+            createWarning(
+              rowIndex,
+              'team_past_match',
+              'warn',
+              'team',
+              createTargets(rowIndex, [teamAId, teamBId]),
+              { teamAId, teamBId }
+            )
+          )
+        }
+
+        const pastSameInstitutionCategories = new Set<ConflictGroupCategory>()
+        pastA
+          .filter((pastTeamId) => pastTeamId !== teamBId)
+          .forEach((pastTeamId) => {
+            overlapConflictCategories(
+              input.teamInstitutions(pastTeamId),
+              teamBInstitutionIds,
+              input.institutionCategory
+            ).forEach((category) => pastSameInstitutionCategories.add(category))
+          })
+        pastB
+          .filter((pastTeamId) => pastTeamId !== teamAId)
+          .forEach((pastTeamId) => {
+            overlapConflictCategories(
+              input.teamInstitutions(pastTeamId),
+              teamAInstitutionIds,
+              input.institutionCategory
+            ).forEach((category) => pastSameInstitutionCategories.add(category))
+          })
+        if (
+          hasRelatedPastSchoolPair(teamAId, teamBId, input) ||
+          hasRelatedPastSchoolPair(teamBId, teamAId, input)
+        ) {
+          pastSameInstitutionCategories.add('institution')
+        }
+        conflictCategoryOrder
+          .filter((category) => pastSameInstitutionCategories.has(category))
+          .forEach((conflictCategory) => {
+            warnings.push(
+              createWarning(
+                rowIndex,
+                'team_past_match_same_institution',
+                'warn',
+                'team',
+                createTargets(rowIndex, [teamAId, teamBId]),
+                {
+                  teamAId,
+                  teamBId,
+                  groupCategory: conflictCategory,
+                }
+              )
+            )
+          })
+      }
     }
 
     for (const adjudicatorId of adjudicatorIds) {
