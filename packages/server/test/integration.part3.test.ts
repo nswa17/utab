@@ -2003,6 +2003,26 @@ describe('Server integration', () => {
     expect(fullyPublicRound.body.data.teamAllocationOpened).toBe(true)
     expect(fullyPublicRound.body.data.adjudicatorAllocationOpened).toBe(true)
 
+    const legacyRoundCloseRes = await organizer.patch(`/api/rounds/${round1Id}`).send({
+      tournamentId,
+      teamAllocationOpened: false,
+    })
+    expect(legacyRoundCloseRes.status).toBe(200)
+    const drawAfterLegacyClose = await organizer
+      .get('/api/draws')
+      .query({ tournamentId, round: 1 })
+    expect(drawAfterLegacyClose.body.data[0].drawOpened).toBe(false)
+
+    const legacyRoundReopenRes = await organizer.patch(`/api/rounds/${round1Id}`).send({
+      tournamentId,
+      teamAllocationOpened: true,
+    })
+    expect(legacyRoundReopenRes.status).toBe(200)
+    const drawAfterLegacyReopen = await organizer
+      .get('/api/draws')
+      .query({ tournamentId, round: 1 })
+    expect(drawAfterLegacyReopen.body.data[0].drawOpened).toBe(true)
+
     const rowTeamIds = (row: any): string[] => {
       if (Array.isArray(row?.teams)) return row.teams.map((value: unknown) => String(value))
       const source = row?.teams ?? {}
@@ -2217,6 +2237,23 @@ describe('Server integration', () => {
     expect(
       (restoredDrawsRes.body.data as Array<any>).map((row) => Number(row.round)).sort()
     ).toEqual([1, 3])
+
+    const restoredRound1 = (restoredRoundsRes.body.data as Array<any>).find(
+      (row) => Number(row.round) === 1
+    )
+    const restoredDraw1 = (restoredDrawsRes.body.data as Array<any>).find(
+      (row) => Number(row.round) === 1
+    )
+    const deleteRestoredDraw1Res = await organizer
+      .delete(`/api/draws/${String(restoredDraw1._id)}`)
+      .query({ tournamentId: restoredTournamentId })
+    expect(deleteRestoredDraw1Res.status).toBe(200)
+    const restoredRound1AfterDrawDelete = await request(app)
+      .get(`/api/rounds/${String(restoredRound1._id)}`)
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredRound1AfterDrawDelete.status).toBe(200)
+    expect(restoredRound1AfterDrawDelete.body.data.teamAllocationOpened).toBe(false)
+    expect(restoredRound1AfterDrawDelete.body.data.adjudicatorAllocationOpened).toBe(false)
 
     const restoredCompiledRes = await organizer
       .get('/api/compiled')
