@@ -1,5 +1,7 @@
 import { Schema, type Connection, type InferSchemaType, type Model } from 'mongoose'
 
+export const ROUND_NAMESPACE_LOCK_COLLECTION = 'round_namespace_locks'
+
 const roundNamespaceLockSchema = new Schema(
   {
     _id: { type: String, required: true },
@@ -7,7 +9,7 @@ const roundNamespaceLockSchema = new Schema(
     epoch: { type: Number, default: 0 },
     touchedAt: { type: Date, default: null },
   },
-  { versionKey: false, collection: 'round_namespace_locks' }
+  { versionKey: false, collection: ROUND_NAMESPACE_LOCK_COLLECTION }
 )
 
 type RoundNamespaceLock = InferSchemaType<typeof roundNamespaceLockSchema>
