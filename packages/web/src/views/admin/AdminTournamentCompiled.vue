@@ -386,7 +386,7 @@
                   {{ $t('順位表・参加者一覧・全ラウンドの投票詳細をまとめてダウンロードします。') }}
                 </p>
                 <span class="muted tiny">
-                  {{ $t('ダウンロード内容: {count} ファイル', { count: bulkExportFiles.length }) }}
+                  {{ $t('ダウンロード内容: {count} ファイル', { count: bulkExportFiles.length + 1 }) }}
                 </span>
               </div>
               <Button variant="primary" class="bulk-download-button" @click="downloadBulkResultsZip">
@@ -3211,15 +3211,28 @@ const detailedResultsExportRows = computed(() =>
   })
 )
 
+const compiledExportRoundSet = computed(() => {
+  const roundsValue = Array.isArray(compiled.value?.rounds) ? compiled.value?.rounds : []
+  return new Set(
+    roundsValue
+      .map((entry: any) => Number(entry?.r ?? entry?.round ?? entry))
+      .filter((round: number) => Number.isInteger(round) && round >= 1)
+  )
+})
+
+const snapshotScopedDetailedResultsExportRows = computed(() =>
+  detailedResultsExportRows.value.filter((row) => compiledExportRoundSet.value.has(row.round))
+)
+
 const detailedResultsExportRounds = computed(() => {
-  const availableRounds = new Set(detailedResultsExportRows.value.map((row) => row.round))
+  const availableRounds = new Set(snapshotScopedDetailedResultsExportRows.value.map((row) => row.round))
   return sortedRounds.value.filter((round) => availableRounds.has(round.round))
 })
 
 const selectedDetailedResultsExportRows = computed(() => {
   const selectedRound = Number(detailedResultsExportRound.value)
   if (!Number.isInteger(selectedRound) || selectedRound < 1) return []
-  return detailedResultsExportRows.value.filter((row) => row.round === selectedRound)
+  return snapshotScopedDetailedResultsExportRows.value.filter((row) => row.round === selectedRound)
 })
 
 const bulkExportFiles = computed<CsvExportFile[]>(() => {
@@ -3238,17 +3251,20 @@ const bulkExportFiles = computed<CsvExportFile[]>(() => {
 
   if (participantExportRows.value.length > 0) {
     files.push({
-      filename: tournamentExportFilename('participants.csv'),
+      filename: tournamentExportFilename('current_participants.csv'),
       csv: buildParticipantExportCsv(participantExportRows.value),
       rowCount: participantExportRows.value.length,
     })
   }
 
-  if (detailedResultsExportRows.value.length > 0) {
+  if (snapshotScopedDetailedResultsExportRows.value.length > 0) {
     files.push({
-      filename: tournamentExportFilename('all_round_results.csv'),
-      csv: buildDetailedResultsExportCsv(detailedResultsExportRows.value, detailedResultsExportLabels()),
-      rowCount: detailedResultsExportRows.value.length,
+      filename: tournamentExportFilename('current_snapshot_round_results.csv'),
+      csv: buildDetailedResultsExportCsv(
+        snapshotScopedDetailedResultsExportRows.value,
+        detailedResultsExportLabels()
+      ),
+      rowCount: snapshotScopedDetailedResultsExportRows.value.length,
     })
   }
 
@@ -3271,6 +3287,7 @@ function detailedResultsExportLabels(): DetailedResultsExportLabels {
     round_name: t('ラウンド名'),
     submission_id: t('提出ID'),
     submitted_at: t('提出日時'),
+    updated_at: t('更新日時'),
     voted_by_id: t('投票者ID'),
     voted_by_name: t('投票者'),
     matchup: t('対戦'),
@@ -3645,7 +3662,8 @@ function downloadCommentSheetCsv() {
 }
 
 function downloadDetailedResultsCsv(scope: 'selected' | 'all') {
-  const rows = scope === 'all' ? detailedResultsExportRows.value : selectedDetailedResultsExportRows.value
+  const rows =
+    scope === 'all' ? snapshotScopedDetailedResultsExportRows.value : selectedDetailedResultsExportRows.value
   if (rows.length === 0) return
 
   emitReportMetric('cta_click', { cta: 'download_detailed_results_csv', scope })
@@ -3659,7 +3677,7 @@ function downloadDetailedResultsCsv(scope: 'selected' | 'all') {
   link.download =
     scope === 'selected' && Number.isInteger(selectedRound) && selectedRound >= 1
       ? tournamentExportFilename(`round_${selectedRound}_detailed_votes.csv`)
-      : tournamentExportFilename('all_round_results.csv')
+      : tournamentExportFilename('current_snapshot_round_results.csv')
   link.click()
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', {
@@ -3807,11 +3825,32 @@ function downloadBulkResultsZip() {
   const files = bulkExportFiles.value
   if (files.length === 0) return
 
-  emitReportMetric('cta_click', { cta: 'download_bulk_results_zip', fileCount: files.length })
-  const entries: ZipEntry[] = files.map((file) => ({
-    name: file.filename,
-    data: `\ufeff${file.csv}`,
-  }))
+  const currentCompiled = compiled.value
+  const snapshotRounds = Array.from(compiledExportRoundSet.value).sort((left, right) => left - right)
+  const provenance = [
+    'UTab report provenance',
+    `generated_at=${new Date().toISOString()}`,
+    `compiled_id=${String(currentCompiled?._id ?? '')}`,
+    `compiled_created_at=${String(currentCompiled?.createdAt ?? '')}`,
+    `compile_source=${String(currentCompiled?.compile_source ?? '')}`,
+    `snapshot_rounds=${snapshotRounds.join(',')}`,
+    'ranking_csvs=stored compiled snapshot data',
+    'current_participants.csv=current entity data at export time',
+    'current_snapshot_round_results.csv=current submission/entity/draw metadata at export time, restricted to snapshot rounds',
+    'warning=current_* files can reflect corrections or metadata edits made after the compiled snapshot was saved',
+  ].join('\n')
+
+  const entries: ZipEntry[] = [
+    ...files.map((file) => ({
+      name: file.filename,
+      data: `\ufeff${file.csv}`,
+    })),
+    {
+      name: tournamentExportFilename('report_provenance.txt'),
+      data: provenance,
+    },
+  ]
+  emitReportMetric('cta_click', { cta: 'download_bulk_results_zip', fileCount: entries.length })
   const archive = createZip(entries)
   const blob = new Blob([archive], { type: 'application/zip' })
   const url = URL.createObjectURL(blob)
@@ -3822,7 +3861,7 @@ function downloadBulkResultsZip() {
   URL.revokeObjectURL(url)
   emitReportMetric('export_complete', {
     exportType: 'bulk_results_zip',
-    fileCount: files.length,
+    fileCount: entries.length,
     rowCount: files.reduce((total, file) => total + file.rowCount, 0),
   })
 }
