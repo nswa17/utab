@@ -57,7 +57,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/adjudicators', payload)
       const created = res.data?.data
@@ -86,7 +86,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/adjudicators/${payload.adjudicatorId}`, {
         tournamentId: payload.tournamentId,
@@ -116,7 +116,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
 
   async function deleteAdjudicator(tournamentId: string, adjudicatorId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/adjudicators/${adjudicatorId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
@@ -141,7 +141,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     if (normalizedIds.length === 0) return 0
 
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete('/adjudicators', {
         params: { tournamentId, ids: normalizedIds.join(',') },
