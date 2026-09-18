@@ -7,6 +7,7 @@ import { TournamentModel } from '../src/models/tournament.js'
 import { UserModel } from '../src/models/user.js'
 import { hashPassword, verifyPassword } from '../src/services/hash.service.js'
 import { getSubmissionModel } from '../src/models/submission.js'
+import { AuditLogModel } from '../src/models/audit-log.js'
 
 let app: Server
 let mongo: MongoMemoryServer
@@ -845,6 +846,244 @@ describe('Server integration', () => {
 
     const forbidden = await outsider.get(`/api/audit-logs?tournamentId=${tournamentId}`)
     expect(forbidden.status).toBe(403)
+  })
+
+  it('persists an audit reservation before starting an audited mutation', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer.post('/api/auth/register').send({
+          username: 'audit-durable-reservation-owner',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer.post('/api/auth/login').send({
+          username: 'audit-durable-reservation-owner',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Audit Durable Reservation Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+
+    const originalUpdateOne = (AuditLogModel as any).updateOne.bind(AuditLogModel)
+    let releaseReservation!: () => void
+    const reservationGate = new Promise<void>((resolve) => {
+      releaseReservation = resolve
+    })
+    let signalReservationStarted!: () => void
+    const reservationStarted = new Promise<void>((resolve) => {
+      signalReservationStarted = resolve
+    })
+
+    const auditSpy = vi.spyOn(AuditLogModel as any, 'updateOne').mockImplementation(
+      (filter: any, update: any, ...args: any[]) => {
+        const query = originalUpdateOne(filter, update, ...args)
+        const isTargetReservation =
+          update?.$setOnInsert?.action === 'team.create' &&
+          update?.$setOnInsert?.tournamentId === tournamentId &&
+          update?.$setOnInsert?.outcome === 'pending'
+        if (!isTargetReservation) return query
+        return {
+          exec: async () => {
+            signalReservationStarted()
+            await reservationGate
+            return await query.exec()
+          },
+        }
+      }
+    )
+
+    let responseSettled = false
+    const pendingResponse = organizer
+      .post('/api/teams')
+      .send({ tournamentId, name: 'Blocked Until Audit Durable' })
+      .then((response) => {
+        responseSettled = true
+        return response
+      })
+
+    await reservationStarted
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(responseSettled).toBe(false)
+    expect(
+      await TeamModel.countDocuments({
+        tournamentId,
+        name: 'Blocked Until Audit Durable',
+      }).exec()
+    ).toBe(0)
+
+    releaseReservation()
+    const response = await pendingResponse
+    auditSpy.mockRestore()
+
+    expect(response.status).toBe(201)
+    const log = await AuditLogModel.findOne({
+      tournamentId,
+      action: 'team.create',
+      targetId: String(response.body.data._id),
+    })
+      .lean()
+      .exec()
+    expect(log?.outcome).toBe('succeeded')
+    expect((log?.metadata as any)?.statusCode).toBe(201)
+  })
+
+  it('fails before mutation when the audit reservation cannot be made durable', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer.post('/api/auth/register').send({
+          username: 'audit-reservation-failure-owner',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer.post('/api/auth/login').send({
+          username: 'audit-reservation-failure-owner',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Audit Reservation Failure Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+
+    const originalUpdateOne = (AuditLogModel as any).updateOne.bind(AuditLogModel)
+    let injectedAttempts = 0
+    const auditSpy = vi.spyOn(AuditLogModel as any, 'updateOne').mockImplementation(
+      (filter: any, update: any, ...args: any[]) => {
+        const isTargetReservation =
+          update?.$setOnInsert?.action === 'team.create' &&
+          update?.$setOnInsert?.tournamentId === tournamentId &&
+          update?.$setOnInsert?.outcome === 'pending'
+        if (!isTargetReservation) return originalUpdateOne(filter, update, ...args)
+        return {
+          exec: async () => {
+            injectedAttempts += 1
+            throw new Error('injected audit reservation failure')
+          },
+        }
+      }
+    )
+
+    const response = await organizer
+      .post('/api/teams')
+      .send({ tournamentId, name: 'Must Not Mutate Without Audit' })
+    auditSpy.mockRestore()
+
+    expect(response.status).toBe(503)
+    expect(response.body.errors?.[0]?.message).toContain('mutation was not started')
+    expect(injectedAttempts).toBe(3)
+    expect(
+      await TeamModel.countDocuments({
+        tournamentId,
+        name: 'Must Not Mutate Without Audit',
+      }).exec()
+    ).toBe(0)
+    expect(
+      await AuditLogModel.countDocuments({
+        tournamentId,
+        action: 'team.create',
+      }).exec()
+    ).toBe(0)
+  })
+
+  it('keeps the durable pending audit record if outcome finalization fails', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer.post('/api/auth/register').send({
+          username: 'audit-finalization-failure-owner',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer.post('/api/auth/login').send({
+          username: 'audit-finalization-failure-owner',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Audit Finalization Failure Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+
+    const originalUpdateOne = (AuditLogModel as any).updateOne.bind(AuditLogModel)
+    let finalizationAttempts = 0
+    const auditSpy = vi.spyOn(AuditLogModel as any, 'updateOne').mockImplementation(
+      (filter: any, update: any, ...args: any[]) => {
+        const isTargetFinalization =
+          filter?.outcome === 'pending' &&
+          update?.$set?.action === 'team.create' &&
+          update?.$set?.tournamentId === tournamentId
+        if (!isTargetFinalization) return originalUpdateOne(filter, update, ...args)
+        return {
+          exec: async () => {
+            finalizationAttempts += 1
+            throw new Error('injected audit finalization failure')
+          },
+        }
+      }
+    )
+
+    const response = await organizer
+      .post('/api/teams')
+      .send({ tournamentId, name: 'Mutation With Pending Audit' })
+    auditSpy.mockRestore()
+
+    expect(response.status).toBe(201)
+    expect(finalizationAttempts).toBe(3)
+    expect(
+      await TeamModel.countDocuments({
+        tournamentId,
+        name: 'Mutation With Pending Audit',
+      }).exec()
+    ).toBe(1)
+
+    const reservation = await AuditLogModel.findOne({
+      tournamentId,
+      action: 'team.create',
+      outcome: 'pending',
+    })
+      .lean()
+      .exec()
+    expect(reservation).toBeTruthy()
   })
 
   it('normalizes tournament access and backfills memberships through maintenance services', async () => {
