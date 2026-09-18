@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type {
   CompileRunRequest,
   CompileSaveRequest,
@@ -34,6 +35,7 @@ export const useCompiledStore = defineStore('compiled', () => {
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
   const latestPreviewSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -56,18 +58,19 @@ export const useCompiledStore = defineStore('compiled', () => {
   }
 
   async function fetchLatest(tournamentId: string) {
+    tournamentScope.activate(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/compiled', { params: { tournamentId, latest: '1' } })
-      if (sequence !== latestFetchSequence.value) {
+      if (sequence !== latestFetchSequence.value || !tournamentScope.isActive(tournamentId)) {
         return null
       }
       compiled.value = extractPayload(res.data?.data)
       return compiled.value
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (sequence !== latestFetchSequence.value || !tournamentScope.isActive(tournamentId)) {
         return null
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load compiled results'
@@ -82,13 +85,14 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileRunRequest
   ) {
+    tournamentScope.activate(tournamentId)
     const sequence = advancePreviewSequence()
     beginRequest()
     error.value = null
     try {
       const source: CompileSource = options?.source === 'raw' ? 'raw' : 'submissions'
       const res = await api.post('/compiled/preview', { tournamentId, ...options })
-      if (sequence !== latestPreviewSequence.value) {
+      if (sequence !== latestPreviewSequence.value || !tournamentScope.isActive(tournamentId)) {
         return null
       }
       const previewPayload = extractPayload(res.data?.data?.preview)
@@ -107,7 +111,7 @@ export const useCompiledStore = defineStore('compiled', () => {
       }
       return previewPayload
     } catch (err: any) {
-      if (sequence !== latestPreviewSequence.value) {
+      if (sequence !== latestPreviewSequence.value || !tournamentScope.isActive(tournamentId)) {
         return null
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to preview compile results'
@@ -138,13 +142,18 @@ export const useCompiledStore = defineStore('compiled', () => {
     error.value = null
     try {
       const res = await api.post('/compiled', toSavePayload(tournamentId, options))
-      advanceFetchSequence()
-      advancePreviewSequence()
-      compiled.value = extractPayload(res.data?.data)
-      previewState.value = null
-      return compiled.value
+      const savedPayload = extractPayload(res.data?.data)
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
+        advancePreviewSequence()
+        compiled.value = savedPayload
+        previewState.value = null
+      }
+      return savedPayload
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save compiled results'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save compiled results'
+      }
       return null
     } finally {
       endRequest()
@@ -166,14 +175,18 @@ export const useCompiledStore = defineStore('compiled', () => {
       }
       const res = await api.delete(`/compiled/${targetId}`, { params: { tournamentId } })
       const deletedPayload = extractPayload(res.data?.data)
-      advanceFetchSequence()
-      advancePreviewSequence()
-      if (compiled.value && String(compiled.value._id ?? '').trim() === targetId) {
-        compiled.value = null
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
+        advancePreviewSequence()
+        if (compiled.value && String(compiled.value._id ?? '').trim() === targetId) {
+          compiled.value = null
+        }
       }
       return deletedPayload
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete compiled result'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete compiled result'
+      }
       return null
     } finally {
       endRequest()
