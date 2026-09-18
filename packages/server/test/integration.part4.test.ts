@@ -3072,6 +3072,52 @@ describe('Server integration', () => {
     )
     expect(finalDelete.status).toBe(200)
     expect(await RoundModel.findOne({ _id: roundId, tournamentId }).lean().exec()).toBeNull()
+
+    const bulkRoundsRes = await organizer.post('/api/rounds').send([
+      { tournamentId, round: 2, name: 'Bulk Delete Round 2' },
+      { tournamentId, round: 3, name: 'Bulk Delete Round 3' },
+    ])
+    expect(bulkRoundsRes.status).toBe(201)
+    const bulkRoundIds = (bulkRoundsRes.body.data as Array<{ _id: string }>).map((item) =>
+      String(item._id)
+    )
+    expect(bulkRoundIds).toHaveLength(2)
+
+    for (const roundNumber of [2, 3]) {
+      const storedResult = await organizer.post('/api/results').send({
+        tournamentId,
+        round: roundNumber,
+        payload: { marker: `bulk-restore-${roundNumber}` },
+      })
+      expect(storedResult.status).toBe(201)
+    }
+
+    const bulkCleanupFailureSpy = vi
+      .spyOn(TeamModel as any, 'updateMany')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected bulk entity cleanup failure')
+        },
+      }))
+
+    const failedBulkDelete = await organizer.delete(
+      `/api/rounds?tournamentId=${tournamentId}&ids=${bulkRoundIds.join(',')}`
+    )
+    expect(failedBulkDelete.status).toBe(500)
+    bulkCleanupFailureSpy.mockRestore()
+
+    expect(
+      await RoundModel.countDocuments({ _id: { $in: bulkRoundIds }, tournamentId }).exec()
+    ).toBe(2)
+    expect(
+      await ResultModel.countDocuments({ tournamentId, round: { $in: [2, 3] } }).exec()
+    ).toBe(2)
+
+    const finalBulkDelete = await organizer.delete(
+      `/api/rounds?tournamentId=${tournamentId}&ids=${bulkRoundIds.join(',')}`
+    )
+    expect(finalBulkDelete.status).toBe(200)
+    expect(finalBulkDelete.body.data.deletedCount).toBe(2)
   })
 
 })
