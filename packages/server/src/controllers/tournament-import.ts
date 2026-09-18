@@ -181,6 +181,31 @@ async function ensureImportedStyle(
   return { styleId: candidateId, createdStyleId: candidateId }
 }
 
+function validateImportedRoundScope(collectionName: string, docs: unknown[]): void {
+  const field =
+    collectionName === 'rounds' ||
+    collectionName === 'draws' ||
+    collectionName === 'submissions' ||
+    collectionName === 'results'
+      ? 'round'
+      : collectionName === 'rawteamresults' ||
+          collectionName === 'rawspeakerresults' ||
+          collectionName === 'rawadjudicatorresults'
+        ? 'r'
+        : null
+  if (!field) return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    const value = record[field]
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return
+    throw new TournamentImportError(
+      400,
+      `Invalid ${collectionName} ${field} in backup at index ${index}: expected a positive integer`
+    )
+  })
+}
+
 function validateImportedEntityState(collectionName: string, docs: unknown[]): void {
   const schemas =
     collectionName === 'teams'
@@ -458,6 +483,7 @@ async function importTournamentFromBundle(
         throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
+      validateImportedRoundScope(collectionName, docs)
       validateImportedEntityState(collectionName, docs)
       const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
       if (revivedDocs.length > 0) {
