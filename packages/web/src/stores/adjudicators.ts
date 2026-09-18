@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Adjudicator } from '@/types/adjudicator'
 
 export const useAdjudicatorsStore = defineStore('adjudicators', () => {
@@ -9,6 +10,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -26,6 +28,8 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   }
 
   async function fetchAdjudicators(tournamentId: string) {
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) adjudicators.value = []
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -54,17 +58,19 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/adjudicators', payload)
       const created = res.data?.data
-      if (created) {
+      if (created && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         adjudicators.value = [created, ...adjudicators.value]
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create adjudicator'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create adjudicator'
+      }
       return null
     } finally {
       endRequest()
@@ -81,7 +87,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/adjudicators/${payload.adjudicatorId}`, {
         tournamentId: payload.tournamentId,
@@ -92,7 +98,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         adjudicators.value = adjudicators.value.map((item) =>
           item._id === updated._id ? updated : item
@@ -100,7 +106,9 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update adjudicator'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update adjudicator'
+      }
       return null
     } finally {
       endRequest()
@@ -109,14 +117,18 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
 
   async function deleteAdjudicator(tournamentId: string, adjudicatorId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/adjudicators/${adjudicatorId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
+        adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicator'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicator'
+      }
       return false
     } finally {
       endRequest()
@@ -130,20 +142,24 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     if (normalizedIds.length === 0) return 0
 
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete('/adjudicators', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
-      adjudicators.value = adjudicators.value.filter(
+      const deletedCount = Number(res.data?.data?.deletedCount)
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
+        const deletedIds = new Set(normalizedIds)
+        adjudicators.value = adjudicators.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
-      const deletedCount = Number(res.data?.data?.deletedCount)
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicators'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete adjudicators'
+      }
       return null
     } finally {
       endRequest()
