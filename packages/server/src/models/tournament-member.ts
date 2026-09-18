@@ -9,12 +9,19 @@ const tournamentMemberSchema = new Schema(
       enum: ['organizer', 'adjudicator', 'speaker', 'audience'],
       required: true,
     },
+    entityType: {
+      type: String,
+      enum: ['team', 'speaker', 'adjudicator'],
+      required: false,
+    },
+    entityId: { type: String, required: false },
   },
   { timestamps: true }
 )
 
 tournamentMemberSchema.index({ tournamentId: 1, userId: 1 }, { unique: true })
 tournamentMemberSchema.index({ userId: 1, role: 1 })
+tournamentMemberSchema.index({ tournamentId: 1, entityType: 1, entityId: 1 })
 
 export type TournamentMember = InferSchemaType<typeof tournamentMemberSchema>
 export const TournamentMemberModel = model<TournamentMember>(
