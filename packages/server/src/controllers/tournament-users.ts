@@ -4,17 +4,24 @@ import { UserModel } from '../models/user.js'
 import { hashPassword } from '../services/hash.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
-function sanitizeTournamentUserResponse(user: {
-  _id: unknown
-  username?: string
-  role?: string
-  tournaments?: unknown[]
-}, membershipRole?: string) {
+function sanitizeTournamentUserResponse(
+  user: {
+    _id: unknown
+    username?: string
+    role?: string
+    tournaments?: unknown[]
+  },
+  tournamentId: string,
+  membershipRole?: string
+) {
+  const isMember = Array.isArray(user.tournaments)
+    ? user.tournaments.some((id) => String(id) === tournamentId)
+    : false
   return {
     userId: String(user._id),
     username: user.username,
     role: membershipRole ?? user.role,
-    tournaments: Array.isArray(user.tournaments) ? user.tournaments.map((id) => String(id)) : [],
+    tournaments: isMember ? [tournamentId] : [],
   }
 }
 
@@ -75,7 +82,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
           `Failed to add and roll back tournament user ${String(created._id)}`
         )
       }
-      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON(), role), errors: [] })
+      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON(), tournamentId, role), errors: [] })
       return
     }
 
@@ -121,7 +128,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
         `Failed to add and roll back tournament user ${String(existing._id)}`
       )
     }
-    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON(), role), errors: [] })
+    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON(), tournamentId, role), errors: [] })
   } catch (err) {
     next(err)
   }
@@ -200,7 +207,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     }
 
     res.json({
-      data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role),
+      data: sanitizeTournamentUserResponse(saved.toJSON(), tournamentId, membership?.role),
       errors: [],
     })
   } catch (err) {
