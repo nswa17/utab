@@ -102,7 +102,7 @@ describe('draws store', () => {
     expect(store.draws[0]._id).toBe('new-draw')
   })
 
-  it('does not overwrite another tournaments draw when upserting the same round', async () => {
+  it('drops another tournaments stale draw when upserting the active tournament', async () => {
     const store = useDrawsStore()
     store.draws = [
       {
@@ -135,15 +135,12 @@ describe('draws store', () => {
       allocation: [{ teams: { gov: 'x', opp: 'y' }, chairs: [], panels: [], trainees: [] }],
     })
 
-    expect(store.draws).toHaveLength(2)
+    expect(store.draws).toHaveLength(1)
     expect(store.draws.find((item) => item._id === 'draw-t1-r1')?.allocation[0]?.teams).toEqual({
       gov: 'x',
       opp: 'y',
     })
-    expect(store.draws.find((item) => item._id === 'draw-t2-r1')?.allocation[0]?.teams).toEqual({
-      gov: 'c',
-      opp: 'd',
-    })
+    expect(store.draws.some((item) => item._id === 'draw-t2-r1')).toBe(false)
   })
 
   it('keeps only the latest fetchDraws response when requests resolve out of order', async () => {
