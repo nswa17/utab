@@ -352,6 +352,79 @@ describe('Server integration', () => {
     expect(forbiddenCreate.status).toBe(403)
   })
 
+  it('expires tournament access after two hours of inactivity while active sessions slide', async () => {
+    const organizer = request.agent(app)
+    const participant = request.agent(app)
+
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'access-inactivity-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'access-inactivity-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Access Inactivity Open',
+      style: 1,
+      options: {},
+      auth: { access: { required: true, password: 'idle-secret' } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const firstAccess = await participant
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'enter', password: 'idle-secret' })
+    expect(firstAccess.status).toBe(200)
+
+    const absoluteExpiry = Number(firstAccess.body.data.expiresAt)
+    const grantedAt = absoluteExpiry - 24 * 60 * 60 * 1000
+    const nowSpy = vi.spyOn(Date, 'now')
+
+    try {
+      nowSpy.mockReturnValue(grantedAt + 90 * 60 * 1000)
+      expect(
+        (await participant.get(`/api/teams?tournamentId=${tournamentId}`)).status
+      ).toBe(200)
+
+      nowSpy.mockReturnValue(grantedAt + 3 * 60 * 60 * 1000)
+      expect(
+        (await participant.get(`/api/teams?tournamentId=${tournamentId}`)).status
+      ).toBe(200)
+
+      nowSpy.mockReturnValue(grantedAt + 5 * 60 * 60 * 1000 + 1)
+      const inactiveRes = await participant.get(`/api/teams?tournamentId=${tournamentId}`)
+      expect(inactiveRes.status).toBe(401)
+      expect(inactiveRes.body.errors?.[0]?.message).toBe('Login required for this tournament')
+    } finally {
+      nowSpy.mockRestore()
+    }
+
+    const secondAccess = await participant
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'enter', password: 'idle-secret' })
+    expect(secondAccess.status).toBe(200)
+    const secondGrantedAt = Number(secondAccess.body.data.expiresAt) - 24 * 60 * 60 * 1000
+
+    const secondNowSpy = vi.spyOn(Date, 'now')
+    try {
+      secondNowSpy.mockReturnValue(secondGrantedAt + 2 * 60 * 60 * 1000 + 1)
+      const expiredRes = await participant.get(`/api/teams?tournamentId=${tournamentId}`)
+      expect(expiredRes.status).toBe(401)
+      expect(expiredRes.body.errors?.[0]?.message).toBe('Login required for this tournament')
+    } finally {
+      secondNowSpy.mockRestore()
+    }
+  })
+
   it('hides rounds and draws marked hidden from participant-facing responses', async () => {
     const organizer = request.agent(app)
 
