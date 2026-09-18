@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import { i18n } from '@/i18n'
 import type { Submission } from '@/types/submission'
 
@@ -59,6 +60,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   const pendingRequests = ref(0)
   const adminFetchSequence = ref(0)
   const participantFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -99,6 +101,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
+    tournamentScope.activate(params.tournamentId)
     const sequence = ++adminFetchSequence.value
     beginRequest()
     error.value = null
@@ -126,6 +129,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
+    tournamentScope.activate(params.tournamentId)
     const sequence = ++participantFetchSequence.value
     beginRequest()
     error.value = null
@@ -149,6 +153,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   function clearSubmissions() {
+    tournamentScope.clear()
     invalidateFetchSequences()
     submissions.value = []
     error.value = null
@@ -164,7 +169,9 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     try {
       return await postWithTimeout('/submissions/ballots', payload)
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
+      }
       return null
     } finally {
       endRequest()
@@ -177,7 +184,9 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     try {
       return await postWithTimeout('/submissions/feedback', payload)
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
+      }
       return null
     } finally {
       endRequest()
@@ -194,13 +203,15 @@ export const useSubmissionsStore = defineStore('submissions', () => {
         payload: payload.payload,
       })
       const updated = res.data?.data ?? null
-      if (updated?._id) {
+      if (updated?._id && tournamentScope.isActive(payload.tournamentId)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
+      }
       return null
     } finally {
       endRequest()
@@ -215,13 +226,15 @@ export const useSubmissionsStore = defineStore('submissions', () => {
         params: { tournamentId: payload.tournamentId },
       })
       const deleted = res.data?.data ?? null
-      if (deleted?._id) {
+      if (deleted?._id && tournamentScope.isActive(payload.tournamentId)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.filter((item) => item._id !== deleted._id)
       }
       return deleted
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
+      }
       return null
     } finally {
       endRequest()
