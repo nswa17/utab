@@ -2945,11 +2945,7 @@ const requestScopeDescriptions = computed<Record<string, string>>(() => ({
 const requestScopeDescription = computed(
   () => requestScopeDescriptions.value[requestScope.value] ?? ''
 )
-const allocationMatchCount = computed(
-  () =>
-    allocation.value.filter((row) => String(row.teams?.gov ?? '') && String(row.teams?.opp ?? ''))
-      .length
-)
+const allocationMatchCount = computed(() => validAllocationRowCount())
 const allocationHasAssignedAdjudicators = computed(() =>
   allocation.value.some(
     (row) =>
@@ -5461,7 +5457,7 @@ const adjudicatorWarningBaseline = computed<AdjudicatorWarningBaselineResult>(()
   return estimateAdjudicatorWarningBaseline({
     rows: allocation.value
       .map((row) => ({
-        teamIds: [String(row.teams?.gov ?? ''), String(row.teams?.opp ?? '')],
+        teamIds: drawTeamIds(row.teams, currentEditableTeamNum()),
         slotCount: requestedAdjudicatorsPerMatch.value,
       }))
       .filter((row) => row.teamIds.every((teamId) => teamId.length > 0) && row.slotCount > 0),
@@ -5585,18 +5581,28 @@ function referenceRowsFromLatestDraw(
   const allocationRows = Array.isArray(draw?.allocation) ? (draw?.allocation ?? []) : []
   return allocationRows
     .map((row, index): ReferenceUnassignedTeamRow | null => {
-      const gov = String(row?.teams?.gov ?? '').trim()
-      const opp = String(row?.teams?.opp ?? '').trim()
-      if (!gov && !opp) return null
-      const govTeamIds = gov ? [gov] : []
-      const oppTeamIds = opp ? [opp] : []
+      const teamNum = editableTeamNum.value ?? inferDrawTeamNum(row?.teams)
+      const normalizedTeams = normalizeDrawTeams(row?.teams, teamNum)
+      const govTeamIds =
+        teamNum === 4
+          ? ['og', 'cg']
+              .map((position) => drawTeamId(normalizedTeams, position as DrawTeamPosition, teamNum))
+              .filter(Boolean)
+          : [drawTeamId(normalizedTeams, 'gov', teamNum)].filter(Boolean)
+      const oppTeamIds =
+        teamNum === 4
+          ? ['oo', 'co']
+              .map((position) => drawTeamId(normalizedTeams, position as DrawTeamPosition, teamNum))
+              .filter(Boolean)
+          : [drawTeamId(normalizedTeams, 'opp', teamNum)].filter(Boolean)
+      if (govTeamIds.length === 0 && oppTeamIds.length === 0) return null
       const venueId = String(row?.venue ?? '').trim()
       const chairIds = normalizeEntityIdList(row?.chairs)
       const panelIds = normalizeEntityIdList(row?.panels)
       const traineeIds = normalizeEntityIdList(row?.trainees)
       const winMetrics = rowWinMetrics(govTeamIds, oppTeamIds)
       return {
-        key: `draw-r${draw?.round ?? 'x'}-${index}-${gov}-${opp}`,
+        key: `draw-r${draw?.round ?? 'x'}-${index}-${[...govTeamIds, ...oppTeamIds].join('-')}`,
         venueId: venueId || null,
         govTeamIds,
         oppTeamIds,
@@ -5606,7 +5612,7 @@ function referenceRowsFromLatestDraw(
         matchIndex: index,
         sortTopWin: winMetrics.sortTopWin,
         sortTotalWin: winMetrics.sortTotalWin,
-        sortLabel: teamNameById(gov || opp),
+        sortLabel: teamNameById(govTeamIds[0] || oppTeamIds[0] || ''),
       }
     })
     .filter((row): row is ReferenceUnassignedTeamRow => row !== null)
