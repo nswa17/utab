@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express'
-import type { Connection } from 'mongoose'
+import { Types, type Connection } from 'mongoose'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getDrawModel } from '../models/draw.js'
@@ -525,6 +525,44 @@ function removeRoundDetails(details: unknown, roundsToRemove: Set<number>) {
     .map((detail) => ({ ...(detail as Record<string, unknown>) }))
 }
 
+type EntityRoundDetailSnapshot = {
+  id: unknown
+  details: Array<Record<string, unknown>>
+}
+
+type RoundDeletionSnapshot = {
+  rounds: any[]
+  draws: any[]
+  submissions: any[]
+  results: any[]
+  rawTeamResults: any[]
+  rawSpeakerResults: any[]
+  rawAdjudicatorResults: any[]
+  teamDetails: EntityRoundDetailSnapshot[]
+  adjudicatorDetails: EntityRoundDetailSnapshot[]
+  venueDetails: EntityRoundDetailSnapshot[]
+  survivingRoundReferences: Array<{
+    id: unknown
+    original: unknown
+    rewritten: unknown
+  }>
+  survivingDrawReferences: Array<{
+    id: unknown
+    original: unknown
+    rewritten: unknown
+  }>
+  tournamentReference:
+    | {
+        original: unknown
+        rewritten: unknown
+      }
+    | null
+}
+
+function roundDetailKey(id: unknown, round: number): string {
+  return `${String(id)}:${round}`
+}
+
 async function syncEntityRoundDetailsForCreate(
   tournamentId: string,
   createdRounds: number[]
@@ -545,117 +583,184 @@ async function syncEntityRoundDetailsForCreate(
     VenueModel.find({ tournamentId }).lean().exec(),
   ])
 
-  const teamOps = teams.map((team: any) => {
+  const insertedTeamKeys = new Set<string>()
+  const insertedAdjudicatorKeys = new Set<string>()
+  const insertedVenueKeys = new Set<string>()
+  const teamOps: any[] = []
+  const adjudicatorOps: any[] = []
+  const venueOps: any[] = []
+
+  teams.forEach((team: any) => {
     const template = normalizeTeamTemplate(team?.template)
-    let nextDetails = Array.isArray(team?.details) ? team.details : []
     uniqueRounds.forEach((roundNumber) => {
-      nextDetails = upsertTeamRoundDetail(nextDetails, roundNumber, template)
+      const exists =
+        Array.isArray(team?.details) &&
+        team.details.some((detail: any) => Number(detail?.r) === roundNumber)
+      if (exists) return
+      insertedTeamKeys.add(roundDetailKey(team._id, roundNumber))
+      teamOps.push({
+        updateOne: {
+          filter: {
+            _id: team._id,
+            tournamentId,
+            details: { $not: { $elemMatch: { r: roundNumber } } },
+          },
+          update: {
+            $push: {
+              details: {
+                r: roundNumber,
+                available: template.available,
+                conflicts: [...template.conflicts],
+                speakers: [...template.speakers],
+              },
+            },
+          },
+        },
+      })
     })
-    return {
-      updateOne: {
-        filter: { _id: team._id, tournamentId },
-        update: { $set: { template, details: nextDetails as any } },
-      },
-    }
   })
 
-  const adjudicatorOps = adjudicators.map((adjudicator: any) => {
+  adjudicators.forEach((adjudicator: any) => {
     const template = normalizeAdjudicatorTemplate(adjudicator?.template)
-    let nextDetails = Array.isArray(adjudicator?.details) ? adjudicator.details : []
     uniqueRounds.forEach((roundNumber) => {
-      nextDetails = upsertAdjudicatorRoundDetail(nextDetails, roundNumber, template)
+      const exists =
+        Array.isArray(adjudicator?.details) &&
+        adjudicator.details.some((detail: any) => Number(detail?.r) === roundNumber)
+      if (exists) return
+      insertedAdjudicatorKeys.add(roundDetailKey(adjudicator._id, roundNumber))
+      adjudicatorOps.push({
+        updateOne: {
+          filter: {
+            _id: adjudicator._id,
+            tournamentId,
+            details: { $not: { $elemMatch: { r: roundNumber } } },
+          },
+          update: {
+            $push: {
+              details: {
+                r: roundNumber,
+                available: template.available,
+                conflicts: [...template.conflicts],
+                conflict_teams: [...template.conflict_teams],
+              },
+            },
+          },
+        },
+      })
     })
-    return {
-      updateOne: {
-        filter: { _id: adjudicator._id, tournamentId },
-        update: { $set: { template, details: nextDetails as any } },
-      },
-    }
   })
 
-  const venueOps = venues.map((venue: any) => {
+  venues.forEach((venue: any) => {
     const template = normalizeVenueTemplate(venue?.template)
-    let nextDetails = Array.isArray(venue?.details) ? venue.details : []
     uniqueRounds.forEach((roundNumber) => {
-      nextDetails = upsertVenueRoundDetail(nextDetails, roundNumber, template)
+      const exists =
+        Array.isArray(venue?.details) &&
+        venue.details.some((detail: any) => Number(detail?.r) === roundNumber)
+      if (exists) return
+      insertedVenueKeys.add(roundDetailKey(venue._id, roundNumber))
+      venueOps.push({
+        updateOne: {
+          filter: {
+            _id: venue._id,
+            tournamentId,
+            details: { $not: { $elemMatch: { r: roundNumber } } },
+          },
+          update: {
+            $push: {
+              details: {
+                r: roundNumber,
+                available: template.available,
+                priority: template.priority,
+              },
+            },
+          },
+        },
+      })
     })
-    return {
-      updateOne: {
-        filter: { _id: venue._id, tournamentId },
-        update: { $set: { template, details: nextDetails as any } },
-      },
-    }
   })
 
-  await Promise.all([
-    teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
-    adjudicatorOps.length > 0
-      ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
-      : Promise.resolve(),
-    venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
-  ])
+  try {
+    await Promise.all([
+      teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
+      adjudicatorOps.length > 0
+        ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
+        : Promise.resolve(),
+      venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
+    ])
+  } catch (writeError) {
+    const rollbackErrors: unknown[] = []
+    const rollbackModel = async (
+      Model: any,
+      rows: any[],
+      insertedKeys: Set<string>
+    ): Promise<void> => {
+      const ops = rows.flatMap((row: any) => {
+        const rounds = uniqueRounds.filter((roundNumber) =>
+          insertedKeys.has(roundDetailKey(row._id, roundNumber))
+        )
+        return rounds.length > 0
+          ? [
+              {
+                updateOne: {
+                  filter: { _id: row._id, tournamentId },
+                  update: { $pull: { details: { r: { $in: rounds } } } },
+                },
+              },
+            ]
+          : []
+      })
+      if (ops.length > 0) await Model.bulkWrite(ops, { ordered: false })
+    }
+
+    for (const [Model, rows, keys] of [
+      [TeamModel, teams, insertedTeamKeys],
+      [AdjudicatorModel, adjudicators, insertedAdjudicatorKeys],
+      [VenueModel, venues, insertedVenueKeys],
+    ] as const) {
+      try {
+        await rollbackModel(Model, rows, keys)
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+    }
+
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [writeError, ...rollbackErrors],
+        'Failed to roll back entity round-detail creation'
+      )
+    }
+    throw writeError
+  }
 }
 
 async function syncEntityRoundDetailsForDelete(
   tournamentId: string,
   deletedRounds: number[]
 ): Promise<void> {
-  const roundSet = new Set(deletedRounds.filter((round) => Number.isInteger(round) && round >= 1))
-  if (roundSet.size === 0) return
+  const uniqueRounds = Array.from(
+    new Set(deletedRounds.filter((round) => Number.isInteger(round) && round >= 1))
+  )
+  if (uniqueRounds.length === 0) return
 
   const connection = await getTournamentConnection(tournamentId)
   const TeamModel = getTeamModel(connection)
   const AdjudicatorModel = getAdjudicatorModel(connection)
   const VenueModel = getVenueModel(connection)
 
-  const [teams, adjudicators, venues] = await Promise.all([
-    TeamModel.find({ tournamentId }).lean().exec(),
-    AdjudicatorModel.find({ tournamentId }).lean().exec(),
-    VenueModel.find({ tournamentId }).lean().exec(),
-  ])
-
-  const teamOps = teams.map((team: any) => ({
-    updateOne: {
-      filter: { _id: team._id, tournamentId },
-      update: {
-        $set: {
-          template: normalizeTeamTemplate(team?.template),
-          details: removeRoundDetails(team?.details, roundSet) as any,
-        },
-      },
-    },
-  }))
-
-  const adjudicatorOps = adjudicators.map((adjudicator: any) => ({
-    updateOne: {
-      filter: { _id: adjudicator._id, tournamentId },
-      update: {
-        $set: {
-          template: normalizeAdjudicatorTemplate(adjudicator?.template),
-          details: removeRoundDetails(adjudicator?.details, roundSet) as any,
-        },
-      },
-    },
-  }))
-
-  const venueOps = venues.map((venue: any) => ({
-    updateOne: {
-      filter: { _id: venue._id, tournamentId },
-      update: {
-        $set: {
-          template: normalizeVenueTemplate(venue?.template),
-          details: removeRoundDetails(venue?.details, roundSet) as any,
-        },
-      },
-    },
-  }))
-
   await Promise.all([
-    teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
-    adjudicatorOps.length > 0
-      ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
-      : Promise.resolve(),
-    venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
+    TeamModel.updateMany(
+      { tournamentId, 'details.r': { $in: uniqueRounds } },
+      { $pull: { details: { r: { $in: uniqueRounds } } } }
+    ).exec(),
+    AdjudicatorModel.updateMany(
+      { tournamentId, 'details.r': { $in: uniqueRounds } },
+      { $pull: { details: { r: { $in: uniqueRounds } } } }
+    ).exec(),
+    VenueModel.updateMany(
+      { tournamentId, 'details.r': { $in: uniqueRounds } },
+      { $pull: { details: { r: { $in: uniqueRounds } } } }
+    ).exec(),
   ])
 }
 
@@ -689,6 +794,239 @@ async function deleteRoundDependencies(
       .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
       .exec(),
   ])
+}
+
+async function restoreDeletedDocuments(Model: any, docs: any[]): Promise<void> {
+  if (docs.length === 0) return
+  await Model.bulkWrite(
+    docs.map((doc) => ({
+      replaceOne: {
+        filter: { _id: doc._id },
+        replacement: doc,
+        upsert: true,
+      },
+    })),
+    { ordered: false }
+  )
+}
+
+async function restoreEntityRoundDetails(
+  Model: any,
+  tournamentId: string,
+  snapshots: EntityRoundDetailSnapshot[]
+): Promise<void> {
+  const ops = snapshots.flatMap((snapshot) =>
+    snapshot.details.map((detail) => ({
+      updateOne: {
+        filter: {
+          _id: snapshot.id,
+          tournamentId,
+          details: { $not: { $elemMatch: { r: Number((detail as any).r) } } },
+        },
+        update: { $push: { details: detail } },
+      },
+    }))
+  )
+  if (ops.length > 0) await Model.bulkWrite(ops, { ordered: false })
+}
+
+async function captureRoundDeletionSnapshot(
+  connection: Connection,
+  tournamentId: string,
+  targetRows: Array<{ id: string; round: number }>
+): Promise<RoundDeletionSnapshot> {
+  const roundNumbers = targetRows.map((target) => target.round)
+  const roundIds = targetRows.map((target) => target.id)
+  const roundSet = new Set(roundNumbers)
+  const RoundModel = getRoundModel(connection)
+  const DrawModel = getDrawModel(connection)
+  const SubmissionModel = getSubmissionModel(connection)
+  const ResultModel = getResultModel(connection)
+  const RawTeamResultModel = getRawTeamResultModel(connection)
+  const RawSpeakerResultModel = getRawSpeakerResultModel(connection)
+  const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(connection)
+  const TeamModel = getTeamModel(connection)
+  const AdjudicatorModel = getAdjudicatorModel(connection)
+  const VenueModel = getVenueModel(connection)
+
+  const [
+    rounds,
+    draws,
+    submissions,
+    results,
+    rawTeamResults,
+    rawSpeakerResults,
+    rawAdjudicatorResults,
+    teams,
+    adjudicators,
+    venues,
+    referenceRounds,
+    referenceDraws,
+    tournament,
+  ] = await Promise.all([
+    RoundModel.find({ _id: { $in: roundIds }, tournamentId })
+      .select('+roundActiveWriteCount +roundActiveWriteTouchedAt +roundMutationLocked +roundMutationEpoch')
+      .lean()
+      .exec(),
+    DrawModel.find({ tournamentId, round: { $in: roundNumbers } }).lean().exec(),
+    SubmissionModel.find({ tournamentId, round: { $in: roundNumbers } }).lean().exec(),
+    ResultModel.find({ tournamentId, round: { $in: roundNumbers } }).lean().exec(),
+    RawTeamResultModel.find({ tournamentId, r: { $in: roundNumbers } }).lean().exec(),
+    RawSpeakerResultModel.find({ tournamentId, r: { $in: roundNumbers } }).lean().exec(),
+    RawAdjudicatorResultModel.find({ tournamentId, r: { $in: roundNumbers } }).lean().exec(),
+    TeamModel.find({ tournamentId }).select({ _id: 1, details: 1 }).lean().exec(),
+    AdjudicatorModel.find({ tournamentId }).select({ _id: 1, details: 1 }).lean().exec(),
+    VenueModel.find({ tournamentId }).select({ _id: 1, details: 1 }).lean().exec(),
+    RoundModel.find({ tournamentId, _id: { $nin: roundIds } })
+      .select({ _id: 1, userDefinedData: 1 })
+      .lean()
+      .exec(),
+    DrawModel.find({ tournamentId, round: { $nin: roundNumbers } })
+      .select({ _id: 1, userDefinedData: 1 })
+      .lean()
+      .exec(),
+    TournamentModel.findById(tournamentId).select({ user_defined_data: 1 }).lean().exec(),
+  ])
+
+  const detailSnapshots = (rows: any[]): EntityRoundDetailSnapshot[] =>
+    rows.flatMap((row: any) => {
+      const details = Array.isArray(row?.details)
+        ? row.details
+            .filter((detail: any) => roundSet.has(Number(detail?.r)))
+            .map((detail: any) => ({ ...detail }))
+        : []
+      return details.length > 0 ? [{ id: row._id, details }] : []
+    })
+
+  const referenceRewrite: RoundReferenceRewrite = {
+    movedRoundByNumber: new Map(),
+    deletedRounds: roundSet,
+  }
+  const survivingRoundReferences = referenceRounds.flatMap((round: any) => {
+    const rewritten = rewriteNestedRoundReferences(round?.userDefinedData, referenceRewrite)
+    return rewritten.changed
+      ? [{ id: round._id, original: round?.userDefinedData, rewritten: rewritten.value }]
+      : []
+  })
+  const survivingDrawReferences = referenceDraws.flatMap((draw: any) => {
+    const rewritten = rewriteNestedRoundReferences(draw?.userDefinedData, referenceRewrite)
+    return rewritten.changed
+      ? [{ id: draw._id, original: draw?.userDefinedData, rewritten: rewritten.value }]
+      : []
+  })
+  const tournamentRewrite = rewriteNestedRoundReferences(
+    (tournament as any)?.user_defined_data,
+    referenceRewrite
+  )
+
+  return {
+    rounds,
+    draws,
+    submissions,
+    results,
+    rawTeamResults,
+    rawSpeakerResults,
+    rawAdjudicatorResults,
+    teamDetails: detailSnapshots(teams),
+    adjudicatorDetails: detailSnapshots(adjudicators),
+    venueDetails: detailSnapshots(venues),
+    survivingRoundReferences,
+    survivingDrawReferences,
+    tournamentReference:
+      tournament && tournamentRewrite.changed
+        ? {
+            original: (tournament as any)?.user_defined_data,
+            rewritten: tournamentRewrite.value,
+          }
+        : null,
+  }
+}
+
+async function restoreRoundDeletionSnapshot(
+  connection: Connection,
+  tournamentId: string,
+  snapshot: RoundDeletionSnapshot
+): Promise<void> {
+  const RoundModel = getRoundModel(connection)
+  const DrawModel = getDrawModel(connection)
+  const TeamModel = getTeamModel(connection)
+  const AdjudicatorModel = getAdjudicatorModel(connection)
+  const VenueModel = getVenueModel(connection)
+  const restoreErrors: unknown[] = []
+
+  const attempt = async (operation: () => Promise<void>) => {
+    try {
+      await operation()
+    } catch (error) {
+      restoreErrors.push(error)
+    }
+  }
+
+  await attempt(() => restoreDeletedDocuments(RoundModel, snapshot.rounds))
+  await attempt(() => restoreDeletedDocuments(DrawModel, snapshot.draws))
+  await attempt(() => restoreDeletedDocuments(getSubmissionModel(connection), snapshot.submissions))
+  await attempt(() => restoreDeletedDocuments(getResultModel(connection), snapshot.results))
+  await attempt(() =>
+    restoreDeletedDocuments(getRawTeamResultModel(connection), snapshot.rawTeamResults)
+  )
+  await attempt(() =>
+    restoreDeletedDocuments(getRawSpeakerResultModel(connection), snapshot.rawSpeakerResults)
+  )
+  await attempt(() =>
+    restoreDeletedDocuments(getRawAdjudicatorResultModel(connection), snapshot.rawAdjudicatorResults)
+  )
+  await attempt(() =>
+    restoreEntityRoundDetails(TeamModel, tournamentId, snapshot.teamDetails)
+  )
+  await attempt(() =>
+    restoreEntityRoundDetails(AdjudicatorModel, tournamentId, snapshot.adjudicatorDetails)
+  )
+  await attempt(() =>
+    restoreEntityRoundDetails(VenueModel, tournamentId, snapshot.venueDetails)
+  )
+
+  for (const item of snapshot.survivingRoundReferences) {
+    await attempt(async () => {
+      await RoundModel.updateOne(
+        {
+          _id: item.id,
+          tournamentId,
+          $or: [{ userDefinedData: item.rewritten }, { userDefinedData: item.original }],
+        },
+        { $set: { userDefinedData: item.original } }
+      ).exec()
+    })
+  }
+  for (const item of snapshot.survivingDrawReferences) {
+    await attempt(async () => {
+      await DrawModel.updateOne(
+        {
+          _id: item.id,
+          tournamentId,
+          $or: [{ userDefinedData: item.rewritten }, { userDefinedData: item.original }],
+        },
+        { $set: { userDefinedData: item.original }, $inc: { __v: 1 } }
+      ).exec()
+    })
+  }
+  if (snapshot.tournamentReference) {
+    await attempt(async () => {
+      await TournamentModel.updateOne(
+        {
+          _id: tournamentId,
+          $or: [
+            { user_defined_data: snapshot.tournamentReference?.rewritten },
+            { user_defined_data: snapshot.tournamentReference?.original },
+          ],
+        },
+        { $set: { user_defined_data: snapshot.tournamentReference.original } }
+      ).exec()
+    })
+  }
+
+  if (restoreErrors.length > 0) {
+    throw new AggregateError(restoreErrors, 'Failed to restore round deletion snapshot')
+  }
 }
 
 type RoundMove = { from: number; to: number }
