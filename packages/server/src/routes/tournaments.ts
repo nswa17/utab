@@ -99,7 +99,7 @@ const tournamentUserSchema = {
           message: 'adjudicator users must bind to an adjudicator entity',
         })
       }
-      if (value.role === 'speaker' && !['speaker', 'team'].includes(value.entityType)) {
+      if (value.role === 'speaker' && value.entityType !== 'speaker' && value.entityType !== 'team') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['entityType'],
