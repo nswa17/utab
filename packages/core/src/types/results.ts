@@ -90,7 +90,7 @@ export interface CompiledTeamResult {
   id: number
   win: number
   vote: number
-  vote_rate: number
+  vote_rate: number | null
   ranking?: number
   details: TeamRoundResult[]
   past_opponents: number[]
