@@ -10,6 +10,11 @@ import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { StyleModel } from '../models/style.js'
 import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  acquireRoundWriteLease,
+  releaseRoundWriteLease,
+  type RoundWriteLease,
+} from '../services/round-write-guard.service.js'
 import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
 import { normalizeTeamNum } from './shared/allocation-support.js'
 import {
@@ -149,7 +154,9 @@ function ensureSubmissionId(res: Parameters<RequestHandler>[1], submissionId: st
   return true
 }
 
-type ValidationOutcome<T> = { ok: true; value: T } | { ok: false; message: string }
+type ValidationOutcome<T> =
+  | { ok: true; value: T; roundId?: string }
+  | { ok: false; message: string }
 
 type NormalizedBallotPayload = {
   teamAId: string
@@ -975,6 +982,7 @@ async function normalizeBallotPayload(
 
   return {
     ok: true,
+    roundId: String((roundDoc as any)?._id ?? ''),
     value: {
       teamAId: normalizedTeamAId,
       teamBId: normalizedTeamBId,
@@ -1113,6 +1121,7 @@ async function normalizeFeedbackPayload(
 
   return {
     ok: true,
+    roundId: String((roundDoc as any)?._id ?? ''),
     value: {
       adjudicatorId: normalizedAdjudicatorId,
       score,
@@ -1196,6 +1205,8 @@ export const listParticipantSubmissions: RequestHandler = async (req, res, next)
 }
 
 export const createBallotSubmission: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const {
       tournamentId,
@@ -1285,6 +1296,20 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       badRequest(res, normalized.message)
       return
     }
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      round,
+      normalized.roundId
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission' }],
+      })
+      return
+    }
+    leaseConnection = connection
     const payload = normalized.value
     const normalizedTeamAId = payload.teamAId
     const normalizedTeamBId = payload.teamBId
@@ -1329,10 +1354,20 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       return
     }
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
 export const createFeedbackSubmission: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const {
       tournamentId,
@@ -1385,6 +1420,20 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       badRequest(res, normalized.message)
       return
     }
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      round,
+      normalized.roundId
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission' }],
+      })
+      return
+    }
+    leaseConnection = connection
     const payload = normalized.value
 
     const SubmissionModel = getSubmissionModel(connection)
@@ -1422,11 +1471,21 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
       return
     }
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
 export const updateSubmission: RequestHandler = async (req, res, next) => {
   let submissionType: 'ballot' | 'feedback' | null = null
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId, round, payload } = req.body as {
@@ -1455,6 +1514,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
     }
 
     let nextPayload: unknown = payload ?? existing.payload
+    let normalizedRoundId = ''
     if (existing.type === 'ballot') {
       const normalizedBallot = await normalizeBallotPayload(
         connection,
@@ -1467,6 +1527,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         badRequest(res, normalizedBallot.message)
         return
       }
+      normalizedRoundId = normalizedBallot.roundId ?? ''
       nextPayload = normalizedBallot.value
     } else {
       const normalizedFeedback = await normalizeFeedbackPayload(
@@ -1480,8 +1541,24 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
         badRequest(res, normalizedFeedback.message)
         return
       }
+      normalizedRoundId = normalizedFeedback.roundId ?? ''
       nextPayload = normalizedFeedback.value
     }
+
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      nextRound,
+      normalizedRoundId || undefined
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission' }],
+      })
+      return
+    }
+    leaseConnection = connection
 
     const dedupeKey =
       existing.type === 'ballot'
@@ -1505,15 +1582,23 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       unsetPayload.dedupeKey = 1
     }
 
+    const expectedVersion = Number((existing as any)?.__v ?? 0)
     const updated = await SubmissionModel.findOneAndUpdate(
-      { _id: id, tournamentId },
+      {
+        _id: id,
+        tournamentId,
+        round: Number(existing.round),
+        __v: expectedVersion,
+      },
       Object.keys(unsetPayload).length > 0
         ? {
             $set: setPayload,
             $unset: unsetPayload,
+            $inc: { __v: 1 },
           }
         : {
             $set: setPayload,
+            $inc: { __v: 1 },
           },
       { new: true }
     )
@@ -1521,7 +1606,10 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updated) {
-      notFound(res, 'Submission not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Submission changed concurrently; retry update' }],
+      })
       return
     }
 
@@ -1557,5 +1645,13 @@ export const deleteSubmission: RequestHandler = async (req, res, next) => {
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
