@@ -292,8 +292,8 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
 
     res.json({
       data: sanitizeTournamentUserResponse(saved.toJSON(), membership?.role, {
-        entityType: membership?.entityType,
-        entityId: membership?.entityId,
+        entityType: membership?.entityType ?? undefined,
+        entityId: membership?.entityId ?? undefined,
       }),
       errors: [],
     })
