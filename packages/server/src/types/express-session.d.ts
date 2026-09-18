@@ -4,6 +4,7 @@ declare module 'express-session' {
   interface TournamentAccessSession {
     grantedAt: number
     expiresAt: number
+    lastActivityAt?: number
     version: number
   }
 
