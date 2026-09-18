@@ -6481,3 +6481,214 @@ The prior Phase 40 head had the complete Web suite at **66/66 files, 342/342 tes
 The security roadmap no longer tells reviewers that intentional participant-safe data is an accidental exposure, and it no longer describes admin-only Results/Compiled/RawResults endpoints as public/access-level reads.
 
 The implementation remains allowlist/reconstruction based; this phase did not broaden the runtime public response surface.
+
+
+## Phase 42 — Full four-team/BP admin draw editor support (P7-07 completion)
+
+Phase 34 previously closed only the dangerous silent-corruption path by making the Web allocation editor fail closed for non-two-team styles. This phase completes the deferred product work for the supported multi-team format instead of leaving BP/4-team tournaments read-only in the admin Web UI.
+
+### Contract
+
+The admin draw editor now explicitly supports:
+
+- 2-team rows: `gov / opp`;
+- 4-team/BP rows: `og / oo / cg / co`.
+
+Other team counts remain fail-closed rather than being forced through an undefined position model.
+
+The participant ballot-entry workflow remains intentionally two-team-only. This phase is about draw/allocation administration and does not broaden the ballot schema beyond its existing contract.
+
+### Shared team-slot representation
+
+A shared Web helper, `packages/web/src/utils/draw-teams.ts`, now owns allocation team-shape normalization.
+
+It provides:
+
+- team-count inference for legacy array/object rows;
+- position lists for 2-team and 4-team styles;
+- normalization of:
+  - `[teamA, teamB]`;
+  - `{ gov, opp }`;
+  - `[og, oo, cg, co]`;
+  - `{ og, oo, cg, co }`;
+- stable serialization back to:
+  - `{ gov, opp }` for two-team draws;
+  - `{ og, oo, cg, co }` for BP draws;
+- generic get/set operations for a team position;
+- complete row team-id extraction and canonical group keys;
+- position labels derived from the active style with OG/OO/CG/CO fallbacks.
+
+`DrawAllocationRow` now uses the generic team-record type rather than a hard-coded Gov/Opp object.
+
+### Editor behavior
+
+`AdminRoundAllocation.vue` is now position-driven.
+
+For 4-team styles the board renders one editable team column for each configured BP slot:
+
+    OG | OO | CG | CO
+
+The same generic position model is used for:
+
+- loading an existing Draw;
+- adding empty rows;
+- dirty-state snapshots;
+- manual drag/drop;
+- swapping an already placed team;
+- duplicate-team prevention inside a debate;
+- save serialization;
+- team-only automatic generation;
+- all-scope automatic generation;
+- adjudicator/venue allocation using existing team rows;
+- unassigned-team calculation;
+- expected-team calculation;
+- row sorting;
+- warning target highlighting;
+- preview data;
+- preview CSV export.
+
+The previous `team_num != 2` blanket stop is removed for `team_num=4`.
+
+### Import/export
+
+The draw CSV importer now recognizes BP columns:
+
+    match,venue,og,oo,cg,co,chairs,panels,trainees
+
+The generated import template switches between the two-team and four-team shape.
+
+Row lookup can use either:
+
+- explicit `match`; or
+- the complete team-group identity.
+
+Imported rows reject duplicate team assignment across any BP positions.
+
+Preview rows now carry a generic `teamNames` map. `DrawPreviewTable` renders the position columns supplied by the caller rather than hard-coding Gov/Opp, and preview CSV export emits all active position columns.
+
+### History and warnings
+
+The allocation-history utilities now treat every team in a 4-team debate as an opponent of the other three.
+
+They also preserve position history using:
+
+    og / oo / cg / co
+
+rather than collapsing BP history to the first two teams.
+
+Allocation warnings now:
+
+- check availability for all four teams;
+- evaluate position-history imbalance against all active positions;
+- evaluate same-institution, win mismatch, prior-opponent and sibling-school history pairwise across all teams in a debate;
+- continue applying adjudicator-team conflicts against every team in the row.
+
+### Regression coverage
+
+New/extended tests cover:
+
+- four-team slot normalization and serialization;
+- BP history/opponent behavior;
+- BP warning behavior;
+- BP CSV import;
+- Web allocation-editor source/runtime behavior;
+- BP allocation generation and preservation.
+
+Relevant implementation sequence:
+
+- `8f2811de0e071f3448e4a51bc7f9f6060543d74f`;
+- `7cfecca7a4834b34112ac91c71a03f660d8885aa`;
+- `6d3389e2c63ec731fe5e92b12432c52ff8153554`;
+- `1bbbcaef4955a179033f546215478c35b1910998`;
+- `3e61639129833adfa9d546d5c7d5930886715489`;
+- `b30c3b210324ff3ffcecd2c46a7b6080bcf6fb39`;
+- `6f8fb65469b55d42a3893a63a411ec05a29a6ad3`;
+- `ab99c70fbc2f030f482e92bde9a5a13c19b41f69`;
+- `9126dc6843eb384a033cc276f1946380e1646738`;
+- `d1f6c535891071081279388f1148b6d1345f7ad6`;
+- `27aa7722131fa00f571a683706afa6419ea2403c`;
+- `974d614e5591b0ff5e865445bd02461c378bcb50`;
+- `59acdefb30d2bd329402088196f181305e3c6f7a`;
+- `c94dd198eecbe1931ea4fde656e465bae54db56e`;
+- `0a28cb31055864e6a8be61d36feeeee03f07332f`;
+- `2b27066a69dbdc003b4fb3fb7a9803ae83fb3cac`;
+- `a81710ec3d2eaa9bde2ca5be37b0ab72705b36e9`;
+- `0b6c37a3e36a6304dd99227d9ca9efb67d43c6b6`;
+- `4ace573572f067b1ff9d809e7552a12baf13411a`.
+
+### P7-07 final status
+
+**P7-07 is now fully closed for the supported 2-team and 4-team/BP admin draw workflows.**
+
+The previous Phase-34 fail-closed boundary remains relevant only for formats whose `team_num` is neither 2 nor 4.
+
+
+## Phase 43 — Participant submission-history contract cleanup and final branch verification
+
+The final branch-wide red test was an obsolete assertion, not a remaining production defect.
+
+### Stale test contract
+
+P7-10 had already established the intended `GET /submissions/mine` behavior:
+
+- anonymous caller: unauthorized;
+- authenticated Tournament participant:
+  - may read history for their bound entity;
+  - speaker-bound account may use its verified Team alias for a concrete round;
+  - may not select another participant's entity;
+- Tournament admin retains administrative access.
+
+The route therefore correctly uses `requireTournamentAccess()` followed by server-side participant entity-binding authorization.
+
+A much older integration test still had the title/assumption:
+
+    allows only tournament admins to read participant submission history
+
+and expected an audience account that had not established Tournament access to reach the entity-binding check and receive 403. The access middleware correctly returned 401 first.
+
+### Regression correction
+
+The test now establishes Tournament access before exercising the unbound-participant case.
+
+It verifies the layered contract explicitly:
+
+1. anonymous caller receives 401;
+2. logged-in audience establishes Tournament access;
+3. the same audience account has no bound participant entity;
+4. querying a caller-selected Team id returns 403 with the entity-binding error;
+5. organizer history access continues to work.
+
+Commit:
+
+- `53b6165f31e3a669f5c862105b6b6e0f015b6f6b`.
+
+The production identity enforcement added for P7-10 remains unchanged.
+
+### Final cumulative verification
+
+GitHub Actions run `35405758845` completed successfully at `53b6165f31e3a669f5c862105b6b6e0f015b6f6b`.
+
+Results:
+
+- lint: success;
+- Web lint: success;
+- Core: **24/24 files, 118/118 tests passed**;
+- Web: **67/67 files, 348/348 tests passed**;
+- Server: **12/12 files, 167/167 tests passed**;
+- production build: success.
+
+Key BP regressions in the successful run include:
+
+- `AdminRoundAllocation.test.ts`: **12/12**;
+- `draw-allocation-import.test.ts`: **5/5**;
+- `allocation-history.test.ts`: **3/3**;
+- `allocation-warnings.test.ts`: **10/10**.
+
+### Remaining audit-task status
+
+All numbered findings and the subsequently discovered correctness/security regressions tracked in this audit are now either:
+
+- repaired with executable regression coverage; or
+- explicitly documented as an architectural boundary rather than a silently unsafe code path.
+
+The only remaining architectural caveat is the already documented process-crash boundary for multi-collection compensation on standalone Mongo: ordinary caught failures are compensated, but a host/process death that prevents rollback code from executing is not equivalent to a transaction.
