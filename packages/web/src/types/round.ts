@@ -14,6 +14,7 @@ export interface BreakParticipant {
 }
 
 export interface RoundBreakConfig {
+  enabled: boolean
   source_rounds: number[]
   size: number
   cutoff_tie_policy: BreakCutoffTiePolicy
