@@ -3232,4 +3232,51 @@ describe('Server integration', () => {
       'outside the configured score range or unit'
     )
   })
+
+  it('rejects raw speaker score vectors that do not match the tournament style', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'raw-speaker-score-length', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'raw-speaker-score-length', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Raw Speaker Score Length Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1, 1, 1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const speakerRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Raw Length Speaker' })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = String(speakerRes.body.data._id)
+
+    const malformedRes = await agent.post('/api/raw-results/speakers').send({
+      tournamentId,
+      id: speakerId,
+      from_id: 'raw-length-source',
+      r: 1,
+      weight: 1,
+      scores: [75],
+    })
+
+    expect(malformedRes.status).toBe(400)
+
+    const listRes = await agent.get(
+      `/api/raw-results/speakers?tournamentId=${encodeURIComponent(tournamentId)}`
+    )
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toEqual([])
+  })
+
 })
