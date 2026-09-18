@@ -974,14 +974,29 @@ function mergeAverageBallotGroup(grouped: any[], key: string, compileOptions: Co
     compileOptions.duplicate_normalization.poi_aggregation
   )
 
+  const speakerAssignmentsA = orientedPayloads.map((payload) =>
+    toStringArray(payload.speakerIdsA)
+  )
+  const speakerAssignmentsB = orientedPayloads.map((payload) =>
+    toStringArray(payload.speakerIdsB)
+  )
+  const distinctAssignments = (values: string[][]) =>
+    new Set(
+      values
+        .filter((value) => value.some((item) => item.length > 0))
+        .map((value) => JSON.stringify(value))
+    )
+  if (distinctAssignments(speakerAssignmentsA).size > 1 || distinctAssignments(speakerAssignmentsB).size > 1) {
+    const err = new Error(
+      `Cannot average duplicate ballots with different speaker assignments: ${key}`
+    )
+    ;(err as any).status = 400
+    throw err
+  }
   const speakerIdsA =
-    orientedPayloads
-      .map((payload) => toStringArray(payload.speakerIdsA))
-      .find((value) => value.some((item) => item.length > 0)) ?? []
+    speakerAssignmentsA.find((value) => value.some((item) => item.length > 0)) ?? []
   const speakerIdsB =
-    orientedPayloads
-      .map((payload) => toStringArray(payload.speakerIdsB))
-      .find((value) => value.some((item) => item.length > 0)) ?? []
+    speakerAssignmentsB.find((value) => value.some((item) => item.length > 0)) ?? []
 
   const winsA = orientedPayloads.map((payload) => {
     const totalA = sumScores(toNumberArray(payload.scoresA))
@@ -1329,20 +1344,18 @@ async function buildCompiledPayloadFromRaw(
     teamMeta.set(String(team._id), { institutions: Array.from(institutions) })
   })
 
-  const speakerMeta = new Map<string, { teamId: string; teamName: string }>()
+  const speakerMeta = new Map<string, Set<string>>()
   teams.forEach((team: any) => {
-    const teamId = String(team._id)
-    const teamName = team.name
-    const speakerIdsFromTeam = new Set<string>()
+    const teamName = String(team.name ?? '')
     team.details?.forEach((detail: any) => {
-      ;(detail.speakers ?? []).forEach((speakerId: string) => {
-        if (speakerId) speakerIdsFromTeam.add(String(speakerId))
+      if (!selectedRoundSet.has(Number(detail?.r))) return
+      ;(detail?.speakers ?? []).forEach((speakerId: string) => {
+        const normalizedSpeakerId = String(speakerId ?? '').trim()
+        if (!normalizedSpeakerId || !teamName) return
+        const names = speakerMeta.get(normalizedSpeakerId) ?? new Set<string>()
+        names.add(teamName)
+        speakerMeta.set(normalizedSpeakerId, names)
       })
-    })
-    speakerIdsFromTeam.forEach((speakerId) => {
-      if (!speakerMeta.has(speakerId)) {
-        speakerMeta.set(speakerId, { teamId, teamName })
-      }
     })
   })
 
@@ -1378,7 +1391,7 @@ async function buildCompiledPayloadFromRaw(
     ),
     compiled_speaker_results: compiledSpeakerResults.map((result: any) => ({
       ...result,
-      teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
+      teams: Array.from(speakerMeta.get(result.id) ?? []),
     })),
     compiled_adjudicator_results: applyAdjudicatorRankingPriority(
       compiledAdjudicatorResults.map((result: any) => ({
@@ -1441,22 +1454,19 @@ async function buildCompiledPayloadFromSubmissions(
   const adjudicatorById = new Map<string, any>(
     adjudicators.map((adjudicator) => [String(adjudicator._id), adjudicator])
   )
-  const speakerMeta = new Map<string, { teamId: string; teamName: string }>()
+  const speakerMeta = new Map<string, Set<string>>()
 
   teams.forEach((team) => {
-    const teamId = String(team._id)
-    const teamName = team.name
-
-    const detailSpeakerIds = new Set<string>()
+    const teamName = String(team.name ?? '')
     team.details?.forEach((detail: any) => {
-      ;(detail.speakers ?? []).forEach((speakerId: string) => {
-        if (speakerId) detailSpeakerIds.add(String(speakerId))
+      if (!selectedRoundSet.has(Number(detail?.r))) return
+      ;(detail?.speakers ?? []).forEach((speakerId: string) => {
+        const normalizedSpeakerId = String(speakerId ?? '').trim()
+        if (!normalizedSpeakerId || !teamName) return
+        const names = speakerMeta.get(normalizedSpeakerId) ?? new Set<string>()
+        names.add(teamName)
+        speakerMeta.set(normalizedSpeakerId, names)
       })
-    })
-    detailSpeakerIds.forEach((speakerId) => {
-      if (!speakerMeta.has(speakerId)) {
-        speakerMeta.set(speakerId, { teamId, teamName })
-      }
     })
   })
 
@@ -1568,6 +1578,36 @@ async function buildCompiledPayloadFromSubmissions(
       return
     }
     normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
+  })
+
+  const submittedMatchKeys = new Set(
+    normalizedBallots.map((submission) =>
+      canonicalBallotMatchKey(Number(submission?.round), (submission?.payload ?? {}) as BallotPayload)
+    )
+  )
+  filteredDraws.forEach((draw: any) => {
+    const round = Number(draw?.round)
+    if (!Number.isFinite(round)) return
+    ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+      const rowTeams = row?.teams
+      const teamAId = String(
+        Array.isArray(rowTeams) ? rowTeams[0] ?? '' : rowTeams?.gov ?? ''
+      ).trim()
+      const teamBId = String(
+        Array.isArray(rowTeams) ? rowTeams[1] ?? '' : rowTeams?.opp ?? ''
+      ).trim()
+      if (!teamAId || !teamBId || teamAId === teamBId) return
+      teamIdsWithResults.add(teamAId)
+      teamIdsWithResults.add(teamBId)
+      const key = canonicalBallotMatchKey(round, { teamAId, teamBId } as BallotPayload)
+      if (!submittedMatchKeys.has(key)) {
+        registerMissingIssue({
+          code: 'missing_ballot',
+          message: `no ballot submission exists for matchup ${teamAId} vs ${teamBId}`,
+          round,
+        })
+      }
+    })
   })
 
   normalizedBallots.forEach((submission: any) => {
@@ -1989,7 +2029,7 @@ async function buildCompiledPayloadFromSubmissions(
     ),
     compiled_speaker_results: compiledSpeakerResults.map((result: any) => ({
       ...result,
-      teams: speakerMeta.get(result.id)?.teamName ? [speakerMeta.get(result.id)?.teamName] : [],
+      teams: Array.from(speakerMeta.get(result.id) ?? []),
     })),
     compiled_adjudicator_results: applyAdjudicatorRankingPriority(
       compiledAdjudicatorResults.map((result: any) => ({
