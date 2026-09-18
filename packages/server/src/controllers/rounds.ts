@@ -1577,6 +1577,99 @@ export const updateRound: RequestHandler = async (req, res, next) => {
   }
 }
 
+export const previewBreakCandidates: RequestHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const {
+      tournamentId,
+      source = 'submissions',
+      sourceRounds,
+      size,
+    } = req.body as {
+      tournamentId: string
+      source?: 'submissions' | 'raw'
+      sourceRounds?: number[]
+      size?: number
+    }
+    if (!ensureTournamentId(res, tournamentId)) return
+    if (!ensureRoundId(res, id)) return
+
+    const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+    const compileOptions = withTournamentTeamRankingPriority(
+      DEFAULT_COMPILE_OPTIONS,
+      asRecord((tournament as any)?.user_defined_data)
+    )
+
+    const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
+    const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!roundDoc) {
+      notFound(res, 'Round not found')
+      return
+    }
+
+    const roundNumber = Number((roundDoc as any).round)
+    if (!Number.isInteger(roundNumber) || roundNumber < 2) {
+      badRequest(res, 'Break candidates require a target round number of 2 or later')
+      return
+    }
+
+    const normalizedSourceRounds = normalizeBreakSourceRounds(roundNumber, sourceRounds)
+    const effectiveSourceRounds =
+      normalizedSourceRounds.length > 0
+        ? normalizedSourceRounds
+        : Array.from({ length: roundNumber - 1 }, (_, index) => index + 1)
+    const requestedSizeRaw = Number(size)
+    const requestedSize =
+      Number.isInteger(requestedSizeRaw) && requestedSizeRaw >= 1 ? requestedSizeRaw : null
+
+    const { payload } = await buildCompiledPayload(
+      tournamentId,
+      source,
+      effectiveSourceRounds,
+      compileOptions
+    )
+    const TeamModel = getTeamModel(connection)
+    const teams = await TeamModel.find({ tournamentId }).lean().exec()
+    const teamNameById = new Map<string, string>()
+    const availabilityByTeamId = new Map<string, boolean>()
+    teams.forEach((team: any) => {
+      const teamId = String(team?._id ?? '').trim()
+      if (!teamId) return
+      teamNameById.set(teamId, String(team?.name ?? teamId))
+      const detail = Array.isArray(team?.details)
+        ? team.details.find((item: any) => Number(item?.r) === roundNumber)
+        : null
+      availabilityByTeamId.set(teamId, detail?.available !== false)
+    })
+
+    const baseCandidates = buildBreakCandidatesFromCompiledPayload(payload, teamNameById)
+    const candidates = annotateBreakCandidatesForPreview(
+      baseCandidates,
+      requestedSize,
+      availabilityByTeamId
+    )
+
+    res.json({
+      data: {
+        roundId: id,
+        round: roundNumber,
+        source,
+        sourceRounds: effectiveSourceRounds,
+        size: requestedSize,
+        candidates,
+      },
+      errors: [],
+    })
+  } catch (err: any) {
+    if ((err as any)?.status === 404) {
+      notFound(res, 'Tournament not found')
+      return
+    }
+    next(err)
+  }
+}
+
 export const updateRoundBreak: RequestHandler = async (req, res, next) => {
   try {
     const { id } = req.params
