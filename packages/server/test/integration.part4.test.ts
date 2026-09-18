@@ -2695,7 +2695,22 @@ describe('Server integration', () => {
       releaseRoundMutationLease,
       releaseRoundWriteLease,
     } = await import('../src/services/round-write-guard.service.js')
+    const { getRoundModel } = await import('../src/models/round.js')
     const connection = await getTournamentConnection(tournamentId)
+
+    await getRoundModel(connection)
+      .updateOne(
+        { _id: roundId, tournamentId },
+        {
+          $unset: {
+            roundActiveWriteCount: 1,
+            roundActiveWriteTouchedAt: 1,
+            roundMutationLocked: 1,
+            roundMutationEpoch: 1,
+          },
+        }
+      )
+      .exec()
 
     const writeLease = await acquireRoundWriteLease(connection, tournamentId, 1, roundId)
     expect(writeLease).toBeTruthy()
