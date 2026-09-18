@@ -3225,3 +3225,145 @@ Four high-value defects are now backed by executable minimal counterexamples:
 4. backup restore changes valid user string types.
 
 These tests fail on the current implementation for the exact reasons predicted in Phase 9. They are suitable as red tests for Phase 11: fixes can now be made without relying on subjective manual verification.
+
+## Phase 11 — Fix sweep and regression closure
+
+Phase 11 resumed from the red tests created in Phase 10 and then expanded to the highest-confidence defects already identified in Phases 3-9. The implementation work was performed directly on `codex/utab-bug-audit-20260918`.
+
+### P11-01 — Comparator and compiled speaker ranking contracts fixed
+
+Commits:
+
+- `0a6308101ec54dce642ccf97fedf5b8058ab1fb8` — Fix core comparator contracts.
+
+The general result comparators now return zero for true ties and the speaker comparator is antisymmetric. The Phase 10 input-order counterexample no longer changes compiled speaker ranking.
+
+This closes the executable regressions for P9-01/P9-02 and the related P3-08 comparator issue.
+
+### P11-02 — Speaker score-vector dimensions are now enforced end to end
+
+Commits:
+
+- `f511aee125fb0ccd9766fbe713bba7d1deb81c60` — Reject inconsistent speaker score vectors.
+- `b417069e3173a484ab04a6a28514c6b8525c1d40` — Validate raw speaker score vector dimensions.
+
+Core aggregation no longer truncates to the shortest vector. The raw speaker-result API now validates the score length against the tournament style before create/update.
+
+This closes P9-04 and the Phase 10 server/core counterexamples.
+
+### P11-03 — Tournament restore preserves ordinary user strings
+
+Commit:
+
+- `c3ca8bfd3134d1b1e2c4632f0f507767516173e4` — Preserve user string types in tournament restore.
+
+Date revival is restricted to schema-known date fields instead of coercing arbitrary ISO-looking strings recursively.
+
+This closes P9-03 and the Phase 10 backup round-trip regression.
+
+### P11-04 — Allocation correctness fixes
+
+Relevant commits:
+
+- `481f27e2f45d3e0cbb3539515a1fad8f68d9c71b` — Honor institution priority order in class-based allocation.
+- `46ed25e42f1d7a595856430eca089deed4b3a159` — Test class-based institution priority direction.
+- `108a21e6b0d2b9d4fed1ace5ea35b1c792398bd3` — Make standard team matching finite and unique.
+- `091ca28c707c6b22690f6a46c707fbde14a4425c` — Fix team ranking weights and strict availability.
+- `c13f6ef6a97c2eaebe49000c024af3d5e701d9ff` — Validate generated draws before persistence.
+
+These changes address the concrete failures behind P3-01/P3-02/P3-03/P3-04/P3-05/P3-06 and P8-02.
+
+Generated draws are structurally checked before save, including complete assignment of all available teams.
+
+### P11-05 — Security and authorization fixes
+
+Relevant commits:
+
+- `847af2fd9b49e3146d542ba3229624b1e5ad398d` — Separate superuser and tournament access authorization.
+- `361612deba7c514e730a9a26abb5ed10e10b597f` — Restrict global style mutation to superusers.
+- `aaeaba50a3ae607523ba52bcc72e9822fe24e3d1` — Restrict service token revocation to superusers.
+- `1584fbda9c2d08462574bde408c14d7dbe009785` — Hash tournament access passwords on write.
+- `206aaf63555463d5ef2d01d4f97ce302fc58db41` — Require tournament access session for participant submissions.
+
+These close the directly actionable authorization/storage defects P5-01, P5-03, P5-04, and P5-05.
+
+P5-02 remains conceptually distinct: possession of tournament access is still not a cryptographic binding between the requester and a concrete speaker/team/adjudicator entity.
+
+### P11-06 — Compilation and result correctness fixes
+
+Relevant commits:
+
+- `ff8ac13ccde5c61512070a245314f919c67da221` — Preserve null score metrics and fix compiled vote rate.
+- `93f30f31908952f18275ec6585cf1670aa8321cc` — Allow null compiled vote rate when votes are not applicable.
+- `d25d0df7181724096e206cba228f1a364da542dd` — Harden submission compilation completeness and attribution.
+
+This resolves the confirmed vote-rate scale defect P6-03/P3-09 and prevents absent score metrics from being silently converted to numeric zero in the repaired paths.
+
+### P11-07 — Round lifecycle and legacy tie behavior hardened
+
+Relevant commits:
+
+- `52585b2bfcfc53d9222f870fc88cb6ec94110003` — Guard round renumbering with compare-and-set.
+- `6e2ade7d6a216a0cdd2c9042d0a2af93886f6131` — Preserve legacy tie setting semantics.
+- `fbb92ae769a63a2fda303ea8f04a6cc8d3ec9409` — Preserve legacy round tie setting in public responses.
+- `6240f8aa15bdc7ccc8f582f5f667c3dfbd272d3f` — Honor legacy tie settings in participant ballot UI.
+- `10aebb1850cfe8b204741f76ca828347d98e1929` — Honor legacy tie settings in admin submissions UI.
+
+The renumber path now checks the expected prior round number before moving a Round document. Missing `allow_low_tie_win` retains the legacy meaning (draws allowed unless explicitly disabled) consistently across server/public/admin/participant surfaces.
+
+This fixes P8-04 and materially narrows P4-01, but does not by itself solve the broader stale-writer and failure-atomicity families P4-02/P4-05.
+
+### P11-08 — Cross-tournament raw-result UI contamination fixed
+
+Commit:
+
+- `0920184499d5994214931b4767f0a0e5df843a65` — Scope raw-result UI state to the active tournament.
+
+This addresses the concrete P7-01-style stale draw/result binding path that was reproduced during the UI audit.
+
+Other current-tournament store mutation races from P7-02/P7-03/P7-06 still require a common mutation/request gate rather than one-off local fixes.
+
+### P11-09 — Regression-suite reconciliation
+
+The implementation fixes exposed several older tests whose expectations encoded the behavior that Phase 11 intentionally changed. They were reconciled rather than reverting the fixes.
+
+Final reconciliation commits:
+
+- `e1c381972105c5402647146fd42dca395ac10037` — use a superuser, not an organizer, when listing inactive global service-token revocations;
+- `647f8a9accfb94ccc19e0764178ff9706720b618` — expect the legacy default `allow_low_tie_win=true` in the public round sanitizer;
+- `ae88916103919eb6bdad6a640ac640ee70548feb` — update the admin submissions source regression to the same legacy tie default.
+
+Final CI:
+
+- workflow run: `35374299467`;
+- conclusion: **success**;
+- lint: success;
+- test: success;
+- build: success;
+- final package summaries include core 24/24 test files, server 12/12 test files, and web 66/66 test files passing.
+
+### Remaining findings after Phase 11
+
+The branch is green, but the audit should not be read as saying every previously identified issue is closed.
+
+In particular:
+
+- **P3-07 remains confirmed**: `strict pairing_method=adjusted` still computes an invariant objective. `combinations(div, div.length)` yields only the complete group, and the subsequent sum of historical side-list lengths is invariant to how teams were partitioned. Repository history shows this logic has existed since the initial implementation; the current UI nevertheless describes it as choosing the lower-bias candidate. This needs a product-level objective before replacing the algorithm.
+- **P4-02 remains HIGH**: a request that validated a round before a concurrent renumber/delete can still commit round-scoped data later. The Phase 11 renumber CAS protects the renumber writer but does not provide a shared mutation epoch/lock with submissions and draws.
+- **P4-03/P4-05/P4-06/P4-07/P4-08** remain architectural concurrency/failure-atomicity gaps.
+- **P5-02/P5-06/P5-07/P5-08** remain separate identity/session-hardening issues.
+- **P6-05/P6-06/P6-07/P6-08** remain report provenance / compile contract gaps.
+- **P7-02/P7-03/P7-04/P7-05/P7-06/P7-07/P7-09** remain frontend state/contract issues unless independently addressed later.
+- **P9-05/P9-06** remain contract-dependent durability questions as documented in Phase 10.
+
+### Phase 11 conclusion
+
+The Phase 10 red tests are green, the branch-wide CI is green, and a substantial set of high-confidence allocation, authorization, compilation, lifecycle, and cross-tournament defects has been fixed.
+
+The next work should not be another broad sweep. The highest-value remaining work is to isolate one architectural family at a time, beginning with either:
+
+1. a round mutation/write coordination design for P4-02/P4-03/P4-05/P4-06; or
+2. the participant identity-binding model for P5-02.
+
+Both need an explicit invariant before implementation because a local patch that only narrows the race window would not close the underlying defect.
+
