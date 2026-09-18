@@ -104,6 +104,55 @@ async function handleExistingRecord(
   return 'handled'
 }
 
+
+async function persistTerminalResponse(input: {
+  actorId: string
+  idempotencyKey: string
+  statusCode: number
+  responseBody: unknown
+}): Promise<void> {
+  const { actorId, idempotencyKey, statusCode, responseBody } = input
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = await ServiceAccountIdempotencyModel.updateOne(
+        { actorId, idempotencyKey, status: 'in_progress' },
+        {
+          $set: {
+            status: 'completed',
+            responseStatus: statusCode,
+            responseBody,
+            completedAt: new Date(),
+          },
+        }
+      ).exec()
+
+      if (result.matchedCount === 1) return
+
+      const existing = await ServiceAccountIdempotencyModel.findOne({
+        actorId,
+        idempotencyKey,
+      })
+        .lean()
+        .exec()
+      if (existing?.status === 'completed') return
+
+      throw new Error('Idempotency record was not available for completion')
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)))
+      }
+    }
+  }
+
+  logger.warn(
+    { err: lastError, actorId, idempotencyKey, statusCode },
+    'failed to persist terminal idempotency response; record remains fail-closed'
+  )
+}
+
 export const handleServiceAccountIdempotency: RequestHandler = async (req, res, next) => {
   try {
     const principal = req.serviceAccount
@@ -173,35 +222,13 @@ export const handleServiceAccountIdempotency: RequestHandler = async (req, res, 
 
     res.on('finish', () => {
       const statusCode = res.statusCode
-      if (statusCode >= 500) {
-        void ServiceAccountIdempotencyModel.deleteOne({
-          actorId,
-          idempotencyKey,
-          status: 'in_progress',
-        })
-          .exec()
-          .catch((err) => {
-            logger.warn({ err, actorId, idempotencyKey }, 'failed to delete idempotency record after 5xx')
-          })
-        return
-      }
-
       const storedResponse = hasJsonResponse ? responseBody : { data: null, errors: [] }
-      void ServiceAccountIdempotencyModel.updateOne(
-        { actorId, idempotencyKey, status: 'in_progress' },
-        {
-          $set: {
-            status: 'completed',
-            responseStatus: statusCode,
-            responseBody: storedResponse,
-            completedAt: new Date(),
-          },
-        }
-      )
-        .exec()
-        .catch((err) => {
-          logger.warn({ err, actorId, idempotencyKey }, 'failed to complete idempotency record')
-        })
+      void persistTerminalResponse({
+        actorId,
+        idempotencyKey,
+        statusCode,
+        responseBody: storedResponse,
+      })
     })
 
     next()
