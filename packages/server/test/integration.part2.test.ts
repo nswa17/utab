@@ -3065,7 +3065,10 @@ describe('Server integration', () => {
       scoresB: [],
       submittedEntityId: adjudicatorId,
     })
-    expect(publishedBallotRes.status).toBe(201)
+    expect(publishedBallotRes.status).toBe(401)
+    expect(publishedBallotRes.body.errors?.[0]?.message).toContain(
+      'Authenticated participant identity'
+    )
 
     const publishedFeedbackRes = await participant.post('/api/submissions/feedback').send({
       tournamentId,
@@ -3074,7 +3077,10 @@ describe('Server integration', () => {
       score: 5,
       submittedEntityId: teamAId,
     })
-    expect(publishedFeedbackRes.status).toBe(201)
+    expect(publishedFeedbackRes.status).toBe(401)
+    expect(publishedFeedbackRes.body.errors?.[0]?.message).toContain(
+      'Authenticated participant identity'
+    )
 
     const unassignedPublicBallotRes = await participant.post('/api/submissions/ballots').send({
       tournamentId,
