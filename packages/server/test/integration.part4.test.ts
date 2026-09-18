@@ -3120,4 +3120,153 @@ describe('Server integration', () => {
     expect(finalBulkDelete.body.data.deletedCount).toBe(2)
   })
 
+
+  it('preserves unrelated concurrent edits during privacy reference cleanup', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'privacy-cas-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'privacy-cas-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Privacy Concurrent Edit Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerRes = await organizer.post('/api/speakers').send({
+      tournamentId,
+      name: 'Privacy Speaker',
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = String(speakerRes.body.data._id)
+
+    const teamRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Privacy Team',
+      template: { available: true, conflicts: [], speakers: [speakerId] },
+      details: [
+        { r: 1, available: true, conflicts: ['before'], speakers: [speakerId] },
+      ],
+    })
+    expect(teamRes.status).toBe(201)
+    const teamId = String(teamRes.body.data._id)
+
+    const adjRes = await organizer.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Privacy Judge',
+      preev: 5,
+    })
+    expect(adjRes.status).toBe(201)
+    const adjudicatorId = String(adjRes.body.data._id)
+
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Privacy Opponent',
+    })
+    expect(teamBRes.status).toBe(201)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamId, opp: teamBId },
+          chairs: [adjudicatorId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const {
+      executeSpeakerPersonalDataErase,
+      executeAdjudicatorPersonalDataErase,
+    } = await import('../src/controllers/privacy.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+    const DrawModel = getDrawModel(connection)
+
+    const originalTeamUpdateMany = TeamModel.updateMany.bind(TeamModel)
+    const teamUpdateSpy = vi
+      .spyOn(TeamModel as any, 'updateMany')
+      .mockImplementationOnce((filter: any, update: any) => {
+        return {
+          exec: async () => {
+            await TeamModel.updateOne(
+              { _id: teamId, tournamentId, 'details.r': 1 },
+              { $set: { 'details.$[detail].conflicts': ['concurrent-edit'] } },
+              { arrayFilters: [{ 'detail.r': 1 }] }
+            ).exec()
+            return await originalTeamUpdateMany(filter, update).exec()
+          },
+        } as any
+      })
+
+    const speakerErase = await executeSpeakerPersonalDataErase({
+      tournamentId,
+      entityId: speakerId,
+      reason: 'test',
+      eraseMode: 'hard_delete',
+    })
+    expect(speakerErase?.redacted).toBe(true)
+    teamUpdateSpy.mockRestore()
+
+    const storedTeam = await TeamModel.findOne({ _id: teamId, tournamentId }).lean().exec()
+    expect((storedTeam as any)?.template?.speakers ?? []).not.toContain(speakerId)
+    const storedDetail = (storedTeam as any)?.details?.find((detail: any) => Number(detail?.r) === 1)
+    expect(storedDetail?.speakers ?? []).not.toContain(speakerId)
+    expect(storedDetail?.conflicts).toEqual(['concurrent-edit'])
+
+    const drawBefore = await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()
+    const versionBefore = Number((drawBefore as any)?.__v ?? 0)
+    const originalDrawUpdateMany = DrawModel.updateMany.bind(DrawModel)
+    const drawUpdateSpy = vi
+      .spyOn(DrawModel as any, 'updateMany')
+      .mockImplementationOnce((filter: any, update: any) => {
+        return {
+          exec: async () => {
+            await DrawModel.updateOne(
+              { tournamentId, round: 1 },
+              { $set: { 'allocation.0.venue': 'concurrent-venue' }, $inc: { __v: 1 } }
+            ).exec()
+            return await originalDrawUpdateMany(filter, update).exec()
+          },
+        } as any
+      })
+
+    const adjudicatorErase = await executeAdjudicatorPersonalDataErase({
+      tournamentId,
+      entityId: adjudicatorId,
+      reason: 'test',
+      eraseMode: 'hard_delete',
+    })
+    expect(adjudicatorErase?.redacted).toBe(true)
+    drawUpdateSpy.mockRestore()
+
+    const storedDraw = await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()
+    expect((storedDraw as any)?.allocation?.[0]?.chairs ?? []).not.toContain(adjudicatorId)
+    expect((storedDraw as any)?.allocation?.[0]?.venue).toBe('concurrent-venue')
+    expect(Number((storedDraw as any)?.__v ?? 0)).toBeGreaterThan(versionBefore)
+  })
+
 })
