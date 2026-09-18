@@ -3518,13 +3518,14 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
 }
 
 async function onSetupMotionOpenedChange(round: any, checked: boolean) {
+  const currentTournamentId = tournamentId.value
   const updated = await rounds.updateRound({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     roundId: String(round._id),
     motionOpened: Boolean(checked),
   })
-  if (updated?._id) {
-    await rounds.fetchRounds(tournamentId.value)
+  if (updated?._id && tournamentId.value === currentTournamentId) {
+    await rounds.fetchRounds(currentTournamentId)
   }
 }
 
@@ -3532,11 +3533,12 @@ async function saveSetupDrawPublication(
   round: any,
   nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean }>
 ): Promise<boolean> {
+  const currentTournamentId = tournamentId.value
   const roundNumber = Number(round?.round)
   const draw = setupRoundDraw(roundNumber)
   if (!Number.isInteger(roundNumber) || !draw) return false
   const updated = await draws.upsertDraw({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     round: roundNumber,
     allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
     userDefinedData: draw.userDefinedData,
@@ -3544,8 +3546,8 @@ async function saveSetupDrawPublication(
     allocationOpened: nextState.allocationOpened ?? Boolean(draw.allocationOpened),
     locked: Boolean(draw.locked),
   })
-  if (!updated?._id) return false
-  await draws.fetchDraws(tournamentId.value)
+  if (!updated?._id || tournamentId.value !== currentTournamentId) return false
+  await draws.fetchDraws(currentTournamentId)
   return true
 }
 
