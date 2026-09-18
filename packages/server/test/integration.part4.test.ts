@@ -2846,4 +2846,81 @@ describe('Server integration', () => {
     }
   })
 
+  it('preserves draw publication and lock flags when an update omits them', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'draw-state-preserve', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'draw-state-preserve', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Draw State Preserve Open',
+      style: 1,
+      options: { style: { team_num: 2 } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const teamA = await organizer.post('/api/teams').send({ tournamentId, name: 'State Team A' })
+    const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'State Team B' })
+    expect(teamA.status).toBe(201)
+    expect(teamB.status).toBe(201)
+
+    const allocation = [
+      {
+        venue: null,
+        teams: {
+          gov: String(teamA.body.data._id),
+          opp: String(teamB.body.data._id),
+        },
+        chairs: [],
+        panels: [],
+        trainees: [],
+      },
+    ]
+
+    const created = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: true,
+      allocationOpened: true,
+      locked: true,
+    })
+    expect(created.status).toBe(201)
+    expect(created.body.data.drawOpened).toBe(true)
+    expect(created.body.data.allocationOpened).toBe(true)
+    expect(created.body.data.locked).toBe(true)
+
+    const allocationOnlyUpdate = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+    })
+    expect(allocationOnlyUpdate.status).toBe(201)
+    expect(allocationOnlyUpdate.body.data.drawOpened).toBe(true)
+    expect(allocationOnlyUpdate.body.data.allocationOpened).toBe(true)
+    expect(allocationOnlyUpdate.body.data.locked).toBe(true)
+
+    const explicitUnlock = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      locked: false,
+    })
+    expect(explicitUnlock.status).toBe(201)
+    expect(explicitUnlock.body.data.drawOpened).toBe(true)
+    expect(explicitUnlock.body.data.allocationOpened).toBe(true)
+    expect(explicitUnlock.body.data.locked).toBe(false)
+  })
+
 })
