@@ -82,6 +82,22 @@ async function waitForResult<T>(
   throw lastError ?? new Error('waitForResult timed out without a successful response')
 }
 
+async function createSuperuserAgent(
+  username: string,
+  password = 'password123'
+): Promise<{ agent: ReturnType<typeof request.agent>; userId: string }> {
+  const user = await UserModel.create({
+    username,
+    passwordHash: await hashPassword(password),
+    role: 'superuser',
+    tournaments: [],
+  })
+  const agent = request.agent(app)
+  const loginRes = await agent.post('/api/auth/login').send({ username, password })
+  expect(loginRes.status).toBe(200)
+  return { agent, userId: String(user._id) }
+}
+
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create({
     instance: { ip: '127.0.0.1', launchTimeout: 600000 },
