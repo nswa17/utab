@@ -4595,3 +4595,66 @@ A tournament access credential and a participant account have different purposes
 
 The next unresolved Phase 5 finding is **P5-06: the documented two-hour inactivity expiry for tournament access sessions is not implemented**.
 
+
+
+## Phase 21 — Tournament access inactivity expiry (P5-06)
+
+P5-06 was confirmed and repaired.
+
+### Previous behavior
+
+The security roadmap documents two independent lifetime bounds for a tournament access session:
+
+- 24 hours absolute lifetime from grant;
+- 2 hours of inactivity.
+
+The implementation only stored and checked `expiresAt = grantedAt + 24h`. There was no activity timestamp, no 2-hour inactivity check, and no sliding activity update on successful tournament access.
+
+Therefore a participant who entered a protected tournament once could retain the tournament access capability for the full 24-hour absolute window even if the session was completely idle for more than two hours.
+
+### Repair
+
+Tournament access session state now includes:
+
+- `grantedAt`;
+- `expiresAt` — the unchanged 24-hour absolute deadline;
+- `lastActivityAt`;
+- `version`.
+
+Shared constants now define the absolute and inactivity lifetimes in `tournament-access.service.ts`.
+
+On each successful session-access authorization:
+
+1. the server rejects/deletes the entry if the absolute deadline has passed;
+2. the server rejects/deletes the entry if `lastActivityAt + 2h` has passed;
+3. legacy session entries without `lastActivityAt` use `grantedAt` as the conservative fallback;
+4. a version mismatch deletes the stale entry;
+5. otherwise `lastActivityAt` advances to the current request time.
+
+The activity timestamp does **not** extend `expiresAt`; active sessions still end no later than 24 hours after the original grant.
+
+Implementation commits:
+
+- `14a0b46bcebe973f166a86325f80bfe07339312a` — centralize access lifetime constants;
+- `0433f1589bc5f19b1187dbd32b3eafe21ee2b42c` — add session activity timestamp;
+- `8eb31d8843ec703d90bc34548be2b5ab0c879c2f` — enforce and slide inactivity lifetime;
+- `880a0d34c36f74a07cd08d2f9a0728bf74590b00` — initialize activity time on access grant.
+
+### Regression coverage
+
+Added to `packages/server/test/integration.part4.test.ts`:
+
+- a protected tournament access remains valid after 90 minutes;
+- a successful request refreshes activity, so another request 90 minutes later remains valid;
+- after more than two hours from the last successful activity, access is rejected;
+- a freshly re-granted access session with no activity is rejected after two hours plus one millisecond.
+
+Regression commit:
+
+- `1719ee30f858d7c9080c252949e679dd37d40701`.
+
+### P5-06 status
+
+**P5-06 is closed.**
+
+The documented 24-hour absolute lifetime and two-hour sliding inactivity lifetime are now both enforced server-side. Existing sessions created before this change fail safely using `grantedAt` as their last-activity baseline until they are refreshed or expire.
