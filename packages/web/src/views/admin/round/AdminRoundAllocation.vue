@@ -3580,21 +3580,29 @@ function removeRow(index: number) {
 }
 
 async function save() {
-  if (!isTwoTeamStyle.value) {
-    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+  if (!isSupportedTeamStyle.value || !editableTeamNum.value) {
+    openNotice(t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。'))
     return
   }
   if (!referenceSelectionConfirmed.value) {
     openNotice(t('先に参照ラウンドを確定してください。'))
     return
   }
-  const validRows = allocation.value.filter((row) => row.teams.gov && row.teams.opp)
+  const positions = drawTeamPositions(editableTeamNum.value)
+  const validRows = allocation.value.filter((row) =>
+    positions.every((position) => drawTeamId(row.teams, position, editableTeamNum.value!))
+  )
   if (validRows.length === 0) {
     openNotice(t('有効なマッチがありません。'))
     return
   }
-  if (validRows.some((row) => row.teams.gov === row.teams.opp)) {
-    openNotice(t('同じチームが両サイドに設定されています。'))
+  if (
+    validRows.some((row) => {
+      const ids = drawTeamIds(row.teams, editableTeamNum.value!)
+      return new Set(ids).size !== ids.length
+    })
+  ) {
+    openNotice(t('同じチームを複数ポジションに設定できません。'))
     return
   }
   const sharedCompiledId = String(selectedDetailSnapshotId.value ?? '').trim()
@@ -3611,7 +3619,10 @@ async function save() {
   const saved = await draws.upsertDraw({
     tournamentId: tournamentId.value,
     round: round.value,
-    allocation: validRows,
+    allocation: validRows.map((row) => ({
+      ...row,
+      teams: serializeDrawTeams(row.teams, editableTeamNum.value!),
+    })),
     ...(nextUserDefinedData ? { userDefinedData: nextUserDefinedData } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
@@ -3630,8 +3641,8 @@ async function save() {
 
 function openAutoGenerateModal() {
   requestError.value = null
-  if (!isTwoTeamStyle.value) {
-    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+  if (!isSupportedTeamStyle.value) {
+    openNotice(t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。'))
     return
   }
   if (locked.value) {
@@ -3661,8 +3672,8 @@ function closeAutoGenerateModal() {
 
 function openAllocationImportModal() {
   allocationImportError.value = null
-  if (!isTwoTeamStyle.value) {
-    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+  if (!isSupportedTeamStyle.value) {
+    openNotice(t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。'))
     return
   }
   allocationImportText.value = ''
@@ -3689,8 +3700,8 @@ async function handleAllocationImportFile(event: Event) {
 
 function applyAllocationImport() {
   allocationImportError.value = null
-  if (!isTwoTeamStyle.value) {
-    allocationImportError.value = t('この対戦表エディタは現在2チーム戦のみ対応しています。')
+  if (!isSupportedTeamStyle.value) {
+    allocationImportError.value = t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。')
     return
   }
   allocationImportInfo.value = null
@@ -3725,6 +3736,7 @@ function applyAllocationImport() {
       _id: String(venue._id),
       name: String(venue.name ?? ''),
     })),
+    teamNum: editableTeamNum.value ?? 2,
   })
   if (applied.errors.length > 0) {
     allocationImportError.value = applied.errors.join(' / ')
@@ -3733,7 +3745,7 @@ function applyAllocationImport() {
 
   allocation.value = applied.allocation.map((row) => ({
     venue: row.venue ?? '',
-    teams: { gov: String(row.teams.gov ?? ''), opp: String(row.teams.opp ?? '') },
+    teams: normalizeDrawTeams(row.teams, editableTeamNum.value ?? 2),
     chairs: [...(row.chairs ?? [])],
     panels: [...(row.panels ?? [])],
     trainees: [...(row.trainees ?? [])],
@@ -3745,10 +3757,7 @@ function applyAllocationImport() {
 }
 
 function teamPairKey(row: DrawAllocationRow) {
-  const gov = String(row.teams?.gov ?? '')
-  const opp = String(row.teams?.opp ?? '')
-  if (!gov || !opp) return ''
-  return [gov, opp].sort().join('::')
+  return drawTeamGroupKey(row.teams, currentEditableTeamNum())
 }
 
 function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
@@ -3766,10 +3775,7 @@ function mergeTeamScopeAllocation(generatedRows: DrawAllocationRow[]) {
   return generatedRows.map((generatedRow, index) => {
     const nextRow: DrawAllocationRow = {
       venue: generatedRow.venue ?? '',
-      teams: {
-        gov: String(generatedRow.teams?.gov ?? ''),
-        opp: String(generatedRow.teams?.opp ?? ''),
-      },
+      teams: normalizeDrawTeams(generatedRow.teams, currentEditableTeamNum()),
       chairs: [...(generatedRow.chairs ?? [])],
       panels: [...(generatedRow.panels ?? [])],
       trainees: [...(generatedRow.trainees ?? [])],
@@ -3920,8 +3926,8 @@ function estimatedRequiredAdjudicatorCountForRequest() {
 
 async function requestAllocation() {
   requestError.value = null
-  if (!isTwoTeamStyle.value) {
-    requestError.value = t('この対戦表エディタは現在2チーム戦のみ対応しています。')
+  if (!isSupportedTeamStyle.value) {
+    requestError.value = t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。')
     return
   }
   if (locked.value) {
