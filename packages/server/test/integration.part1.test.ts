@@ -476,13 +476,12 @@ describe('Server integration', () => {
     expect(first.status).toBe(500)
     createSpy.mockRestore()
 
-    const stored = await waitForResult(
-      async () =>
-        ServiceAccountIdempotencyModel.findOne({ actorId, idempotencyKey }).lean().exec(),
-      (record) => record?.status === 'completed' && record.responseStatus === 500,
-      1500,
-      25
-    )
+    const stored = await ServiceAccountIdempotencyModel.findOne({
+      actorId,
+      idempotencyKey,
+    })
+      .lean()
+      .exec()
     expect(stored?.status).toBe('completed')
     expect(stored?.responseStatus).toBe(500)
 
