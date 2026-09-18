@@ -659,6 +659,8 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       }))
       .filter((r: any) => r.id !== undefined)
 
+    allocations.teams.precheck(teamInstances, [], style, round)
+
     const compiledTeamResults =
       mappedRawSpeakerResults.length > 0 && speakerInstances.length > 0
         ? coreResults.compileTeamResults(
@@ -828,6 +830,24 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
       }
     })
 
+    const structureError = validateAllocationStructure(mappedAllocation, teamNum)
+    if (structureError) {
+      badRequest(res, `Generated allocation is invalid: ${structureError}`)
+      return
+    }
+    const assignedTeamCount = mappedAllocation.reduce(
+      (count: number, row: any) => count + normalizeDrawTeamIds(row?.teams).length,
+      0
+    )
+    const availableTeamCount = filterAvailable(teamInstances, round).length
+    if (assignedTeamCount !== availableTeamCount) {
+      badRequest(
+        res,
+        `Generated allocation assigned ${assignedTeamCount} of ${availableTeamCount} available teams`
+      )
+      return
+    }
+
     const payload = {
       r: round,
       allocation: mappedAllocation,
@@ -874,6 +894,23 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
 
     res.json({ data: payload, errors: [] })
   } catch (err: any) {
+    if (
+      Number(err?.code) === 412 ||
+      Number(err?.status) === 412 ||
+      String(err?.name ?? '') === 'DetailNotDefined' ||
+      /^NeedMore(Team|Adjudicator|Venue)$/i.test(String(err?.name ?? ''))
+    ) {
+      res.status(412).json({
+        data: null,
+        errors: [
+          {
+            name: String(err?.name ?? 'PreconditionFailed'),
+            message: String(err?.message ?? 'Precondition failed'),
+          },
+        ],
+      })
+      return
+    }
     if (err?.status === 400) {
       badRequest(res, String(err?.message ?? 'Bad Request'))
       return
