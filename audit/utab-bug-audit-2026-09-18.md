@@ -5188,3 +5188,85 @@ Full generic position-aware Web draw editing remains a future feature.
 All numbered Phase-7 findings P7-01 through P7-09 are either fixed on the current branch or explicitly fail-closed, and the newly discovered P7-10 submission-history authorization defect is fixed.
 
 The next audit work should re-check later phase findings against the accumulated branch rather than assuming the original findings still reproduce.
+
+
+## Phase 35 — Strict adjusted pairing objective (P3-07)
+
+P3-07 was closed by defining the previously missing product objective and implementing it with the side-balance metrics already used by the allocator.
+
+### Previous behavior
+
+`pairing_method='adjusted'` enumerated candidate partitions, but its score for each matchup was the sum of `past_sides.length` over every team in that matchup.
+
+Summed over a complete partition, this is constant:
+
+[
+\sum_{M \in \mathcal P} \sum_{i \in M} |H_i|
+= \sum_i |H_i|,
+]
+
+so every candidate partition had the same score. The implementation therefore selected the first generated candidate rather than performing any adjustment.
+
+### Objective selected
+
+The UI has always described adjusted pairing as choosing the pairing with smaller bias, and the core already has an explicit adjusted-position side-balance objective.
+
+The pairing objective is now:
+
+> Among all candidate matchup partitions inside a strict win bracket, choose the partition that minimizes the total side-history imbalance **after each matchup is hypothetically assigned its best adjusted positions**.
+
+For a two-team matchup, if (b_i = #gov_i - #opp_i), the per-match cost is the existing `squareOneSided` objective after `decidePositions`:
+
+[
+C(M) = |b_{gov}+1| + |b_{opp}-1|.
+]
+
+For a four-team/BP matchup, the existing `squareOneSidedBp` opening/government imbalance objective is used after `decidePositions`.
+
+The partition score is
+
+[
+C(\mathcal P) = \sum_{M \in \mathcal P} C(M),
+]
+
+and the minimum-score partition is selected. Candidate enumeration order remains the deterministic tie-break.
+
+No new side-bias metric was introduced; adjusted pairing now uses the same side-balance semantics as adjusted position assignment.
+
+For formats other than 2-team and 4-team, where `decidePositions` has no defined side-balance objective, adjusted pairing falls back to deterministic sorted pairing instead of running an undefined exponential optimization.
+
+### Implementation and regression
+
+Core implementation:
+
+- `b01f4debe2b6baabde90846ab9a3852f5562765b` — make strict adjusted pairing minimize side bias.
+
+Regression:
+
+- `1e73d2a143954b02ba1f13b61d9ee9142d902bc4` — add a four-team field / two-team-format counterexample where sorted pairing groups the two government-heavy teams together, while adjusted pairing chooses mixed-bias matchups.
+
+The new core regression passes and the full core suite is green:
+
+- 24/24 test files;
+- 117/117 tests.
+
+UI contract clarification:
+
+- `217cd4cb4ac7aee92db67515af4b97f3225bac60` — clarify the adjusted-pairing objective in the allocation UI;
+- `5e473ab943c52ca42c99e96d79ecb7a932c143da` — add the English translation.
+
+### CI note
+
+Push CI run `35392813497`:
+
+- lint/web typecheck: success;
+- core: 24/24 files, 117/117 tests, including the new P3-07 regression;
+- branch-wide `pnpm test`: failure from already-present unrelated Web/store and participant-history regressions.
+
+Those same unrelated failures are present in pre-P3-07 run `35391508439` (before these commits), including the entity-store/institution test failures and the participant-history authorization expectation. They were not introduced by this pairing change.
+
+### P3-07 status
+
+**P3-07 is closed.**
+
+`strict + adjusted` pairing now has a concrete, documented, non-invariant objective consistent with the allocator's existing adjusted side-assignment semantics.
