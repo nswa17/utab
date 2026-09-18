@@ -46,21 +46,26 @@
 ログアウト時は大会アクセスを含むセッションを破棄する。
 
 3. 公開レスポンス許可フィールド（public view のみ適用）:
-以下の許可フィールド以外は返さない。`createdBy` / `submittedBy` / `userDefinedData` / `user_defined_data` / `passwordHash` / `tournaments` は必ず遮断する。
 
-| Resource | Public allowlist fields | Notes |
+> **現行契約（2026-09-18）**: 2026-02-07 に確定した初期 allowlist は、その後の participant workflow と権限制御の変更で一部 obsolete になった。以下を現行の security contract とし、`packages/server/src/services/response-sanitizer.ts` と route middleware を実装上の source of truth とする。
+>
+> 「raw の `userDefinedData` / `user_defined_data` を公開しない」という原則は維持する。ただし Round は participant UI が必要とする設定だけを **新しい object として再構成して返す**。Tournament の `options` も style の participant-facing key だけを allowlist で再構成する。
+
+| Resource | 現行 public/view contract | Notes |
 | --- | --- | --- |
-| Tournament | `_id`, `name`, `style`, `total_round_num`, `current_round_num`, `auth.access.required` | `auth` のパスワード情報や `options` は非公開 |
-| Team | `_id`, `tournamentId`, `name`, `institution`, `speakers` | `details` と `userDefinedData` は非公開 |
+| Tournament | `_id`, `name`, `style`, `total_round_num`, `current_round_num`, `hidden`, `auth.access.required`; 必要な場合のみ `options.style.{team_num,score_weights,side_labels,side_labels_short,speaker_sequence,range,adjudicator_range,roles}` | password/hash、任意の `options`、raw `user_defined_data`、`createdBy` は public DTO に含めない |
+| Team | `_id`, `tournamentId`, `name`, `template.speakers` | raw `template` の他 key、`details`、`userDefinedData` は非公開 |
 | Speaker | `_id`, `tournamentId`, `name` | `userDefinedData` は非公開 |
-| Adjudicator | `_id`, `tournamentId`, `name` | `strength` / `preev` / `details` は非公開 |
-| Venue | `_id`, `tournamentId`, `name` | `details` は非公開 |
-| Institution | `_id`, `tournamentId`, `name` | `userDefinedData` は非公開 |
-| Round | `_id`, `tournamentId`, `round`, `name`, `motions` | `teamAllocationOpened` / `adjudicatorAllocationOpened` は非公開 |
-| Draw | `_id`, `tournamentId`, `round`, `drawOpened`, `allocationOpened`, `allocation` | `drawOpened=false` の場合 `allocation=[]` を返す。`allocationOpened=false` の場合は審判配席のみ非公開 |
-| Result | `_id`, `tournamentId`, `round`, `payload` | `payload` 内は `user_defined_data` / `comment` 等の内部情報を除去 |
-| Compiled | `_id`, `tournamentId`, `payload` | `payload` 内は内部情報を除去 |
-| RawResults | 公開対象外 | 大会アクセスまたは管理者権限が必須 |
+| Adjudicator | `_id`, `tournamentId`, `name` | `preev` / `details` / `userDefinedData` は非公開 |
+| Venue | `_id`, `tournamentId`, `name` | `details` / `userDefinedData` は非公開 |
+| Institution | `_id`, `tournamentId`, `name` | category/priority と `userDefinedData` は public DTO では非公開 |
+| Round | `_id`, `tournamentId`, `round`, `name`, `motions`, `motionOpened`, `teamAllocationOpened`, `adjudicatorAllocationOpened`, participant-safe `userDefinedData` subset | hidden round は非admin list から除外し direct get も 404。motions は `motionOpened=true` のときだけ返す。safe subset は `hidden`, `evaluate_from_adjudicators`, `evaluate_from_teams`, `chairs_always_evaluated`, `no_speaker_score`, `allow_low_tie_win`, `allow_score_winner_mismatch`, `score_by_matter_manner`, `poi`, `best`, `evaluator_in_team`, `ballot_submitter_roles` |
+| Draw | `_id`, `tournamentId`, `round`, `drawOpened`, `allocationOpened`, sanitized `allocation` | 両方 closed なら `allocation=[]`。team draw だけ closed なら allocation rows は残すが team ids を空文字で mask し、`allocationOpened=true` なら chairs/panels/trainees は公開する。adjudicator allocation が closed ならそれらの配席は空配列。hidden round の Draw は非admin response から除外 |
+| Result | public/view 対象外 | 現行 route は `requireTournamentAdmin` |
+| Compiled | public/view 対象外 | 現行 route は `requireTournamentAdmin` |
+| RawResults | public/view 対象外 | 現行 route は GET を含め `requireTournamentAdmin` |
+
+`createdBy`, `submittedBy`, password material、ユーザーの大会 membership 一覧などの内部情報は public DTO に passthrough しない。Result/Compiled 用 sanitizer helper は残っているが、現行 HTTP route が public であることを意味しない。
 
 4. 監査ログのイベント種別:
 `auth.login` / `auth.logout` / `auth.register` / `tournament.create` / `tournament.update` / `tournament.delete` / `tournament.access.grant` / `tournament.access.revoke` /
@@ -146,11 +151,15 @@
 - requireTournamentAccess: 結果送信権限
 - requireTournamentAdmin: 管理者権限
 
-**進捗（2026-02-08）**
+**進捗（2026-02-08、履歴）**
 - [x] `requireTournamentRole` を廃止し、`requireTournamentView` を追加。
-- [x] 閲覧系ルート（teams/speakers/adjudicators/venues/institutions/rounds/draws/results/compiled/tournaments）を `requireTournamentView` に置換。
-- [x] `raw-results` の GET を `requireTournamentAccess` に置換し、提出系と同じアクセス判定へ統一。
-- [x] `pnpm -C packages/server test` で統合テストを実行し、回帰がないことを確認。
+- [x] 当時の閲覧系ルートを `requireTournamentView` に移行。
+- [x] 当時は `raw-results` GET を `requireTournamentAccess` に移行。
+- [x] `pnpm -C packages/server test` で統合テストを実行。
+
+**現行差分（2026-09-18）**
+- teams/speakers/adjudicators/venues/institutions/rounds/draws/tournaments の participant-facing read は `requireTournamentView` 系の境界を使う。
+- results / compiled / raw-results は GET を含め `requireTournamentAdmin`。2026-02 の「results/compiled は閲覧系」「raw-results GET は Access」という記述は履歴であり、現行権限仕様ではない。
 
 **編集候補ファイル**
 - packages/server/src/middleware/auth.ts
@@ -178,11 +187,17 @@
 - 公開レスポンス用のサニタイズ関数を導入。
 - コントローラの list/get 応答を DTO 化。
 
-**進捗（2026-02-08）**
+**進捗（2026-02-08、履歴）**
 - [x] `packages/server/src/services/response-sanitizer.ts` を追加し、公開用 allowlist/sanitize を実装。
-- [x] `tournaments/teams/speakers/adjudicators/venues/institutions/rounds/results/compiled/raw-results` の list/get を「非admin時のみ」公開DTOへ変換。
-- [x] `draws` の公開レスポンスも DTO 化し、`drawOpened=false` 時の allocation 非公開と `allocationOpened=false` 時の配席隠蔽を実装。
-- [x] 統合テストを更新し、公開レスポンスで内部フィールドが除去されることを検証。
+- [x] 当時の非admin read を公開DTOへ変換。
+- [x] `draws` の公開レスポンスを DTO 化。
+- [x] 統合テストで内部フィールドの除去を検証。
+
+**現行差分（2026-09-18）**
+- public DTO の正確な field contract は上記「現行契約」を参照する。
+- Tournament style override と Round の participant-safe flags は、raw object passthrough ではなく allowlist で再構成して公開する。
+- Draw は `drawOpened` と `allocationOpened` を独立に扱う。team draw が closed でも adjudicator allocation が open なら team ids を mask した allocation rows と配席を返す。
+- results / compiled / raw-results は現在 admin-only のため、通常の participant public DTO endpoint ではない。
 
 **編集候補ファイル**
 - packages/server/src/services/response-sanitizer.ts (新規)
