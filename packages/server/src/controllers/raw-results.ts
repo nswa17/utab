@@ -19,7 +19,7 @@ import {
   normalizeScoreWeights,
   normalizeTeamNum,
 } from './shared/allocation-support.js'
-import { notFound } from './shared/http-errors.js'
+import { badRequest, notFound } from './shared/http-errors.js'
 import {
   ensureObjectId,
   ensureTournamentId,
@@ -281,6 +281,41 @@ const rawAdjudicatorResultCrudHandlers = createRawResultCrudHandlers({
   notFoundMessage: 'Raw adjudicator result not found',
 })
 
+async function resolveSpeakerScoreCount(tournamentId: string): Promise<number | null> {
+  const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+  if (!tournament) return null
+  const styleOptions = (tournament.options as any)?.style ?? {}
+  const styleDoc =
+    typeof tournament.style === 'number'
+      ? await StyleModel.findOne({ id: tournament.style }).lean().exec()
+      : null
+  const scoreWeights = normalizeScoreWeights(
+    styleOptions.score_weights ?? styleDoc?.score_weights
+  )
+  return scoreWeights.length > 0 ? scoreWeights.length : null
+}
+
+async function validateRawSpeakerScoreLength(
+  res: Parameters<RequestHandler>[1],
+  payload: unknown
+): Promise<boolean> {
+  const rows = Array.isArray(payload) ? payload : [payload]
+  const tournamentId = rows
+    .map((row: any) => String(row?.tournamentId ?? '').trim())
+    .find((value) => value.length > 0)
+  if (!tournamentId) return true
+  const expected = await resolveSpeakerScoreCount(tournamentId)
+  if (expected === null) return true
+  for (const row of rows as any[]) {
+    if (row?.scores === undefined) continue
+    if (!Array.isArray(row.scores) || row.scores.length !== expected) {
+      badRequest(res, `Speaker scores must contain exactly ${expected} values for this tournament style`)
+      return false
+    }
+  }
+  return true
+}
+
 export const listRawTeamResults: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, round, id, fromId } = req.query as {
@@ -497,8 +532,23 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
   }
 }
 
-export const createRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.create
-export const updateRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.update
+export const createRawSpeakerResult: RequestHandler = async (req, res, next) => {
+  try {
+    if (!(await validateRawSpeakerScoreLength(res, req.body))) return
+    return rawSpeakerResultCrudHandlers.create(req, res, next)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const updateRawSpeakerResult: RequestHandler = async (req, res, next) => {
+  try {
+    if (!(await validateRawSpeakerScoreLength(res, req.body))) return
+    return rawSpeakerResultCrudHandlers.update(req, res, next)
+  } catch (err) {
+    next(err)
+  }
+}
 export const deleteRawSpeakerResult: RequestHandler = rawSpeakerResultCrudHandlers.deleteOne
 export const deleteRawSpeakerResults: RequestHandler = rawSpeakerResultCrudHandlers.deleteMany
 
