@@ -3871,3 +3871,157 @@ The privacy anonymization branch also intentionally replaces the erased entity's
 
 The next unresolved Phase 4 issue is **P4-07: compilation reads multiple collections without a coherent snapshot**.
 
+## Phase 16 — Coherent compile read set (P4-07)
+
+P4-07 was addressed with a retry-until-stable revision fence rather than MongoDB snapshot transactions.
+
+The supported standalone MongoDB deployment cannot assume multi-document transactions/read-snapshot transactions are available. Compilation therefore verifies that the application-visible source revision did not change while the multi-collection read set was being assembled.
+
+### Stable-source revision fence
+
+`buildCompiledPayload` now performs:
+
+1. read a source revision fingerprint;
+2. build the complete compiled payload using the existing multi-collection readers;
+3. read the source revision fingerprint again;
+4. accept the payload only if the two fingerprints match;
+5. otherwise discard the mixed attempt and rebuild from scratch.
+
+Up to five complete attempts are allowed.
+
+If all five attempts race concurrent source mutation, compilation fails closed with:
+
+- HTTP status: `409` when surfaced through the API error middleware;
+- error name/code: `CompileUnstable`;
+- no compiled payload is saved from the unstable read.
+
+Relevant commits:
+
+- `92850a8b6ff505fa572c5b8f2c7dae59129e9081` — retry compile reads until the source revision is stable;
+- `65b868cda7400f166acf3faa26852738c3e93819` — keep Draw revision/version fingerprints aligned;
+- `dccc7a7365c63dbbf1257ea4223b1caf972898c5` — expose sustained contention as `CompileUnstable`.
+
+### Revision contents
+
+The revision fence covers the data that the compile builders actually read.
+
+Common to both submission/raw compilation:
+
+- Tournament identity/style revision;
+- referenced Style revision;
+- Teams;
+- Adjudicators;
+- Draws;
+- Rounds.
+
+Submission source additionally fingerprints:
+
+- Submissions.
+
+Raw source additionally fingerprints:
+
+- raw Team results;
+- raw Speaker results;
+- raw Adjudicator results.
+
+Collection fingerprints are deterministic: documents are represented by stable `_id + updatedAt` rows sorted by id.
+
+Draw fingerprints also include `__v`, because normal Draw mutation uses optimistic versioning and several maintenance paths explicitly advance that version.
+
+Tournament and Style revisions are included because compile behavior can change when tournament style/options or the referenced global style changes even if tournament-database entities remain untouched.
+
+### Why this prevents the original mixed-read failure
+
+Before Phase 16, the following was possible:
+
+    read Teams
+    admin edits Draw / Submission / Round
+    read Draws / Submissions / Rounds
+    compile and save a payload joining both sides of the edit
+
+After Phase 16, any ordinary application-mediated mutation in the compile source set updates the affected document's timestamp (and Draw version where applicable).
+
+The post-build fingerprint then differs from the pre-build fingerprint, so that payload is discarded.
+
+On retry, all source queries are executed again against the newer state.
+
+The returned payload therefore corresponds to a read interval in which no tracked source revision changed, rather than silently accepting the first mixed Promise.all result.
+
+### Regression coverage
+
+Added to:
+
+- `packages/server/test/integration.part4.test.ts`.
+
+The regression deliberately changes a Team after the first compile attempt has already read that Team snapshot.
+
+Specifically:
+
+1. the pre-read revision sees Team A with institution marker `old-inst`;
+2. the first payload builder reads that old Team value;
+3. the test injects a Team update to `new-inst` before the attempt completes;
+4. the trailing revision detects the changed `updatedAt`;
+5. the first payload is discarded;
+6. compilation retries;
+7. the returned compiled Team result contains `new-inst`, not the stale `old-inst`.
+
+The test also verifies that the Team source reader executes a second complete revision/build/revision cycle.
+
+Commit:
+
+- `96ded284ffaad27984e83de9799c1b031c94a4b6` — concurrent source mutation retry regression.
+
+A second regression keeps changing Team source state during every one of the five attempts.
+
+Expected behavior:
+
+- no mixed payload is returned;
+- `buildCompiledPayload` rejects with `CompileUnstable`;
+- status is `409`;
+- exactly five injected churn writes are observed.
+
+Commit:
+
+- `ed4bb3f32fc1a4aa066c241169a12960fd85a6fd` — sustained-churn fail-closed regression.
+
+### Baseline diff note
+
+`attachDiffAgainstBaseline` compares the stable current compile against one persisted Compiled document.
+
+Persisted Compiled snapshots are immutable through the supported API (they are created or deleted, not edited in place), and the baseline resolver reads one complete snapshot document.
+
+A concurrently created/deleted `latest` baseline can therefore choose the previous or next immutable baseline, but it does not recreate the P4-07 mixed source-collection state inside the newly compiled current payload.
+
+### CI
+
+Final head before this log update:
+
+- `ed4bb3f32fc1a4aa066c241169a12960fd85a6fd`
+
+GitHub Actions:
+
+- run `35383255144`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-07 status and boundaries
+
+**P4-07 is closed for ordinary application-mediated writes to the collections used by submission/raw compilation.**
+
+This is a logical stable-read fence, not a database snapshot transaction.
+
+Important boundaries:
+
+- direct/out-of-band database writes that deliberately bypass Mongoose timestamps are outside this application-level revision protocol;
+- revision detection depends on the repository's normal timestamped Mongoose write paths (with Draw `__v` as an additional fence);
+- an update that occurs only after the trailing revision has already read that collection does not invalidate the payload, because the payload still corresponds to the immediately preceding stable state;
+- repeated high write contention can make compile return 409 rather than eventually producing a result. That is intentional fail-closed behavior.
+
+The next unresolved Phase 4 finding is **P4-08: privacy hard-delete can fail after irreversible partial mutation**.
+
