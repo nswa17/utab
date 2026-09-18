@@ -256,16 +256,10 @@ export function requireTournamentAccess(paramName = 'tournamentId'): RequestHand
         next()
         return
       }
-      if (
-        membershipRole &&
-        (membershipRole === 'audience' ||
-          membershipRole === 'speaker' ||
-          membershipRole === 'adjudicator')
-      ) {
-        next()
-        return
-      }
 
+      // Participant membership identifies the user's role but does not replace
+      // the tournament-access gate. Protected and public tournaments both
+      // require an explicit access session for participant submissions.
       if (hasSessionTournamentAccess(req, tournamentId, (tournament as any).auth)) {
         next()
         return
