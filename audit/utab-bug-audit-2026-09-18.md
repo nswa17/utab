@@ -6692,3 +6692,255 @@ All numbered findings and the subsequently discovered correctness/security regre
 - explicitly documented as an architectural boundary rather than a silently unsafe code path.
 
 The only remaining architectural caveat is the already documented process-crash boundary for multi-collection compensation on standalone Mongo: ordinary caught failures are compensated, but a host/process death that prevents rollback code from executing is not equivalent to a transaction.
+
+
+## Phase 44 — Final review of open audit PRs (#34–#41)
+
+After completing the cumulative audit branch, the still-open phase PRs were re-reviewed against the later findings rather than relying on their original green CI alone.
+
+The review asked three questions for every PR:
+
+1. does the patch actually close the bug it claims to close;
+2. does it introduce a new reachable regression;
+3. has a later audit phase discovered a stronger version of the same invariant that the isolated PR does not contain.
+
+### PR #34 — core allocation and vote-rate invariants
+
+**Review result: safe within its stated scope.**
+
+The weighted-allocation sparse-array repair and strict-allocation availability filtering address the reproduced counterexamples directly.
+
+The two-team compiled vote-rate conversion is algebraically correct for the representation used by that branch.
+
+Later cumulative work generalized/null-hardened vote-rate aggregation, so #34 is not the final implementation of every result-aggregation edge case, but no new defect was found in the PR's own fixes.
+
+Original PR-head CI was green.
+
+### PR #35 — compiled metamorphic invariants
+
+**Review result: fixes are correct, with an important scope limitation documented on the PR.**
+
+The following changes remain valid:
+
+- requested compile rounds are set-normalized;
+- preview revision hashes result content rather than only cardinality;
+- submission-source compilation detects a selected two-team Draw matchup whose ballot is absent.
+
+The later Phase-39 re-audit found that the analogous **raw-source** Draw-completeness invariant was still missing. That raw-source repair exists on the cumulative branch but is outside #35.
+
+This is a scope gap rather than a regression introduced by #35. The PR description was updated to say so explicitly.
+
+Original PR-head CI was green.
+
+### PR #36 — server state-transition lost-update hardening
+
+**Review result: safe within scope.**
+
+The submission-edit and Draw-update optimistic concurrency checks correctly turn competing same-version writes into conflicts instead of silent lost updates.
+
+The Draw partial-update fix also correctly preserves omitted publication/lock fields.
+
+The broader multi-collection Round lifecycle risk identified by the PR was real and was addressed later by namespace/write leases, compensation, and failure-injection tests on the cumulative audit branch.
+
+No new defect was found in #36 itself.
+
+Original PR-head CI was green.
+
+### PR #37 — tournament public/auth boundary
+
+**Original PR result: unsafe product-semantics regression found during final review.**
+
+The original PR changed:
+
+    user_defined_data.hidden=true
+
+from an **unlisted/list-visibility** setting into an admin-only authorization boundary.
+
+That contradicted the later specification re-audit and could deny legitimate speaker/adjudicator access to an intentionally unlisted tournament.
+
+The actual cross-tenant security defect in this PR was separate and valid: tournament-user administration responses could reveal the managed user's memberships in unrelated tournaments.
+
+#### Correction applied directly to PR #37
+
+The final-review correction removed the hidden-tournament 404 authorization behavior while retaining the membership-response scoping fix.
+
+Correct contract:
+
+- hidden tournament is absent from the public tournament list;
+- direct access follows the tournament's ordinary public/password/membership policy;
+- public DTO sanitization still hides internal fields;
+- tournament-user admin responses expose only the membership relevant to the tournament being administered.
+
+Correction commits:
+
+- `f04099a407899e7f3ebb7504e07451d68d906473`;
+- `5c35f39bfccdc3e9855983da518f56711dae7182`;
+- `52153109ca6c0b0c66a73d3d5db6216b1f94ea2a`.
+
+The PR title/body were also updated to describe the corrected contract.
+
+Corrected CI run `35406571241`: **success**.
+
+**PR #37 is safe after this correction.**
+
+### PR #38 — Web state synchronization
+
+**Original PR result: incomplete tournament-scope isolation found during final review.**
+
+The original branch already blocked several late-mutation contamination paths, but the entity stores still had two weaknesses:
+
+1. changing A -> B did not immediately clear A's entity array, so A data could remain rendered while B was loading;
+2. one store-global fetch sequence was weaker than the later per-tournament generation invariant and made mutation/fetch invalidation semantics unnecessarily coupled across tournaments.
+
+#### Correction applied directly to PR #38
+
+Teams, Speakers, Adjudicators, Venues and Institutions now use the same per-tournament scope/generation contract proven on the cumulative branch:
+
+- fetch token = tournament id + generation;
+- scope change clears the previous visible entity list;
+- a mutation invalidates only its own tournament's outstanding fetches;
+- a late A mutation cannot invalidate a newer B fetch;
+- inactive mutation failures cannot overwrite B's visible error state;
+- first-use mutation-only flows retain compatibility.
+
+Cross-tournament bulk-delete/fetch races are tested for all five stores.
+
+Correction commits include:
+
+- `aea9a8aa615b348e56c977a75016aee955e130c4`;
+- `aaaf8d31910c61ec21ca711d22b7f3b3bb023989`;
+- `1d6a35d3dffa27649f98f0151dbef1ac72a89797`;
+- `0fc482a6008b90d3ad6eed41ba1fb94e31e23e4d`;
+- `b15746d950ca247fe89cab97201d69500dc7c6db`;
+- `3a5f8c4ddc2fdb558d72b1b49abd3e973bcafb7a`;
+- `112ab886a8936e97bac145bc628d0664bbcc94da`;
+- `ba68a7a07a6a008dc5a369309d7fd2bec8fe72e2`.
+
+The PR body was updated with the corrected contract.
+
+Corrected CI run `35406635182`: **success**.
+
+**PR #38 is safe after this correction.**
+
+### PR #39 — regressions from recent PRs
+
+**Review result: safe within scope.**
+
+The final review found no new high-confidence regression in:
+
+- furthest-reached ballot-wizard step tracking;
+- tournament-import rollback error surfacing;
+- numeric speaker-order export sorting.
+
+The rollback code correctly refuses to pretend cleanup succeeded when cleanup itself fails.
+
+The larger Round lifecycle atomicity issue was intentionally left to later dedicated phases and is not made worse by #39.
+
+Original PR-head CI was green.
+
+### PR #40 — boundary/type validation
+
+**Review result: safe within scope.**
+
+The validated invariants remain coherent with the rest of the application:
+
+- raw-result round filters are positive integers;
+- tournament round counts and round-scoped persisted round numbers are positive integers;
+- tie points are constrained to the win-point scale `[0,1]`;
+- entity template/detail schemas validate known structure while remaining passthrough-compatible with legacy extension fields;
+- duplicate entity-detail rounds are rejected;
+- tournament backup import applies matching validation before native collection insertion.
+
+No high-confidence compatibility regression was found.
+
+The lack of a product-defined maximum `total_round_num` remains documented as a separate resource-boundary question rather than inventing an arbitrary limit.
+
+Original PR-head CI was green.
+
+### PR #41 — full lifecycle / PDA workflow
+
+**Original PR result: a new concurrency bug was found during final review.**
+
+The original implementation attempted bidirectional persistence synchronization:
+
+    Draw update -> follow-up Round publication write
+    Round publication PATCH -> follow-up Draw publication write
+
+Those were independent database operations.
+
+A concurrent Draw update and legacy Round publication update could therefore interleave so that the two follow-up writes crossed, recreating exactly the contradictory publication state the PR intended to eliminate.
+
+#### Correction applied directly to PR #41
+
+The corrected contract uses one authority:
+
+> `Draw.drawOpened / Draw.allocationOpened` are the persisted publication source of truth.
+
+Public Round list/get responses derive:
+
+- `teamAllocationOpened`;
+- `adjudicatorAllocationOpened`
+
+from the matching Draw.
+
+The bidirectional follow-up writes were removed.
+
+Legacy Round fields may remain in old/admin payloads for compatibility, but writing them does not override Draw-authoritative participant publication.
+
+Correction commits:
+
+- `b33cb24910e577e3cd8806c5683c467cef3edd77`;
+- `ab0b3e8848a527f593882b3887184cf625b12c89`;
+- `ba693bc53b4b2d752334dc60d8d77fbcd52b2de7`;
+- `0a5cad5cc394d97a60db991d96f42d575cbdf426`.
+
+The PR body was updated to document the single-source-of-truth contract.
+
+Corrected CI run `35406680224`: **success**.
+
+**PR #41 is safe after this correction.**
+
+### Merge-order / integration assessment
+
+At final review:
+
+- #34 through #40 target `main`;
+- #41 is explicitly stacked on #40 and targets `audit/boundary-type-phase9`;
+- all eight PRs report mergeable against their current bases.
+
+However, several PRs touch overlapping files and were created as phase-isolated branches. Therefore:
+
+> `mergeable=true` against today's base does not imply that #34–#41 can be merged in an arbitrary sequence without rebasing/re-running CI.
+
+In particular:
+
+- #41 must follow #40 unless it is rebased;
+- later PRs should be rebased/tested after preceding overlapping phase PRs land.
+
+More importantly, these eight open PRs do **not** collectively contain every later fix made during Phases 11–43.
+
+The authoritative fully audited state remains:
+
+    codex/utab-bug-audit-20260918
+
+That branch contains the later compiler completeness fixes, lifecycle compensation/leases, security durability changes, full BP editor support, public-DTO reconciliation and other closures that are outside the early phase PRs.
+
+### Final PR-review conclusion
+
+After the corrections above:
+
+- #34: no high-confidence new regression found;
+- #35: correct within scope; raw-source completeness requires later cumulative fix;
+- #36: no high-confidence new regression found;
+- #37: unsafe original hidden-tournament behavior removed; corrected PR green;
+- #38: incomplete cross-tournament entity scoping strengthened; corrected PR green;
+- #39: no high-confidence new regression found;
+- #40: no high-confidence new regression found;
+- #41: unsafe bidirectional publication mirroring removed; corrected PR green.
+
+The final cumulative audit branch itself remains fully green at run `35405758845`:
+
+- Core: **118/118**;
+- Web: **348/348**;
+- Server: **167/167**;
+- lint/build: success.
