@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Round, RoundBreakConfig } from '@/types/round'
 
 type BreakCandidate = {
@@ -30,6 +31,7 @@ export const useRoundsStore = defineStore('rounds', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -47,6 +49,7 @@ export const useRoundsStore = defineStore('rounds', () => {
   }
 
   async function fetchRounds(tournamentId: string, options?: { forcePublic?: boolean }) {
+    tournamentScope.activate(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -89,13 +92,15 @@ export const useRoundsStore = defineStore('rounds', () => {
     try {
       const res = await api.post('/rounds', payload)
       const created = res.data?.data
-      if (created) {
+      if (created && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         rounds.value = [...rounds.value, created].sort((a, b) => a.round - b.round)
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create round'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create round'
+      }
       return null
     } finally {
       endRequest()
@@ -119,13 +124,15 @@ export const useRoundsStore = defineStore('rounds', () => {
     try {
       const res = await api.patch(`/rounds/${payload.roundId}`, payload)
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         rounds.value = rounds.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update round'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update round'
+      }
       return null
     } finally {
       endRequest()
@@ -151,7 +158,8 @@ export const useRoundsStore = defineStore('rounds', () => {
     try {
       const res = await api.patch('/rounds', payload)
       const updatedList = Array.isArray(res.data?.data) ? (res.data.data as Round[]) : []
-      if (updatedList.length > 0) {
+      const payloadTournamentId = String(payload[0]?.tournamentId ?? '')
+      if (updatedList.length > 0 && tournamentScope.isActive(payloadTournamentId)) {
         advanceFetchSequence()
         const updatedById = new Map(updatedList.map((item) => [String(item._id), item]))
         rounds.value = rounds.value
@@ -160,7 +168,9 @@ export const useRoundsStore = defineStore('rounds', () => {
       }
       return updatedList
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update rounds'
+      if (tournamentScope.isActive(String(payload[0]?.tournamentId ?? ''))) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update rounds'
+      }
       return []
     } finally {
       endRequest()
@@ -172,11 +182,15 @@ export const useRoundsStore = defineStore('rounds', () => {
     error.value = null
     try {
       await api.delete(`/rounds/${roundId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      rounds.value = rounds.value.filter((item) => item._id !== roundId)
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
+        rounds.value = rounds.value.filter((item) => item._id !== roundId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete round'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete round'
+      }
       return false
     } finally {
       endRequest()
@@ -201,7 +215,9 @@ export const useRoundsStore = defineStore('rounds', () => {
       })
       return (res.data?.data ?? null) as BreakCandidatesResponse | null
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load break candidates'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load break candidates'
+      }
       return null
     } finally {
       endRequest()
@@ -223,13 +239,15 @@ export const useRoundsStore = defineStore('rounds', () => {
         syncTeamAvailability: payload.syncTeamAvailability ?? true,
       })
       const updatedRound = res.data?.data?.round as Round | undefined
-      if (updatedRound?._id) {
+      if (updatedRound?._id && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         rounds.value = rounds.value.map((item) => (item._id === updatedRound._id ? updatedRound : item))
       }
       return res.data?.data ?? null
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save break settings'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save break settings'
+      }
       return null
     } finally {
       endRequest()
