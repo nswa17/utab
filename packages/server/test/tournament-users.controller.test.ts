@@ -135,7 +135,10 @@ describe('tournament user membership consistency', () => {
     )
     expect(mocks.updateMembership).toHaveBeenCalledWith(
       { tournamentId, userId },
-      { $set: { role: 'speaker' } },
+      {
+        $set: { role: 'speaker' },
+        $unset: { entityType: '', entityId: '' },
+      },
       { upsert: true }
     )
     expect(req.session.tournaments).toEqual([tournamentId])
