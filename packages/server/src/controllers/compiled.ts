@@ -2194,6 +2194,7 @@ async function readCompileSourceRevision(
 
 function compileUnstableError(): Error {
   const err = new Error('Tournament data changed repeatedly while compiling; retry')
+  err.name = 'CompileUnstable'
   ;(err as any).status = 409
   ;(err as any).code = 'CompileUnstable'
   return err
