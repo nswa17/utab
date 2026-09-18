@@ -1101,6 +1101,9 @@ export const createRound: RequestHandler = async (req, res, next) => {
 }
 
 export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
+  let mutationLeases: RoundMutationLease[] = []
+  let mutationConnection: Connection | null = null
+  let mutationStarted = false
   try {
     if (!Array.isArray(req.body) || req.body.length === 0) {
       badRequest(res, 'Empty payload')
@@ -1124,6 +1127,7 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Invalid round id')
       return
     }
+
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const ids = payload.map((item) => String(item.id))
@@ -1131,6 +1135,7 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Bulk update ids must be unique')
       return
     }
+
     const allRoundDocs = await RoundModel.find({ tournamentId })
       .select({ _id: 1, round: 1 })
       .lean()
@@ -1140,6 +1145,7 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       notFound(res, 'Round not found')
       return
     }
+
     const beforeRoundById = new Map<string, number>(
       beforeDocs.map((doc: any) => [String(doc?._id ?? ''), Number(doc?.round)])
     )
@@ -1161,8 +1167,9 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       }
       finalRoundOwners.set(finalRound, id)
     }
+
     const changes = payload
-      .map((item, index) => {
+      .map((item) => {
         const previousRound = Number(beforeRoundById.get(String(item.id)))
         const nextRound = item.round === undefined ? previousRound : Number(item.round)
         if (previousRound === nextRound) return null
@@ -1170,21 +1177,58 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
           id: String(item.id),
           previousRound,
           nextRound,
-          temporaryRound: -1_000_000_000 - index,
+          temporaryRound: temporaryRoundNumber(String(item.id)),
         }
       })
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
+    const mutationLeaseById = new Map<string, RoundMutationLease>()
     if (changes.length > 0) {
-      await RoundModel.bulkWrite(
-        changes.map((change) => ({
-          updateOne: {
-            filter: { _id: change.id, tournamentId, round: change.previousRound },
-            update: { $set: { round: change.temporaryRound } },
-          },
-        })),
+      const acquired = await acquireRoundMutationLeases(
+        connection,
+        tournamentId,
+        changes.map((change) => ({ id: change.id, round: change.previousRound }))
+      )
+      if (!acquired) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'One or more rounds have active writes; retry bulk change' }],
+        })
+        return
+      }
+      mutationLeases = acquired
+      mutationConnection = connection
+      acquired.forEach((lease) => mutationLeaseById.set(lease.roundId, lease))
+
+      const claimResult = await RoundModel.bulkWrite(
+        changes.map((change) => {
+          const lease = mutationLeaseById.get(change.id)
+          return {
+            updateOne: {
+              filter: {
+                _id: change.id,
+                tournamentId,
+                round: change.previousRound,
+                roundMutationLocked: true,
+                roundMutationEpoch: lease?.epoch,
+              },
+              update: { $set: { round: change.temporaryRound } },
+            },
+          }
+        }),
         { ordered: true }
       )
+      if (claimResult.matchedCount !== changes.length) {
+        await releaseRoundMutationLeases(connection, mutationLeases)
+        mutationLeases = []
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+        })
+        return
+      }
+      mutationStarted = true
+
       await moveRoundReferences(
         connection,
         tournamentId,
@@ -1196,6 +1240,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
         changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
       )
     }
+
+    const changeById = new Map(changes.map((change) => [change.id, change]))
     const ops = payload.map((item) => {
       const update: Record<string, unknown> = {}
       if (item.round !== undefined) update.round = item.round
@@ -1211,26 +1257,54 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       if (item.userDefinedData !== undefined) {
         update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
       }
+
+      const change = changeById.get(String(item.id))
+      const lease = change ? mutationLeaseById.get(String(item.id)) : undefined
       return {
         updateOne: {
-          filter: { _id: item.id, tournamentId },
+          filter: change
+            ? {
+                _id: item.id,
+                tournamentId,
+                round: change.temporaryRound,
+                roundMutationLocked: true,
+                roundMutationEpoch: lease?.epoch,
+              }
+            : {
+                _id: item.id,
+                tournamentId,
+                round: Number(beforeRoundById.get(String(item.id))),
+                roundMutationLocked: { $ne: true },
+              },
           update: { $set: update },
         },
       }
     })
     await RoundModel.bulkWrite(ops, { ordered: true })
+
     if (changes.length > 0) {
       await rewriteStoredRoundReferences(
         connection,
         tournamentId,
         changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
       )
+      await releaseRoundMutationLeases(connection, mutationLeases)
+      mutationLeases = []
     }
+
     const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
       .lean()
       .exec()
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (mutationLeases.length > 0 && mutationConnection && !mutationStarted) {
+      try {
+        await releaseRoundMutationLeases(mutationConnection, mutationLeases)
+        mutationLeases = []
+      } catch {
+        // If release fails, mutation locks fail closed.
+      }
+    }
     if (isDuplicateKeyError(err)) {
       res
         .status(409)
@@ -1242,6 +1316,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
 }
 
 export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
+  let mutationLeases: RoundMutationLease[] = []
+  let mutationConnection: Connection | null = null
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
     if (!ensureTournamentId(res, tournamentId)) return
@@ -1260,22 +1336,66 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Invalid round id')
       return
     }
+
     const filter: Record<string, unknown> = { tournamentId, _id: { $in: idList } }
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const targets = await RoundModel.find(filter).select({ _id: 1, round: 1 }).lean().exec()
-    const deletedRounds = targets
-      .map((item: any) => Number(item?.round))
-      .filter((value) => Number.isInteger(value) && value >= 1)
+    const targetRows = targets
+      .map((item: any) => ({ id: String(item?._id ?? ''), round: Number(item?.round) }))
+      .filter((item) => item.id && Number.isInteger(item.round) && item.round >= 1)
+
+    if (targetRows.length > 0) {
+      const acquired = await acquireRoundMutationLeases(connection, tournamentId, targetRows)
+      if (!acquired) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'One or more rounds have active writes; retry bulk deletion' }],
+        })
+        return
+      }
+      mutationLeases = acquired
+      mutationConnection = connection
+    }
+
+    const deletedRounds = targetRows.map((item) => item.round)
     await deleteRoundDependencies(connection, tournamentId, deletedRounds)
-    const result = await RoundModel.deleteMany(filter).exec()
+
+    const leaseById = new Map(mutationLeases.map((lease) => [lease.roundId, lease]))
+    const deleteResult =
+      targetRows.length > 0
+        ? await RoundModel.bulkWrite(
+            targetRows.map((target) => ({
+              deleteOne: {
+                filter: {
+                  _id: target.id,
+                  tournamentId,
+                  round: target.round,
+                  roundMutationLocked: true,
+                  roundMutationEpoch: leaseById.get(target.id)?.epoch,
+                },
+              },
+            })),
+            { ordered: true }
+          )
+        : { deletedCount: 0 }
+
     if (deletedRounds.length > 0) {
       await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
       await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
     }
-    res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+    mutationLeases = []
+    res.json({ data: { deletedCount: deleteResult.deletedCount }, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (mutationLeases.length > 0 && mutationConnection) {
+      try {
+        await releaseRoundMutationLeases(mutationConnection, mutationLeases)
+      } catch {
+        // Failed deletions release best-effort; stale write counts are recovered separately.
+      }
+    }
   }
 }
 
