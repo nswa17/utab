@@ -1,9 +1,15 @@
 import type { RequestHandler } from 'express'
+import type { Connection } from 'mongoose'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { getResultModel } from '../models/result.js'
 import { getRoundModel } from '../models/round.js'
 import { sanitizeResultForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  acquireRoundWriteLease,
+  releaseRoundWriteLease,
+  type RoundWriteLease,
+} from '../services/round-write-guard.service.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId } from './shared/request-validators.js'
 
@@ -42,6 +48,8 @@ export const getResult: RequestHandler = async (req, res, next) => {
 }
 
 export const createResult: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { tournamentId, round, payload } = req.body as {
       tournamentId: string
@@ -53,11 +61,31 @@ export const createResult: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
-    const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
-    if (!roundExists) {
+    const roundDoc = await getRoundModel(connection)
+      .findOne({ tournamentId, round })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (!roundDoc) {
       notFound(res, 'Round not found')
       return
     }
+
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      round,
+      String((roundDoc as any)._id)
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry result save' }],
+      })
+      return
+    }
+    leaseConnection = connection
+
     const created = await ResultModel.create({
       tournamentId,
       round,
@@ -67,10 +95,20 @@ export const createResult: RequestHandler = async (req, res, next) => {
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
 export const updateResult: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId, round, payload } = req.body as {
@@ -82,35 +120,76 @@ export const updateResult: RequestHandler = async (req, res, next) => {
     if (!ensureTournamentId(res, tournamentId)) return
     if (!ensureObjectId(res, id, 'Invalid result id')) return
 
-    const update: Record<string, unknown> = {}
-    if (round !== undefined) update.round = round
-    if (payload !== undefined) update.payload = payload
-
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
-    if (round !== undefined) {
-      const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
-      if (!roundExists) {
-        notFound(res, 'Round not found')
-        return
-      }
+    const existing = await ResultModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
+      notFound(res, 'Result not found')
+      return
     }
+
+    const nextRound = round === undefined ? Number(existing.round) : Number(round)
+    const roundDoc = await getRoundModel(connection)
+      .findOne({ tournamentId, round: nextRound })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (!roundDoc) {
+      notFound(res, 'Round not found')
+      return
+    }
+
+    roundWriteLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      nextRound,
+      String((roundDoc as any)._id)
+    )
+    if (!roundWriteLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry result update' }],
+      })
+      return
+    }
+    leaseConnection = connection
+
+    const update: Record<string, unknown> = {}
+    if (round !== undefined) update.round = nextRound
+    if (payload !== undefined) update.payload = payload
+    const expectedVersion = Number((existing as any).__v ?? 0)
     const updated = await ResultModel.findOneAndUpdate(
-      { _id: id, tournamentId },
-      { $set: update },
+      {
+        _id: id,
+        tournamentId,
+        round: Number(existing.round),
+        __v: expectedVersion,
+      },
+      { $set: update, $inc: { __v: 1 } },
       { new: true }
     )
       .lean()
       .exec()
 
     if (!updated) {
-      notFound(res, 'Result not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Result changed concurrently; retry update' }],
+      })
       return
     }
 
     res.json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
