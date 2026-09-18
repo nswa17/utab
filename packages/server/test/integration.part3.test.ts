@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
-import { beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { AuditLogModel } from '../src/models/audit-log.js'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
@@ -1637,6 +1637,128 @@ describe('Server integration', () => {
     expect(updateRes.body.data.auth.access.hasPassword).toBe(true)
     expect(updateRes.body.data.auth.access.password).toBeUndefined()
     expect(updateRes.body.data.auth.access.passwordHash).toBeUndefined()
+  })
+
+
+  it('records incomplete tournament-import cleanup failures for repair', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'import-cleanup-failure', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'import-cleanup-failure', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const sourceTournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Import Cleanup Source',
+      style: 1,
+      options: {},
+      total_round_num: 1,
+    })
+    expect(sourceTournamentRes.status).toBe(201)
+    const sourceTournamentId = String(sourceTournamentRes.body.data._id)
+
+    const teamRes = await agent.post('/api/teams').send({
+      tournamentId: sourceTournamentId,
+      name: 'Cleanup Failure Team',
+    })
+    expect(teamRes.status).toBe(201)
+
+    const exportRes = await agent
+      .get(`/api/tournaments/${sourceTournamentId}/export`)
+      .buffer(true)
+      .parse(parseBinaryResponse)
+      .send()
+    expect(exportRes.status).toBe(200)
+
+    const [{ buildZip, extractZip }, { dropTournamentDatabase }] = await Promise.all([
+      import('../src/services/zip.js'),
+      import('../src/services/tournament-db.service.js'),
+    ])
+
+    const entries = extractZip(exportRes.body as Buffer)
+    const metadataEntry = entries.find((entry) => entry.path === 'metadata.json')
+    expect(metadataEntry).toBeTruthy()
+    const metadata = JSON.parse(metadataEntry?.content.toString('utf8') ?? '{}') as {
+      collectionFiles?: Array<{ path: string; collectionName: string }>
+    }
+    const teamsPath = metadata.collectionFiles?.find(
+      (entry) => entry.collectionName === 'teams'
+    )?.path
+    expect(teamsPath).toBeTruthy()
+    if (!teamsPath) throw new Error('teams collection path missing from export metadata')
+
+    const malformedEntries = entries.map((entry) => {
+      if (entry.path !== teamsPath) {
+        return {
+          path: entry.path,
+          content: entry.content,
+          modifiedAt: new Date('2024-01-01T00:00:00Z'),
+        }
+      }
+      const docs = JSON.parse(entry.content.toString('utf8')) as Array<Record<string, unknown>>
+      expect(docs.length).toBeGreaterThan(0)
+      return {
+        path: entry.path,
+        content: Buffer.from(JSON.stringify([docs[0], docs[0]])),
+        modifiedAt: new Date('2024-01-01T00:00:00Z'),
+      }
+    })
+    const malformedBundle = buildZip(malformedEntries)
+
+    const cleanupDeleteSpy = vi
+      .spyOn(TournamentModel as any, 'deleteOne')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected tournament cleanup failure')
+        },
+      }))
+
+    const importRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(malformedBundle)
+
+    cleanupDeleteSpy.mockRestore()
+
+    expect(importRes.status).toBe(500)
+    expect(importRes.body.errors?.[0]?.message).toContain('cleanup was incomplete')
+    expect(importRes.body.errors?.[0]?.message).toContain('repair required')
+
+    const repairLog = await AuditLogModel.findOne({
+      action: 'tournament.import.cleanup_failed',
+      'metadata.failedSteps.step': 'tournament',
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec()
+    expect(repairLog).toBeTruthy()
+    expect((repairLog as any)?.metadata?.repairRequired).toBe(true)
+    expect((repairLog as any)?.metadata?.originalError?.errorMessage).toBeTruthy()
+    expect(
+      ((repairLog as any)?.metadata?.failedSteps ?? []).some(
+        (failure: any) =>
+          failure?.step === 'tournament' &&
+          String(failure?.errorMessage ?? '').includes('injected tournament cleanup failure')
+      )
+    ).toBe(true)
+
+    const orphanTournamentId = String((repairLog as any)?.targetId ?? '')
+    expect(orphanTournamentId).toBeTruthy()
+    expect(
+      await TournamentModel.findOne({ _id: orphanTournamentId }).lean().exec()
+    ).toBeTruthy()
+
+    await TournamentModel.deleteOne({ _id: orphanTournamentId }).exec()
+    await AuditLogModel.deleteMany({
+      action: 'tournament.import.cleanup_failed',
+      targetId: orphanTournamentId,
+    }).exec()
+    await dropTournamentDatabase(orphanTournamentId).catch(() => undefined)
   })
 
 })
