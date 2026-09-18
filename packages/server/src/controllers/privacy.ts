@@ -164,9 +164,9 @@ async function restoreDeletedDocuments(Model: any, docs: any[]): Promise<void> {
   if (docs.length === 0) return
   await Model.bulkWrite(
     docs.map((doc) => ({
-      replaceOne: {
+      updateOne: {
         filter: { _id: doc._id },
-        replacement: doc,
+        update: { $setOnInsert: doc },
         upsert: true,
       },
     })),
