@@ -121,7 +121,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       await api.delete(`/adjudicators/${adjudicatorId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
+        adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
       }
       return true
     } catch (err: any) {
@@ -146,13 +146,13 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       const res = await api.delete('/adjudicators', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      const deletedCount = Number(res.data?.data?.deletedCount)
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
+        const deletedIds = new Set(normalizedIds)
       adjudicators.value = adjudicators.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
-      const deletedCount = Number(res.data?.data?.deletedCount)
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
