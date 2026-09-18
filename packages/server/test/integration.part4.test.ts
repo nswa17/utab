@@ -496,6 +496,12 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
 
+    const participant = request.agent(app)
+    const accessRes = await participant
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'skip' })
+    expect(accessRes.status).toBe(200)
+
     const roundRes = await organizer.post('/api/rounds').send({
       tournamentId,
       round: 2,
@@ -504,7 +510,7 @@ describe('Server integration', () => {
     })
     expect(roundRes.status).toBe(201)
 
-    const publicBallot = await request(app)
+    const publicBallot = await participant
       .post('/api/submissions/ballots')
       .send({
         tournamentId,
@@ -521,7 +527,7 @@ describe('Server integration', () => {
     expect(publicBallot.status).toBe(400)
     expect(publicBallot.body.errors?.[0]?.message).toBe('round is hidden from participants')
 
-    const publicFeedback = await request(app).post('/api/submissions/feedback').send({
+    const publicFeedback = await participant.post('/api/submissions/feedback').send({
       tournamentId,
       round: 2,
       adjudicatorId: 'judge-a',
