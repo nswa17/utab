@@ -4766,6 +4766,13 @@ describe('Server integration', () => {
     })
     expect(duplicateTeamDetails.status).toBe(400)
 
+    const invalidTeamTemplate = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Invalid template team',
+      template: 'not-an-object',
+    })
+    expect(invalidTeamTemplate.status).toBe(400)
+
     const nonArrayAdjudicatorDetails = await agent.post('/api/adjudicators').send({
       tournamentId,
       name: 'Invalid details judge',
