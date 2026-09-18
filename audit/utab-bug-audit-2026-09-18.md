@@ -4192,3 +4192,115 @@ Important boundaries remain:
 
 The next unresolved Phase 4 finding is **P4-09: service-account idempotency can amplify partial 5xx mutations**.
 
+## Phase 18 — Service-account idempotency after 5xx (P4-09)
+
+P4-09 was addressed by changing the service-account idempotency contract from "delete the key after a 5xx" to "the first terminal HTTP response owns the key, including a 5xx."
+
+### Previous failure mode
+
+Previously, the middleware created an `in_progress` idempotency row before invoking a mutation, but on any response with status >= 500 it deleted that row.
+
+That meant:
+
+1. a multi-step endpoint could commit some writes;
+2. a later write could fail and return 5xx;
+3. the middleware deleted the idempotency record;
+4. the client retried the same request with the same key;
+5. the mutation executed again against already changed state.
+
+This was particularly unsafe before the compensating fixes for Round lifecycle and privacy hard-delete, but the middleware contract itself was still wrong for any endpoint that can fail after side effects.
+
+### New terminal-response semantics
+
+The middleware now persists every terminal response, not only <500 responses.
+
+For the first request using a service-account idempotency key, it stores:
+
+- request method/path/hash;
+- terminal HTTP status, including 5xx;
+- terminal JSON response body;
+- completion timestamp.
+
+A later request with the same actor, key, and identical request hash replays that stored response with:
+
+    Idempotency-Replayed: true
+
+This means a 500 response is replayed as the same 500 response rather than granting permission to execute the mutation a second time.
+
+A caller that intentionally wants a new execution after diagnosing a failed attempt must use a **new idempotency key**.
+
+Commit:
+
+- `130e8d8099604ffa0abe0b499ff65f89a4e2cc75` — preserve service idempotency records after 5xx.
+
+### Completion persistence
+
+Terminal-response persistence remains triggered from the response `finish` event, but it is now fail-closed.
+
+The persistence helper:
+
+- retries the completion write up to three times;
+- treats an already-completed matching record as success;
+- never deletes an `in_progress` record merely because the request returned 5xx;
+- logs a warning if all completion attempts fail.
+
+If persistence is unavailable after all retries, the record therefore remains `in_progress`.
+
+That can temporarily make identical retries return 409 until TTL expiry, but it does **not** permit duplicate execution. This favors mutation safety over automatic retry availability.
+
+A process crash between the HTTP response and completion persistence has the same fail-closed behavior: the pre-created `in_progress` row remains and blocks reuse of that key.
+
+### Regression coverage
+
+Added to:
+
+- `packages/server/test/integration.part1.test.ts`.
+
+The regression uses a real authenticated service-account request and injects a Team creation database failure.
+
+It verifies:
+
+1. the first request returns 500;
+2. the idempotency record transitions to `completed` with `responseStatus=500`;
+3. after the injected database failure is removed, the identical request with the **same** key still returns the stored 500;
+4. the replay carries `Idempotency-Replayed: true`;
+5. no Team has been created by the replay;
+6. submitting the same logical mutation with a **fresh** idempotency key executes normally and creates exactly one Team.
+
+Commit:
+
+- `e3e866ba5d835b7893d1d7a50507f869888f0dd2` — test service idempotency replay after 5xx.
+
+### CI
+
+Final implementation/test head before this log update:
+
+- `e3e866ba5d835b7893d1d7a50507f869888f0dd2`
+
+GitHub Actions:
+
+- run `35385316727`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-09 status and boundaries
+
+**P4-09 is closed for the duplicate-execution risk caused by deleting service-account idempotency records after 5xx responses.**
+
+The service-account contract is now effectively at-most-once per actor/idempotency-key/request-hash for the TTL lifetime.
+
+Important boundaries:
+
+- a 5xx does not imply that the operation definitely committed; it means only that the same key will not automatically execute it again;
+- intentional retries must use a fresh idempotency key after the caller has decided that a new execution is appropriate;
+- if completion persistence repeatedly fails, the key remains fail-closed as `in_progress`, so replay availability is degraded but duplicate mutation is prevented;
+- this mechanism is not a substitute for endpoint-level compensation/atomicity. P4-05 and P4-08 remain necessary because the first execution itself must still recover correctly from partial failure.
+
+The next unresolved Phase 4 finding is **P4-10: tournament import cleanup failures are discarded**.
+
