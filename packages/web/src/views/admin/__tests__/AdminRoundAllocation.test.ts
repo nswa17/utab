@@ -49,16 +49,19 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('ジャッジ結果参照ラウンドに直前ラウンドを含めてください。')
   })
 
-  it('fails closed instead of editing multi-team draw shapes as gov/opp', () => {
+  it('edits two-team and four-team draw shapes through position-aware slots', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
-    expect(source).toContain('const isTwoTeamStyle = computed')
-    expect(source).toContain('v-if="!isTwoTeamStyle"')
-    expect(source).toContain('v-if="isTwoTeamStyle"')
-    expect(source).toContain('この対戦表エディタは現在2チーム戦のみ対応しています。')
-    expect(source).toContain('if (!isTwoTeamStyle.value) {')
-    expect(source).toContain(
-      'この形式の対戦表はServer/Coreでは保持できますが、この画面で編集・自動生成すると情報を失う可能性があるため操作を停止しています。'
-    )
+    expect(source).toContain('const editableTeamNum = computed')
+    expect(source).toContain('const isSupportedTeamStyle = computed')
+    expect(source).toContain('drawTeamPositionColumns')
+    expect(source).toContain('v-for="position in teamPositionColumns"')
+    expect(source).toContain('@drop="dropTeam(row, position.key)"')
+    expect(source).toContain('serializeDrawTeams(row.teams, editableTeamNum.value!)')
+    expect(source).toContain('teamNum: editableTeamNum.value ?? 2')
+    expect(source).toContain(':team-columns="teamPositionColumns"')
+    expect(source).toContain('match,venue,og,oo,cg,co,chairs,panels,trainees')
+    expect(source).toContain('この対戦表エディタは2チーム戦と4チーム戦に対応しています。')
+    expect(source).not.toContain('この対戦表エディタは現在2チーム戦のみ対応しています。')
   })
 
   it('keeps selected CSV file visible while reading allocation import text', () => {
