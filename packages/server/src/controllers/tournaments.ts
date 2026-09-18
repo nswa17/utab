@@ -3,11 +3,7 @@ import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
-import {
-  getAuthenticatedActorId,
-  getAuthenticatedActorRole,
-  hasTournamentAdminAccess,
-} from '../middleware/auth.js'
+import { getAuthenticatedActorId, getAuthenticatedActorRole } from '../middleware/auth.js'
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
 import { verifyPassword } from '../services/hash.service.js'
 import {
@@ -408,12 +404,6 @@ export const accessTournament: RequestHandler = async (req, res, next) => {
 
     const tournament = await TournamentModel.findById(id).lean().exec()
     if (!tournament) {
-      notFound(res, 'Tournament not found')
-      return
-    }
-
-    const userDefinedData = asRecord((tournament as any).user_defined_data)
-    if (userDefinedData.hidden === true && !(await hasTournamentAdminAccess(req, id))) {
       notFound(res, 'Tournament not found')
       return
     }
