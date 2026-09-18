@@ -1800,31 +1800,56 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     }
 
     const deletedRounds = targetRows.map((item) => item.round)
-    await deleteRoundDependencies(connection, tournamentId, deletedRounds)
-
-    const leaseById = new Map(mutationLeases.map((lease) => [lease.roundId, lease]))
-    const deleteResult =
+    const deletionSnapshot =
       targetRows.length > 0
-        ? await RoundModel.bulkWrite(
-            targetRows.map((target) => ({
-              deleteOne: {
-                filter: {
-                  _id: target.id,
-                  tournamentId,
-                  round: target.round,
-                  roundMutationLocked: true,
-                  roundMutationEpoch: leaseById.get(target.id)?.epoch,
-                },
-              },
-            })),
-            { ordered: true }
-          )
-        : { deletedCount: 0 }
+        ? await captureRoundDeletionSnapshot(connection, tournamentId, targetRows)
+        : null
 
-    if (deletedRounds.length > 0) {
-      await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
-      await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
+    let deleteResult: { deletedCount?: number } = { deletedCount: 0 }
+    try {
+      await deleteRoundDependencies(connection, tournamentId, deletedRounds)
+
+      const leaseById = new Map(mutationLeases.map((lease) => [lease.roundId, lease]))
+      deleteResult =
+        targetRows.length > 0
+          ? await RoundModel.bulkWrite(
+              targetRows.map((target) => ({
+                deleteOne: {
+                  filter: {
+                    _id: target.id,
+                    tournamentId,
+                    round: target.round,
+                    roundMutationLocked: true,
+                    roundMutationEpoch: leaseById.get(target.id)?.epoch,
+                  },
+                },
+              })),
+              { ordered: true }
+            )
+          : { deletedCount: 0 }
+
+      if ((deleteResult.deletedCount ?? 0) !== targetRows.length) {
+        throw new Error('Round changed concurrently during bulk deletion')
+      }
+
+      if (deletedRounds.length > 0) {
+        await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
+        await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
+      }
+    } catch (operationError) {
+      if (deletionSnapshot) {
+        try {
+          await restoreRoundDeletionSnapshot(connection, tournamentId, deletionSnapshot)
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [operationError, rollbackError],
+            'Failed to roll back bulk round deletion'
+          )
+        }
+      }
+      throw operationError
     }
+
     mutationLeases = []
     res.json({ data: { deletedCount: deleteResult.deletedCount }, errors: [] })
   } catch (err) {
@@ -2341,27 +2366,41 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
     }
     mutationConnection = connection
 
-    await deleteRoundDependencies(connection, tournamentId, [deletedRound])
-    const deleted = await RoundModel.findOneAndDelete({
-      _id: id,
-      tournamentId,
-      round: deletedRound,
-      roundMutationLocked: true,
-      roundMutationEpoch: mutationLease.epoch,
-    })
-      .lean()
-      .exec()
-    if (!deleted) {
-      res.status(409).json({
-        data: null,
-        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+    const deletionSnapshot = await captureRoundDeletionSnapshot(connection, tournamentId, [
+      { id, round: deletedRound },
+    ])
+
+    let deleted: any = null
+    try {
+      await deleteRoundDependencies(connection, tournamentId, [deletedRound])
+      deleted = await RoundModel.findOneAndDelete({
+        _id: id,
+        tournamentId,
+        round: deletedRound,
+        roundMutationLocked: true,
+        roundMutationEpoch: mutationLease.epoch,
       })
-      return
+        .lean()
+        .exec()
+      if (!deleted) {
+        throw new Error('Round changed concurrently during deletion')
+      }
+      if (Number.isInteger(deletedRound) && deletedRound >= 1) {
+        await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
+        await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
+      }
+    } catch (operationError) {
+      try {
+        await restoreRoundDeletionSnapshot(connection, tournamentId, deletionSnapshot)
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [operationError, rollbackError],
+          'Failed to roll back round deletion'
+        )
+      }
+      throw operationError
     }
-    if (Number.isInteger(deletedRound) && deletedRound >= 1) {
-      await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
-      await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
-    }
+
     mutationLease = null
     res.json({ data: deleted, errors: [] })
   } catch (err) {
