@@ -175,6 +175,18 @@ export const requireOrganizer: RequestHandler = (req, res, next) => {
   respondForbidden(res, 'Organizer access required')
 }
 
+export const requireSuperuser: RequestHandler = (req, res, next) => {
+  if (!isAuthenticatedRequest(req)) {
+    respondUnauthorized(res)
+    return
+  }
+  if (getAuthenticatedActorRole(req) === 'superuser') {
+    next()
+    return
+  }
+  respondForbidden(res, 'Superuser access required')
+}
+
 export function requireTournamentAdmin(paramName = 'tournamentId'): RequestHandler {
   return async (req, res, next) => {
     try {
@@ -220,10 +232,50 @@ export function requireTournamentView(paramName = 'tournamentId'): RequestHandle
 }
 
 export function requireTournamentAccess(paramName = 'tournamentId'): RequestHandler {
-  return requireTournamentRole(['audience'], {
-    sessionRoles: ['audience', 'speaker', 'adjudicator'],
-    paramName,
-  })
+  return async (req, res, next) => {
+    try {
+      const tournamentId = getTournamentId(req, paramName)
+      if (!tournamentId || !Types.ObjectId.isValid(tournamentId)) {
+        respondBadRequest(res)
+        return
+      }
+
+      const tournament = await TournamentModel.findById(tournamentId).lean().exec()
+      if (!tournament) {
+        respondNotFound(res)
+        return
+      }
+
+      if (getAuthenticatedActorRole(req) === 'superuser') {
+        next()
+        return
+      }
+
+      const membershipRole = await getTournamentMembershipRole(req, tournamentId)
+      if (membershipRole === 'organizer') {
+        next()
+        return
+      }
+      if (
+        membershipRole &&
+        (membershipRole === 'audience' ||
+          membershipRole === 'speaker' ||
+          membershipRole === 'adjudicator')
+      ) {
+        next()
+        return
+      }
+
+      if (hasSessionTournamentAccess(req, tournamentId, (tournament as any).auth)) {
+        next()
+        return
+      }
+
+      respondUnauthorized(res, 'Tournament access session required')
+    } catch (err) {
+      next(err)
+    }
+  }
 }
 
 export function requireTournamentRole(
