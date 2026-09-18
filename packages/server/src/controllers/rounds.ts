@@ -866,27 +866,6 @@ function sanitizeRoundWithDrawPublication(round: unknown, draw: unknown) {
   }
 }
 
-async function syncDrawPublicationFromRoundFields(
-  connection: Connection,
-  tournamentId: string,
-  round: number,
-  teamAllocationOpened?: boolean,
-  adjudicatorAllocationOpened?: boolean
-): Promise<void> {
-  if (teamAllocationOpened === undefined && adjudicatorAllocationOpened === undefined) return
-  const set: Record<string, boolean> = {}
-  if (teamAllocationOpened !== undefined) set.drawOpened = teamAllocationOpened
-  if (adjudicatorAllocationOpened !== undefined) {
-    set.allocationOpened = adjudicatorAllocationOpened
-  }
-  await getDrawModel(connection)
-    .updateOne(
-      { tournamentId, round },
-      { $set: set, $inc: { __v: 1 } }
-    )
-    .exec()
-}
-
 export const listRounds: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, public: publicParam } = req.query as {
@@ -1243,19 +1222,6 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
     const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
       .lean()
       .exec()
-    const payloadById = new Map(payload.map((item) => [String(item.id), item]))
-    await Promise.all(
-      updated.map((roundDoc: any) => {
-        const item = payloadById.get(String(roundDoc?._id ?? ''))
-        return syncDrawPublicationFromRoundFields(
-          connection,
-          tournamentId,
-          Number(roundDoc?.round),
-          item?.teamAllocationOpened,
-          item?.adjudicatorAllocationOpened
-        )
-      })
-    )
     res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
@@ -1394,13 +1360,6 @@ export const updateRound: RequestHandler = async (req, res, next) => {
         { from: previousRound, to: nextRound },
       ])
     }
-    await syncDrawPublicationFromRoundFields(
-      connection,
-      tournamentId,
-      nextRound,
-      teamAllocationOpened,
-      adjudicatorAllocationOpened
-    )
     res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
