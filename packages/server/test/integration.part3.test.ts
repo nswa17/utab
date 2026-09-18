@@ -1089,17 +1089,26 @@ describe('Server integration', () => {
     })
     expect(drawRes.status).toBe(201)
 
-    const ballotRes = await agent.post('/api/submissions/ballots').send({
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
       tournamentId,
       round: 1,
-      teamAId: teamA,
-      teamBId: teamB,
-      winnerId: teamA,
-      scoresA: [],
-      scoresB: [],
-      submittedEntityId: 'judge-a',
+      type: 'ballot',
+      payload: {
+        teamAId: teamA,
+        teamBId: teamB,
+        winnerId: teamA,
+        scoresA: [],
+        scoresB: [],
+        submittedEntityId: 'judge-a',
+      },
+      submittedBy: 'judge-a',
     })
-    expect(ballotRes.status).toBe(201)
 
     const submissionCompile = await agent.post('/api/compiled').send({
       tournamentId,
