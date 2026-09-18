@@ -5270,3 +5270,195 @@ Those same unrelated failures are present in pre-P3-07 run `35391508439` (before
 **P3-07 is closed.**
 
 `strict + adjusted` pairing now has a concrete, documented, non-invariant objective consistent with the allocator's existing adjusted side-assignment semantics.
+
+
+## Phase 36 — Round renumber failure atomicity and round-number namespace coordination
+
+This phase closes the remaining ordinary database-failure atomicity gap in round renumbering and the target-round namespace race left explicit after Phases 12-15.
+
+### Previous boundary
+
+Before this phase, a supported single/bulk renumber already acquired a per-Round mutation lease and moved the Round document through a unique negative temporary round number. That prevented ordinary round-bound writers from committing against a Round while the renumber was in progress.
+
+Two separate gaps remained:
+
+1. after the structural mutation began, an ordinary database error while moving Draw/Submission/Result/raw-result/entity-detail rows or rewriting nested round references could leave a partially renumbered tournament;
+2. the target round-number namespace itself was not serialized. For example, a renumber could validate that round 2 was free while a concurrent create claimed round 2, or a delete could make round 2 appear free while its later cleanup was still deleting round-2 data.
+
+### Shared round-number namespace lock
+
+A per-tournament runtime namespace lock was added in the tournament database:
+
+- collection: `round_namespace_locks`;
+- key: tournament id;
+- state: `locked / epoch / touchedAt`.
+
+Supported structural routes now participate in the same lock:
+
+- single Round create;
+- bulk Round create;
+- single renumber;
+- bulk renumber;
+- single Round delete;
+- bulk Round delete.
+
+The lock is acquired **before** the structural route reads/checks the round-number namespace. Therefore the check and subsequent structural mutation are no longer separated by an uncoordinated window.
+
+Concurrent first-use initialization is also handled: if two processes race to create the lock document, the unique-`_id` loser treats the duplicate-key result as successful initialization and both proceed to the atomic claim, where only one can acquire the lease.
+
+Relevant commits:
+
+- `77f6ff57fc7aa37b2450cdc467d41b37e6d092a0` — add the round namespace lease;
+- `fcc88e1ae40ab6cf3d9f8d062f0725301c261fed` — make Round create participate;
+- `bb5e768fb02245abd06df184aba8eaace601b49d` — make single/bulk delete participate;
+- `fe4f4946f55cd90bbfd646b5c1d1dab7bf25e748` — tolerate concurrent lock-document initialization.
+
+### Renumber move journal
+
+The previous broad `moveRoundReferences(from, to)` helper was replaced by an operation-local move plan captured **before** the first dependency mutation.
+
+For every moved source round the plan records the exact ids of:
+
+- Draw documents;
+- Submission documents;
+- Result documents;
+- raw team results;
+- raw speaker results;
+- raw adjudicator results;
+- Teams containing the source-round detail;
+- Adjudicators containing the source-round detail;
+- Venues containing the source-round detail.
+
+The forward operation is now:
+
+1. lock the source Round(s);
+2. snapshot the original Round document(s);
+3. capture the exact dependency move plan;
+4. move Round number(s) `old -> unique temporary`;
+5. move only captured dependencies `old -> temporary`;
+6. move only captured dependencies `temporary -> target`;
+7. move/update Round document(s) `temporary -> target`;
+8. snapshot metadata that will be rewritten;
+9. rewrite nested round references;
+10. release the Round mutation lease(s).
+
+Using captured ids is important for compensation: rollback does not issue a broad `target -> old` update that could accidentally capture unrelated records created at the target number.
+
+Relevant commits:
+
+- `0017cc85c467b2207295d6ee104f99abfc1cec69` — capture/journal exact dependency moves;
+- `871ebe7d83ded12bc3b6f17be06fdddf9e9c9d3c` — compensate bulk renumber;
+- `c78aaf5c6cba381c31a64e9d66f017f37ae8e4b8` — compensate single renumber.
+
+### Compensation
+
+If an ordinary caught failure occurs after mutation starts, the controller now attempts, in order:
+
+1. restore rewritten Round/Draw/Tournament round-reference metadata;
+2. move captured dependencies `target -> temporary -> original`;
+3. restore the original Round document snapshot;
+4. release the per-Round mutation lease only after compensation attempts.
+
+Metadata restoration is conditional: the rollback expects either the rewritten value or the already-restored original value. If another value is observed, rollback reports a conflict rather than overwriting an unrelated change.
+
+The dependency movement and metadata-rewrite batches use `Promise.allSettled`, not fail-fast `Promise.all`. This matters because a rejected promise does not cancel sibling Mongo writes. Rollback therefore does not begin until every forward write in the current batch has settled.
+
+Commit:
+
+- `c2b8f7a816c12aa84692ab1d76664fd1a75cced0` — wait for all forward writes to settle before compensation.
+
+### Regression coverage
+
+`packages/server/test/integration.part4.test.ts` now exercises:
+
+1. **early single-renumber dependency failure**
+   - inject a Team detail move failure;
+   - PATCH round 1 -> 2 returns 500;
+   - Round, Draw, Result, and Team detail state are all back at round 1;
+   - a subsequent normal renumber succeeds.
+
+2. **late single-renumber metadata failure**
+   - allow Round/dependencies to reach the new number;
+   - inject failure while rewriting tournament-level nested `source_rounds`;
+   - Round/Draw/Result and both Round/Tournament reference metadata return to their pre-request values.
+
+3. **bulk-renumber dependency failure**
+   - inject failure while moving rounds 3/4 -> 5/6;
+   - both Round documents, Results, and entity details return to 3/4;
+   - a subsequent normal bulk renumber succeeds.
+
+4. **namespace contention**
+   - while the namespace lease is held, single create, single renumber, single delete, and bulk delete all return 409 rather than entering a competing structural transition;
+   - after release, normal creation succeeds.
+
+Regression commits:
+
+- `e82c2f7c373cc66c8af8904f2de7bbcfb529d9bf`;
+- `f0d14e5a0c3712cd8f8cd5c00a2c843bc5d8be51`;
+- `e10b7b55fd3c0314f047e3e5d142722e1338b3be`.
+
+### Runtime coordination state must not become tournament data
+
+The new namespace lock, and the older per-Round write/mutation counters, are runtime coordination state rather than logical tournament state.
+
+A follow-up audit found that the general tournament ZIP exporter and devtools tournament copier enumerate native collections. Without an explicit boundary, a backup/copy taken during a mutation could therefore persist `locked=true` into a restored/copied tournament.
+
+The boundary is now:
+
+- `round_namespace_locks` is excluded from tournament export and devtools copies;
+- Round runtime fields
+  - `roundActiveWriteCount`,
+  - `roundActiveWriteTouchedAt`,
+  - `roundMutationLocked`,
+  - `roundMutationEpoch`
+  are stripped from exported/copied Round documents;
+- import also ignores a legacy `round_namespace_locks` collection and strips those Round runtime fields, so an older/externally constructed backup cannot restore a stale lock.
+
+Commits:
+
+- `764095594c59ca5f77e70f3b06967f31e363a721` — name the internal namespace collection;
+- `14029c5a7a3acb38d3077dc1b86c7108a2301e64` — exclude runtime state from export;
+- `f16405397f11be7e1362a91ab6054914f84aef1b` — ignore runtime state on import;
+- `71d2b4c6e0a76693fc6a6541393559e4ca537612` — exclude runtime state from devtools copies;
+- `0fb939aeabcd37466f3dafcf35f88ac8678d7869` — backup regression for clean export/restore;
+- `d3c8679f887859372464fee1962c5d48861eabbe` — restore regression using a deliberately legacy-tainted backup containing `locked=true` runtime state.
+
+### Verification
+
+Relevant CI evidence:
+
+- run `35394220656`:
+  - lint/web typecheck passed;
+  - core 117/117 passed;
+  - server 156/157 passed;
+  - the new renumber failure/namespace regression passed;
+  - the sole server failure was the already-existing participant-history assertion (`Tournament admin access required` vs the test's older identity-mismatch message expectation).
+
+- run `35394588927`:
+  - lint passed;
+  - core 117/117 passed;
+  - `integration.part3.test.ts` passed 18/18, including the clean export/restore runtime-state regression;
+  - the same unrelated participant-history assertion remained the only server failure.
+
+- run `35394734155`:
+  - lint passed;
+  - core 117/117 passed;
+  - `integration.part3.test.ts` passed 18/18 with the legacy-tainted backup regression;
+  - `integration.part4.test.ts` ran 42 tests and again had only the pre-existing participant-history assertion failure, so the new renumber/namespace regression remained green.
+
+The branch-wide workflow remains red because of previously identified unrelated Web store tests and the participant-history assertion. Those failures predate this phase.
+
+### Status and explicit boundaries
+
+**The ordinary caught-database-failure atomicity gap for supported single/bulk Round renumbering is closed, and the supported-route target-round namespace race across create/renumber/delete is closed.**
+
+This is compensation-based atomicity, not a Mongo multi-document transaction. Explicit remaining boundaries:
+
+- a process/host crash can interrupt the operation before in-memory compensation runs;
+- if compensation itself fails, the error is surfaced (including rollback errors) but exact automatic recovery is not guaranteed;
+- the namespace lock intentionally fails closed; a process crash while holding it can require recovery/manual intervention rather than unsafe time-based unlocking;
+- raw-result APIs remain outside the Round-bound mutation-lease contract established in Phase 12, so an independently inserted raw row racing the captured move-plan boundary is not claimed to be coordinated here;
+- direct/out-of-band database writes are outside the application coordination protocol;
+- compensation restores logical round identity/content, but internal timestamps/version counters may advance and are not claimed to be bit-for-bit rollback.
+
+The remaining lifecycle problem is therefore crash recovery/persistent transaction journaling rather than the ordinary caught-write-failure counterexample originally recorded under P8-01.
