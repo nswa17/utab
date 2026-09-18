@@ -349,69 +349,44 @@
                           <span v-else class="muted small">{{ $t('会場をドロップ') }}</span>
                         </div>
                       </td>
-                      <td class="team-col">
+                      <td
+                        v-for="position in teamPositionColumns"
+                        :key="`team-cell-${index}-${position.key}`"
+                        class="team-col"
+                      >
                         <div
                           class="drop-zone compact single-line"
-                          :class="dropZoneClasses('team', [row.teams.gov])"
+                          :class="dropZoneClasses('team', [rowTeamId(row, position.key)])"
                           @dragover.prevent
-                          @drop="dropTeam(row, 'gov')"
+                          @drop="dropTeam(row, position.key)"
                         >
                           <span
-                            v-if="row.teams.gov"
+                            v-if="rowTeamId(row, position.key)"
                             :class="[
                               'pill',
                               'draggable',
                               'team-pill',
-                              ...entityPillClasses('team', row.teams.gov),
+                              ...entityPillClasses('team', rowTeamId(row, position.key)),
                             ]"
-                            :title="teamPillTitle(row.teams.gov)"
-                            :draggable="canDragEntity('team', row.teams.gov)"
-                            @dragstart="onDragStart('team', row.teams.gov)"
+                            :title="teamPillTitle(rowTeamId(row, position.key))"
+                            :draggable="canDragEntity('team', rowTeamId(row, position.key))"
+                            @dragstart="onDragStart('team', rowTeamId(row, position.key))"
                             @dragend="onDragEnd"
-                            @mouseenter="onEntityHover('team', row.teams.gov)"
-                            @mouseleave="onEntityHoverEnd('team', row.teams.gov)"
-                            @click.stop="selectDetail('team', row.teams.gov)"
+                            @mouseenter="onEntityHover('team', rowTeamId(row, position.key))"
+                            @mouseleave="onEntityHoverEnd('team', rowTeamId(row, position.key))"
+                            @click.stop="selectDetail('team', rowTeamId(row, position.key))"
                           >
-                            <span class="team-pill-name">{{ teamName(row.teams.gov) }}</span>
+                            <span class="team-pill-name">{{
+                              teamName(rowTeamId(row, position.key))
+                            }}</span>
                             <span
-                              v-if="teamWinBadge(row.teams.gov)"
-                              :class="['team-win-badge', teamWinBadgeClass(row.teams.gov)]"
+                              v-if="teamWinBadge(rowTeamId(row, position.key))"
+                              :class="[
+                                'team-win-badge',
+                                teamWinBadgeClass(rowTeamId(row, position.key)),
+                              ]"
                             >
-                              {{ teamWinBadge(row.teams.gov) }}
-                            </span>
-                          </span>
-                          <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
-                        </div>
-                      </td>
-                      <td class="team-col">
-                        <div
-                          class="drop-zone compact single-line"
-                          :class="dropZoneClasses('team', [row.teams.opp])"
-                          @dragover.prevent
-                          @drop="dropTeam(row, 'opp')"
-                        >
-                          <span
-                            v-if="row.teams.opp"
-                            :class="[
-                              'pill',
-                              'draggable',
-                              'team-pill',
-                              ...entityPillClasses('team', row.teams.opp),
-                            ]"
-                            :title="teamPillTitle(row.teams.opp)"
-                            :draggable="canDragEntity('team', row.teams.opp)"
-                            @dragstart="onDragStart('team', row.teams.opp)"
-                            @dragend="onDragEnd"
-                            @mouseenter="onEntityHover('team', row.teams.opp)"
-                            @mouseleave="onEntityHoverEnd('team', row.teams.opp)"
-                            @click.stop="selectDetail('team', row.teams.opp)"
-                          >
-                            <span class="team-pill-name">{{ teamName(row.teams.opp) }}</span>
-                            <span
-                              v-if="teamWinBadge(row.teams.opp)"
-                              :class="['team-win-badge', teamWinBadgeClass(row.teams.opp)]"
-                            >
-                              {{ teamWinBadge(row.teams.opp) }}
+                              {{ teamWinBadge(rowTeamId(row, position.key)) }}
                             </span>
                           </span>
                           <span v-else class="muted small">{{ $t('チームをドロップ') }}</span>
@@ -3116,6 +3091,10 @@ const allocationChanged = computed(() => allocationSnapshot() !== savedSnapshot.
 
 function currentEditableTeamNum(): 2 | 4 {
   return editableTeamNum.value ?? inferDrawTeamNum(allocation.value[0]?.teams)
+}
+
+function rowTeamId(row: DrawAllocationRow, position: DrawTeamPosition): string {
+  return drawTeamId(row.teams, position, currentEditableTeamNum())
 }
 
 function createEmptyAllocationRow(): DrawAllocationRow {
