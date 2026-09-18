@@ -4304,3 +4304,142 @@ Important boundaries:
 
 The next unresolved Phase 4 finding is **P4-10: tournament import cleanup failures are discarded**.
 
+## Phase 19 — Tournament import cleanup repair visibility (P4-10)
+
+P4-10 was addressed by making import cleanup outcomes explicit and durable.
+
+### Previous behavior
+
+When tournament import failed after the central Tournament had already been created, cleanup attempted to remove:
+
+- the central Tournament;
+- imported AuditLog rows;
+- TournamentMember rows;
+- the per-tournament database;
+- the importing user's tournament reference;
+- a newly created Style, when applicable.
+
+These cleanup operations were executed with `Promise.allSettled`, but rejected cleanup results were discarded.
+
+The caller then received only the original import error.
+
+This meant an orphan Tournament/database/style/reference could remain with no persistent indication that cleanup itself had failed.
+
+### Named cleanup steps
+
+Import cleanup now runs as named steps:
+
+- `tournament`;
+- `audit_logs`;
+- `memberships`;
+- `tournament_database`;
+- `user_tournament_reference` when an actor is known;
+- `created_style` when import created a Style.
+
+All cleanup operations are still attempted independently. One failed cleanup step does not prevent the remaining cleanup steps from running.
+
+After settlement, failures are collected with:
+
+- step name;
+- error name;
+- error message.
+
+Commit:
+
+- `a73ae7416f3f9fc5bcedd61762dcddabf622538e` — surface incomplete tournament import cleanup.
+
+### Repair record
+
+If every cleanup step succeeds, import preserves the previous behavior and rethrows the original import failure.
+
+If one or more cleanup steps fail, the operation is instead classified as an incomplete-cleanup server failure.
+
+The server now:
+
+1. emits an error through the normal structured server logger;
+2. attempts to persist a central AuditLog row with:
+   - action `tournament.import.cleanup_failed`;
+   - the failed imported tournament id;
+   - importing actor id when available;
+   - `repairRequired: true`;
+   - failed cleanup step names/errors;
+   - the original import error;
+   - the created Style id when one was involved;
+3. returns HTTP 500 with an explicit "cleanup was incomplete / repair required" message.
+
+The repair AuditLog is written **after** the imported audit-log cleanup step has finished, so a successful `AuditLogModel.deleteMany({ tournamentId })` cannot immediately erase the repair marker.
+
+If persisting the repair AuditLog itself fails, that failure is:
+
+- appended to the cleanup failure set as `cleanup_failure_audit_record`;
+- emitted through the server logger as a second error.
+
+Thus there is still an external operational signal even when the central audit store itself is unavailable.
+
+### Failure-injection regression
+
+Added to:
+
+- `packages/server/test/integration.part3.test.ts`.
+
+The regression:
+
+1. creates and exports a valid tournament containing a Team;
+2. rewrites the exported Team collection to contain the same `_id` twice, forcing import to fail during collection insertion after the new central Tournament has already been created;
+3. injects an independent failure into the cleanup `TournamentModel.deleteOne` call;
+4. submits the malformed backup through the real import endpoint.
+
+It verifies:
+
+- the response is HTTP 500 rather than the original ordinary import error;
+- the response states that cleanup was incomplete and repair is required;
+- a `tournament.import.cleanup_failed` AuditLog exists;
+- `metadata.repairRequired === true`;
+- the repair record names the `tournament` cleanup step;
+- the injected cleanup error message is retained;
+- the original import error is recorded;
+- the orphan Tournament genuinely still exists, demonstrating that the repair record corresponds to a real residual resource rather than only a simulated warning.
+
+The test then explicitly removes the intentionally orphaned resource.
+
+Commit:
+
+- `9f48b47c1e79e5a9ed1f1c85b1c8bccb875f3c93` — test import cleanup repair recording.
+
+### CI
+
+Final implementation/test head before this log update:
+
+- `9f48b47c1e79e5a9ed1f1c85b1c8bccb875f3c93`
+
+GitHub Actions:
+
+- run `35386459800`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-10 status and boundaries
+
+**P4-10 is closed: cleanup failures are no longer silently discarded.**
+
+An incomplete import cleanup now leaves an actionable persistent repair signal whenever the central audit store is available, plus a structured server error log in all cases where logging remains available.
+
+This does not make import rollback transactionally atomic:
+
+- a failed cleanup can still leave an orphan resource;
+- the system now identifies that state instead of pretending the original import failure fully rolled back;
+- automatic asynchronous repair is not introduced here;
+- process termination before the catch/cleanup path runs remains outside in-process compensation.
+
+### Phase 4 closure
+
+All numbered Phase 4 findings P4-01 through P4-10 have now been addressed or closed with explicit tested semantics and documented boundaries.
+
+The next unresolved high-value audit family is Phase 5 security/identity, beginning with **P5-02: participant submission authorization is tournament-scoped but not cryptographically bound to the claimed participant entity**.
+
