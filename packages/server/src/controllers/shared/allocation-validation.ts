@@ -36,7 +36,6 @@ const adjudicatorStandardFilters = [
 
 const nonNegativeNumberSchema = z.number().finite().min(0)
 const nonNegativeIntegerSchema = z.number().int().min(0)
-const positiveRoundSchema = z.number().int().min(1)
 
 const teamStandardOptionsSchema = z
   .object({
