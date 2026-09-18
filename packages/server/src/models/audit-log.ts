@@ -15,6 +15,13 @@ const auditLogSchema = new Schema(
     ip: { type: String, required: false },
     userAgent: { type: String, required: false },
     metadata: { type: Schema.Types.Mixed, required: false },
+    outcome: {
+      type: String,
+      enum: ['pending', 'succeeded', 'failed'],
+      required: false,
+      index: true,
+    },
+    finalizedAt: { type: Date, required: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 )
