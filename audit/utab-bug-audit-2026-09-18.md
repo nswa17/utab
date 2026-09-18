@@ -1883,3 +1883,419 @@ Phase 6 found two result-affecting defects that should be treated above ordinary
 - legitimate null/non-applicable score metrics can be coerced to zero, creating submission/raw divergence and potentially changing score/margin tiebreak ordering across mixed scored/scoreless rounds.
 
 It also found a mathematically incorrect compiled vote_rate and several archival/report-provenance issues that can make historical snapshot exports disagree with the ballots and metadata shown alongside them.
+
+
+## Phase 7 — Web state, races, and API-contract audit
+
+### Scope and method
+
+Phase 7 traced the Vue/Pinia side of the application with emphasis on state ownership rather than visual polish:
+
+    route params
+      -> page refresh orchestration
+      -> Pinia fetch/mutation lifecycle
+      -> shared arrays
+      -> API request/response contracts
+      -> loading/error state
+      -> user-visible actions
+
+The audit specifically looked for:
+
+- stale responses overwriting newer route state,
+- cross-tournament state contamination,
+- mutation-versus-navigation races,
+- double submit / timeout ambiguity,
+- swallowed API errors,
+- frontend/server schema drift,
+- loading overlays that still permit actions on stale data,
+- and assumptions that a store contains only the current tournament.
+
+No production code was changed in this phase.
+
+### P7-01 — HIGH: AdminRoundResult can permanently bind the room summary to another tournament's draw
+
+Status: confirmed cross-tournament state bug.
+Area:
+- packages/web/src/stores/draws.ts
+- packages/web/src/views/admin/round/AdminRoundResult.vue
+
+The draw store intentionally behaves differently for a round-scoped fetch. When fetchDraws(tournamentId, round) is used, it preserves draw rows belonging to other tournaments while replacing only the requested tournament/round slice.
+
+AdminRoundResult performs exactly that round-scoped fetch:
+
+    draws.fetchDraws(tournamentId.value, round.value)
+
+but selects the draw with:
+
+    draws.draws.find((draw) => Number(draw.round) === round.value)
+
+It does not constrain by tournamentId.
+
+This is not merely a transient old-response race. If the store contains:
+
+    Tournament A / Round 1
+    Tournament B / Round 1
+
+the round-scoped merge can retain both. Because other-tournament rows are retained ahead of the newly merged tournament rows, find(round === 1) can continue returning Tournament A's Round 1 even after Tournament B's fetch has completed successfully.
+
+The resulting roomOrderSummaries then combine:
+
+- Tournament A's draw/allocation,
+- Tournament B's raw results,
+- Tournament B's team/adjudicator/venue stores.
+
+Names can fall back to raw IDs when the A IDs do not exist in B. More importantly, the administrator is being shown the wrong room/matchup structure while editing B's raw results.
+
+Minimal regression case:
+
+1. Open Tournament A, Round 1 raw results so the draw store contains A/R1.
+2. Navigate to Tournament B, Round 1 raw results without a full draw-store reset.
+3. Let the B round-scoped fetch complete.
+4. Expected: drawForRound is B/R1.
+5. Current selector: first row whose round is 1, which can be A/R1.
+
+Recommended fix:
+- every selector over shared/multi-tournament draw state must key on both tournamentId and round;
+- preferably expose a store helper such as getDraw(tournamentId, round) so components cannot accidentally use round as a globally unique key;
+- add a two-tournament regression test with the same round number.
+
+### P7-02 — HIGH/MEDIUM: entity mutations can invalidate the new tournament's fetch and inject the old tournament into single-tournament stores
+
+Status: confirmed mutation/navigation race pattern.
+Area: multiple current-tournament Pinia stores, including teams, speakers, adjudicators, venues, institutions, and rounds.
+
+These stores correctly protect fetch-versus-fetch races with a latestFetchSequence. The mutation methods use the same sequence counter, however, and mutate the current array without verifying that the route/store context still belongs to the mutation's tournament.
+
+A representative create race is:
+
+1. On Tournament A, call createTeam(A, ...). Request remains in flight.
+2. Navigate to Tournament B.
+3. fetchTeams(B) starts and captures sequence N.
+4. A's create request resolves.
+5. createTeam calls advanceFetchSequence(), making the sequence N+1, then unshifts the new A team into teams.value.
+6. fetchTeams(B) resolves with its older sequence N and is discarded as stale.
+7. The Tournament B screen can now hold Tournament A team rows until another successful refresh.
+
+This is worse than an ordinary late-response race because the mutation itself deliberately invalidates the correct B fetch.
+
+The same structural problem exists in several entity stores that model "the current tournament" as one global array while allowing outstanding mutations from a previous tournament.
+
+Update/delete operations can similarly invalidate the new fetch even when the old entity ID does not match anything in the new array. Creates are the clearest contamination case because they actively insert the old-tournament object.
+
+Recommended fix:
+- capture the mutation tournamentId and only apply local state if the store is still scoped to that tournament;
+- alternatively make entity state keyed by tournamentId rather than one global array;
+- do not use a mutation from tournament A to invalidate an in-flight fetch for tournament B;
+- add deterministic deferred-promise tests covering create(A) -> fetch(B) -> create(A) resolves -> fetch(B) resolves.
+
+### P7-03 — MEDIUM: participant home has a page-level refresh race that can expose stale tournament data while the new tournament is loading
+
+Status: confirmed orchestration race.
+Area: packages/web/src/views/user/participant/UserParticipantHome.vue.
+
+Most individual stores have fetch sequence protection, but the page-level refresh lifecycle does not.
+
+On tournament/mode change the watcher does:
+
+    hasLoaded = false
+    refresh()
+
+refresh() has no request token and unconditionally executes:
+
+    finally {
+      hasLoaded = true
+    }
+
+Therefore an older refresh for Tournament A can finish after a newer refresh for Tournament B has started and set hasLoaded=true for the B route.
+
+The template then stops showing the blocking initial LoadingState because:
+
+    LoadingState if !hasLoaded && isLoading
+    page body otherwise
+
+When hasLoaded is prematurely true while B is still loading, the previous store arrays can be rendered beneath a reload overlay. The overlay explicitly has:
+
+    pointer-events: none
+
+so links/buttons underneath remain interactive.
+
+A concrete sequence is:
+
+1. A page has A rounds/draws in stores.
+2. Navigate quickly to B.
+3. B fetches start; A's older refresh finishes and sets hasLoaded=true.
+4. Before B fetches finish, the B URL can render A round/draw content.
+5. Action links are generated with the B tournamentId but A entity/match IDs.
+
+The server should reject many malformed cross-tournament actions, so this is primarily a UI state-integrity bug rather than a server isolation bypass. It can nevertheless send users into invalid ballot/feedback flows and display the wrong draw.
+
+Recommended fix:
+- use createLatestRequestGate or an equivalent captured tournament token around the whole page refresh;
+- clear or explicitly scope current-tournament arrays on route change;
+- make a loading overlay that is meant to prevent actions actually intercept pointer input;
+- test A -> B navigation with A completing after B starts.
+
+### P7-04 — MEDIUM: raw-result create/update/delete failures are swallowed, refreshed away, and can look successful
+
+Status: confirmed error-contract bug.
+Area:
+- packages/web/src/stores/raw-results.ts
+- packages/web/src/views/admin/round/AdminRoundResult.vue
+
+The raw-results store intentionally catches API failures and returns null:
+
+    createRawResults(...) -> null on API error
+    updateRawResult(...) -> null on API error
+    deleteRawResult(...) -> null on API error
+
+It also stores the server message in raw.error.
+
+The view treats those calls as if failures would throw.
+
+For create:
+
+    await raw.createRawResults(...)
+    await refresh()
+
+For update:
+
+    await raw.updateRawResult(...)
+    await refresh()
+    cancelEdit()
+
+For single delete:
+
+    await raw.deleteRawResult(...)
+    await refresh()
+
+Because the store swallowed the exception, the view continues after a null result. refresh() immediately calls fetchRawResults, and each fetch begins with:
+
+    error.value = null
+
+Thus the original mutation error can disappear before the user sees it.
+
+For update, the editor is also closed even when the update failed.
+
+The surrounding catch blocks mainly catch JSON.parse errors, not the API errors the author appears to expect.
+
+The bulk delete path is a useful positive contrast: confirmDeleteAll checks the returned value before refresh and preserves the error.
+
+Recommended fix:
+- check the returned mutation value before refreshing/closing;
+- or standardize store mutation contracts to throw and let views catch;
+- never reuse one error ref in a way where an automatic follow-up GET erases the failed mutation's message;
+- add tests for 400/409/500 on create/update/delete and verify editor state/error text remains visible.
+
+### P7-05 — MEDIUM: browser ballot/feedback timeout can report failure after the server has committed the submission
+
+Status: confirmed ambiguous-outcome failure mode.
+Area: packages/web/src/stores/submissions.ts.
+
+Participant submission POSTs are wrapped in a 15-second AbortController timeout.
+
+When the client aborts it returns null and reports a timeout message. Client cancellation, however, does not provide transaction rollback semantics at the server. The server may already have committed the submission while the response is delayed or lost.
+
+A user can therefore observe:
+
+1. POST reaches the server and is committed.
+2. Response does not reach the browser before 15 seconds.
+3. UI reports "通信がタイムアウトしました".
+4. User retries.
+5. The dedupe unique constraint rejects the retry as an already submitted ballot/feedback.
+
+The database uniqueness protection is good for integrity but does not resolve the user-visible uncertainty: the first submission may actually be the accepted record.
+
+Recommended fix:
+- use a client-generated idempotency/request key for participant submissions, or
+- after an ambiguous timeout, reconcile by querying the actor/match submission state before telling the user to retry;
+- distinguish an idempotent replay from a genuine conflicting duplicate.
+
+### P7-06 — MEDIUM: in-flight Tournament A settings saves can overwrite Tournament B's local form after navigation
+
+Status: confirmed local-state race.
+Area: packages/web/src/views/admin/AdminTournamentHome.vue.
+
+The page has a good refreshGate for reads, but mutation completions are not tied to the tournament that is still being displayed.
+
+For example saveTournament captures A in the request, awaits updateTournament(A), then unconditionally does:
+
+    applyAccessForm(updated.auth, ...)
+    tournamentAutosaveStatus = 'saved'
+
+The tournamentId watcher clears pending timers and flags, but it cannot cancel an already in-flight save and there is no post-await check that:
+
+    tournamentId.value === updated._id
+
+The specialized break/team-ranking/adjudicator-ranking saves have the same pattern and Object.assign the returned configuration directly into shared form objects after await.
+
+Possible sequence:
+
+1. Save A settings.
+2. Navigate to B while request is in flight.
+3. B refresh applies B forms.
+4. A save resolves later.
+5. A's access/break/ranking values are written into the B screen.
+
+A subsequent B edit/save can then persist values copied from A if the user does not notice.
+
+Recommended fix:
+- capture currentTournamentId before every mutation and discard UI-side completion effects when the route no longer matches;
+- optionally cancel obsolete browser requests, but still keep the post-await identity check;
+- apply the same mutation gate pattern used for reads.
+
+### P7-07 — MEDIUM: the server/core support N-team allocations, but the Web draw contract and editor collapse to a two-team gov/opp model
+
+Status: confirmed API/frontend contract mismatch for non-two-team styles.
+Area:
+- packages/core/src/allocations/teams.ts
+- packages/server/src/controllers/allocations.ts
+- packages/server/src/routes/draws.ts
+- packages/web/src/types/draw.ts
+- packages/web/src/views/admin/round/AdminRoundAllocation.vue
+- other Web draw consumers.
+
+The core allocator is explicitly parameterized by:
+
+    config.style.team_num
+
+and standard/random allocation can emit square.teams arrays of that size.
+
+The server preserves this: mapAllocationOut converts exactly two teams into:
+
+    { gov, opp }
+
+but leaves larger team arrays as arrays.
+
+The draw route also accepts broader team shapes, including arrays and four-team forms.
+
+The Web type declares only:
+
+    teams: { gov: string; opp: string }
+
+and AdminRoundAllocation is structurally two-team in many places:
+
+    row.teams.gov
+    row.teams.opp
+    validAllocationRowCount => gov && opp
+    import template => gov,opp
+    unassigned-team logic => gov/opp only
+
+The page is aware that team_num can differ from two—it computes normalizeTournamentTeamNum(style.team_num) and only disables one specific algorithm for non-two-team styles—but the main allocation state remains DrawAllocationRow[] with the two-team shape.
+
+For team_num=4, a successful server team-allocation response can contain:
+
+    teams: [team1, team2, team3, team4]
+
+which violates the frontend type and leaves gov/opp reads undefined.
+
+Participant ballot submission being intentionally limited to two-team styles is not the issue here; that limitation is explicit in both UI and server. The problem is that the admin draw/allocation API advertises and produces a broader shape than the admin Web editor can faithfully represent.
+
+The user manual also describes selecting BP/PDA-style formats, so this should not be treated as an impossible internal-only shape.
+
+Recommended fix:
+- define a shared discriminated allocation-team shape derived from team_num/positions;
+- make admin draw rendering/editing generic over configured positions;
+- or explicitly reject non-two-team tournament creation/admin allocation until the Web surface supports it, rather than accepting a shape the UI cannot operate on.
+
+### P7-08 — LOW: RoundBreakConfig type omits a field required by the server break endpoint, and CI typechecking cannot catch the existing violating test call
+
+Status: confirmed latent type-contract drift.
+Area:
+- packages/web/src/types/round.ts
+- packages/web/src/stores/rounds.ts
+- packages/server/src/routes/rounds.ts
+- packages/web/src/stores/workflow-ui.test.ts
+- packages/web/tsconfig.typecheck.json
+
+The Web type RoundBreakConfig does not contain:
+
+    enabled: boolean
+
+but the server breakConfigSchema requires enabled.
+
+The rounds store exposes saveBreakRound with:
+
+    breakConfig: RoundBreakConfig
+
+and sends it to the server.
+
+The workflow integration test actually calls saveBreakRound with:
+
+    enabled: true
+
+which is outside the declared TypeScript type.
+
+This mismatch is not detected by normal Web typechecking because tsconfig.typecheck.json excludes test/spec files.
+
+A production caller of saveBreakRound using only the declared type can therefore construct a payload the server rejects.
+
+No production call to this store helper was found in the current source, so this is classified as a latent contract bug rather than an active user workflow defect.
+
+Recommended fix:
+- make the frontend request type match the server schema exactly;
+- keep persistent round-break config and break-endpoint request DTO separate if their shapes differ;
+- add contract/type tests that are included in CI, rather than relying on test files excluded from vue-tsc.
+
+### P7-09 — LOW/MEDIUM: current-tournament stores retain the previous tournament's successful data when the next fetch fails
+
+Status: confirmed state-lifetime weakness; amplifies P7-02/P7-03.
+Area: teams/speakers/adjudicators/venues/institutions/rounds and similar stores.
+
+The fetch methods generally:
+
+1. set error=null,
+2. request the new tournament,
+3. replace the array only on success,
+4. set error on failure,
+
+but do not clear the old tournament array when switching scope.
+
+This is sometimes masked by page-level error branches or loading gates, but it means "store contains current tournament data" is not itself an invariant. Components that continue to render, computed selectors that are not tournament-filtered, and mutation code can still observe the old array.
+
+This state model is the enabling condition for several cross-tournament bugs above.
+
+Recommended fix: track the tournamentId associated with each current-scope store payload and expose data only when it matches the requested scope, or key cached state by tournamentId.
+
+### Items investigated and rejected/reduced
+
+1. Simple fetch-vs-fetch races in teams/speakers/adjudicators/venues/rounds: the per-store latestFetchSequence mechanism generally prevents an older GET response from replacing a newer GET response. The larger problems arise when mutations share/invalidate that sequence across tournament scopes, or when page-level loading state is not similarly gated.
+
+2. Ballot/feedback double-click submission: the participant confirmation buttons use submissions.loading in their disabled/loading state and a countdown, so ordinary rapid double-clicks are guarded. P7-05 concerns ambiguous network completion, not a missing button lock.
+
+3. AdminRoundOperationsHub read orchestration: it uses createLatestRequestGate for the page refresh plus separate gates for submissions/history/auto-preview. Its read-side tournament switching is materially safer than UserParticipantHome.
+
+4. AdminTournamentHome read refresh: it captures the tournament ID and uses refreshGate before applying the form, so stale GET completions are guarded. P7-06 is specifically about mutation completions.
+
+5. Compiled frontend/server option definitions: packages/web/src/types/compiled.ts and packages/server/src/types/compiled-options.ts currently match closely, including defaults. No Phase-7 mismatch was found there.
+
+6. Raw-result bulk delete: unlike single create/update/delete, the view checks the returned value before refresh and preserves failure state.
+
+### Positive controls worth preserving
+
+- createLatestRequestGate is small, understandable, and already used effectively in several complex admin screens.
+- Most entity fetches have a sequence guard, which blocks the common "slow old GET overwrites fast new GET" race.
+- AdminRoundOperationsHub and AdminRoundAllocation have substantially better whole-page refresh gating than older/simple pages.
+- Participant ballot and feedback confirmation buttons are disabled while the submission store is loading.
+- Server-side tournament scoping and submission dedupe remain the final integrity boundary for several UI races; the Web issues found here do not by themselves bypass server authorization.
+- The compiled store separately sequences latest-result and preview requests and invalidates stale previews on save/delete paths.
+- Bulk raw-result deletion handles a failed mutation explicitly; that pattern should be reused for single mutations.
+
+### Remediation priority for the later fix phase
+
+1. Fix every draw selector to use the compound key (tournamentId, round), starting with AdminRoundResult.
+2. Introduce explicit tournament scoping into current-entity stores so old-tournament mutation completions cannot invalidate/contaminate new-tournament fetches.
+3. Add a page-level latest-request gate to UserParticipantHome and prevent interaction with stale content while reloads are active.
+4. Fix raw-result mutation contracts so failed create/update/delete operations remain visible and do not close/refresh as success.
+5. Add mutation-completion route guards to AdminTournamentHome.
+6. Add submission timeout reconciliation/idempotency for ambiguous POST outcomes.
+7. Decide whether non-two-team Web allocation is supported; then either implement a generic team-position shape or explicitly reject unsupported styles at the UI/API boundary.
+8. Align RoundBreakConfig/request DTOs and bring contract type tests under CI.
+9. Make store payload scope explicit so a failed fetch cannot leave old data masquerading as current data.
+
+### Phase 7 conclusion
+
+Phase 7 found that UTab's read-side race handling is uneven rather than absent: several stores and newer admin screens use good sequence/gate patterns, but tournament scope is not encoded strongly enough in shared state.
+
+The most concrete defect is AdminRoundResult selecting a draw by round number alone even though the draw store can intentionally contain multiple tournaments. A second systemic problem is that late mutations from Tournament A can invalidate Tournament B's correct fetch and insert A objects into current-tournament stores.
+
+The remaining findings show the same architectural theme: route identity, request identity, and stored-data identity are often tracked separately rather than as one compound state invariant. Encoding tournamentId into store scope/selectors and applying the existing latest-request-gate pattern to mutations would remove several classes of bugs at once.
