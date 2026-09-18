@@ -4703,3 +4703,70 @@ Regression commit:
 **P5-07 is closed.**
 
 Tournament-scoped user administration no longer discloses unrelated tournament membership identifiers.
+
+
+## Phase 23 — Tournament access guessing resistance (P5-08)
+
+P5-08 was confirmed and repaired.
+
+### Previous behavior
+
+Protected-tournament password attempts were covered only by the generic API limiter, whose default allowance is much larger than the authentication limiter. New/rotated tournament passwords also accepted any non-empty string.
+
+The admin UI compounded this by silently installing the fixed password `password` when access protection was enabled without an explicit password.
+
+### Repair
+
+Tournament access attempts now pass through the same stronger slowdown/rate-limit policy used for authentication before request validation and password verification.
+
+New or rotated plaintext tournament access passwords must be at least 10 characters.
+
+This rule intentionally applies only when accepting a new plaintext password. Existing password hashes continue to verify normally, so legacy tournaments are not locked out solely because their historical password was shorter.
+
+The admin tournament UI no longer invents a fixed fallback credential. When protection is enabled for a tournament that has no existing password, an explicit password is required.
+
+Implementation commits:
+
+- `db377cb9a5fb86dff8efb3fb6d9fc1e18f43f8a1` / `44f81832047f4c08a88a22aedfd7153363fb59a4` — password-strength floor;
+- `79d09a86932f209023b49e7298d97e3d2a5a5949` — apply authentication-grade rate limiting to tournament access attempts;
+- `134a725d56ed2693c8aa2bbd53b066ac380cc468` — remove the fixed `password` fallback from the admin UI.
+
+### Regression coverage
+
+The malformed-payload integration test now verifies that both tournament creation and password rotation reject a short password with the explicit minimum-length validation error.
+
+Regression commits:
+
+- `0b07df6b4eb395b3365cfec91c0ea629b1314825`;
+- `9d1f12f1421ce964e2326837bd3c52585e653dec`.
+
+### P5-08 status
+
+**P5-08 is closed for the identified online-guessing/configuration gap.**
+
+The rate limiter remains load-adaptive and configuration-backed, as before. This change does not attempt password-composition rules or forced rotation of existing credentials.
+
+## Phase 24 — Audit tournament-id response fallback (P5-09)
+
+P5-09 was repaired.
+
+`resolveTournamentId` intended to resolve the tournament id in this order:
+
+1. explicit audit event;
+2. request `tournamentId`;
+3. request `id`;
+4. response `data.tournamentId`.
+
+The final response expression had been syntactically detached from the nullish-coalescing chain, so its value was discarded.
+
+The missing `??` has been restored.
+
+Implementation commit:
+
+- `687762a56959b9b100c182f610863e033f5861fa` — restore audit response-body tournament fallback.
+
+### P5-09 status
+
+**P5-09 is closed.**
+
+P5-10 remains documentation/spec reconciliation rather than a confirmed runtime vulnerability.
