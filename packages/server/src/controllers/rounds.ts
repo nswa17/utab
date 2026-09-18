@@ -1280,6 +1280,9 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
 }
 
 export const updateRound: RequestHandler = async (req, res, next) => {
+  let mutationLease: RoundMutationLease | null = null
+  let mutationConnection: Connection | null = null
+  let mutationStarted = false
   try {
     const { id } = req.params
     const {
@@ -1329,6 +1332,7 @@ export const updateRound: RequestHandler = async (req, res, next) => {
     }
     const previousRound = Number((before as any)?.round)
     const nextRound = round === undefined ? previousRound : Number(round)
+
     if (previousRound !== nextRound) {
       const conflict = await RoundModel.exists({
         tournamentId,
@@ -1341,28 +1345,85 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
         return
       }
-      const temporaryRound = -2_000_000_000
+
+      mutationLease = await acquireRoundMutationLease(
+        connection,
+        tournamentId,
+        id,
+        previousRound
+      )
+      if (!mutationLease) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round has active writes; retry round change' }],
+        })
+        return
+      }
+      mutationConnection = connection
+
+      const temporaryRound = temporaryRoundNumber(id)
       const claimed = await RoundModel.updateOne(
-        { _id: id, tournamentId, round: previousRound },
+        {
+          _id: id,
+          tournamentId,
+          round: previousRound,
+          roundMutationLocked: true,
+          roundMutationEpoch: mutationLease.epoch,
+        },
         { $set: { round: temporaryRound } }
       ).exec()
       if (claimed.matchedCount !== 1) {
+        await releaseRoundMutationLease(connection, mutationLease)
+        mutationLease = null
         res.status(409).json({
           data: null,
           errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
         })
         return
       }
+      mutationStarted = true
+
       await moveRoundReferences(connection, tournamentId, [
         { from: previousRound, to: temporaryRound },
       ])
       await moveRoundReferences(connection, tournamentId, [{ from: temporaryRound, to: nextRound }])
+
+      const updated = await RoundModel.findOneAndUpdate(
+        {
+          _id: id,
+          tournamentId,
+          round: temporaryRound,
+          roundMutationLocked: true,
+          roundMutationEpoch: mutationLease.epoch,
+        },
+        { $set: update },
+        { new: true }
+      )
+        .lean()
+        .exec()
+      if (!updated) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+        })
+        return
+      }
+
+      await rewriteStoredRoundReferences(connection, tournamentId, [
+        { from: previousRound, to: nextRound },
+      ])
+      await releaseRoundMutationLease(connection, mutationLease)
+      mutationLease = null
+      res.json({ data: updated, errors: [] })
+      return
     }
+
     const updated = await RoundModel.findOneAndUpdate(
       {
         _id: id,
         tournamentId,
-        ...(previousRound !== nextRound ? { round: -2_000_000_000 } : { round: previousRound }),
+        round: previousRound,
+        roundMutationLocked: { $ne: true },
       },
       { $set: update },
       { new: true }
@@ -1376,110 +1437,20 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       })
       return
     }
-    if (previousRound !== nextRound) {
-      await rewriteStoredRoundReferences(connection, tournamentId, [
-        { from: previousRound, to: nextRound },
-      ])
-    }
+
     res.json({ data: updated, errors: [] })
   } catch (err) {
+    if (mutationLease && mutationConnection && !mutationStarted) {
+      try {
+        await releaseRoundMutationLease(mutationConnection, mutationLease)
+      } catch {
+        // If release fails, the mutation lock fails closed.
+      }
+    }
     if (isDuplicateKeyError(err)) {
       res
         .status(409)
         .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
-      return
-    }
-    next(err)
-  }
-}
-
-export const previewBreakCandidates: RequestHandler = async (req, res, next) => {
-  try {
-    const { id } = req.params
-    const {
-      tournamentId,
-      source = 'submissions',
-      sourceRounds,
-      size,
-    } = req.body as {
-      tournamentId: string
-      source?: 'submissions' | 'raw'
-      sourceRounds?: number[]
-      size?: number
-    }
-    if (!ensureTournamentId(res, tournamentId)) return
-    if (!ensureRoundId(res, id)) return
-
-    const tournament = await TournamentModel.findById(tournamentId).lean().exec()
-    const compileOptions = withTournamentTeamRankingPriority(
-      DEFAULT_COMPILE_OPTIONS,
-      asRecord((tournament as any)?.user_defined_data)
-    )
-
-    const connection = await getTournamentConnection(tournamentId)
-    const RoundModel = getRoundModel(connection)
-    const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
-    if (!roundDoc) {
-      notFound(res, 'Round not found')
-      return
-    }
-
-    const roundNumber = Number((roundDoc as any).round)
-    if (!Number.isInteger(roundNumber) || roundNumber < 2) {
-      badRequest(res, 'Break candidates require a target round number of 2 or later')
-      return
-    }
-
-    const normalizedSourceRounds = normalizeBreakSourceRounds(roundNumber, sourceRounds)
-    const effectiveSourceRounds =
-      normalizedSourceRounds.length > 0
-        ? normalizedSourceRounds
-        : Array.from({ length: roundNumber - 1 }, (_, index) => index + 1)
-    const requestedSizeRaw = Number(size)
-    const requestedSize =
-      Number.isInteger(requestedSizeRaw) && requestedSizeRaw >= 1 ? requestedSizeRaw : null
-
-    const { payload } = await buildCompiledPayload(
-      tournamentId,
-      source,
-      effectiveSourceRounds,
-      compileOptions
-    )
-    const TeamModel = getTeamModel(connection)
-    const teams = await TeamModel.find({ tournamentId }).lean().exec()
-    const teamNameById = new Map<string, string>()
-    const availabilityByTeamId = new Map<string, boolean>()
-    teams.forEach((team: any) => {
-      const teamId = String(team?._id ?? '').trim()
-      if (!teamId) return
-      teamNameById.set(teamId, String(team?.name ?? teamId))
-      const detail = Array.isArray(team?.details)
-        ? team.details.find((item: any) => Number(item?.r) === roundNumber)
-        : null
-      availabilityByTeamId.set(teamId, detail?.available !== false)
-    })
-
-    const baseCandidates = buildBreakCandidatesFromCompiledPayload(payload, teamNameById)
-    const candidates = annotateBreakCandidatesForPreview(
-      baseCandidates,
-      requestedSize,
-      availabilityByTeamId
-    )
-
-    res.json({
-      data: {
-        roundId: id,
-        round: roundNumber,
-        source,
-        sourceRounds: effectiveSourceRounds,
-        size: requestedSize,
-        candidates,
-      },
-      errors: [],
-    })
-  } catch (err: any) {
-    if ((err as any)?.status === 404) {
-      notFound(res, 'Tournament not found')
       return
     }
     next(err)
@@ -1627,6 +1598,8 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteRound: RequestHandler = async (req, res, next) => {
+  let mutationLease: RoundMutationLease | null = null
+  let mutationConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -1640,18 +1613,53 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedRound = Number((existing as any)?.round)
+    mutationLease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      id,
+      deletedRound
+    )
+    if (!mutationLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round has active writes; retry deletion' }],
+      })
+      return
+    }
+    mutationConnection = connection
+
     await deleteRoundDependencies(connection, tournamentId, [deletedRound])
-    const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+    const deleted = await RoundModel.findOneAndDelete({
+      _id: id,
+      tournamentId,
+      round: deletedRound,
+      roundMutationLocked: true,
+      roundMutationEpoch: mutationLease.epoch,
+    })
+      .lean()
+      .exec()
     if (!deleted) {
-      notFound(res, 'Round not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+      })
       return
     }
     if (Number.isInteger(deletedRound) && deletedRound >= 1) {
       await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
       await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
     }
+    mutationLease = null
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (mutationLease && mutationConnection) {
+      try {
+        await releaseRoundMutationLease(mutationConnection, mutationLease)
+      } catch {
+        // Release failure leaves the round fail-closed until stale-write recovery/manual retry.
+      }
+    }
   }
 }
