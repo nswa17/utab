@@ -3791,4 +3791,225 @@ describe('Server integration', () => {
     )
   })
 
+
+  it('binds participant submissions to authenticated tournament entities', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'entity-binding-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'entity-binding-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Entity Binding Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: true,
+        evaluator_in_team: 'team',
+        chairs_always_evaluated: true,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerARes = await organizer
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Bound Speaker A' })
+    const speakerBRes = await organizer
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Bound Speaker B' })
+    expect(speakerARes.status).toBe(201)
+    expect(speakerBRes.status).toBe(201)
+    const speakerAId = String(speakerARes.body.data._id)
+    const speakerBId = String(speakerBRes.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Bound Team A',
+      details: [{ r: 1, speakers: [speakerAId] }],
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Bound Team B',
+      details: [{ r: 1, speakers: [speakerBId] }],
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const judge1Res = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Bound Judge 1', preev: 7 })
+    const judge2Res = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Bound Judge 2', preev: 6 })
+    expect(judge1Res.status).toBe(201)
+    expect(judge2Res.status).toBe(201)
+    const judge1Id = String(judge1Res.body.data._id)
+    const judge2Id = String(judge2Res.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [judge1Id],
+          panels: [judge2Id],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const anonymous = request.agent(app)
+    const anonymousAccess = await anonymous
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'skip' })
+    expect(anonymousAccess.status).toBe(200)
+
+    const anonymousBallot = await anonymous.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerAId],
+      speakerIdsB: [speakerBId],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: judge1Id,
+    })
+    expect(anonymousBallot.status).toBe(401)
+    expect(anonymousBallot.body.errors?.[0]?.message).toContain(
+      'Authenticated participant identity'
+    )
+
+    const addJudgeUser = await organizer.post(`/api/tournaments/${tournamentId}/users`).send({
+      username: 'bound-judge-user',
+      password: 'password123',
+      role: 'adjudicator',
+      entityType: 'adjudicator',
+      entityId: judge1Id,
+    })
+    expect(addJudgeUser.status).toBe(201)
+    expect(addJudgeUser.body.data.entityType).toBe('adjudicator')
+    expect(addJudgeUser.body.data.entityId).toBe(judge1Id)
+
+    const judgeUser = request.agent(app)
+    expect(
+      (
+        await judgeUser
+          .post('/api/auth/login')
+          .send({ username: 'bound-judge-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await judgeUser
+          .post(`/api/tournaments/${tournamentId}/access`)
+          .send({ action: 'skip' })
+      ).status
+    ).toBe(200)
+
+    const impersonation = await judgeUser.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerAId],
+      speakerIdsB: [speakerBId],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: judge2Id,
+    })
+    expect(impersonation.status).toBe(403)
+    expect(impersonation.body.errors?.[0]?.message).toContain(
+      'does not match the authenticated participant identity'
+    )
+
+    const ownBallot = await judgeUser.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerAId],
+      speakerIdsB: [speakerBId],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: judge1Id,
+    })
+    expect(ownBallot.status).toBe(201)
+    expect(ownBallot.body.data.payload.submittedEntityId).toBe(judge1Id)
+
+    const addSpeakerUser = await organizer.post(`/api/tournaments/${tournamentId}/users`).send({
+      username: 'bound-speaker-user',
+      password: 'password123',
+      role: 'speaker',
+      entityType: 'speaker',
+      entityId: speakerAId,
+    })
+    expect(addSpeakerUser.status).toBe(201)
+
+    const speakerUser = request.agent(app)
+    expect(
+      (
+        await speakerUser
+          .post('/api/auth/login')
+          .send({ username: 'bound-speaker-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await speakerUser
+          .post(`/api/tournaments/${tournamentId}/access`)
+          .send({ action: 'skip' })
+      ).status
+    ).toBe(200)
+
+    const teamFeedback = await speakerUser.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: judge1Id,
+      score: 8,
+      submittedEntityId: teamAId,
+    })
+    expect(teamFeedback.status).toBe(201)
+    expect(teamFeedback.body.data.payload.submittedEntityId).toBe(teamAId)
+
+    const otherTeamFeedback = await speakerUser.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: judge2Id,
+      score: 8,
+      submittedEntityId: teamBId,
+    })
+    expect(otherTeamFeedback.status).toBe(403)
+  })
+
 })
