@@ -2251,6 +2251,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
 export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
   let mutationLeases: RoundMutationLease[] = []
   let mutationConnection: Connection | null = null
+  let namespaceLease: RoundNamespaceLease | null = null
+  let namespaceConnection: Connection | null = null
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
     if (!ensureTournamentId(res, tournamentId)) return
@@ -2273,6 +2275,15 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const filter: Record<string, unknown> = { tournamentId, _id: { $in: idList } }
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry bulk deletion' }],
+      })
+      return
+    }
+    namespaceConnection = connection
     const targets = await RoundModel.find(filter).select({ _id: 1, round: 1 }).lean().exec()
     const targetRows = targets
       .map((item: any) => ({ id: String(item?._id ?? ''), round: Number(item?.round) }))
@@ -2352,6 +2363,13 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
         await releaseRoundMutationLeases(mutationConnection, mutationLeases)
       } catch {
         // Failed deletions release best-effort; stale write counts are recovered separately.
+      }
+    }
+    if (namespaceLease && namespaceConnection) {
+      try {
+        await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
       }
     }
   }
@@ -2921,6 +2939,8 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
 export const deleteRound: RequestHandler = async (req, res, next) => {
   let mutationLease: RoundMutationLease | null = null
   let mutationConnection: Connection | null = null
+  let namespaceLease: RoundNamespaceLease | null = null
+  let namespaceConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -2928,6 +2948,15 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
     if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry deletion' }],
+      })
+      return
+    }
+    namespaceConnection = connection
     const existing = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!existing) {
       notFound(res, 'Round not found')
@@ -2994,6 +3023,13 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
         await releaseRoundMutationLease(mutationConnection, mutationLease)
       } catch {
         // Release failure leaves the round fail-closed until stale-write recovery/manual retry.
+      }
+    }
+    if (namespaceLease && namespaceConnection) {
+      try {
+        await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
       }
     }
   }
