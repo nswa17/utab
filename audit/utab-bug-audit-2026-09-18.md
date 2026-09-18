@@ -6269,3 +6269,215 @@ No Phase 8 closure regression failed.
 - **P8-05: closed under an explicit mixed-provenance ZIP contract** — current attachments are named and documented as current rather than historical.
 - **P8-06: closed** — detailed result exports carry both creation and correction timestamps.
 - **P8-08: closed** — destructive Round lifecycle paths now have mid-operation failure-injection/compensation regressions.
+
+
+## Phase 41 — Public DTO / security-roadmap reconciliation (P5-10)
+
+P5-10 was a documentation/specification drift finding rather than a confirmed runtime exposure.
+
+### Why the old text was misleading
+
+The Phase 0 / Phase 3 / Phase 4 security-roadmap text still described the February 2026 contract as if it were the current one.
+
+That older text said, among other things:
+
+- Tournament `options` were entirely non-public;
+- Round `teamAllocationOpened` / `adjudicatorAllocationOpened` were non-public;
+- raw `userDefinedData` was described as categorically absent without distinguishing reconstructed participant-safe Round settings;
+- a closed team draw implied an empty Draw allocation;
+- Results and Compiled objects were participant-facing view resources;
+- RawResults GET required Tournament Access rather than Tournament Admin;
+- Team public shape used an older `institution` / `speakers` description rather than the current reconstructed `template.speakers` DTO.
+
+Those statements no longer matched the implementation and existing participant workflows.
+
+### Current contract documented
+
+`docs/security-roadmap.md` now explicitly distinguishes the 2026-02 historical implementation log from the current 2026-09-18 contract.
+
+The current public/view table records the actual sanitizer/route behavior:
+
+#### Tournament
+
+Public DTO may contain:
+
+- `_id`;
+- `name`;
+- `style`;
+- `total_round_num`;
+- `current_round_num`;
+- `hidden`;
+- `auth.access.required`;
+- selected `options.style` participant-facing keys only:
+  - `team_num`;
+  - `score_weights`;
+  - `side_labels`;
+  - `side_labels_short`;
+  - `speaker_sequence`;
+  - `range`;
+  - `adjudicator_range`;
+  - `roles`.
+
+Arbitrary `options`, password material, raw `user_defined_data`, and `createdBy` are not passed through.
+
+Tournament list remains its own visibility-filtered public path; direct Tournament GET uses the Tournament View boundary.
+
+#### Team
+
+Public Team DTO is reconstructed as:
+
+    _id
+    tournamentId
+    name
+    template.speakers
+
+Other template fields, `details`, and `userDefinedData` are omitted.
+
+#### Speaker / Adjudicator / Venue / Institution
+
+The participant-facing DTO is limited to:
+
+    _id
+    tournamentId
+    name
+
+In particular:
+
+- Adjudicator `preev` and `details` are not public;
+- Institution category/priority are not in the public DTO;
+- raw entity `userDefinedData` is not exposed.
+
+#### Round
+
+Public Round DTO includes workflow flags needed by participant clients:
+
+- `motions` plus `motionOpened`;
+- `teamAllocationOpened`;
+- `adjudicatorAllocationOpened`;
+- a **reconstructed participant-safe `userDefinedData` subset**.
+
+The safe subset is explicitly listed in the roadmap:
+
+- `hidden`;
+- `evaluate_from_adjudicators`;
+- `evaluate_from_teams`;
+- `chairs_always_evaluated`;
+- `no_speaker_score`;
+- `allow_low_tie_win`;
+- `allow_score_winner_mismatch`;
+- `score_by_matter_manner`;
+- `poi`;
+- `best`;
+- `evaluator_in_team`;
+- `ballot_submitter_roles`.
+
+This is not raw object passthrough.
+
+Motions are returned only when `motionOpened=true`.
+
+Hidden Rounds remain excluded from non-admin lists and return 404 through the non-admin direct-get path.
+
+#### Draw
+
+The two visibility flags are documented as independent.
+
+- both `drawOpened=false` and `allocationOpened=false`:
+  - `allocation=[]`;
+- team draw closed but adjudicator allocation open:
+  - allocation rows remain;
+  - team ids are masked to empty strings;
+  - chair/panel/trainee assignments remain visible;
+- adjudicator allocation closed:
+  - adjudicator role arrays are empty;
+- hidden-round Draws are filtered from non-admin responses.
+
+This matches the current participant allocation workflow.
+
+#### Result / Compiled / RawResults
+
+The roadmap no longer claims these are participant-view resources.
+
+Current routes require `requireTournamentAdmin` for GET as well as mutation:
+
+- Results: admin-only;
+- Compiled: admin-only;
+- RawResults: admin-only.
+
+Result/Compiled sanitizer helper functions can still exist internally without implying a public HTTP route.
+
+### Historical Phase 3 / Phase 4 entries
+
+The February progress entries were retained as history but relabeled as historical.
+
+A dated 2026-09-18 "current difference" section now states the live route and DTO boundaries so future security review does not interpret an old completed-roadmap snapshot as the active API specification.
+
+Documentation commits:
+
+- `ff972ddcaf66adb80b6824a1308fdb2ba01748ad` — reconcile the public DTO table and obsolete Phase 3/4 route statements;
+- `9b348b826ee4178b7205d0eb46109a0f44cc4b5f` — clarify Tournament list/direct-read distinction and raw-vs-reconstructed userDefinedData wording.
+
+### Runtime regression contract
+
+Documentation reconciliation was paired with explicit sanitizer unit coverage so future implementation drift is visible.
+
+`packages/server/test/response-sanitizer.unit.test.ts` now additionally verifies:
+
+1. Team reconstruction:
+   - only ids/name + `template.speakers`;
+   - no arbitrary template field;
+   - no details;
+   - no entity `userDefinedData`;
+   - no `createdBy`.
+
+2. Speaker / Adjudicator / Venue / Institution:
+   - only `_id`, `tournamentId`, `name`;
+   - fields such as `preev`, category/priority, details and private metadata do not pass through.
+
+3. Tournament:
+   - all currently approved style override keys survive;
+   - arbitrary top-level/options/style keys do not;
+   - password hash and raw user-defined metadata do not;
+   - only `auth.access.required` survives from auth.
+
+4. Round:
+   - participant-safe settings are reconstructed exactly;
+   - unrelated `userDefinedData` keys and break metadata do not pass through;
+   - closed motions are hidden and opened motions are returned.
+
+Regression commit:
+
+- `fe5f7e71831aa627083c21eb849e7b21c755c764` — lock the participant public DTO contract.
+
+The existing Draw sanitizer tests continue to cover:
+
+- open team draw / closed adjudicator allocation;
+- fully open four-team allocation;
+- closed team draw / open adjudicator allocation with masked teams;
+- both visibility channels closed.
+
+### Verification
+
+CI run `35403385091` on the DTO-test head:
+
+- lint/server typecheck: success;
+- Web typecheck: success;
+- `response-sanitizer.unit.test.ts`: **9/9 passed**;
+- fallback Core rerun: **24/24 files, 118/118 tests passed**;
+- server: **166 passed / 1 failed**.
+
+The sole server failure remains the previously identified participant-history assertion:
+
+    expected "Tournament admin access required"
+    to contain "does not match the authenticated participant identity"
+
+The initial parallel Core run also hit the repository's existing `controllers-dbhandler` legacy draw-shape flake; the workflow fallback immediately reran Core and passed 118/118. No P5-10 regression failed.
+
+The prior Phase 40 head had the complete Web suite at **66/66 files, 342/342 tests passed**; this phase changes only documentation and server sanitizer unit tests, not Web runtime code.
+
+### P5-10 status
+
+**P5-10 is closed as a spec/documentation reconciliation finding.**
+
+The security roadmap no longer tells reviewers that intentional participant-safe data is an accidental exposure, and it no longer describes admin-only Results/Compiled/RawResults endpoints as public/access-level reads.
+
+The implementation remains allowlist/reconstruction based; this phase did not broaden the runtime public response surface.
