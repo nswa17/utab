@@ -1,0 +1,26 @@
+name: Phase 10 server regressions
+
+on:
+  push:
+    branches:
+      - codex/utab-bug-audit-20260918
+
+jobs:
+  server-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C packages/core build
+      - name: Raw speaker score-vector regression
+        run: pnpm -C packages/server exec vitest run test/integration.part2.test.ts -t "rejects raw speaker score vectors that do not match the tournament style"
+      - name: Backup type-preservation regression
+        if: always()
+        run: pnpm -C packages/server exec vitest run test/integration.part3.test.ts -t "restores a tournament from an exported backup zip"
