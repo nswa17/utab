@@ -211,7 +211,13 @@ export function sanitizeInstitutionForPublic(institution: unknown): PlainRecord 
   return pick(source, ['_id', 'tournamentId', 'name'])
 }
 
-export function sanitizeRoundForPublic(round: unknown): PlainRecord {
+export function sanitizeRoundForPublic(
+  round: unknown,
+  publication?: {
+    teamAllocationOpened: boolean
+    adjudicatorAllocationOpened: boolean
+  }
+): PlainRecord {
   const source = asRecord(round)
   const userDefinedData = asRecord(source.userDefinedData)
   const motionOpened = source.motionOpened === true
@@ -220,8 +226,10 @@ export function sanitizeRoundForPublic(round: unknown): PlainRecord {
     ...pick(source, ['_id', 'tournamentId', 'round', 'name']),
     motions,
     motionOpened,
-    teamAllocationOpened: source.teamAllocationOpened !== false,
-    adjudicatorAllocationOpened: source.adjudicatorAllocationOpened !== false,
+    teamAllocationOpened:
+      publication?.teamAllocationOpened ?? source.teamAllocationOpened !== false,
+    adjudicatorAllocationOpened:
+      publication?.adjudicatorAllocationOpened ?? source.adjudicatorAllocationOpened !== false,
     userDefinedData: {
       hidden: userDefinedData.hidden === true,
       evaluate_from_adjudicators: userDefinedData.evaluate_from_adjudicators !== false,
