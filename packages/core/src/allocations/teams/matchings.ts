@@ -29,26 +29,43 @@ export function mGaleShapley(
     rankPointers[t] = 0
   }
 
-  let remaining = [...ts]
-  while (remaining.length > 1) {
-    const ap = remaining[0]
-    for (let i = rankPointers[ap]; i < ranks[ap].length; i++) {
-      const op = ranks[ap][i]
-      if (matching[op].length < cap || isBetter(ranks, op, matching[op], ap)) {
-        if (matching[op].length === cap) {
-          const maxRankMatcher = getMaxRankMatcher(ranks, op, matching[op])
-          rankPointers[maxRankMatcher] += 1
-          matching[maxRankMatcher] = matching[maxRankMatcher].filter((n) => n !== op)
-          matching[op] = matching[op].filter((n) => n !== maxRankMatcher)
-        }
-        matching[ap].push(op)
-        matching[op].push(ap)
-        break
-      }
-      rankPointers[ap] += 1
+  // Each proposal advances exactly one pointer. This gives a finite upper
+  // bound of sum(ranks[t].length) proposals and prevents a team from
+  // repeatedly adding the same opponent when cap > 1.
+  while (true) {
+    const ap = ts.find(
+      (teamId) =>
+        matching[teamId].length < cap &&
+        rankPointers[teamId] < (ranks[teamId]?.length ?? 0)
+    )
+    if (ap === undefined) break
+
+    const op = ranks[ap]?.[rankPointers[ap]]
+    rankPointers[ap] += 1
+    if (
+      op === undefined ||
+      op === ap ||
+      matching[op] === undefined ||
+      matching[ap].includes(op)
+    ) {
+      continue
     }
-    remaining = ts.filter((t) => matching[t].length < cap)
+
+    if (matching[op].length < cap) {
+      matching[ap].push(op)
+      matching[op].push(ap)
+      continue
+    }
+
+    if (!isBetter(ranks, op, matching[op], ap)) continue
+
+    const displaced = getMaxRankMatcher(ranks, op, matching[op])
+    matching[displaced] = matching[displaced].filter((id) => id !== op)
+    matching[op] = matching[op].filter((id) => id !== displaced)
+    matching[ap].push(op)
+    matching[op].push(ap)
   }
+
   return matching
 }
 
