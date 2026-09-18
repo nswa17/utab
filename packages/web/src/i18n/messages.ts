@@ -1629,6 +1629,10 @@ const en = {
     'Counts warnings only for the currently selected ranking criteria against the current draw.',
   'この baseline は 2チーム戦でのみ表示できます。':
     'This baseline is available only for two-team formats.',
+  'この対戦表エディタは現在2チーム戦のみ対応しています。':
+    'The draw editor currently supports only two-team formats.',
+  'この形式の対戦表はServer/Coreでは保持できますが、この画面で編集・自動生成すると情報を失う可能性があるため操作を停止しています。':
+    'Server/Core can preserve this draw format, but editing or auto-generating it in this screen could lose information, so those actions are disabled.',
   'baseline を出すには 2 チーム以上が必要です。':
     'At least two teams are required to show the baseline.',
   'baseline を出すには現在の対戦カードが必要です。':
