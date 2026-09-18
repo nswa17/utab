@@ -3622,3 +3622,128 @@ Intentional/remaining boundaries:
 
 The next high-value server-consistency target is therefore P4-05 (failure atomicity of round lifecycle operations), with P4-06 as a closely related follow-up.
 
+## Phase 14 — Round create/delete failure atomicity (P4-05)
+
+P4-05 was addressed without introducing a MongoDB transaction requirement.
+
+The repository's supported Docker/VPS configuration runs a standalone MongoDB server, and the server integration suite uses `MongoMemoryServer` rather than a replica set. Multi-document transactions therefore cannot be assumed to exist in every supported deployment.
+
+The fix uses fail-closed mutation locks plus compensating rollback for ordinary caught database write failures.
+
+### Round creation
+
+New Rounds are created in an internal mutation-locked state while entity round details are synchronized.
+
+Round-scoped writers cannot acquire a write lease during this interval.
+
+Entity detail creation was changed from rebuilding and replacing complete `details` arrays to conditionally appending only missing round details. The helper records exactly which details it attempted to add and removes those additions if any Team/Adjudicator/Venue write fails.
+
+If entity synchronization or finalization fails:
+
+1. newly added entity details are removed;
+2. newly inserted Round documents are deleted;
+3. the original failure is propagated;
+4. rollback failures are surfaced as an `AggregateError` rather than being discarded.
+
+Bulk creation now assigns Round ObjectIds before `insertMany`, so even an ordered insert that partially succeeds can be cleaned up deterministically by id.
+
+Relevant commits:
+
+- `4372b1e72e0df89237852dbc7a588465124bfa7c` — make entity round-detail creation compensatable;
+- `a1852c0f553314268ce7dc5e4c8f9de4d93e5034` — make single/bulk Round creation compensating and failure-atomic;
+- `a1d15c108cd82aa34def12a3f0dd7a0abd90ef51` — cleanup after the implementation pass.
+
+### Round deletion
+
+Before deleting a Round or a set of Rounds, the server now captures a rollback snapshot of state that the lifecycle operation can destroy or rewrite:
+
+- target Round documents, including internal mutation-coordination state;
+- Draws;
+- Submissions;
+- stored Results;
+- raw team/speaker/adjudicator results;
+- round-specific Team/Adjudicator/Venue detail entries;
+- surviving Round/Draw `userDefinedData` that contains references to the deleted round numbers;
+- tournament-level `user_defined_data` when it contains affected round references.
+
+The destructive sequence still runs under the Phase 12 Round mutation lease.
+
+If any later write fails, the server restores the snapshot before releasing the mutation lease. Deleted documents are upserted by their original `_id`; removed entity round details are re-added only when that round detail is absent; stored round-reference metadata is restored to its pre-delete value.
+
+Entity detail deletion itself was also narrowed from whole-array reconstruction to targeted `$pull` of the deleted round numbers. This removes another P4-06-style stale-array overwrite path.
+
+Relevant commits:
+
+- `29ee1abad8e65852de4d77680925906cb915eab8` — add lifecycle deletion snapshots and restoration helpers;
+- `84438c5779c56fac40c07a8d13894448c89ee872` — apply compensation to single and bulk Round deletion;
+- `9ba9c14d90720e4ebe802d8eb82d08f1e87e2556` — tighten rollback reference handling.
+
+### Failure-injection regressions
+
+`packages/server/test/integration.part4.test.ts` now deliberately injects database failures.
+
+The test verifies:
+
+1. single Round creation fails during Team detail synchronization:
+   - API returns failure;
+   - no Round remains;
+   - no newly created round detail remains on Teams;
+
+2. bulk Round creation fails during the same synchronization:
+   - none of the proposed Rounds remain;
+   - no partial Team round details remain;
+
+3. single Round deletion fails while dependency deletion is in progress:
+   - the Round still exists afterward;
+   - Draw/Result data is restored;
+
+4. single Round deletion fails after the Round and dependencies were already deleted, during entity-detail cleanup:
+   - the Round is restored;
+   - Draw/Result data is restored;
+   - Team round details are restored;
+
+5. a subsequent normal delete succeeds;
+
+6. bulk Round deletion fails after destructive work has begun:
+   - all target Rounds are restored;
+   - stored Results are restored;
+   - a subsequent normal bulk delete succeeds.
+
+Regression commits:
+
+- `9b90843ac035332b81d0889923278de872caefc5` — single lifecycle failure injection;
+- `e41f9793b56af1f9c2b9dae78d6b2445feeef49e` — bulk creation rollback coverage;
+- `d420008a674418e570a8afb6d73db36acbeebeea` — bulk deletion rollback coverage.
+
+### CI
+
+Final head before this log update:
+
+- `d420008a674418e570a8afb6d73db36acbeebeea`
+
+GitHub Actions:
+
+- run `35379734940`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-05 status and boundaries
+
+**P4-05 is closed for ordinary caught database write failures in the supported single and bulk Round create/delete API paths.**
+
+The important remaining boundaries are explicit:
+
+- this is compensating atomicity, not a database transaction;
+- a process crash/kill between writes cannot execute in-memory compensation;
+- a second independent database failure during rollback can still prevent full restoration; that condition is surfaced as an aggregate failure rather than silently reported as a clean rollback;
+- unrelated concurrent entity edits are a P4-06 coordination problem. The new targeted detail writes materially reduce that overwrite surface but do not serialize every Team/Adjudicator/Venue mutation;
+- Round renumber failure atomicity is a related lifecycle concern but is not the original create/delete P4-05 counterexample and should be handled with the remaining P4-06/lifecycle work rather than overstating this closure.
+
+The next remaining Phase 4 target is **P4-06: stale full-array read/modify/write helpers can overwrite concurrent edits**.
+
