@@ -566,11 +566,11 @@ function roundDetailKey(id: unknown, round: number): string {
 async function syncEntityRoundDetailsForCreate(
   tournamentId: string,
   createdRounds: number[]
-): Promise<void> {
+): Promise<() => Promise<void>> {
   const uniqueRounds = Array.from(
     new Set(createdRounds.filter((round) => Number.isInteger(round) && round >= 1))
   )
-  if (uniqueRounds.length === 0) return
+  if (uniqueRounds.length === 0) return async () => {}
 
   const connection = await getTournamentConnection(tournamentId)
   const TeamModel = getTeamModel(connection)
@@ -679,39 +679,31 @@ async function syncEntityRoundDetailsForCreate(
     })
   })
 
-  try {
-    await Promise.all([
-      teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
-      adjudicatorOps.length > 0
-        ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
-        : Promise.resolve(),
-      venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
-    ])
-  } catch (writeError) {
-    const rollbackErrors: unknown[] = []
-    const rollbackModel = async (
-      Model: any,
-      rows: any[],
-      insertedKeys: Set<string>
-    ): Promise<void> => {
-      const ops = rows.flatMap((row: any) => {
-        const rounds = uniqueRounds.filter((roundNumber) =>
-          insertedKeys.has(roundDetailKey(row._id, roundNumber))
-        )
-        return rounds.length > 0
-          ? [
-              {
-                updateOne: {
-                  filter: { _id: row._id, tournamentId },
-                  update: { $pull: { details: { r: { $in: rounds } } } },
-                },
+  const rollbackModel = async (
+    Model: any,
+    rows: any[],
+    insertedKeys: Set<string>
+  ): Promise<void> => {
+    const ops = rows.flatMap((row: any) => {
+      const rounds = uniqueRounds.filter((roundNumber) =>
+        insertedKeys.has(roundDetailKey(row._id, roundNumber))
+      )
+      return rounds.length > 0
+        ? [
+            {
+              updateOne: {
+                filter: { _id: row._id, tournamentId },
+                update: { $pull: { details: { r: { $in: rounds } } } },
               },
-            ]
-          : []
-      })
-      if (ops.length > 0) await Model.bulkWrite(ops, { ordered: false })
-    }
+            },
+          ]
+        : []
+    })
+    if (ops.length > 0) await Model.bulkWrite(ops, { ordered: false })
+  }
 
+  const rollbackInsertedDetails = async (): Promise<void> => {
+    const rollbackErrors: unknown[] = []
     for (const [Model, rows, keys] of [
       [TeamModel, teams, insertedTeamKeys],
       [AdjudicatorModel, adjudicators, insertedAdjudicatorKeys],
@@ -723,15 +715,32 @@ async function syncEntityRoundDetailsForCreate(
         rollbackErrors.push(rollbackError)
       }
     }
-
     if (rollbackErrors.length > 0) {
+      throw new AggregateError(rollbackErrors, 'Failed to roll back entity round-detail creation')
+    }
+  }
+
+  try {
+    await Promise.all([
+      teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
+      adjudicatorOps.length > 0
+        ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
+        : Promise.resolve(),
+      venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
+    ])
+  } catch (writeError) {
+    try {
+      await rollbackInsertedDetails()
+    } catch (rollbackError) {
       throw new AggregateError(
-        [writeError, ...rollbackErrors],
+        [writeError, rollbackError],
         'Failed to roll back entity round-detail creation'
       )
     }
     throw writeError
   }
+
+  return rollbackInsertedDetails
 }
 
 async function syncEntityRoundDetailsForDelete(
