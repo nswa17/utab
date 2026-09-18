@@ -9,7 +9,6 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
   const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
@@ -22,24 +21,20 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchAdjudicators(tournamentId: string) {
-    tournamentScope.activate(tournamentId)
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) adjudicators.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/adjudicators', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return
       }
       adjudicators.value = res.data?.data ?? []
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load adjudicators'
@@ -56,14 +51,17 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/adjudicators', payload)
       const created = res.data?.data
-      if (created && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        adjudicators.value = [created, ...adjudicators.value]
+      if (created) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          adjudicators.value = [created, ...adjudicators.value]
+        }
       }
       return created
     } catch (err: any) {
@@ -85,6 +83,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
@@ -97,11 +96,13 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        adjudicators.value = adjudicators.value.map((item) =>
-          item._id === updated._id ? updated : item
-        )
+      if (updated) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          adjudicators.value = adjudicators.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
@@ -115,12 +116,13 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   }
 
   async function deleteAdjudicator(tournamentId: string, adjudicatorId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/adjudicators/${adjudicatorId}`, { params: { tournamentId } })
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         adjudicators.value = adjudicators.value.filter((item) => item._id !== adjudicatorId)
       }
       return true
@@ -140,6 +142,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
@@ -147,10 +150,10 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
       const deletedCount = Number(res.data?.data?.deletedCount)
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         const deletedIds = new Set(normalizedIds)
-      adjudicators.value = adjudicators.value.filter(
+        adjudicators.value = adjudicators.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
       }
