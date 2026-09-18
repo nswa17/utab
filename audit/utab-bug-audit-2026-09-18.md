@@ -3035,3 +3035,193 @@ The recurring theme is that several boundaries infer structure instead of valida
     asynchronous durability
 
 Those are better Phase 10 targets than mechanically reducing `any` counts.
+
+
+## Phase 10 — Targeted regression tests and minimal counterexamples
+
+### Goal
+
+Phase 10 converts the strongest static findings into executable counterexamples before any production fix is attempted.
+
+The tests deliberately encode invariants rather than the current implementation:
+
+- comparator equality must return 0;
+- comparator direction must be antisymmetric;
+- compiled ranking must not depend on entity input order;
+- aggregation must not silently discard score dimensions;
+- accepted raw-result dimensions must match the tournament style;
+- tournament backup/restore must preserve user-data types.
+
+Production code remains unchanged in this phase, so the new regression tests are expected to fail until Phase 11 fixes the corresponding defects.
+
+### P10-01 — Comparator contract tests reproduce P9-01/P9-02
+
+Added:
+
+- `packages/core/tests/general-sortings-contracts.test.ts`
+
+The new tests check complete ties for:
+
+- `speakerSimpleComparer`
+- `teamSimpleComparer`
+- `adjudicatorSimpleComparer`
+- `speakerComparer`
+- `adjudicatorComparer`
+- `teamComparer`
+
+All six currently return `-1` rather than `0` for complete equality.
+
+A separate anti-symmetry test uses:
+
+    A: sum=140, average=70
+    B: sum=80,  average=80
+
+Observed:
+
+    speakerComparer(A, B) = 1
+    speakerComparer(B, A) = 1
+
+This confirms the comparator is not merely unstable on exact ties; it gives contradictory direction for unequal records.
+
+CI confirmation:
+
+- normal CI run 35361296573;
+- core: 7/7 newly added comparator-contract tests failed for the expected reasons.
+
+### P10-02 — Compiled speaker ranking is directly input-order dependent
+
+Extended:
+
+- `packages/core/tests/results-summarize.test.ts`
+
+Counterexample:
+
+- speaker 1: round averages 70, 70 -> compiled sum 140, average 70;
+- speaker 2: one round average 80 -> compiled sum 80, average 80.
+
+The same raw results are compiled twice with speaker instances in opposite order.
+
+Observed CI result:
+
+    order [1, 2] -> rankings {1: 1, 2: 2}
+    order [2, 1] -> rankings {1: 2, 2: 1}
+
+So P9-01 is confirmed as an externally visible ranking defect, not only a comparator-law violation.
+
+### P10-03 — Core aggregation silently truncates mismatched speaker score vectors
+
+Extended:
+
+- `packages/core/tests/results-summarize.test.ts`
+
+Counterexample:
+
+    ballot/result A scores = [70, 75]
+    ballot/result B scores = [72]
+
+The invariant test expects compilation to reject inconsistent dimensions.
+
+Observed CI result:
+
+    expected function to throw
+    received: no exception
+
+This confirms the current `sumByEach()` minimum-length behavior silently discards the second score dimension.
+
+### P10-04 — Raw speaker API accepts a vector whose length contradicts the configured style
+
+Extended:
+
+- `packages/server/test/integration.part2.test.ts`
+
+Test tournament override:
+
+    score_weights = [1, 1, 1]
+
+Submitted raw speaker result:
+
+    scores = [75]
+
+Expected:
+
+    HTTP 400
+
+Observed in focused server CI:
+
+    HTTP 201
+
+Focused run:
+
+- workflow run 35361576749;
+- exact failing assertion: expected 201 to be 400.
+
+This independently confirms the server-side half of P9-04. The malformed record is accepted before core aggregation sees it.
+
+### P10-05 — Backup round-trip changes an ordinary ISO-looking string into a Date
+
+Extended the existing backup restore integration test in:
+
+- `packages/server/test/integration.part3.test.ts`
+
+Stored user metadata:
+
+    userDefinedData.isoLookingUserText =
+      "2026-09-18T12:34:56.000Z"
+
+Expected after export/import:
+
+    same value, type string
+
+Observed in focused server CI:
+
+    expected "2026-09-18T12:34:56.000Z"
+    received 2026-09-18T12:34:56.000Z as Date
+
+Focused run:
+
+- workflow run 35361576749.
+
+This confirms P9-03 with the actual export/import path and Mongo model rather than only static inspection.
+
+### CI mechanics
+
+The repository's ordinary `pnpm test` stops/falls back at the failing core regressions before a deterministic focused server check is convenient.
+
+A temporary branch-only workflow was therefore added to run only:
+
+1. the raw score-vector regression;
+2. the backup type-preservation regression.
+
+Both failed exactly at the intended assertion. The temporary workflow file was then removed; it is not part of the final branch tree.
+
+Relevant commits:
+
+- `f868509` — comparator contract regressions;
+- `8168c8b` — speaker ranking/order and truncation regressions;
+- `919197a` — raw speaker score-length regression;
+- `07a708d` — backup type-preservation regression;
+- `922caa2` / `ebba770` — temporary focused runner added and removed.
+
+### Findings not converted into failing tests
+
+P9-05 (idempotency completion durability) and P9-06 (audit-log durability) are real implementation gaps, but their desired behavior is partly a product/operational contract.
+
+Creating a failing test now would prematurely choose one of these guarantees:
+
+- response must wait for durable persistence;
+- stale `in_progress` records must self-heal;
+- audit logging is mandatory and mutation failure-coupled;
+- audit logging is explicitly best-effort telemetry.
+
+For Phase 11, the implementation contract should be selected first, then fault-injection tests should be added around that contract. Useful seams would allow delaying/rejecting the idempotency completion write and audit-log write deterministically.
+
+### Phase 10 conclusion
+
+Four high-value defects are now backed by executable minimal counterexamples:
+
+1. comparator contract failure;
+2. speaker ranking depends on input order;
+3. mismatched speaker vectors are silently truncated and are accepted by the raw API;
+4. backup restore changes valid user string types.
+
+These tests fail on the current implementation for the exact reasons predicted in Phase 9. They are suitable as red tests for Phase 11: fixes can now be made without relying on subjective manual verification.
