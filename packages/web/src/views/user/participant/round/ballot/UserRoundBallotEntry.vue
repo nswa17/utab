@@ -699,7 +699,7 @@ const speakerSelectionValid = computed(() => {
 })
 
 const allowLowTieWin = computed(
-  () => roundConfig.value?.userDefinedData?.allow_low_tie_win === true
+  () => roundConfig.value?.userDefinedData?.allow_low_tie_win !== false
 )
 const allowWinnerScoreMismatch = computed(() =>
   roundAllowsWinnerScoreMismatch(roundConfig.value?.userDefinedData)
