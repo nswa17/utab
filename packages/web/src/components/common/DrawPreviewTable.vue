@@ -24,36 +24,20 @@
                 </div>
               </div>
             </th>
-            <th>
+            <th v-for="column in resolvedTeamColumns" :key="`team-head-${column.key}`">
               <div class="draw-header-cell">
                 <SortHeaderButton
-                  :label="govLabel"
-                  :indicator="sortIndicator('gov')"
-                  @click="setSort('gov')"
+                  :label="column.label"
+                  :indicator="sortIndicator(`team:${column.key}`)"
+                  @click="setSort(`team:${column.key}`)"
                 />
-                <div v-if="columnHeaderBadges('gov').length > 0" class="draw-header-badge-list">
+                <div
+                  v-if="columnHeaderBadges(column.key).length > 0"
+                  class="draw-header-badge-list"
+                >
                   <span
-                    v-for="(badge, index) in columnHeaderBadges('gov')"
-                    :key="`gov-badge-${index}-${badge.text}`"
-                    class="draw-header-badge"
-                    :class="`is-${badge.tone ?? 'neutral'}`"
-                  >
-                    {{ badge.text }}
-                  </span>
-                </div>
-              </div>
-            </th>
-            <th>
-              <div class="draw-header-cell">
-                <SortHeaderButton
-                  :label="oppLabel"
-                  :indicator="sortIndicator('opp')"
-                  @click="setSort('opp')"
-                />
-                <div v-if="columnHeaderBadges('opp').length > 0" class="draw-header-badge-list">
-                  <span
-                    v-for="(badge, index) in columnHeaderBadges('opp')"
-                    :key="`opp-badge-${index}-${badge.text}`"
+                    v-for="(badge, index) in columnHeaderBadges(column.key)"
+                    :key="`team-${column.key}-badge-${index}-${badge.text}`"
                     class="draw-header-badge"
                     :class="`is-${badge.tone ?? 'neutral'}`"
                   >
@@ -252,8 +236,9 @@
           <template v-for="row in sortedRows" :key="`preview-${row.key}`">
             <tr>
               <td>{{ row.venueLabel }}</td>
-              <td>{{ row.govName }}</td>
-              <td>{{ row.oppName }}</td>
+              <td v-for="column in resolvedTeamColumns" :key="`team-${row.key}-${column.key}`">
+                {{ previewTeamName(row, column.key) }}
+              </td>
               <td>
                 <div class="draw-win-cell">
                   <span class="draw-win-main">
@@ -432,29 +417,19 @@ import { computed, ref } from 'vue'
 import SortHeaderButton from '@/components/common/SortHeaderButton.vue'
 import type { DrawPreviewRow } from '@/types/draw-preview'
 
-type PreviewSortKey =
-  | 'venue'
-  | 'gov'
-  | 'opp'
-  | 'win'
-  | 'score'
-  | 'chair'
-  | 'panel'
-  | 'trainee'
-  | 'teamSubmission'
-  | 'judgeSubmission'
-  | 'judgeScore'
+type PreviewSortKey = string
 type PreviewSortDirection = 'asc' | 'desc'
 type PreviewSortState = { key: PreviewSortKey; direction: PreviewSortDirection }
 type HeaderBadgeTone = 'open' | 'closed' | 'neutral'
 type HeaderBadge = { text: string; tone?: HeaderBadgeTone }
-type ColumnHeaderBadgeMap = Partial<Record<PreviewSortKey, HeaderBadge[]>>
+type ColumnHeaderBadgeMap = Partial<Record<string, HeaderBadge[]>>
 
 const props = withDefaults(
   defineProps<{
     rows: DrawPreviewRow[]
     govLabel?: string
     oppLabel?: string
+    teamColumns?: Array<{ key: string; label: string }>
     teamVisible?: boolean
     adjudicatorVisible?: boolean
     showSubmissionColumns?: boolean
@@ -473,6 +448,7 @@ const props = withDefaults(
   {
     govLabel: 'Gov',
     oppLabel: 'Opp',
+    teamColumns: () => [],
     teamVisible: true,
     adjudicatorVisible: true,
     showSubmissionColumns: false,
@@ -503,6 +479,14 @@ const sortCollator = new Intl.Collator(['ja', 'en'], {
   numeric: true,
   sensitivity: 'base',
 })
+const resolvedTeamColumns = computed(() =>
+  props.teamColumns.length > 0
+    ? props.teamColumns
+    : [
+        { key: 'gov', label: props.govLabel },
+        { key: 'opp', label: props.oppLabel },
+      ]
+)
 const showSubmissionColumns = computed(() => props.showSubmissionColumns)
 const showJudgeSubmissionColumn = computed(
   () => showSubmissionColumns.value && props.showJudgeSubmissionColumn
@@ -531,10 +515,10 @@ const columnCount = computed(() => {
     Number(showJudgeSubmissionColumn.value) +
     Number(showJudgeScoreColumn.value)
   const detailColumn = Number(showDetailColumn.value)
-  return 7 + scoreColumn + submissionColumns + detailColumn
+  return 5 + resolvedTeamColumns.value.length + scoreColumn + submissionColumns + detailColumn
 })
 
-function columnHeaderBadges(key: PreviewSortKey) {
+function columnHeaderBadges(key: string) {
   return props.columnHeaderBadges?.[key] ?? []
 }
 
@@ -545,14 +529,21 @@ function judgeScoreText(scoreLabel?: string) {
   return `${value} ${judgeScoreValueUnit.value}`
 }
 
+function previewTeamName(row: DrawPreviewRow, key: string) {
+  const explicit = row.teamNames?.[key]
+  if (explicit !== undefined) return explicit
+  if (key === 'gov') return row.govName
+  if (key === 'opp') return row.oppName
+  return ''
+}
+
 function sortValue(row: DrawPreviewRow, key: PreviewSortKey) {
   if (key === 'score' && !showScoreColumn.value) return -1
   if (key === 'teamSubmission' && !showSubmissionColumns.value) return 0
   if (key === 'judgeSubmission' && !showJudgeSubmissionColumn.value) return 0
   if (key === 'judgeScore' && !showJudgeScoreColumn.value) return -1
   if (key === 'venue') return row.venueLabel
-  if (key === 'gov') return row.govName
-  if (key === 'opp') return row.oppName
+  if (key.startsWith('team:')) return previewTeamName(row, key.slice('team:'.length))
   if (key === 'win') return row.winTotal
   if (key === 'score') return row.scoreTotal ?? -1
   if (key === 'chair') return row.chairsLabel
