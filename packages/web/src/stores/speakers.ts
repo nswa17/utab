@@ -9,7 +9,6 @@ export const useSpeakersStore = defineStore('speakers', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
   const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
@@ -22,25 +21,21 @@ export const useSpeakersStore = defineStore('speakers', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchSpeakers(tournamentId: string) {
-    tournamentScope.activate(tournamentId)
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) speakers.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/speakers', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       speakers.value = res.data?.data ?? []
       return speakers.value
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load speakers'
@@ -55,14 +50,17 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name: string
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/speakers', payload)
       const created = res.data?.data
-      if (created && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        speakers.value = [created, ...speakers.value]
+      if (created) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          speakers.value = [created, ...speakers.value]
+        }
       }
       return created
     } catch (err: any) {
@@ -81,6 +79,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name?: string
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
@@ -90,9 +89,13 @@ export const useSpeakersStore = defineStore('speakers', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        speakers.value = speakers.value.map((item) => (item._id === updated._id ? updated : item))
+      if (updated) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          speakers.value = speakers.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
@@ -106,12 +109,13 @@ export const useSpeakersStore = defineStore('speakers', () => {
   }
 
   async function deleteSpeaker(tournamentId: string, speakerId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         speakers.value = speakers.value.filter((item) => item._id !== speakerId)
       }
       return true
@@ -131,6 +135,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
@@ -138,10 +143,10 @@ export const useSpeakersStore = defineStore('speakers', () => {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
       const deletedCount = Number(res.data?.data?.deletedCount)
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         const deletedIds = new Set(normalizedIds)
-      speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
+        speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
