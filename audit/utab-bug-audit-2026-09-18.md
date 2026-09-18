@@ -1570,3 +1570,316 @@ Phase 5 found two separate classes of serious authorization defects:
 The global Style mutation is the strongest Phase-5 finding because it gives an arbitrary self-registered organizer a direct path to alter scoring/style behavior used by tournaments they do not administer.
 
 The access-control roadmap also reveals two regressions from previously marked-complete security work: View and Access have collapsed back into the same predicate, and newly supplied tournament access passwords are again persisted as plaintext until startup maintenance.
+
+
+## Phase 6 — ballot / compile / ranking / export consistency audit
+
+### Scope and method
+
+Phase 6 traced the tournament-result data path end to end:
+
+    ballot / feedback submission
+      -> submission normalization + dedupe
+      -> submission-to-raw adaptation
+      -> core round aggregation
+      -> compiled team/speaker/adjudicator results
+      -> ranking
+      -> saved compiled snapshots
+      -> CSV / ZIP report exports
+
+The audit focused on recomputation after corrections, missing and duplicate data, scoreless rounds, ties, selected-round subsets, historical snapshots, and consistency between submission-source and raw-source compilation.
+
+No production code was changed in this phase.
+
+### P6-01 — HIGH: missing_data_policy does not detect an entirely missing ballot/matchup
+
+Status: confirmed result-integrity bug.
+Area: packages/server/src/controllers/compiled.ts.
+Impact: a tournament can be compiled and saved with an entire drawn matchup missing, even when missing_data_policy='error'; teams in that matchup can disappear from the standings without a server error.
+
+The reports UI correctly knows how many ballots are expected from each draw and displays:
+
+    expected
+    submitted
+    missing
+    duplicates
+    unknown
+
+using buildRoundSubmissionCoverage.
+
+The server-side compiler does not use that expected-submission model. Its MissingDataIssue collection is populated only while iterating submissions that already exist. Registered issues cover cases such as:
+
+    invalid round inside an existing submission
+    invalid matchup inside an existing submission
+    non-finite score
+    missing winner/verdict
+    missing speaker id for a scored slot
+    invalid feedback
+
+There is no draw-versus-submission sweep that says "this expected matchup has no ballot."
+
+This is particularly dangerous because the submission compiler constructs teamInstances from teamIdsWithResults. If Match B has no ballot at all, its teams are not merely marked incomplete; they are absent from the compiled result set.
+
+The current default compile option is missing_data_policy='error', and the user manual describes error-stop as the safe production choice. That guarantee is therefore incomplete.
+
+Minimal regression case:
+
+1. Create one round with two drawn matchups: A-B and C-D.
+2. Submit a valid ballot only for A-B.
+3. Compile selected round with source='submissions' and missing_data_policy='error'.
+4. Expected: HTTP 400 identifying missing ballot(s) for C-D.
+5. Current behavior: no missing-data issue is generated from the absent matchup; compilation can proceed using only the submitted matchup.
+
+The same conceptual gap exists in raw-source compilation: compile_options retains missing_data_policy but the raw builder emits compile_warnings: [] and does not enforce completeness against the draw.
+
+Recommended fix: derive expected ballot keys from selected draws and round submission rules on the server, reconcile them with normalized submissions before aggregation, and feed absent expected keys through the same warn/exclude/error policy. Server enforcement is required even if the UI also displays coverage.
+
+### P6-02 — HIGH: scoreless rounds can be converted to numeric zero tiebreak values and distort mixed-round rankings
+
+Status: confirmed aggregation/source-consistency bug.
+Area: packages/server/src/controllers/compiled.ts + packages/core/src/results/results.ts.
+Impact: legitimate no_speaker_score rounds, byes, or other rounds with null score-derived metrics can inject artificial zeroes into aggregate score/margin statistics; mixed scored + scoreless tournaments can receive incorrect tiebreak values and rankings.
+
+There are two interacting problems.
+
+First, raw-source compilation already distinguishes whether speaker-score data exists:
+
+    if mappedRawSpeakerResults and speakerInstances exist:
+        compileTeamResults(full speaker integration)
+    else:
+        compileTeamResults(simple team-only mode)
+
+Submission-source compilation does not make that distinction. As long as there is a team result, it calls the full speaker-integration overload even when mappedRawSpeakerResults is empty.
+
+A legitimate round with userDefinedData.no_speaker_score=true therefore has team results but no speaker results. Speaker integration correctly produces null score-derived round metrics. The next aggregation step then does:
+
+    Number(result.sum ?? 0)
+    Number(result.margin ?? 0)
+    Number(result.opponent_average ?? 0)
+
+and pushes those zeroes into aggregate arrays.
+
+Consequences:
+
+- an all-scoreless submission compile reports numeric zero score/margin fields where raw-source/simple compilation reports null/non-applicable fields;
+- in a mix of scored and scoreless rounds, the scoreless round participates as an artificial zero in averages and other score-derived tiebreak summaries;
+- default ranking priority includes win, sum, margin, so the distortion can change final ordering when win totals tie;
+- bye rounds whose integrated margin/opponent_average is intentionally null can similarly dilute average_margin/opponent_average by contributing zero.
+
+This behavior bypasses missing_data_policy because scoreless rounds are legitimate, not malformed submissions.
+
+Recommended fix:
+1. Make submission-source and raw-source mode selection consistent.
+2. In core aggregation, preserve null/non-applicable metrics rather than coercing them to zero.
+3. Aggregate each metric over rounds in which that metric is actually defined, with an explicit policy for mixed score/no-score tournaments.
+4. Add cross-source parity tests for no_speaker_score and mixed scored/scoreless rounds.
+
+### P6-03 — MEDIUM: compiled vote_rate is mathematically wrong
+
+Status: confirmed core aggregation bug.
+Area: packages/core/src/results/results.ts.
+
+At round level, vote_rate is a vote/win fraction in [0, 1].
+
+For a two-team round, the code keeps both:
+
+    vote      = signed vote difference (wins - losses)
+    vote_rate = wins / ballots
+
+At compiled level it accumulates signed vote values into votes[id], accumulates ballot counts into accs[id], then computes:
+
+    vote_rate = votes[id] / accs[id]
+
+That is a signed margin rate in [-1, 1], not the round-level vote fraction.
+
+Minimal example:
+
+    ballot 1: win  -> vote = +1
+    ballot 2: loss -> vote = -1
+    acc = 2
+
+Correct aggregate vote_rate = 1 / 2 = 0.5.
+Current compiled vote_rate = (+1 - 1) / 2 = 0.
+
+The same mismatch applies to fractional/tied voting because the round representation centers vote around zero while vote_rate remains an ordinary fraction.
+
+Current tests assert compiled vote in several cases but do not assert compiled vote_rate.
+
+Recommended fix: accumulate vote wins/fractions directly (e.g. result.vote_rate * result.acc) and divide by total acc, or algebraically convert signed vote difference back to a fraction. Add 1-0, 0-1, 1-1 split, and fractional-tie regression cases.
+
+### P6-04 — MEDIUM: duplicate merge_policy='average' can attribute averaged scores to the wrong speakers
+
+Status: confirmed historical/imported-data correctness bug.
+Area: packages/server/src/controllers/compiled.ts.
+Impact: speaker rankings / Best / POI attribution can be wrong when duplicate ballots from the same actor contain different speaker selections.
+
+mergeAverageBallotGroup averages score, matter, manner, Best, POI, and winner information across all duplicate payloads.
+
+Speaker IDs are not merged with the same semantics. The implementation chooses the first duplicate payload that contains non-empty speaker IDs:
+
+    speakerIdsA = first non-empty speakerIdsA
+    speakerIdsB = first non-empty speakerIdsB
+
+and then attaches the averaged score arrays to those IDs.
+
+Example:
+
+    duplicate 1 slot 1: Speaker X = 75
+    duplicate 2 slot 1: Speaker Y = 80
+
+The merged row can become:
+
+    Speaker X = 77.5
+
+even though half of that score belonged to Y.
+
+The normal submission API now prevents same-actor duplicates, but duplicate normalization is explicitly a supported compile feature for historical/imported/manual data, and the integration suite manually creates duplicate rows to test it. The existing duplicate-average test uses identical speaker IDs across duplicates, so this mismatch case is uncovered.
+
+Recommended behavior: if speaker identities differ across duplicates, either reject average mode for that group, warn and fall back to latest, or aggregate per speaker identity rather than per positional slot.
+
+### P6-05 — MEDIUM: historical compiled snapshots are exported together with live submissions, draws, and entity metadata
+
+Status: confirmed report-provenance inconsistency.
+Area: packages/web/src/views/admin/AdminTournamentCompiled.vue and detailed-results-export.ts.
+Impact: a downloaded report bundle can combine historical aggregate rankings with current/corrected ballot details that did not produce those rankings.
+
+The compiled-history UI can select and display an older immutable compiled snapshot. Ranking CSVs are generated from that selected compiled payload.
+
+However:
+
+    detailedResultsExportRows
+      = buildDetailedResultsExportRows(submissions.submissions, ...)
+
+where submissions.submissions is the current live submission store fetched from the server.
+
+The detailed export also resolves:
+
+    round names from current round records
+    team/speaker/adjudicator names from current entity records
+    ballot side from current draws
+
+not from snapshot-time state.
+
+The bulk ZIP then combines:
+
+    ranking CSVs from selected compiled snapshot
+    participant CSV from current entities
+    all_round_results.csv from current submissions
+
+Additionally, all_round_results.csv is not restricted to the rounds contained in the selected compiled snapshot.
+
+Therefore this sequence is possible:
+
+1. Save Snapshot S from rounds 1-3.
+2. Correct a ballot, edit an entity name, alter a draw, or add round 4 submissions.
+3. Re-open historical Snapshot S.
+4. Download the bulk ZIP.
+5. Ranking files represent S, while detailed vote rows/entity labels/draw sides represent the current database and may include round 4.
+
+The detailed vote CSV compounds the provenance problem by exporting only submitted_at=createdAt; it has no updated_at column, so a corrected ballot carries the original submission timestamp with current contents and no visible correction timestamp. The separate comment-sheet exporter already includes both created_at and updated_at, showing the data is available.
+
+Recommended fix: either snapshot the raw provenance required for a report, or label detailed/live files explicitly and restrict them to the selected snapshot rounds. At minimum include updated_at and a generated-at/current-data warning; for archival correctness, store submission version/IDs or immutable input material with the compiled snapshot.
+
+### P6-06 — MEDIUM: compiled speaker affiliation collapses round-specific team membership to the first team encountered
+
+Status: confirmed presentation/export metadata bug.
+Area: packages/server/src/controllers/compiled.ts.
+Impact: speaker result rows, speaker CSVs, award slides, POI/Best displays can show an incorrect or incomplete team when a speaker's team membership differs by round.
+
+The team model explicitly supports round-specific details[].speakers, and submission validation uses round-specific speaker ownership.
+
+Both raw and submission compilation build speaker metadata approximately as:
+
+    for each team:
+      collect speaker IDs from all team.details
+      if speakerMeta does not already contain speaker:
+          speakerMeta[speaker] = this team
+
+The compiled speaker result then emits only:
+
+    teams: [speakerMeta[speaker].teamName]
+
+Thus a speaker who appears for Team A in one selected round and Team B in another is permanently labeled with whichever team happened to be encountered first.
+
+This does not alter the speaker's numeric score computation, but it makes exported/presented affiliation inconsistent with the round-level data model.
+
+Recommended fix: collect the set of teams associated with each speaker over the selected compile rounds, or carry round-specific team attribution into the result DTO.
+
+### P6-07 — MEDIUM/LOW: stale-preview protection is optional at the API boundary
+
+Status: confirmed consistency-guard gap; normal current UI uses the guard correctly.
+Area: routes/compiled.ts + controllers/compiled.ts.
+
+The current reports UI follows the intended workflow:
+
+    preview
+    -> store preview_signature + revision
+    -> save with both tokens
+    -> server rebuilds and rejects stale tokens
+
+That path is good.
+
+But POST /compiled defines both fields as optional:
+
+    preview_signature: optional
+    revision: optional
+
+and server validation compares a token only if a non-empty token was supplied. If both are omitted, the save is accepted.
+
+This means direct API clients, older clients, or alternative UI paths can bypass the "what I previewed is what I save" invariant. The server recompiles current data, so it does not persist a stale calculation; instead it can persist a result the caller never previewed.
+
+If backward compatibility is still required on legacy /api, the stronger contract can be introduced on /api/v1 while temporarily retaining legacy behavior.
+
+### P6-08 — LOW: detailed result exports hide correction time
+
+Status: confirmed export-provenance weakness; closely related to P6-05.
+Area: packages/web/src/utils/detailed-results-export.ts.
+
+DetailedResultsExportRow has submitted_at but no updated_at. createBaseRow sets submitted_at from submission.createdAt.
+
+An organizer correction updates the payload and updatedAt but preserves createdAt. The detailed vote export therefore presents corrected contents under the original submission timestamp with no way to distinguish that correction from the original ballot.
+
+The comment-sheet exporter already exports both created_at and updated_at. Detailed result exports should do the same.
+
+### Items investigated and rejected/reduced
+
+1. Submission dedupe after administrator correction: not a bug. updateSubmission re-normalizes the edited payload and round, recomputes dedupeKey, and persists the new key. The unique index is correctly scoped by tournamentId + round + type + dedupeKey, so the same actor/matchup can legitimately submit again in a later round.
+
+2. score_weights apparent "missing multiplication": not classified as a bug. UTab styles use score ranges and weights with legacy normalization semantics (for example reply speeches can already be stored on a half-scale). Simply multiplying each score by its weight would change those semantics. This requires a deliberate scoring-model redesign, not a bug patch.
+
+3. Normal ballot winner absence: current public/admin ballot normalization requires winnerId or an allowed draw. Missing-winner handling in compilation remains relevant for imported/legacy/manual rows but is not a normal new-submission path.
+
+4. Preview staleness in the current reports UI: current UI does pass preview_signature and revision and marks changed compile inputs stale before save. P6-07 concerns the server/API invariant, not the primary UI workflow.
+
+5. Dedupe race: the database unique index backs the application-level duplicate precheck, so concurrent duplicate submissions are ultimately contained.
+
+### Positive controls worth preserving
+
+- Ballot creation validates team membership, score ranges/units, speaker ownership by round, draw publication, winner/draw rules, and array lengths.
+- Administrator submission edits re-run ballot/feedback normalization rather than writing arbitrary payloads directly.
+- Submission dedupe keys are protected by a compound unique index that includes round.
+- Compile snapshots store the selected rounds, source, normalized compile options, and diff-baseline metadata.
+- Current reports UI uses preview signatures/revisions and blocks stale preview saves in its normal path.
+- Explicit compiled diff baselines are tournament-scoped.
+- Core integration correctly preserves repeated speaker slots for formats where one speaker fills multiple speaking positions.
+- CSV escaping includes spreadsheet-formula protection through the shared CSV helper.
+
+### Remediation priority for the later fix phase
+
+1. Server-side expected-ballot completeness reconciliation for every selected draw/round; make missing_data_policy actually cover absent matchups.
+2. Remove null-to-zero score/margin coercion and make submission/raw compilation agree for no_speaker_score and mixed-score rounds.
+3. Fix compiled vote_rate mathematics and add direct regression tests.
+4. Make historical report exports snapshot-consistent, or clearly separate live provenance from immutable snapshot data.
+5. Define safe behavior for average-merging duplicates whose speaker identities differ.
+6. Preserve multi-team/round-specific speaker affiliation in compiled DTOs.
+7. Require preview/revision tokens on the canonical save API if preview-save consistency is intended as a server invariant.
+8. Add updated_at to detailed vote exports.
+
+### Phase 6 conclusion
+
+Phase 6 found two result-affecting defects that should be treated above ordinary UI bugs:
+
+- missing_data_policy='error' does not protect against an entire expected matchup being absent;
+- legitimate null/non-applicable score metrics can be coerced to zero, creating submission/raw divergence and potentially changing score/margin tiebreak ordering across mixed scored/scoreless rounds.
+
+It also found a mathematically incorrect compiled vote_rate and several archival/report-provenance issues that can make historical snapshot exports disagree with the ballots and metadata shown alongside them.
