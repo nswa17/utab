@@ -1016,6 +1016,303 @@ describe('Server integration', () => {
     expect(team2.ranking).toBe(1)
   })
 
+  it('rejects submission and raw compiles when a drawn matchup is entirely missing', async () => {
+    const agent = request.agent(app)
+
+    expect(
+      (
+        await agent.post('/api/auth/register').send({
+          username: 'missing-matchup-compile-user',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent.post('/api/auth/login').send({
+          username: 'missing-matchup-compile-user',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Missing Matchup Compile Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    expect(
+      (
+        await agent.post('/api/rounds').send({
+          tournamentId,
+          round: 1,
+          name: 'Round 1',
+        })
+      ).status
+    ).toBe(201)
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Missing Matchup A' },
+      { tournamentId, name: 'Missing Matchup B' },
+      { tournamentId, name: 'Missing Matchup C' },
+      { tournamentId, name: 'Missing Matchup D' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const [teamA, teamB, teamC, teamD] = teamsRes.body.data.map((row: any) => String(row._id))
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamA, opp: teamB },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+        {
+          venue: '',
+          teams: { gov: teamC, opp: teamD },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: teamA,
+      teamBId: teamB,
+      winnerId: teamA,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: 'judge-a',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const submissionCompile = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error' },
+    })
+    expect(submissionCompile.status).toBe(400)
+    expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(
+      'no ballot submission exists for matchup'
+    )
+    expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(teamC)
+    expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(teamD)
+
+    const rawRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamA,
+        from_id: 'judge-a',
+        r: 1,
+        win: 1,
+        opponents: [teamB],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: teamB,
+        from_id: 'judge-a',
+        r: 1,
+        win: 0,
+        opponents: [teamA],
+        side: 'opp',
+      },
+    ])
+    expect(rawRes.status).toBe(201)
+
+    const rawCompile = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options: { missing_data_policy: 'error' },
+    })
+    expect(rawCompile.status).toBe(400)
+    expect(String(rawCompile.body.errors?.[0]?.message ?? '')).toContain(
+      'no raw team results exist for matchup'
+    )
+    expect(String(rawCompile.body.errors?.[0]?.message ?? '')).toContain(teamC)
+    expect(String(rawCompile.body.errors?.[0]?.message ?? '')).toContain(teamD)
+
+    const rawWarnCompile = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options: { missing_data_policy: 'warn' },
+    })
+    expect(rawWarnCompile.status).toBe(201)
+    expect(
+      rawWarnCompile.body.data.payload.compile_warnings.some((message: string) =>
+        message.includes('no raw team results exist for matchup')
+      )
+    ).toBe(true)
+    expect(
+      rawWarnCompile.body.data.payload.compiled_team_results
+        .map((row: any) => String(row.id))
+        .sort()
+    ).toEqual([teamA, teamB, teamC, teamD].sort())
+  })
+
+  it('rejects duplicate-average ballots when speaker assignments differ', async () => {
+    const agent = request.agent(app)
+
+    expect(
+      (
+        await agent.post('/api/auth/register').send({
+          username: 'duplicate-average-speaker-mismatch-user',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent.post('/api/auth/login').send({
+          username: 'duplicate-average-speaker-mismatch-user',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Duplicate Average Speaker Mismatch Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+    expect(
+      (
+        await agent.post('/api/rounds').send({
+          tournamentId,
+          round: 1,
+          name: 'Round 1',
+        })
+      ).status
+    ).toBe(201)
+
+    const speakersRes = await agent.post('/api/speakers').send([
+      { tournamentId, name: 'Mismatch Speaker A1' },
+      { tournamentId, name: 'Mismatch Speaker A2' },
+      { tournamentId, name: 'Mismatch Speaker B1' },
+    ])
+    expect(speakersRes.status).toBe(201)
+    const [speakerA1, speakerA2, speakerB1] = speakersRes.body.data.map((row: any) =>
+      String(row._id)
+    )
+
+    const teamsRes = await agent.post('/api/teams').send([
+      {
+        tournamentId,
+        name: 'Mismatch Team A',
+        details: [{ r: 1, speakers: [speakerA1, speakerA2] }],
+      },
+      {
+        tournamentId,
+        name: 'Mismatch Team B',
+        details: [{ r: 1, speakers: [speakerB1] }],
+      },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const [teamA, teamB] = teamsRes.body.data.map((row: any) => String(row._id))
+
+    expect(
+      (
+        await agent.post('/api/draws').send({
+          tournamentId,
+          round: 1,
+          allocation: [
+            {
+              venue: '',
+              teams: { gov: teamA, opp: teamB },
+              chairs: [],
+              panels: [],
+              trainees: [],
+            },
+          ],
+          drawOpened: true,
+          allocationOpened: true,
+        })
+      ).status
+    ).toBe(201)
+
+    const [{ getTournamentConnection }, { getSubmissionModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/submission.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create([
+      {
+        tournamentId,
+        round: 1,
+        type: 'ballot',
+        payload: {
+          teamAId: teamA,
+          teamBId: teamB,
+          winnerId: teamA,
+          speakerIdsA: [speakerA1],
+          speakerIdsB: [speakerB1],
+          scoresA: [75],
+          scoresB: [72],
+          submittedEntityId: 'judge-a',
+        },
+        submittedBy: 'judge-a',
+      },
+      {
+        tournamentId,
+        round: 1,
+        type: 'ballot',
+        payload: {
+          teamAId: teamA,
+          teamBId: teamB,
+          winnerId: teamA,
+          speakerIdsA: [speakerA2],
+          speakerIdsB: [speakerB1],
+          scoresA: [80],
+          scoresB: [72],
+          submittedEntityId: 'judge-a',
+        },
+        submittedBy: 'judge-a',
+      },
+    ])
+
+    const compileRes = await agent.post('/api/compiled').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: {
+        duplicate_normalization: {
+          merge_policy: 'average',
+          poi_aggregation: 'average',
+          best_aggregation: 'average',
+        },
+        missing_data_policy: 'error',
+      },
+    })
+
+    expect(compileRes.status).toBe(400)
+    expect(String(compileRes.body.errors?.[0]?.message ?? '')).toContain(
+      'Cannot average duplicate ballots with different speaker assignments'
+    )
+  })
+
   it('exports tournament bundle with RFC5987 content-disposition when tournament name has non-ASCII', async () => {
     const agent = request.agent(app)
 
