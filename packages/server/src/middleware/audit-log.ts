@@ -1,4 +1,5 @@
 import type { Request, RequestHandler } from 'express'
+import { Types } from 'mongoose'
 import { AuditLogModel } from '../models/audit-log.js'
 import { getAuthenticatedActorId, getAuthenticatedActorRole } from './auth.js'
 import { logger } from './logging.js'
@@ -372,6 +373,74 @@ function resolveAuditEvent(path: string, method: string, statusCode: number, res
   return null
 }
 
+function resolveAuditIntent(path: string, method: string): AuditEvent | null {
+  if (!MUTATING_METHODS.has(method)) return null
+  if (method === 'POST' && (path === '/api/draws' || path === '/api/draws/generate')) {
+    return { action: 'draw.write', targetType: 'draw' }
+  }
+  return resolveAuditEvent(path, method, 200, null)
+}
+
+async function persistAuditReservation(input: {
+  id: Types.ObjectId
+  document: Record<string, unknown>
+}): Promise<void> {
+  const { id, document } = input
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await AuditLogModel.updateOne(
+        { _id: id },
+        { $setOnInsert: document },
+        { upsert: true }
+      ).exec()
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)))
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to durably reserve audit event')
+}
+
+async function finalizeAuditReservation(input: {
+  id: Types.ObjectId
+  document: Record<string, unknown>
+}): Promise<void> {
+  const { id, document } = input
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = await AuditLogModel.updateOne(
+        { _id: id, outcome: 'pending' },
+        { $set: document }
+      ).exec()
+      if (result.matchedCount === 1) return
+
+      const existing = await AuditLogModel.findById(id).select({ outcome: 1 }).lean().exec()
+      if (existing && existing.outcome !== 'pending') return
+
+      throw new Error('Audit reservation was not available for finalization')
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)))
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to finalize durable audit event')
+}
+
 function truncate(value: string | null, maxLength: number): string | undefined {
   if (!value) return undefined
   return value.length > maxLength ? value.slice(0, maxLength) : value
@@ -444,41 +513,31 @@ function resolveTargetId(
   return truncate(extractTargetIdFromResponse(responseBody), 512)
 }
 
-export const auditRequestLogger: RequestHandler = (req, res, next) => {
-  const actorUserIdBefore = getAuthenticatedActorId(req)
+export const auditRequestLogger: RequestHandler = async (req, res, next) => {
+  const rawPath = typeof req.originalUrl === 'string' ? req.originalUrl.split('?')[0] : req.path
+  const path = normalizePath(rawPath)
+  const method = req.method.toUpperCase()
+  const intent = resolveAuditIntent(path, method)
+
+  if (!intent) {
+    next()
+    return
+  }
+
+  const actorUserIdBefore = getAuthenticatedActorId(req) ?? undefined
   const actorRoleBefore = getAuthenticatedActorRole(req)
-  let responseBody: unknown
+  const ip = toSingleString(req.ip ?? req.socket.remoteAddress ?? null) ?? 'unknown'
+  const userAgent = getHeaderValue(req.headers['user-agent']) ?? 'unknown'
+  const auditId = new Types.ObjectId()
 
-  const originalJson = res.json.bind(res)
-  res.json = ((body: unknown) => {
-    responseBody = body
-    return originalJson(body)
-  }) as typeof res.json
+  const buildMetadata = (
+    event: AuditEvent,
+    responseBody: unknown,
+    statusCode?: number
+  ): Record<string, unknown> => {
+    const metadata: Record<string, unknown> = { method, path }
+    if (statusCode !== undefined) metadata.statusCode = statusCode
 
-  res.on('finish', () => {
-    const rawPath = typeof req.originalUrl === 'string' ? req.originalUrl.split('?')[0] : req.path
-    const path = normalizePath(rawPath)
-    const method = req.method.toUpperCase()
-    const replayedHeader = String(res.getHeader('Idempotency-Replayed') ?? '').toLowerCase()
-    const isIdempotencyReplay = replayedHeader === 'true'
-    if (isIdempotencyReplay && MUTATING_METHODS.has(method)) {
-      return
-    }
-    const statusCode = res.statusCode
-    const event = resolveAuditEvent(path, method, statusCode, responseBody)
-    if (!event) return
-
-    const actorUserId = getAuthenticatedActorId(req) ?? actorUserIdBefore
-    const actorRole = getAuthenticatedActorRole(req) ?? actorRoleBefore
-    const tournamentId = resolveTournamentId(req, event, responseBody)
-    const targetId = resolveTargetId(req, event, responseBody, actorUserIdBefore ?? undefined)
-    const ip = toSingleString(req.ip ?? req.socket.remoteAddress ?? null) ?? 'unknown'
-    const userAgent = getHeaderValue(req.headers['user-agent']) ?? 'unknown'
-    const metadata: Record<string, unknown> = {
-      method,
-      path,
-      statusCode,
-    }
     if (req.serviceAccount) {
       metadata.authType = 'service_account'
       metadata.serviceAccountJti = truncate(req.serviceAccount.jti, 128)
@@ -513,7 +572,9 @@ export const auditRequestLogger: RequestHandler = (req, res, next) => {
           getResponseResultValue(responseBody, 'eraseMode'),
         64
       )
-      const targetRefs = extractBodyStringArray(req, 'targetRefs') ?? getResponseStringArray(responseBody, 'targetRefs')
+      const targetRefs =
+        extractBodyStringArray(req, 'targetRefs') ??
+        getResponseStringArray(responseBody, 'targetRefs')
       if (reason) metadata.reason = reason
       if (approvedBy) metadata.approvedBy = approvedBy
       if (eraseMode) metadata.eraseMode = eraseMode
@@ -533,18 +594,102 @@ export const auditRequestLogger: RequestHandler = (req, res, next) => {
       if (reason) metadata.reason = reason
     }
 
-    void AuditLogModel.create({
-      tournamentId,
-      action: event.action,
-      actorUserId: truncate(actorUserId ?? null, 128),
-      actorRole,
-      targetType: event.targetType,
-      targetId,
-      ip: truncate(ip, 128),
-      userAgent: truncate(userAgent, 512),
-      metadata,
-    }).catch((err) => {
-      logger.warn({ err, action: event.action, path }, 'failed to persist audit log')
+    return metadata
+  }
+
+  try {
+    await persistAuditReservation({
+      id: auditId,
+      document: {
+        _id: auditId,
+        tournamentId: resolveTournamentId(req, intent, null),
+        action: intent.action,
+        actorUserId: truncate(actorUserIdBefore ?? null, 128),
+        actorRole: actorRoleBefore,
+        targetType: intent.targetType,
+        targetId: resolveTargetId(req, intent, null, actorUserIdBefore),
+        ip: truncate(ip, 128),
+        userAgent: truncate(userAgent, 512),
+        metadata: buildMetadata(intent, null),
+        outcome: 'pending',
+      },
+    })
+  } catch (error) {
+    logger.error(
+      { err: error, action: intent.action, path },
+      'blocking mutation because audit reservation could not be persisted'
+    )
+    res.status(503).json({
+      data: null,
+      errors: [
+        {
+          name: 'ServiceUnavailable',
+          message: 'Audit trail is unavailable; the mutation was not started',
+        },
+      ],
+    })
+    return
+  }
+
+  let finalizationStarted = false
+  let responseBody: unknown
+  const originalJson = res.json.bind(res)
+
+  const finalize = async (body: unknown, statusCode: number): Promise<void> => {
+    const successfulEvent = resolveAuditEvent(path, method, statusCode, body)
+    const event = successfulEvent ?? intent
+    const actorUserId = getAuthenticatedActorId(req) ?? actorUserIdBefore
+    const actorRole = getAuthenticatedActorRole(req) ?? actorRoleBefore
+    const outcome = statusCode >= 200 && statusCode < 400 ? 'succeeded' : 'failed'
+
+    await finalizeAuditReservation({
+      id: auditId,
+      document: {
+        tournamentId: resolveTournamentId(req, event, body),
+        action: event.action,
+        actorUserId: truncate(actorUserId ?? null, 128),
+        actorRole,
+        targetType: event.targetType,
+        targetId: resolveTargetId(req, event, body, actorUserIdBefore),
+        ip: truncate(ip, 128),
+        userAgent: truncate(userAgent, 512),
+        metadata: buildMetadata(event, body, statusCode),
+        outcome,
+        finalizedAt: new Date(),
+      },
+    })
+  }
+
+  res.json = ((body: unknown) => {
+    responseBody = body
+    if (finalizationStarted) {
+      return originalJson(body)
+    }
+    finalizationStarted = true
+    const statusCode = res.statusCode
+
+    void finalize(body, statusCode)
+      .catch((error) => {
+        logger.error(
+          { err: error, action: intent.action, path, auditId: String(auditId) },
+          'audit reservation is durable but outcome finalization failed'
+        )
+      })
+      .finally(() => {
+        if (!res.headersSent) originalJson(body)
+      })
+
+    return res
+  }) as typeof res.json
+
+  res.on('finish', () => {
+    if (finalizationStarted) return
+    finalizationStarted = true
+    void finalize(responseBody, res.statusCode).catch((error) => {
+      logger.error(
+        { err: error, action: intent.action, path, auditId: String(auditId) },
+        'audit reservation is durable but finish-time outcome finalization failed'
+      )
     })
   })
 
