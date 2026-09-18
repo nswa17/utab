@@ -191,7 +191,12 @@ const groupedResults = computed(() => {
     .sort((a, b) => a.name.localeCompare(b.name))
 })
 
-const drawForRound = computed(() => draws.draws.find((draw) => Number(draw.round) === round.value))
+const drawForRound = computed(() =>
+  draws.draws.find(
+    (draw) =>
+      String(draw.tournamentId) === tournamentId.value && Number(draw.round) === round.value
+  )
+)
 
 function venueName(id?: string) {
   if (!id) return t('会場未定')
@@ -316,7 +321,8 @@ async function refresh() {
 async function createRaw() {
   try {
     const payload = JSON.parse(newPayload.value)
-    await raw.createRawResults(activeLabel.value, payload)
+    const created = await raw.createRawResults(activeLabel.value, payload)
+    if (created === null) return
     await refresh()
   } catch {
     raw.error = t('JSON形式が正しくありません')
@@ -339,7 +345,8 @@ async function saveEdit() {
   if (!editingId.value) return
   try {
     const payload = JSON.parse(editPayload.value)
-    await raw.updateRawResult(activeLabel.value, editingId.value, payload)
+    const updated = await raw.updateRawResult(activeLabel.value, editingId.value, payload)
+    if (updated === null) return
     await refresh()
     cancelEdit()
   } catch {
@@ -349,7 +356,8 @@ async function saveEdit() {
 
 async function remove(id?: string) {
   if (!id) return
-  await raw.deleteRawResult(activeLabel.value, id, tournamentId.value)
+  const deleted = await raw.deleteRawResult(activeLabel.value, id, tournamentId.value)
+  if (deleted === null) return
   await refresh()
 }
 
