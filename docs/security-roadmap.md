@@ -275,6 +275,9 @@
 - [x] 監査ログ自動記録ミドルウェアを追加し、`auth` / `tournaments` / `teams` / `speakers` / `adjudicators` / `venues` / `institutions` / `rounds` / `draws` / `submissions` / `results` / `compiled` の主要な作成・更新・削除イベントを記録。
 - [x] `/api/audit-logs` を新設し、`tournamentId` `from/to` `actorUserId` `action` `targetType` `targetId` `limit/cursor` で検索できるように実装。
 - [x] 統合テストに「監査ログ記録」「フィルタ検索」「カーソルページング」「権限制御」を追加。
+- [x] 監査対象の mutation は、処理開始前に `AuditLog(outcome=pending)` を永続化する。予約保存に失敗した場合は mutation を開始せず 503 で fail-closed とする。
+- [x] mutation 完了後は同じ監査レコードを `succeeded` / `failed` に確定する。確定更新が失敗しても durable な `pending` レコードを残し、既に実行済みの mutation を監査失敗だけを理由に再試行させない。
+- [x] したがって監査ログは best-effort telemetry ではなく、監査対象 mutation に対して「副作用開始前に少なくとも1件の durable audit record が存在する」ことを保証する。プロセスクラッシュ等で outcome 確定前に停止した場合は `pending` が未確定操作の証跡となる。
 
 **編集候補ファイル**
 - packages/server/src/models/audit-log.ts (新規)
