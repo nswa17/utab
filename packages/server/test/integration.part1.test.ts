@@ -2,7 +2,8 @@ import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
-import { beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
+import { ServiceAccountIdempotencyModel } from '../src/models/service-account-idempotency.js'
 import { ServiceTokenRevocationModel } from '../src/models/service-token-revocation.js'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
@@ -425,6 +426,87 @@ describe('Server integration', () => {
       .get(`/api/v1/teams?tournamentId=${tournamentId}`)
       .set('Authorization', `Bearer ${invalidAudienceToken}`)
     expect(invalidAudienceRes.status).toBe(401)
+  })
+
+  it('replays service-account 5xx responses instead of re-executing the mutation', async () => {
+    const organizer = request.agent(app)
+
+    const registerRes = await organizer
+      .post('/api/v1/auth/register')
+      .send({ username: 'service-idempotency-5xx-owner', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await organizer
+      .post('/api/v1/auth/login')
+      .send({ username: 'service-idempotency-5xx-owner', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/v1/tournaments')
+      .send({ name: 'Service Idempotency 5xx Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const actorId = 'ops-service-idempotency-5xx'
+    const token = createServiceToken({
+      sub: actorId,
+      scopes: ['read', 'create', 'upsert', 'delete'],
+      tournamentIds: [tournamentId],
+    })
+    const idempotencyKey = 'service-team-injected-5xx'
+    const payload = {
+      tournamentId,
+      name: 'Idempotency 5xx Team',
+    }
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const TeamModel = getTeamModel(connection)
+
+    const createSpy = vi
+      .spyOn(TeamModel as any, 'create')
+      .mockRejectedValueOnce(new Error('injected service mutation failure'))
+
+    const first = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+    expect(first.status).toBe(500)
+    createSpy.mockRestore()
+
+    const stored = await waitForResult(
+      async () =>
+        ServiceAccountIdempotencyModel.findOne({ actorId, idempotencyKey }).lean().exec(),
+      (record) => record?.status === 'completed' && record.responseStatus === 500,
+      1500,
+      25
+    )
+    expect(stored?.status).toBe('completed')
+    expect(stored?.responseStatus).toBe(500)
+
+    const replay = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', idempotencyKey)
+      .send(payload)
+    expect(replay.status).toBe(500)
+    expect(replay.headers['idempotency-replayed']).toBe('true')
+    expect(replay.body).toEqual(first.body)
+
+    const rowsAfterReplay = await TeamModel.find({ tournamentId, name: payload.name }).lean().exec()
+    expect(rowsAfterReplay).toHaveLength(0)
+
+    const explicitRetry = await request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Idempotency-Key', `${idempotencyKey}-retry`)
+      .send(payload)
+    expect(explicitRetry.status).toBe(201)
+
+    const rowsAfterFreshKey = await TeamModel.find({ tournamentId, name: payload.name }).lean().exec()
+    expect(rowsAfterFreshKey).toHaveLength(1)
   })
 
   it('revokes service-account tokens by jti and denies further use', async () => {
