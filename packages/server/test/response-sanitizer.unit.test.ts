@@ -126,7 +126,7 @@ describe('sanitizeTournamentForPublic', () => {
 })
 
 describe('sanitizeRoundForPublic', () => {
-  it('keeps draw submission opt-in while exposing explicit enablement', () => {
+  it('preserves the legacy draw default while exposing explicit enablement', () => {
     const defaultRound = sanitizeRoundForPublic({
       tournamentId: 't1',
       round: 1,
@@ -138,7 +138,7 @@ describe('sanitizeRoundForPublic', () => {
       userDefinedData: { allow_low_tie_win: true },
     }) as any
 
-    expect(defaultRound.userDefinedData.allow_low_tie_win).toBe(false)
+    expect(defaultRound.userDefinedData.allow_low_tie_win).toBe(true)
     expect(drawEnabledRound.userDefinedData.allow_low_tie_win).toBe(true)
   })
 })
