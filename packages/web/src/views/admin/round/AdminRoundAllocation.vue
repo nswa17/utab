@@ -1021,6 +1021,7 @@
               :rows="previewRows"
               :gov-label="govLabel"
               :opp-label="oppLabel"
+              :team-columns="teamPositionColumns"
             />
             <div class="stack preview-download-stack">
               <div class="row section-download-row">
@@ -4477,28 +4478,36 @@ function adjudicatorPillTitle(adjudicatorId: string) {
 }
 
 const previewRows = computed<DrawPreviewRow[]>(() => {
+  const teamNum = currentEditableTeamNum()
   return allocation.value.map((row, index) => {
-    const govId = row.teams.gov
-    const oppId = row.teams.opp
-    const govResult = compiledTeamMap.value.get(String(govId))
-    const oppResult = compiledTeamMap.value.get(String(oppId))
-    const govWin = Number(govResult?.win)
-    const oppWin = Number(oppResult?.win)
-    const normalizedGovWin = Number.isFinite(govWin) ? govWin : 0
-    const normalizedOppWin = Number.isFinite(oppWin) ? oppWin : 0
+    const positions = drawTeamPositions(teamNum)
+    const ids = positions.map((position) => drawTeamId(row.teams, position, teamNum))
+    const teamNames = Object.fromEntries(
+      positions.map((position, positionIndex) => {
+        const id = ids[positionIndex]
+        return [position, id ? teamName(id) : t('未選択')]
+      })
+    )
+    const wins = ids.map((id) => {
+      const win = Number(compiledTeamMap.value.get(String(id))?.win)
+      return Number.isFinite(win) ? win : 0
+    })
     const venueLabel = row.venue ? venueName(row.venue) : t('会場未定')
-    const govName = govId ? teamName(govId) : t('未選択')
-    const oppName = oppId ? teamName(oppId) : t('未選択')
+    const firstName = teamNames[positions[0]] ?? t('未選択')
+    const secondName = teamNames[positions[1]] ?? t('未選択')
+    const maxWin = wins.length > 0 ? Math.max(...wins) : 0
+    const minWin = wins.length > 0 ? Math.min(...wins) : 0
     return {
-      key: `${index}-${govId}-${oppId}-${row.venue ?? ''}`,
+      key: `${index}-${ids.join('-')}-${row.venue ?? ''}`,
       matchIndex: index,
       venuePriority: venuePriority(row.venue),
       venueLabel,
-      govName,
-      oppName,
-      winLabel: `${normalizedGovWin}-${normalizedOppWin}`,
-      winTotal: normalizedGovWin + normalizedOppWin,
-      winGap: Math.abs(normalizedGovWin - normalizedOppWin),
+      govName: firstName,
+      oppName: secondName,
+      teamNames,
+      winLabel: wins.join('-'),
+      winTotal: wins.reduce((total, win) => total + win, 0),
+      winGap: maxWin - minWin,
       chairsLabel: adjudicatorListLabel(row.chairs ?? []),
       panelsLabel: adjudicatorListLabel(row.panels ?? []),
       traineesLabel: adjudicatorListLabel(row.trainees ?? []),
@@ -4519,8 +4528,7 @@ function downloadDrawPreviewCsv() {
   const headers = [
     '#',
     t('会場'),
-    govLabel.value,
-    oppLabel.value,
+    ...teamPositionColumns.value.map((column) => column.label),
     t('チェア'),
     t('パネル'),
     t('トレーニー'),
@@ -4529,8 +4537,11 @@ function downloadDrawPreviewCsv() {
     [
       index + 1,
       row.venueLabel,
-      row.govName,
-      row.oppName,
+      ...teamPositionColumns.value.map(
+        (column) =>
+          row.teamNames?.[column.key] ??
+          (column.key === 'gov' ? row.govName : column.key === 'opp' ? row.oppName : '')
+      ),
       row.chairsLabel,
       row.panelsLabel,
       row.traineesLabel,
