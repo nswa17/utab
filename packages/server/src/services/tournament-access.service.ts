@@ -4,6 +4,7 @@ type PlainObject = Record<string, unknown>
 
 export const TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS = 24 * 60 * 60 * 1000
 export const TOURNAMENT_ACCESS_INACTIVITY_TTL_MS = 2 * 60 * 60 * 1000
+export const TOURNAMENT_ACCESS_PASSWORD_MIN_LENGTH = 8
 
 export interface TournamentAccessConfig {
   required: boolean
@@ -83,6 +84,13 @@ export async function mergeTournamentAuth(
   if (hasOwn(incomingAccess, 'password')) {
     const nextPassword = incomingAccess.password
     if (typeof nextPassword === 'string' && nextPassword.length > 0) {
+      if (nextPassword.length < TOURNAMENT_ACCESS_PASSWORD_MIN_LENGTH) {
+        return {
+          auth: mergedAuth,
+          error: `Tournament access password must be at least ${TOURNAMENT_ACCESS_PASSWORD_MIN_LENGTH} characters`,
+          accessPasswordUpdated,
+        }
+      }
       accessPasswordUpdated = true
       password = undefined
       passwordHash = await hashPassword(nextPassword)
