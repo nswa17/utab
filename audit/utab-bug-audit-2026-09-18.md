@@ -5640,3 +5640,172 @@ Remaining explicit boundary:
 - resolving abandoned `in_progress` records safely would require endpoint-specific reconciliation, a persistent mutation/result journal, or transactional coupling between the business mutation and the idempotency record.
 
 That remaining problem is crash reconciliation, not the old "successful response was sent before its idempotency record existed durably" race.
+
+
+## Phase 38 — Durable audit reservation contract (P9-06)
+
+P9-06 was closed by making the audit trail a precondition of audited mutations rather than best-effort telemetry emitted after the response.
+
+### Previous behavior
+
+`auditRequestLogger` observed the HTTP response `finish` event and then launched:
+
+    void AuditLogModel.create(...)
+
+The mutation and its successful response were therefore already complete before audit persistence began.
+
+A database error, process exit, or shutdown in that window could leave a successful security-sensitive mutation with no audit row at all.
+
+Simply changing this to "mutation executes, then audit persistence failure returns 503" would not be safe: ordinary session-authenticated mutations are not universally idempotent, so the caller could retry an already-applied mutation because only the audit write failed.
+
+### Contract selected
+
+UTab now uses a **durable audit reservation before mutation**.
+
+For every route/method recognized by the audit event rules:
+
+1. request parsing and service-account authentication/idempotency setup run first;
+2. before the route handler is entered, the middleware durably upserts an `AuditLog` row with:
+   - the intended action/target type;
+   - request-known tournament/target identity;
+   - actor identity when known;
+   - request metadata;
+   - `outcome = pending`;
+3. only after that write succeeds does the middleware call `next()` and allow the business mutation to begin;
+4. after a terminal response is produced, the same row is updated with final actor/target data, HTTP status and:
+   - `outcome = succeeded`, or
+   - `outcome = failed`;
+5. normal JSON responses wait for this outcome-finalization attempt before the response is emitted.
+
+The durable reservation write uses a preallocated Mongo ObjectId and idempotent upsert, so retrying an ambiguous reservation write cannot create duplicate audit rows.
+
+### Failure semantics
+
+#### Reservation cannot be persisted
+
+The reservation write is retried three times.
+
+If all attempts fail:
+
+- the middleware returns 503;
+- the business route handler is never entered;
+- therefore the audited mutation is not started.
+
+This is the fail-closed point.
+
+#### Outcome finalization cannot be persisted
+
+Once the `pending` row exists, the core audit invariant is already satisfied.
+
+If the post-mutation finalization update fails after its retries:
+
+- the original mutation response is still returned;
+- the mutation is **not** asked to roll back or execute again merely because final audit enrichment failed;
+- the durable audit row remains `pending`.
+
+A `pending` row therefore has an explicit operational meaning: an audited operation was admitted, but the process did not durably establish its final outcome. This includes the process-crash window after the mutation starts.
+
+This avoids both unsafe alternatives:
+
+- successful mutation with no audit evidence;
+- duplicate side effects caused by converting an audit-write failure into a retryable mutation failure after the side effect already occurred.
+
+### Middleware ordering
+
+Audit middleware was moved from the global pre-parser position into each API namespace after:
+
+- service-account principal/scope/idempotency middleware;
+- request body parsing.
+
+This allows the durable reservation to include request-scoped tournament IDs, reasons and service-account identity before the route handler executes.
+
+Service-account idempotent replays are resolved before the audit middleware is entered, preserving the existing rule that replay delivery does not create a second mutation audit event.
+
+### Model changes
+
+`AuditLog` now carries optional lifecycle fields:
+
+- `outcome: pending | succeeded | failed`;
+- `finalizedAt`.
+
+Historical audit rows created before this phase have no `outcome`; those rows were generated only for successful 2xx/3xx responses under the old middleware and remain valid legacy records.
+
+Implementation commits:
+
+- `787c4a9993a8ad916746d3c0f7c2cf7eae0e8365` — add audit outcome lifecycle fields;
+- `78242a715f30b620f553bdc503e02d19fea09476` — reserve audit rows durably before audited mutations and finalize the same row afterward;
+- `0f856392c0ac4331a7aa80865d7d2e4a7fea0d0b` — move audit middleware after auth/body parsing;
+- `8e52b2b50981a464ea5dab085b0394a034c39e17` — document the durability contract in the security roadmap.
+
+### Fault-injection regressions
+
+Added to `packages/server/test/integration.part4.test.ts`.
+
+#### 1. Delayed reservation blocks mutation start
+
+The test gates the exact `pending` audit upsert for a Team creation.
+
+While that audit write is blocked it verifies:
+
+- the HTTP request has not completed;
+- the Team document has not been created.
+
+After releasing the audit write:
+
+- the mutation succeeds;
+- the audit row is already finalized as `succeeded`;
+- `metadata.statusCode = 201`.
+
+#### 2. Reservation failure fails before side effects
+
+The test injects failure into all three reservation attempts.
+
+It verifies:
+
+- response is 503;
+- the Team mutation never occurs;
+- no Team audit row exists;
+- the error explicitly states that the mutation was not started.
+
+#### 3. Finalization failure keeps durable pending evidence
+
+The reservation is allowed to persist, then all three outcome-finalization writes are forced to fail.
+
+It verifies:
+
+- the Team mutation executes exactly once and returns 201;
+- the audit row still exists;
+- the row remains `outcome = pending`.
+
+Regression commit:
+
+- `e621e4bacf60baa9265790fb020613bbe803b94e` — fault-inject audit reservation/finalization behavior.
+
+### Verification
+
+CI run `35400357208` at `e621e4bacf60baa9265790fb020613bbe803b94e`:
+
+- lint/server typecheck: success;
+- Web typecheck: success;
+- core: **24/24 files, 117/117 tests passed**;
+- server `integration.part4.test.ts`: **45 tests total**, with all three new audit durability regressions passing;
+- server total: **161 passed / 1 failed**.
+
+The sole server failure is the already-existing participant-history authorization-message assertion:
+
+    expected "Tournament admin access required"
+    to contain "does not match the authenticated participant identity"
+
+The branch-wide test job also retains the previously identified unrelated Web entity-store/institution failures.
+
+No P9-06 regression failed.
+
+### P9-06 status
+
+**P9-06 is closed for the missing-audit-record durability gap.**
+
+The explicit invariant is now:
+
+> An audited business mutation is not allowed to begin unless at least one durable audit row for that operation has already been persisted.
+
+The remaining boundary is outcome certainty, not record existence. A crash after reservation and after some business side effects but before finalization can leave `outcome=pending`; that state is intentionally preserved as evidence requiring reconciliation rather than being silently deleted or guessed as success/failure.
