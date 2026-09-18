@@ -734,6 +734,45 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
   return `${round}:${ordered[0]}:${ordered[1]}`
 }
 
+function drawRowTeamIds(row: any): string[] {
+  const teams = row?.teams
+  if (Array.isArray(teams)) {
+    return Array.from(
+      new Set(
+        teams
+          .map((teamId) => String(teamId ?? '').trim())
+          .filter((teamId) => teamId.length > 0)
+      )
+    )
+  }
+  if (!teams || typeof teams !== 'object') return []
+  const source = teams as Record<string, unknown>
+  const preferredKeys = ['og', 'oo', 'cg', 'co', 'gov', 'opp']
+  return Array.from(
+    new Set(
+      preferredKeys
+        .map((key) => String(source[key] ?? '').trim())
+        .filter((teamId) => teamId.length > 0)
+    )
+  )
+}
+
+function canonicalTeamGroupKey(round: number, teamIds: string[]): string {
+  const normalized = Array.from(
+    new Set(teamIds.map((teamId) => String(teamId ?? '').trim()).filter(Boolean))
+  ).sort()
+  return `${round}:${normalized.join(':')}`
+}
+
+function rawTeamResultGroupKey(result: any): string {
+  const round = Number(result?.r)
+  const teamId = String(result?.id ?? '').trim()
+  const opponents = Array.isArray(result?.opponents)
+    ? result.opponents.map((opponentId: unknown) => String(opponentId ?? '').trim())
+    : []
+  return canonicalTeamGroupKey(round, [teamId, ...opponents])
+}
+
 function resolveBallotSubmissionActor(submission: any): string {
   const payloadActor = String(
     (submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? ''
@@ -1170,6 +1209,45 @@ async function buildCompiledPayloadFromRaw(
   const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
+  const missingDataIssues: MissingDataIssue[] = []
+  const expectedDrawTeamIds = new Set<string>()
+  filteredDraws.forEach((draw: any) => {
+    const round = Number(draw?.round)
+    if (!Number.isFinite(round)) return
+    ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+      const teamIds = drawRowTeamIds(row)
+      if (teamIds.length < 2) return
+      teamIds.forEach((teamId) => expectedDrawTeamIds.add(teamId))
+
+      const expectedKey = canonicalTeamGroupKey(round, teamIds)
+      const matchingResults = filteredRawTeamResults.filter(
+        (result: any) => rawTeamResultGroupKey(result) === expectedKey
+      )
+      const presentTeamIds = new Set(
+        matchingResults.map((result: any) => String(result?.id ?? '').trim()).filter(Boolean)
+      )
+
+      if (presentTeamIds.size === 0) {
+        missingDataIssues.push({
+          code: 'missing_ballot',
+          message: `no raw team results exist for matchup ${teamIds.join(' vs ')}`,
+          round,
+        })
+        return
+      }
+
+      teamIds.forEach((teamId) => {
+        if (presentTeamIds.has(teamId)) return
+        missingDataIssues.push({
+          code: 'missing_team_result',
+          message: `raw team result is missing for team ${teamId} in matchup ${teamIds.join(' vs ')}`,
+          round,
+        })
+      })
+    })
+  })
+  const compileWarnings = finalizeMissingDataIssues(missingDataIssues, compileOptions)
+
   const teamMaps = buildIdMaps(teams)
   const adjudicatorMaps = buildIdMaps(adjudicators)
   const teamById = new Map(teams.map((team) => [String(team._id), team]))
@@ -1242,6 +1320,10 @@ async function buildCompiledPayloadFromRaw(
     .filter((result): result is Record<string, any> => result !== null)
 
   const teamIds = new Set(mappedRawTeamResults.map((result) => Number(result.id)))
+  expectedDrawTeamIds.forEach((teamId) => {
+    const mappedId = teamMaps.map.get(teamId)
+    if (mappedId !== undefined) teamIds.add(mappedId)
+  })
   const teamInstances = Array.from(teamIds)
     .map((numericId) => {
       if (!Number.isFinite(numericId)) return null
@@ -1400,7 +1482,7 @@ async function buildCompiledPayloadFromRaw(
     compile_source: 'raw',
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
     compile_options: compileOptions,
-    compile_warnings: [],
+    compile_warnings: compileWarnings,
     compile_diff_meta: buildDefaultDiffMeta(compileOptions),
     compiled_team_results: applyTeamRankingPriority(
       compiledTeamResults.map((result: any) => ({
