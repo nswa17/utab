@@ -12,6 +12,7 @@ const submissions: Submission[] = [
     round: 2,
     type: 'ballot',
     createdAt: '2026-07-17T10:00:00.000Z',
+    updatedAt: '2026-07-17T11:30:00.000Z',
     payload: {
       teamAId: 'team-a',
       teamBId: 'team-b',
@@ -64,6 +65,8 @@ describe('detailed results export', () => {
 
     expect(alice).toMatchObject({
       record_type: 'ballot_speaker',
+      submitted_at: '2026-07-17T10:00:00.000Z',
+      updated_at: '2026-07-17T11:30:00.000Z',
       voted_by_name: 'Judge One',
       side: 'Gov',
       matter: '38',
@@ -87,6 +90,8 @@ describe('detailed results export', () => {
 
   it('builds a spreadsheet-safe all-results CSV with the provenance columns', () => {
     const csv = buildDetailedResultsExportCsv(buildDetailedResultsExportRows(submissions, resolvers))
+    expect(csv).toContain('Updated at')
+    expect(csv).toContain('2026-07-17T11:30:00.000Z')
     expect(csv).toContain('Voted by')
     expect(csv).toContain('Best Debater')
     expect(csv).toContain('Judge One')
