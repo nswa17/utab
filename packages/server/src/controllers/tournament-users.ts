@@ -5,7 +5,6 @@ import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getTeamModel } from '../models/team.js'
 import { hashPassword } from '../services/hash.service.js'
-import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function sanitizeTournamentUserResponse(user: {
@@ -33,6 +32,7 @@ async function validateParticipantEntityBinding(
   if (!entityType && !entityId) return {}
   if (!entityType || !entityId || !isValidObjectId(entityId)) return null
 
+  const { getTournamentConnection } = await import('../services/tournament-db.service.js')
   const connection = await getTournamentConnection(tournamentId)
   if (role === 'adjudicator') {
     if (entityType !== 'adjudicator') return null
