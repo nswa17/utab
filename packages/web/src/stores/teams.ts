@@ -56,7 +56,7 @@ export const useTeamsStore = defineStore('teams', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/teams', payload)
       const created = res.data?.data
@@ -84,7 +84,7 @@ export const useTeamsStore = defineStore('teams', () => {
     userDefinedData?: Record<string, any>
   }) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/teams/${payload.teamId}`, {
         tournamentId: payload.tournamentId,
@@ -111,7 +111,7 @@ export const useTeamsStore = defineStore('teams', () => {
 
   async function deleteTeam(tournamentId: string, teamId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/teams/${teamId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
@@ -136,7 +136,7 @@ export const useTeamsStore = defineStore('teams', () => {
     if (normalizedIds.length === 0) return 0
 
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete('/teams', {
         params: { tournamentId, ids: normalizedIds.join(',') },
