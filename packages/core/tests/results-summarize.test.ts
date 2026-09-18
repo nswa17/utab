@@ -3,6 +3,7 @@ import {
   summarizeTeamResults,
   summarizeSpeakerResults,
   compileTeamResults,
+  compileSpeakerResults,
 } from '../src/results/results.js'
 
 describe('results/results', () => {
@@ -98,4 +99,45 @@ describe('results/results', () => {
     expect(team1?.sum).toBeNull()
     expect(team2?.sum).toBeNull()
   })
+
+  it('keeps compiled speaker rankings invariant to speaker input order', () => {
+    const rawSpeakerResults = [
+      { id: 1, r: 1, scores: [70] },
+      { id: 1, r: 2, scores: [70] },
+      { id: 2, r: 1, scores: [80] },
+    ]
+    const style = { score_weights: [1] }
+
+    const forward = compileSpeakerResults(
+      [{ id: 1 }, { id: 2 }],
+      rawSpeakerResults,
+      style,
+      [1, 2]
+    )
+    const reversed = compileSpeakerResults(
+      [{ id: 2 }, { id: 1 }],
+      rawSpeakerResults,
+      style,
+      [1, 2]
+    )
+    const rankById = (rows: Array<{ id: number; ranking?: number }>) =>
+      Object.fromEntries(rows.map((row) => [row.id, row.ranking]))
+
+    expect(rankById(forward)).toEqual(rankById(reversed))
+  })
+
+  it('rejects inconsistent speaker score vector lengths instead of truncating them', () => {
+    expect(() =>
+      summarizeSpeakerResults(
+        [{ id: 11 }],
+        [
+          { id: 11, r: 1, scores: [70, 75] },
+          { id: 11, r: 1, scores: [72] },
+        ],
+        { score_weights: [1, 1] },
+        1
+      )
+    ).toThrow(/score|length/i)
+  })
+
 })
