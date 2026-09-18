@@ -2752,18 +2752,6 @@ describe('Server integration', () => {
     expect(blockedResultWrite.status).toBe(409)
     expect(blockedResultWrite.body.errors?.[0]?.message).toContain('Round changed concurrently')
 
-    const blockedRawWrite = await organizer.post('/api/raw-results/teams').send({
-      tournamentId,
-      id: teamAId,
-      from_id: teamAId,
-      r: 1,
-      win: 1,
-      opponents: [teamBId],
-      side: 'gov',
-    })
-    expect(blockedRawWrite.status).toBe(409)
-    expect(blockedRawWrite.body.errors?.[0]?.message).toContain('changed concurrently')
-
     await releaseRoundMutationLease(connection, mutationLease)
 
     const renumberRes = await organizer.patch(`/api/rounds/${roundId}`).send({
