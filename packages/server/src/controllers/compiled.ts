@@ -208,6 +208,26 @@ async function buildCompiledPreviewPayload(params: {
   }
 }
 
+function requirePreviewTokensForVersionedApi(
+  req: Parameters<RequestHandler>[0],
+  res: Parameters<RequestHandler>[1]
+): boolean {
+  if (!req.originalUrl.startsWith('/api/v1/compiled')) return true
+  const previewSignature = normalizeRequestToken(req.body?.preview_signature)
+  const revision = normalizeRequestToken(req.body?.revision)
+  if (previewSignature && revision) return true
+  res.status(400).json({
+    data: null,
+    errors: [
+      {
+        name: 'ValidationError',
+        message: 'preview_signature and revision are required; run compile preview before saving',
+      },
+    ],
+  })
+  return false
+}
+
 function validatePreviewToken(
   res: Parameters<RequestHandler>[1],
   expected: { preview_signature: string; revision: string },
@@ -2319,6 +2339,7 @@ const makeCreateCompiled =
         revision?: string
       }
       if (!ensureTournamentId(res, tournamentId)) return
+      if (!requirePreviewTokensForVersionedApi(req, res)) return
 
       const compileOptions = normalizeCompileOptions(
         req.body?.options as CompileOptionsInput | undefined
@@ -2420,6 +2441,7 @@ export const createCompiled: RequestHandler = async (req, res, next) => {
       revision?: string
     }
     if (!ensureTournamentId(res, tournamentId)) return
+    if (!requirePreviewTokensForVersionedApi(req, res)) return
 
     const compileOptions = normalizeCompileOptions(
       req.body?.options as CompileOptionsInput | undefined
