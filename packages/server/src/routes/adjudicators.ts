@@ -12,6 +12,7 @@ import {
 import { eraseAdjudicatorPersonalData } from '../controllers/privacy.js'
 import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
+import { adjudicatorDetailsSchema } from '../schemas/entity-details.js'
 
 const router: Router = Router()
 
@@ -20,7 +21,7 @@ const createBodySchema = z.object({
   name: z.string().trim().min(1),
   preev: z.number().optional(),
   template: z.any().optional(),
-  details: z.any().optional(),
+  details: adjudicatorDetailsSchema.optional(),
   userDefinedData: z.any().optional(),
 })
 
@@ -42,7 +43,7 @@ const updateSchema = {
       name: z.string().trim().min(1).optional(),
       preev: z.number().optional(),
       template: z.any().optional(),
-      details: z.any().optional(),
+      details: adjudicatorDetailsSchema.optional(),
       userDefinedData: z.any().optional(),
     })
     .refine(
@@ -65,7 +66,7 @@ const bulkUpdateSchema = {
         name: z.string().trim().min(1).optional(),
         preev: z.number().optional(),
         template: z.any().optional(),
-        details: z.any().optional(),
+        details: adjudicatorDetailsSchema.optional(),
         userDefinedData: z.any().optional(),
       })
       .refine(
