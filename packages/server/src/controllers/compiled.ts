@@ -164,9 +164,9 @@ function buildPreviewRevision(payload: CompiledPayload): string {
     compile_options: payload.compile_options,
     compile_warnings: payload.compile_warnings,
     compile_diff_meta: payload.compile_diff_meta,
-    team_result_count: payload.compiled_team_results.length,
-    speaker_result_count: payload.compiled_speaker_results.length,
-    adjudicator_result_count: payload.compiled_adjudicator_results.length,
+    team_results_hash: sha256Hex(stableSerialize(payload.compiled_team_results)),
+    speaker_results_hash: sha256Hex(stableSerialize(payload.compiled_speaker_results)),
+    adjudicator_results_hash: sha256Hex(stableSerialize(payload.compiled_adjudicator_results)),
   }
   return sha256Hex(stableSerialize(revisionSeed))
 }
@@ -712,6 +712,22 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
   if (!teamA || !teamB) return `${round}:invalid`
   const ordered = [teamA, teamB].sort()
   return `${round}:${ordered[0]}:${ordered[1]}`
+}
+
+function canonicalDrawMatchKey(round: number, row: any): string | null {
+  const rowTeams = row?.teams
+  let teamAId = ''
+  let teamBId = ''
+  if (Array.isArray(rowTeams)) {
+    if (rowTeams.length !== 2) return null
+    teamAId = String(rowTeams[0] ?? '').trim()
+    teamBId = String(rowTeams[1] ?? '').trim()
+  } else if (rowTeams && typeof rowTeams === 'object') {
+    teamAId = String(rowTeams.gov ?? '').trim()
+    teamBId = String(rowTeams.opp ?? '').trim()
+  }
+  if (!teamAId || !teamBId || teamAId === teamBId) return null
+  return canonicalBallotMatchKey(round, { teamAId, teamBId })
 }
 
 function resolveBallotSubmissionActor(submission: any): string {
@@ -1568,6 +1584,29 @@ async function buildCompiledPayloadFromSubmissions(
       return
     }
     normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
+  })
+
+  const submittedMatchKeys = new Set(
+    normalizedBallots.map((submission) =>
+      canonicalBallotMatchKey(Number(submission?.round), (submission?.payload ?? {}) as BallotPayload)
+    )
+  )
+  const expectedDrawMatches = new Map<string, number>()
+  filteredDraws.forEach((draw: any) => {
+    const round = Number(draw?.round)
+    if (!Number.isFinite(round)) return
+    ;(draw?.allocation ?? []).forEach((row: any) => {
+      const key = canonicalDrawMatchKey(round, row)
+      if (key) expectedDrawMatches.set(key, round)
+    })
+  })
+  expectedDrawMatches.forEach((round, key) => {
+    if (submittedMatchKeys.has(key)) return
+    registerMissingIssue({
+      code: 'missing_ballot',
+      message: 'ballot submission is missing for draw matchup',
+      round,
+    })
   })
 
   normalizedBallots.forEach((submission: any) => {
