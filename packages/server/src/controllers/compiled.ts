@@ -2064,6 +2064,23 @@ function revisionRows(rows: any[]): Array<{ id: string; updatedAt: string | null
     .sort((left, right) => left.id.localeCompare(right.id))
 }
 
+function drawRevisionRows(
+  rows: any[]
+): Array<{ id: string; updatedAt: string | null; version: number }> {
+  return rows
+    .map((row: any) => ({
+      id: String(row?._id ?? ''),
+      updatedAt:
+        row?.updatedAt instanceof Date
+          ? row.updatedAt.toISOString()
+          : row?.updatedAt
+            ? new Date(row.updatedAt).toISOString()
+            : null,
+      version: Number(row?.__v ?? 0),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+}
+
 async function readCompileSourceRevision(
   connection: Connection,
   tournamentId: string,
@@ -2158,10 +2175,7 @@ async function readCompileSourceRevision(
       : null,
     teams: revisionRows(commonQueries[0] as any[]),
     adjudicators: revisionRows(commonQueries[1] as any[]),
-    draws: revisionRows(commonQueries[2] as any[]).map((row, index) => ({
-      ...row,
-      version: Number((commonQueries[2] as any[])[index]?.__v ?? 0),
-    })),
+    draws: drawRevisionRows(commonQueries[2] as any[]),
     rounds: revisionRows(commonQueries[3] as any[]),
     source:
       source === 'raw'
