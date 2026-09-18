@@ -36,6 +36,16 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).toContain('refresh()')
   })
 
+  it('gates refresh completion across route switches and blocks actions during reload', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain("import { createLatestRequestGate } from '@/utils/latest-request'")
+    expect(source).toContain('const refreshGate = createLatestRequestGate()')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
+    expect(source).toContain('const token = refreshGate.begin()')
+    expect(source).toContain('if (completion.isCurrent) hasLoaded.value = true')
+    expect(source).toContain('pointer-events: auto;')
+  })
+
   it('uses the same Gov/Opp colour coding as the ballot entry screen', () => {
     const source = load('src/views/user/participant/UserParticipantHome.vue')
     expect(source).toContain('class="side-chip gov-chip"')
