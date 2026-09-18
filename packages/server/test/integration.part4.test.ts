@@ -4062,6 +4062,27 @@ describe('Server integration', () => {
     expect(ownBallot.status).toBe(201)
     expect(ownBallot.body.data.payload.submittedEntityId).toBe(judge1Id)
 
+    const otherJudgeHistory = await judgeUser.get('/api/submissions/mine').query({
+      tournamentId,
+      submittedEntityId: judge2Id,
+      type: 'ballot',
+      round: 1,
+    })
+    expect(otherJudgeHistory.status).toBe(403)
+    expect(otherJudgeHistory.body.errors?.[0]?.message).toContain(
+      'does not match the authenticated participant identity'
+    )
+
+    const ownJudgeHistory = await judgeUser.get('/api/submissions/mine').query({
+      tournamentId,
+      submittedEntityId: judge1Id,
+      type: 'ballot',
+      round: 1,
+    })
+    expect(ownJudgeHistory.status).toBe(200)
+    expect(ownJudgeHistory.body.data).toHaveLength(1)
+    expect(ownJudgeHistory.body.data[0]._id).toBe(ownBallot.body.data._id)
+
     const addSpeakerUser = await organizer.post(`/api/tournaments/${tournamentId}/users`).send({
       username: 'bound-speaker-user',
       password: 'password123',
@@ -4096,6 +4117,24 @@ describe('Server integration', () => {
     })
     expect(teamFeedback.status).toBe(201)
     expect(teamFeedback.body.data.payload.submittedEntityId).toBe(teamAId)
+
+    const ownTeamHistory = await speakerUser.get('/api/submissions/mine').query({
+      tournamentId,
+      submittedEntityId: teamAId,
+      type: 'feedback',
+      round: 1,
+    })
+    expect(ownTeamHistory.status).toBe(200)
+    expect(ownTeamHistory.body.data).toHaveLength(1)
+    expect(ownTeamHistory.body.data[0]._id).toBe(teamFeedback.body.data._id)
+
+    const otherTeamHistory = await speakerUser.get('/api/submissions/mine').query({
+      tournamentId,
+      submittedEntityId: teamBId,
+      type: 'feedback',
+      round: 1,
+    })
+    expect(otherTeamHistory.status).toBe(403)
 
     const otherTeamFeedback = await speakerUser.post('/api/submissions/feedback').send({
       tournamentId,
