@@ -42,7 +42,7 @@ export function sortDecorator<TBase, TItem extends { id: number }, TDict>(
       const c = func(base, a, b, dict)
       if (c !== 0) return c
     }
-    return a.id > b.id ? 1 : -1
+    return a.id === b.id ? 0 : a.id > b.id ? 1 : -1
   }
 }
 
@@ -53,7 +53,7 @@ export function allocationComparer(
 ): number {
   const aWin = sum(a.teams.map((id) => findOneResult(compiledTeamResults, id).win))
   const bWin = sum(b.teams.map((id) => findOneResult(compiledTeamResults, id).win))
-  return aWin > bWin ? 1 : -1
+  return aWin === bWin ? 0 : aWin > bWin ? 1 : -1
 }
 
 function measureSlightness(
@@ -73,8 +73,10 @@ export function allocationSlightnessComparer(
   const [win1, sum1] = measureSlightness(s1.teams, compiledTeamResults)
   const [win2, sum2] = measureSlightness(s2.teams, compiledTeamResults)
   if (win1 < win2) return 1
-  if (win1 === win2 && sum1 < sum2) return 1
-  return -1
+  if (win1 > win2) return -1
+  if (sum1 < sum2) return 1
+  if (sum1 > sum2) return -1
+  return 0
 }
 
 export function allocationClosenessComparer(
@@ -85,8 +87,10 @@ export function allocationClosenessComparer(
   const [win1, sum1] = measureSlightness(s1.teams, compiledTeamResults)
   const [win2, sum2] = measureSlightness(s2.teams, compiledTeamResults)
   if (win1 < win2) return -1
-  if (win1 === win2 && sum1 < sum2) return -1
-  return 1
+  if (win1 > win2) return 1
+  if (sum1 < sum2) return -1
+  if (sum1 > sum2) return 1
+  return 0
 }
 
 export function speakerSimpleComparer(
@@ -94,7 +98,9 @@ export function speakerSimpleComparer(
   id1: number,
   id2: number
 ): number {
-  return findOneResult(results, id1).average < findOneResult(results, id2).average ? 1 : -1
+  const left = findOneResult(results, id1).average
+  const right = findOneResult(results, id2).average
+  return left === right ? 0 : left < right ? 1 : -1
 }
 
 export function teamSimpleComparer<T extends { id: number; win: number }>(
@@ -102,17 +108,23 @@ export function teamSimpleComparer<T extends { id: number; win: number }>(
   id1: number,
   id2: number
 ): number {
-  return findOneResult(results, id1).win < findOneResult(results, id2).win ? 1 : -1
+  const left = findOneResult(results, id1).win
+  const right = findOneResult(results, id2).win
+  return left === right ? 0 : left < right ? 1 : -1
 }
 
 export function adjudicatorSimpleComparer(results: IdWithScore[], id1: number, id2: number): number {
-  return findOneResult(results, id1).score < findOneResult(results, id2).score ? 1 : -1
+  const left = findOneResult(results, id1).score
+  const right = findOneResult(results, id2).score
+  return left === right ? 0 : left < right ? 1 : -1
 }
 
 export function speakerComparer(results: IdWithSumAndAverage[], id1: number, id2: number): number {
-  if (findOneResult(results, id1).sum < findOneResult(results, id2).sum) return 1
-  if (findOneResult(results, id1).average < findOneResult(results, id2).average) return 1
-  return -1
+  const left = findOneResult(results, id1)
+  const right = findOneResult(results, id2)
+  if (left.sum !== right.sum) return left.sum < right.sum ? 1 : -1
+  if (left.average !== right.average) return left.average < right.average ? 1 : -1
+  return 0
 }
 
 export function adjudicatorComparer(
@@ -120,7 +132,9 @@ export function adjudicatorComparer(
   id1: number,
   id2: number
 ): number {
-  return findOneResult(results, id1).average < findOneResult(results, id2).average ? 1 : -1
+  const left = findOneResult(results, id1).average
+  const right = findOneResult(results, id2).average
+  return left === right ? 0 : left < right ? 1 : -1
 }
 
 export function teamComparer<
@@ -137,9 +151,12 @@ export function teamComparer<
       const aMargin = a.margin ?? Number.NEGATIVE_INFINITY
       const bMargin = b.margin ?? Number.NEGATIVE_INFINITY
       if (aMargin < bMargin) return 1
+      if (aMargin > bMargin) return -1
+      return 0
     }
+    return aSum > bSum ? -1 : 0
   }
-  return -1
+  return a.win > b.win ? -1 : 0
 }
 
 export function sortTeams<T extends { id: number }>(
@@ -174,7 +191,7 @@ export function sortAdjudicatorsWithPreev<T extends { id: number; preev: number 
   sorted.sort((a, b) => {
     const aScore = evaluateAdjudicator(a, compiledAdjudicatorResults, preevWeights)
     const bScore = evaluateAdjudicator(b, compiledAdjudicatorResults, preevWeights)
-    return aScore < bScore ? 1 : -1
+    return aScore === bScore ? 0 : aScore < bScore ? 1 : -1
   })
   return sorted
 }
@@ -184,9 +201,11 @@ export function sortVenues<
 >(r: number, venues: T[]): T[] {
   sillyLogger(sortVenues, arguments, 'general')
   const sorted = [...venues]
-  sorted.sort((a, b) =>
-    Number(accessDetail(a, r).priority ?? 0) > Number(accessDetail(b, r).priority ?? 0) ? 1 : -1
-  )
+  sorted.sort((a, b) => {
+    const left = Number(accessDetail(a, r).priority ?? 0)
+    const right = Number(accessDetail(b, r).priority ?? 0)
+    return left === right ? 0 : left > right ? 1 : -1
+  })
   return sorted
 }
 
