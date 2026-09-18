@@ -2310,4 +2310,130 @@ describe('Server integration', () => {
     }
   })
 
+
+  it('enforces PDA-style ballot role, scoreless, and no-draw settings end to end', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'phase10-pda-ballot-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'phase10-pda-ballot-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Phase 10 PDA Ballot Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'PDA Round',
+      userDefinedData: {
+        no_speaker_score: true,
+        allow_low_tie_win: false,
+        ballot_submitter_roles: ['chair'],
+      },
+    })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const teamARes = await organizer
+      .post('/api/teams')
+      .send({ tournamentId, name: 'PDA Team A' })
+    const teamBRes = await organizer
+      .post('/api/teams')
+      .send({ tournamentId, name: 'PDA Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const chairRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'PDA Chair', preev: 7 })
+    const panelRes = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'PDA Panel', preev: 6 })
+    expect(chairRes.status).toBe(201)
+    expect(panelRes.status).toBe(201)
+    const chairId = String(chairRes.body.data._id)
+    const panelId = String(panelRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [chairId],
+          panels: [panelId],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const deniedPanelBallot = await request(app).post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: panelId,
+    })
+    expect(deniedPanelBallot.status).toBe(400)
+    expect(String(deniedPanelBallot.body.errors?.[0]?.message ?? '')).toContain(
+      'submittedEntityId'
+    )
+
+    const forbiddenDraw = await request(app).post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      draw: true,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: chairId,
+    })
+    expect(forbiddenDraw.status).toBe(400)
+
+    const allowPanelRes = await organizer.patch(`/api/rounds/${roundId}`).send({
+      tournamentId,
+      userDefinedData: {
+        no_speaker_score: true,
+        allow_low_tie_win: false,
+        ballot_submitter_roles: ['chair', 'panel'],
+      },
+    })
+    expect(allowPanelRes.status).toBe(200)
+
+    const panelBallot = await request(app).post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: panelId,
+    })
+    expect(panelBallot.status).toBe(201)
+    expect(panelBallot.body.data.payload.winnerId).toBe(teamAId)
+    expect(panelBallot.body.data.payload.scoresA).toEqual([])
+    expect(panelBallot.body.data.payload.scoresB).toEqual([])
+  })
+
 })
