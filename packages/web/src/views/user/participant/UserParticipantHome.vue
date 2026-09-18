@@ -371,6 +371,7 @@ import {
 } from '@/composables/useParticipantMode'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { normalizeTournamentTeamNum, resolveTournamentStyle } from '@/utils/tournament-style'
+import { createLatestRequestGate } from '@/utils/latest-request'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
 
 const route = useRoute()
@@ -514,6 +515,7 @@ const isLoading = computed(
     venuesStore.loading
 )
 const hasLoaded = ref(false)
+const refreshGate = createLatestRequestGate()
 
 const errorMessage = computed(
   () =>
@@ -1249,23 +1251,27 @@ function venueName(id?: string) {
 }
 
 async function refresh() {
-  if (!tournamentId.value) {
-    hasLoaded.value = true
+  const currentTournamentId = tournamentId.value
+  const token = refreshGate.begin()
+  if (!currentTournamentId) {
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
     return
   }
   try {
     await Promise.all([
       tournamentStore.fetchTournaments(),
       stylesStore.fetchStyles(),
-      roundsStore.fetchRounds(tournamentId.value, { forcePublic: true }),
-      drawsStore.fetchDraws(tournamentId.value, undefined, { forcePublic: true }),
-      teamsStore.fetchTeams(tournamentId.value),
-      adjudicatorsStore.fetchAdjudicators(tournamentId.value),
-      speakersStore.fetchSpeakers(tournamentId.value),
-      venuesStore.fetchVenues(tournamentId.value),
+      roundsStore.fetchRounds(currentTournamentId, { forcePublic: true }),
+      drawsStore.fetchDraws(currentTournamentId, undefined, { forcePublic: true }),
+      teamsStore.fetchTeams(currentTournamentId),
+      adjudicatorsStore.fetchAdjudicators(currentTournamentId),
+      speakersStore.fetchSpeakers(currentTournamentId),
+      venuesStore.fetchVenues(currentTournamentId),
     ])
   } finally {
-    hasLoaded.value = true
+    const completion = refreshGate.complete(token)
+    if (completion.isCurrent) hasLoaded.value = true
   }
 }
 
@@ -1495,7 +1501,7 @@ select {
   justify-content: center;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-surface) 75%, transparent);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .participant-home-header {
