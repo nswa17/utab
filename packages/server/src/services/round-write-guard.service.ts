@@ -1,8 +1,6 @@
 import type { Connection } from 'mongoose'
 import { getRoundModel } from '../models/round.js'
 
-const STALE_ACTIVE_WRITE_MS = 10 * 60 * 1000
-
 export type RoundWriteLease = {
   roundId: string
   tournamentId: string
@@ -117,7 +115,7 @@ export async function acquireRoundMutationLease(
   roundId: string,
   expectedRound: number
 ): Promise<RoundMutationLease | null> {
-  const idleLease = await tryAcquireMutationLease(
+  return await tryAcquireMutationLease(
     connection,
     tournamentId,
     roundId,
@@ -126,24 +124,6 @@ export async function acquireRoundMutationLease(
       $or: [
         { roundActiveWriteCount: { $exists: false } },
         { roundActiveWriteCount: { $lte: 0 } },
-      ],
-    },
-    true
-  )
-  if (idleLease) return idleLease
-
-  const staleBefore = new Date(Date.now() - STALE_ACTIVE_WRITE_MS)
-  return await tryAcquireMutationLease(
-    connection,
-    tournamentId,
-    roundId,
-    expectedRound,
-    {
-      roundActiveWriteCount: { $gt: 0 },
-      $or: [
-        { roundActiveWriteTouchedAt: { $exists: false } },
-        { roundActiveWriteTouchedAt: null },
-        { roundActiveWriteTouchedAt: { $lt: staleBefore } },
       ],
     },
     true
