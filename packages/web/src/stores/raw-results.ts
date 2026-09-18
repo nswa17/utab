@@ -101,13 +101,15 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   async function updateRawResult(label: RawLabel, rawId: string, payload: Record<string, any>) {
+    const tournamentId = String(payload.tournamentId ?? '')
     beginRequest()
-    error.value = null
+    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      error.value = null
+    }
     try {
       const res = await api.patch(`/raw-results/${label}/${rawId}`, payload)
       return res.data?.data ?? null
     } catch (err: any) {
-      const tournamentId = String(payload.tournamentId ?? '')
       if (!tournamentId || tournamentScope.isActive(tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update raw result'
       }
@@ -119,7 +121,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
 
   async function deleteRawResult(label: RawLabel, rawId: string, tournamentId: string) {
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete(`/raw-results/${label}/${rawId}`, {
         params: { tournamentId },
@@ -136,13 +138,15 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   async function deleteRawResults(label: RawLabel, params: Record<string, any>) {
+    const tournamentId = String(params.tournamentId ?? '')
     beginRequest()
-    error.value = null
+    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      error.value = null
+    }
     try {
       const res = await api.delete(`/raw-results/${label}`, { params })
       return res.data?.data ?? null
     } catch (err: any) {
-      const tournamentId = String(params.tournamentId ?? '')
       if (!tournamentId || tournamentScope.isActive(tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw results'
       }
