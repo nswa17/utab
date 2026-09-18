@@ -1816,4 +1816,441 @@ describe('Server integration', () => {
     ).toBe(0)
   })
 
+
+  it('runs a public tournament lifecycle from hidden draw through break, renumber, backup, and delete', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'phase10-lifecycle-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'phase10-lifecycle-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Phase 10 Lifecycle Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 2,
+      current_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const speakerNames = ['Alpha Speaker', 'Beta Speaker', 'Gamma Speaker', 'Delta Speaker']
+    const speakerRes = await organizer.post('/api/speakers').send(
+      speakerNames.map((name) => ({ tournamentId, name }))
+    )
+    expect(speakerRes.status).toBe(201)
+    const speakerIdByName = new Map<string, string>(
+      (speakerRes.body.data as Array<{ _id: string; name: string }>).map((row) => [
+        row.name,
+        String(row._id),
+      ])
+    )
+
+    const teamSpecs = [
+      ['Alpha', 'Alpha Speaker'],
+      ['Beta', 'Beta Speaker'],
+      ['Gamma', 'Gamma Speaker'],
+      ['Delta', 'Delta Speaker'],
+    ] as const
+    const teamsRes = await organizer.post('/api/teams').send(
+      teamSpecs.map(([name, speakerName]) => ({
+        tournamentId,
+        name: `Lifecycle Team ${name}`,
+        template: {
+          available: true,
+          conflicts: [],
+          speakers: [speakerIdByName.get(speakerName)],
+        },
+      }))
+    )
+    expect(teamsRes.status).toBe(201)
+    const teamIdByName = new Map<string, string>(
+      (teamsRes.body.data as Array<{ _id: string; name: string }>).map((row) => [
+        row.name,
+        String(row._id),
+      ])
+    )
+    const speakerIdByTeamId = new Map<string, string>(
+      teamSpecs.map(([name, speakerName]) => [
+        teamIdByName.get(`Lifecycle Team ${name}`)!,
+        speakerIdByName.get(speakerName)!,
+      ])
+    )
+
+    const adjudicatorRes = await organizer.post('/api/adjudicators').send([
+      { tournamentId, name: 'Lifecycle Judge A', preev: 7 },
+      { tournamentId, name: 'Lifecycle Judge B', preev: 6 },
+    ])
+    expect(adjudicatorRes.status).toBe(201)
+
+    const venuesRes = await organizer.post('/api/venues').send([
+      { tournamentId, name: 'Lifecycle Room A', template: { available: true, priority: 1 } },
+      { tournamentId, name: 'Lifecycle Room B', template: { available: true, priority: 2 } },
+    ])
+    expect(venuesRes.status).toBe(201)
+
+    const round1Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Lifecycle Prelim',
+      motions: ['This House would test the entire lifecycle.'],
+    })
+    const round2Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Lifecycle Final',
+    })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+    const round1Id = String(round1Res.body.data._id)
+    const round2Id = String(round2Res.body.data._id)
+
+    const publicRoundsBeforeDraw = await request(app)
+      .get('/api/rounds')
+      .query({ tournamentId })
+    expect(publicRoundsBeforeDraw.status).toBe(200)
+    const publicRound1BeforeDraw = publicRoundsBeforeDraw.body.data.find(
+      (row: any) => Number(row.round) === 1
+    )
+    expect(publicRound1BeforeDraw.teamAllocationOpened).toBe(false)
+    expect(publicRound1BeforeDraw.adjudicatorAllocationOpened).toBe(false)
+    expect(publicRound1BeforeDraw.motions).toEqual([])
+
+    const generatedDrawRes = await organizer.post('/api/draws/generate').send({
+      tournamentId,
+      round: 1,
+      save: true,
+      options: {
+        team_allocation_algorithm: 'random',
+        team_allocation_algorithm_options: {},
+        adjudicator_allocation_algorithm: 'random',
+        adjudicator_allocation_algorithm_options: {},
+        numbers_of_adjudicators: { chairs: 1, panels: 0, trainees: 0 },
+        venue_allocation_algorithm_options: { shuffle: false },
+      },
+    })
+    expect(generatedDrawRes.status).toBe(201)
+    expect(generatedDrawRes.body.data.allocation).toHaveLength(2)
+    expect(generatedDrawRes.body.data.drawOpened).toBe(false)
+    expect(generatedDrawRes.body.data.allocationOpened).toBe(false)
+    const prelimAllocation = generatedDrawRes.body.data.allocation as Array<any>
+
+    const hiddenPublicDraw = await request(app)
+      .get('/api/draws')
+      .query({ tournamentId, round: 1 })
+    expect(hiddenPublicDraw.status).toBe(200)
+    expect(hiddenPublicDraw.body.data).toHaveLength(1)
+    expect(hiddenPublicDraw.body.data[0].allocation).toEqual([])
+
+    const motionOpenRes = await organizer.patch(`/api/rounds/${round1Id}`).send({
+      tournamentId,
+      motionOpened: true,
+    })
+    expect(motionOpenRes.status).toBe(200)
+
+    const publishTeamsRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: prelimAllocation,
+      userDefinedData: generatedDrawRes.body.data.userDefinedData,
+      drawOpened: true,
+      allocationOpened: false,
+      locked: false,
+    })
+    expect(publishTeamsRes.status).toBe(201)
+
+    const teamsOnlyPublicRound = await request(app)
+      .get(`/api/rounds/${round1Id}`)
+      .query({ tournamentId })
+    expect(teamsOnlyPublicRound.status).toBe(200)
+    expect(teamsOnlyPublicRound.body.data.teamAllocationOpened).toBe(true)
+    expect(teamsOnlyPublicRound.body.data.adjudicatorAllocationOpened).toBe(false)
+    expect(teamsOnlyPublicRound.body.data.motions).toEqual([
+      'This House would test the entire lifecycle.',
+    ])
+
+    const teamsOnlyPublicDraw = await request(app)
+      .get('/api/draws')
+      .query({ tournamentId, round: 1 })
+    expect(teamsOnlyPublicDraw.status).toBe(200)
+    expect(teamsOnlyPublicDraw.body.data[0].allocation).toHaveLength(2)
+    expect(
+      Object.values(teamsOnlyPublicDraw.body.data[0].allocation[0].teams).every(
+        (value) => typeof value === 'string' && value.length > 0
+      )
+    ).toBe(true)
+    expect(teamsOnlyPublicDraw.body.data[0].allocation[0].chairs).toEqual([])
+
+    const publishAllRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: prelimAllocation,
+      userDefinedData: generatedDrawRes.body.data.userDefinedData,
+      drawOpened: true,
+      allocationOpened: true,
+      locked: false,
+    })
+    expect(publishAllRes.status).toBe(201)
+
+    const fullyPublicRound = await request(app)
+      .get(`/api/rounds/${round1Id}`)
+      .query({ tournamentId })
+    expect(fullyPublicRound.status).toBe(200)
+    expect(fullyPublicRound.body.data.teamAllocationOpened).toBe(true)
+    expect(fullyPublicRound.body.data.adjudicatorAllocationOpened).toBe(true)
+
+    const rowTeamIds = (row: any): string[] => {
+      if (Array.isArray(row?.teams)) return row.teams.map((value: unknown) => String(value))
+      const source = row?.teams ?? {}
+      return Object.values(source).map((value) => String(value))
+    }
+
+    for (const row of prelimAllocation) {
+      const [teamAId, teamBId] = rowTeamIds(row)
+      const chairId = String(row.chairs?.[0] ?? '')
+      expect(teamAId).toBeTruthy()
+      expect(teamBId).toBeTruthy()
+      expect(chairId).toBeTruthy()
+
+      const ballotRes = await request(app).post('/api/submissions/ballots').send({
+        tournamentId,
+        round: 1,
+        teamAId,
+        teamBId,
+        winnerId: teamAId,
+        speakerIdsA: [speakerIdByTeamId.get(teamAId)],
+        speakerIdsB: [speakerIdByTeamId.get(teamBId)],
+        scoresA: [76],
+        scoresB: [72],
+        submittedEntityId: chairId,
+      })
+      expect(ballotRes.status).toBe(201)
+
+      const feedbackRes = await request(app).post('/api/submissions/feedback').send({
+        tournamentId,
+        round: 1,
+        adjudicatorId: chairId,
+        score: 8,
+        comment: 'Lifecycle feedback',
+        submittedEntityId: teamAId,
+      })
+      expect(feedbackRes.status).toBe(201)
+    }
+
+    const prelimPreviewRes = await organizer.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: {
+        missing_data_policy: 'warn',
+        include_labels: ['teams', 'speakers', 'adjudicators'],
+      },
+    })
+    expect(prelimPreviewRes.status).toBe(200)
+    expect(prelimPreviewRes.body.data.preview.compiled_team_results).toHaveLength(4)
+
+    const breakCandidatesRes = await organizer
+      .post(`/api/rounds/${round2Id}/break/candidates`)
+      .send({
+        tournamentId,
+        source: 'submissions',
+        sourceRounds: [1],
+        size: 2,
+      })
+    expect(breakCandidatesRes.status).toBe(200)
+    expect(breakCandidatesRes.body.data.candidates).toHaveLength(4)
+    const breakParticipants = (breakCandidatesRes.body.data.candidates as Array<any>)
+      .slice(0, 2)
+      .map((candidate, index) => ({
+        teamId: String(candidate.teamId),
+        seed: index + 1,
+      }))
+
+    const saveBreakRes = await organizer.patch(`/api/rounds/${round2Id}/break`).send({
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'high_low',
+        participants: breakParticipants,
+      },
+      syncTeamAvailability: true,
+    })
+    expect(saveBreakRes.status).toBe(200)
+
+    const breakAllocationRes = await organizer.post('/api/allocations/break').send({
+      tournamentId,
+      round: 2,
+    })
+    expect(breakAllocationRes.status).toBe(200)
+    expect(breakAllocationRes.body.data.allocation).toHaveLength(1)
+    const breakAllocation = (breakAllocationRes.body.data.allocation as Array<any>).map(
+      (row, index) => ({
+        ...row,
+        venue: null,
+        chairs: [String(adjudicatorRes.body.data[index % adjudicatorRes.body.data.length]._id)],
+        panels: [],
+        trainees: [],
+      })
+    )
+
+    const breakDrawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: breakAllocation,
+      userDefinedData: breakAllocationRes.body.data.userDefinedData,
+      drawOpened: true,
+      allocationOpened: true,
+      locked: false,
+    })
+    expect(breakDrawRes.status).toBe(201)
+
+    const breakMatch = breakDrawRes.body.data.allocation[0]
+    const [breakTeamAId, breakTeamBId] = rowTeamIds(breakMatch)
+    const breakChairId = String(breakMatch.chairs[0])
+    const breakBallotRes = await request(app).post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 2,
+      teamAId: breakTeamAId,
+      teamBId: breakTeamBId,
+      winnerId: breakTeamAId,
+      speakerIdsA: [speakerIdByTeamId.get(breakTeamAId)],
+      speakerIdsB: [speakerIdByTeamId.get(breakTeamBId)],
+      scoresA: [77],
+      scoresB: [73],
+      submittedEntityId: breakChairId,
+    })
+    expect(breakBallotRes.status).toBe(201)
+
+    const finalPreviewBody = {
+      tournamentId,
+      source: 'submissions',
+      rounds: [1, 2],
+      options: {
+        missing_data_policy: 'warn',
+        include_labels: ['teams', 'speakers', 'adjudicators'],
+      },
+    }
+    const finalPreviewRes = await organizer.post('/api/compiled/preview').send(finalPreviewBody)
+    expect(finalPreviewRes.status).toBe(200)
+    const finalSaveRes = await organizer.post('/api/compiled').send({
+      ...finalPreviewBody,
+      snapshot_name: 'Phase 10 lifecycle snapshot',
+      preview_signature: finalPreviewRes.body.data.preview_signature,
+      revision: finalPreviewRes.body.data.revision,
+    })
+    expect(finalSaveRes.status).toBe(201)
+
+    const renumberRes = await organizer.patch(`/api/rounds/${round2Id}`).send({
+      tournamentId,
+      round: 3,
+    })
+    expect(renumberRes.status).toBe(200)
+    expect(renumberRes.body.data.round).toBe(3)
+
+    const movedDrawRes = await organizer
+      .get('/api/draws')
+      .query({ tournamentId, round: 3 })
+    expect(movedDrawRes.status).toBe(200)
+    expect(movedDrawRes.body.data).toHaveLength(1)
+    expect(movedDrawRes.body.data[0].drawOpened).toBe(true)
+    expect(movedDrawRes.body.data[0].allocationOpened).toBe(true)
+
+    const oldDrawRes = await organizer
+      .get('/api/draws')
+      .query({ tournamentId, round: 2 })
+    expect(oldDrawRes.status).toBe(200)
+    expect(oldDrawRes.body.data).toHaveLength(0)
+
+    const movedBallotsRes = await organizer.get(
+      `/api/submissions?tournamentId=${tournamentId}&round=3&type=ballot`
+    )
+    expect(movedBallotsRes.status).toBe(200)
+    expect(movedBallotsRes.body.data).toHaveLength(1)
+
+    const movedTeamsRes = await organizer.get('/api/teams').query({ tournamentId })
+    expect(movedTeamsRes.status).toBe(200)
+    for (const team of movedTeamsRes.body.data as Array<any>) {
+      expect((team.details ?? []).some((detail: any) => Number(detail.r) === 2)).toBe(false)
+      expect((team.details ?? []).some((detail: any) => Number(detail.r) === 3)).toBe(true)
+    }
+
+    const exportRes = await organizer
+      .get(`/api/tournaments/${tournamentId}/export`)
+      .buffer(true)
+      .parse(parseBinaryResponse)
+      .send()
+    expect(exportRes.status).toBe(200)
+    expect(Buffer.isBuffer(exportRes.body)).toBe(true)
+
+    const importRes = await organizer
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(exportRes.body)
+    expect(importRes.status).toBe(201)
+    const restoredTournamentId = String(importRes.body.data.tournament._id)
+    expect(restoredTournamentId).not.toBe(tournamentId)
+
+    const restoredRoundsRes = await organizer
+      .get('/api/rounds')
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredRoundsRes.status).toBe(200)
+    expect(
+      (restoredRoundsRes.body.data as Array<any>).map((row) => Number(row.round)).sort()
+    ).toEqual([1, 3])
+    const restoredRound3 = (restoredRoundsRes.body.data as Array<any>).find(
+      (row) => Number(row.round) === 3
+    )
+    expect(restoredRound3.teamAllocationOpened).toBe(true)
+    expect(restoredRound3.adjudicatorAllocationOpened).toBe(true)
+
+    const restoredDrawsRes = await organizer
+      .get('/api/draws')
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredDrawsRes.status).toBe(200)
+    expect(
+      (restoredDrawsRes.body.data as Array<any>).map((row) => Number(row.round)).sort()
+    ).toEqual([1, 3])
+
+    const restoredCompiledRes = await organizer
+      .get('/api/compiled')
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredCompiledRes.status).toBe(200)
+    expect(restoredCompiledRes.body.data).toHaveLength(1)
+    expect(restoredCompiledRes.body.data[0].payload.snapshot_name).toBe(
+      'Phase 10 lifecycle snapshot'
+    )
+
+    const deleteRestoredRoundRes = await organizer
+      .delete(`/api/rounds/${String(restoredRound3._id)}`)
+      .query({ tournamentId: restoredTournamentId })
+    expect(deleteRestoredRoundRes.status).toBe(200)
+
+    const afterDeleteDrawsRes = await organizer
+      .get('/api/draws')
+      .query({ tournamentId: restoredTournamentId, round: 3 })
+    expect(afterDeleteDrawsRes.status).toBe(200)
+    expect(afterDeleteDrawsRes.body.data).toHaveLength(0)
+
+    const afterDeleteBallotsRes = await organizer.get(
+      `/api/submissions?tournamentId=${restoredTournamentId}&round=3&type=ballot`
+    )
+    expect(afterDeleteBallotsRes.status).toBe(200)
+    expect(afterDeleteBallotsRes.body.data).toHaveLength(0)
+
+    const restoredTeamsAfterDeleteRes = await organizer
+      .get('/api/teams')
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredTeamsAfterDeleteRes.status).toBe(200)
+    for (const team of restoredTeamsAfterDeleteRes.body.data as Array<any>) {
+      expect((team.details ?? []).some((detail: any) => Number(detail.r) === 3)).toBe(false)
+    }
+  })
+
 })
