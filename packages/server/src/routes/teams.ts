@@ -11,14 +11,14 @@ import {
 } from '../controllers/teams.js'
 import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
-import { teamDetailsSchema } from '../schemas/entity-details.js'
+import { teamDetailsSchema, teamTemplateSchema } from '../schemas/entity-details.js'
 
 const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string(),
   name: z.string().trim().min(1),
-  template: z.any().optional(),
+  template: teamTemplateSchema.optional(),
   details: teamDetailsSchema.optional(),
   userDefinedData: z.any().optional(),
 })
@@ -39,7 +39,7 @@ const updateSchema = {
     .object({
       tournamentId: z.string().min(1),
       name: z.string().trim().min(1).optional(),
-      template: z.any().optional(),
+      template: teamTemplateSchema.optional(),
       details: teamDetailsSchema.optional(),
       userDefinedData: z.any().optional(),
     })
@@ -60,7 +60,7 @@ const bulkUpdateSchema = {
         id: z.string().min(1),
         tournamentId: z.string().min(1),
         name: z.string().trim().min(1).optional(),
-        template: z.any().optional(),
+        template: teamTemplateSchema.optional(),
         details: teamDetailsSchema.optional(),
         userDefinedData: z.any().optional(),
       })
