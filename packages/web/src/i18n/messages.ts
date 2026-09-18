@@ -1679,6 +1679,8 @@ const en = {
   '会場をランダム順で割り当てます。': 'Assign venues in random order.',
   '考慮対象にする過去ラウンドを個別に選択します。': 'Choose past rounds to consider individually.',
   '厳密アルゴリズムのチーム組み合わせ方式です。': 'Pairing method for strict team allocation.',
+  '候補全体を比較し、サイド配置後の履歴偏りの合計が最小になる組み方を選びます。':
+    'Compare all candidates and choose the pairing that minimizes total side-history imbalance after adjusted side assignment.',
   '同一機関や衝突指定の対戦を避けます。': 'Avoid same-institution and conflict-marked matchups.',
   '同一属性（機関）衝突の回避強度です。':
     'Weight for avoiding same-attribute (institution) conflicts.',
