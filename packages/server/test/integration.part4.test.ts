@@ -2650,12 +2650,43 @@ describe('Server integration', () => {
       tournamentId,
       round: 1,
       name: 'Round 1',
+      userDefinedData: { no_speaker_score: true },
     })
     expect(roundRes.status).toBe(201)
     const roundId = String(roundRes.body.data._id)
     expect(roundRes.body.data.roundActiveWriteCount).toBeUndefined()
     expect(roundRes.body.data.roundMutationLocked).toBeUndefined()
     expect(roundRes.body.data.roundMutationEpoch).toBeUndefined()
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Round Guard Team A',
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Round Guard Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+    const allocation = [
+      {
+        venue: null,
+        teams: { gov: teamAId, opp: teamBId },
+        chairs: [],
+        panels: [],
+        trainees: [],
+      },
+    ]
+    const initialDraw = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(initialDraw.status).toBe(201)
 
     const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
     const {
@@ -2691,6 +2722,36 @@ describe('Server integration', () => {
 
     const blockedWriter = await acquireRoundWriteLease(connection, tournamentId, 1, roundId)
     expect(blockedWriter).toBeNull()
+    const blockedDrawWrite = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(blockedDrawWrite.status).toBe(409)
+    expect(blockedDrawWrite.body.errors?.[0]?.message).toContain('Round changed concurrently')
+
+    const blockedBallotWrite = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+    })
+    expect(blockedBallotWrite.status).toBe(409)
+    expect(blockedBallotWrite.body.errors?.[0]?.message).toContain('Round changed concurrently')
+
+    const blockedResultWrite = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { status: 'should-not-save' },
+    })
+    expect(blockedResultWrite.status).toBe(409)
+    expect(blockedResultWrite.body.errors?.[0]?.message).toContain('Round changed concurrently')
+
     await releaseRoundMutationLease(connection, mutationLease)
 
     const renumberRes = await organizer.patch(`/api/rounds/${roundId}`).send({
