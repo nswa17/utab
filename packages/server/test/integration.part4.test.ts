@@ -3566,4 +3566,229 @@ describe('Server integration', () => {
     expect(churnWrites).toBe(5)
   })
 
+
+  it('rolls back hard-delete privacy erasure after late entity-delete failure', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'privacy-rollback-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'privacy-rollback-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Privacy Rollback Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerRes = await organizer.post('/api/speakers').send({
+      tournamentId,
+      name: 'Rollback Speaker',
+      userDefinedData: { email: 'speaker@example.test' },
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = String(speakerRes.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Rollback Team A',
+      template: { speakers: [speakerId] },
+      details: [{ r: 1, speakers: [speakerId] }],
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Rollback Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const adjudicatorRes = await organizer.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Rollback Adjudicator',
+      preev: 4,
+      userDefinedData: { email: 'adj@example.test' },
+    })
+    expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = String(adjudicatorRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [adjudicatorId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getSpeakerModel } = await import('../src/models/speaker.js')
+    const { getAdjudicatorModel } = await import('../src/models/adjudicator.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const { getSubmissionModel } = await import('../src/models/submission.js')
+    const { getRawSpeakerResultModel } = await import('../src/models/raw-speaker-result.js')
+    const { getRawAdjudicatorResultModel } = await import('../src/models/raw-adjudicator-result.js')
+    const {
+      executeSpeakerPersonalDataErase,
+      executeAdjudicatorPersonalDataErase,
+    } = await import('../src/controllers/privacy.js')
+
+    const connection = await getTournamentConnection(tournamentId)
+    const SpeakerModel = getSpeakerModel(connection)
+    const AdjudicatorModel = getAdjudicatorModel(connection)
+    const TeamModel = getTeamModel(connection)
+    const DrawModel = getDrawModel(connection)
+    const SubmissionModel = getSubmissionModel(connection)
+    const RawSpeakerResultModel = getRawSpeakerResultModel(connection)
+    const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(connection)
+
+    const speakerSubmission = await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      submittedBy: speakerId,
+      payload: {
+        submittedEntityId: speakerId,
+        teamAId,
+        teamBId,
+        comment: 'speaker private comment',
+      },
+    })
+    const adjudicatorSubmission = await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'feedback',
+      submittedBy: adjudicatorId,
+      payload: {
+        adjudicatorId,
+        submittedEntityId: adjudicatorId,
+        score: 7,
+        comment: 'adjudicator private comment',
+      },
+    })
+
+    const rawSpeaker = await RawSpeakerResultModel.create({
+      tournamentId,
+      id: speakerId,
+      from_id: speakerId,
+      r: 1,
+      weight: 1,
+      scores: [75, 0, 0, 0],
+    })
+    const rawAdjudicator = await RawAdjudicatorResultModel.create({
+      tournamentId,
+      id: adjudicatorId,
+      from_id: adjudicatorId,
+      r: 1,
+      weight: 1,
+      score: 7,
+      judged_teams: [teamAId, teamBId],
+      comment: 'raw private comment',
+    })
+
+    const speakerDeleteSpy = vi
+      .spyOn(SpeakerModel as any, 'deleteOne')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected late speaker delete failure')
+        },
+      }))
+
+    await expect(
+      executeSpeakerPersonalDataErase({
+        tournamentId,
+        entityId: speakerId,
+        reason: 'rollback speaker hard delete',
+        eraseMode: 'hard_delete',
+      })
+    ).rejects.toThrow('injected late speaker delete failure')
+    speakerDeleteSpy.mockRestore()
+
+    const restoredSpeaker = await SpeakerModel.findOne({ _id: speakerId, tournamentId }).lean().exec()
+    expect(restoredSpeaker).toBeTruthy()
+    expect((restoredSpeaker as any)?.name).toBe('Rollback Speaker')
+
+    const restoredTeam = await TeamModel.findOne({ _id: teamAId, tournamentId }).lean().exec()
+    expect((restoredTeam as any)?.template?.speakers ?? []).toContain(speakerId)
+    const restoredTeamDetail = (restoredTeam as any)?.details?.find(
+      (detail: any) => Number(detail?.r) === 1
+    )
+    expect(restoredTeamDetail?.speakers ?? []).toContain(speakerId)
+
+    expect(
+      await RawSpeakerResultModel.findOne({ _id: rawSpeaker._id, tournamentId }).lean().exec()
+    ).toBeTruthy()
+    const restoredSpeakerSubmission = await SubmissionModel.findById(speakerSubmission._id)
+      .lean()
+      .exec()
+    expect((restoredSpeakerSubmission as any)?.payload?.comment).toBe('speaker private comment')
+
+    const adjudicatorDeleteSpy = vi
+      .spyOn(AdjudicatorModel as any, 'deleteOne')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected late adjudicator delete failure')
+        },
+      }))
+
+    await expect(
+      executeAdjudicatorPersonalDataErase({
+        tournamentId,
+        entityId: adjudicatorId,
+        reason: 'rollback adjudicator hard delete',
+        eraseMode: 'hard_delete',
+      })
+    ).rejects.toThrow('injected late adjudicator delete failure')
+    adjudicatorDeleteSpy.mockRestore()
+
+    const restoredAdjudicator = await AdjudicatorModel.findOne({
+      _id: adjudicatorId,
+      tournamentId,
+    })
+      .lean()
+      .exec()
+    expect(restoredAdjudicator).toBeTruthy()
+    expect((restoredAdjudicator as any)?.name).toBe('Rollback Adjudicator')
+
+    const restoredDraw = await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()
+    expect((restoredDraw as any)?.allocation?.[0]?.chairs ?? []).toContain(adjudicatorId)
+
+    expect(
+      await RawAdjudicatorResultModel.findOne({
+        _id: rawAdjudicator._id,
+        tournamentId,
+      })
+        .lean()
+        .exec()
+    ).toBeTruthy()
+    const restoredAdjudicatorSubmission = await SubmissionModel.findById(
+      adjudicatorSubmission._id
+    )
+      .lean()
+      .exec()
+    expect((restoredAdjudicatorSubmission as any)?.payload?.comment).toBe(
+      'adjudicator private comment'
+    )
+  })
+
 })
