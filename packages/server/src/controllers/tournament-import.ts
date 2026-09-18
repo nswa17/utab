@@ -35,6 +35,18 @@ class TournamentImportError extends Error {
 }
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
+const DATE_FIELD_NAMES = new Set([
+  'createdAt',
+  'updatedAt',
+  'requestedAt',
+  'approvedAt',
+  'rejectedAt',
+  'completedAt',
+  'revokedAt',
+  'expireAt',
+  'expiresAt',
+  'grantedAt',
+])
 
 function asRecord(value: unknown): PlainObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -248,7 +260,7 @@ function reviveZipValue(
         ? options.targetTournamentId
         : new Types.ObjectId(options.targetTournamentId)
     }
-    if (ISO_DATE_PATTERN.test(value)) {
+    if (key && DATE_FIELD_NAMES.has(key) && ISO_DATE_PATTERN.test(value)) {
       const parsed = new Date(value)
       if (!Number.isNaN(parsed.getTime())) return parsed
     }
