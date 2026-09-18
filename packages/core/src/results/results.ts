@@ -57,11 +57,10 @@ function insertRanking<T extends Ranked>(
 }
 
 function sumByEach(a: number[], b: number[]): number[] {
-  const newList: number[] = []
-  for (let i = 0, limit = Math.min(a.length, b.length); i < limit; i += 1) {
-    newList.push(a[i] + b[i])
+  if (a.length !== b.length) {
+    throw new Error(`speaker score vector length mismatch: ${a.length} !== ${b.length}`)
   }
-  return newList
+  return a.map((value, index) => value + b[index])
 }
 
 function toUserDefinedCollection(
