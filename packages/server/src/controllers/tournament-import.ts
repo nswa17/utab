@@ -11,6 +11,7 @@ import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
+import { ROUND_NAMESPACE_LOCK_COLLECTION } from '../services/round-namespace-guard.service.js'
 import { extractZip } from '../services/zip.js'
 import { badRequest } from './shared/http-errors.js'
 
@@ -294,6 +295,19 @@ function reviveTournamentDocument(doc: unknown, tournamentId: string): PlainObje
   )
 }
 
+function sanitizeImportedTournamentCollectionDocument(
+  collectionName: string,
+  doc: PlainObject
+): PlainObject {
+  if (collectionName !== 'rounds') return doc
+  const next = { ...doc }
+  delete next.roundActiveWriteCount
+  delete next.roundActiveWriteTouchedAt
+  delete next.roundMutationLocked
+  delete next.roundMutationEpoch
+  return next
+}
+
 function reviveAuditLogDocument(doc: unknown, tournamentId: string): PlainObject {
   const revived = requireRecord(
     reviveZipValue(doc, {
@@ -547,8 +561,16 @@ async function importTournamentFromBundle(
       if (!collectionName) {
         throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
       }
+      if (collectionName === ROUND_NAMESPACE_LOCK_COLLECTION) {
+        continue
+      }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
-      const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
+      const revivedDocs = docs.map((doc) =>
+        sanitizeImportedTournamentCollectionDocument(
+          collectionName,
+          reviveTournamentDocument(doc, tournamentId)
+        )
+      )
       if (revivedDocs.length > 0) {
         await db.collection(collectionName).insertMany(revivedDocs, { ordered: true })
       }
