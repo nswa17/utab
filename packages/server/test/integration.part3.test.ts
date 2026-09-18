@@ -2028,20 +2028,19 @@ describe('Server integration', () => {
       teamAllocationOpened: false,
     })
     expect(legacyRoundCloseRes.status).toBe(200)
-    const drawAfterLegacyClose = await organizer
-      .get('/api/draws')
-      .query({ tournamentId, round: 1 })
-    expect(drawAfterLegacyClose.body.data[0].drawOpened).toBe(false)
 
-    const legacyRoundReopenRes = await organizer.patch(`/api/rounds/${round1Id}`).send({
-      tournamentId,
-      teamAllocationOpened: true,
-    })
-    expect(legacyRoundReopenRes.status).toBe(200)
-    const drawAfterLegacyReopen = await organizer
+    // Draw publication is authoritative. Legacy Round flags may still be stored for
+    // backward-compatible payloads, but they must not race with or override Draw.
+    const drawAfterLegacyRoundWrite = await organizer
       .get('/api/draws')
       .query({ tournamentId, round: 1 })
-    expect(drawAfterLegacyReopen.body.data[0].drawOpened).toBe(true)
+    expect(drawAfterLegacyRoundWrite.body.data[0].drawOpened).toBe(true)
+
+    const publicRoundAfterLegacyWrite = await request(app)
+      .get(`/api/rounds/${round1Id}`)
+      .query({ tournamentId })
+    expect(publicRoundAfterLegacyWrite.status).toBe(200)
+    expect(publicRoundAfterLegacyWrite.body.data.teamAllocationOpened).toBe(true)
 
     const rowTeamIds = (row: any): string[] => {
       if (Array.isArray(row?.teams)) return row.teams.map((value: unknown) => String(value))
