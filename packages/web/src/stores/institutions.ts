@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Institution } from '@/types/institution'
 
 export const useInstitutionsStore = defineStore('institutions', () => {
@@ -9,6 +10,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -26,6 +28,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   }
 
   async function fetchInstitutions(tournamentId: string) {
+    tournamentScope.activate(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -59,13 +62,15 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     try {
       const res = await api.post('/institutions', payload)
       const created = res.data?.data
-      if (created) {
+      if (created && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         institutions.value = [created, ...institutions.value]
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create institution'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create institution'
+      }
       return null
     } finally {
       endRequest()
@@ -91,7 +96,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         institutions.value = institutions.value.map((item) =>
           item._id === updated._id ? updated : item
@@ -99,7 +104,9 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update institution'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update institution'
+      }
       return null
     } finally {
       endRequest()
@@ -111,11 +118,15 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     error.value = null
     try {
       await api.delete(`/institutions/${institutionId}`, { params: { tournamentId } })
-      advanceFetchSequence()
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
       institutions.value = institutions.value.filter((item) => item._id !== institutionId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institution'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institution'
+      }
       return false
     } finally {
       endRequest()
@@ -134,15 +145,19 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       const res = await api.delete('/institutions', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       institutions.value = institutions.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
       const deletedCount = Number(res.data?.data?.deletedCount)
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
+      }
       return null
     } finally {
       endRequest()
