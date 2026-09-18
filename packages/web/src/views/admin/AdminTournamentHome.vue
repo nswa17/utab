@@ -3189,12 +3189,14 @@ async function refreshEntities() {
 
 async function saveTournament(options: { includeName?: boolean; includeInfo?: boolean } = {}) {
   if (!tournament.value) return false
+  const targetTournament = tournament.value
+  const requestTournamentId = String(targetTournament._id)
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
   const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
-  const currentAccess = readTournamentAccessState(tournament.value.auth)
+  const currentAccess = readTournamentAccessState(targetTournament.auth)
   const currentHasPassword = currentAccess.hasPassword
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const currentInfo =
     nextUserDefined.info && typeof nextUserDefined.info === 'object'
@@ -3225,8 +3227,8 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     }
   }
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
-    name: includeName ? tournamentForm.name : tournament.value.name,
+    tournamentId: requestTournamentId,
+    name: includeName ? tournamentForm.name : targetTournament.name,
     style: tournamentForm.style,
     auth: authPayload,
     user_defined_data: {
@@ -3235,6 +3237,7 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
       info,
     },
   })
+  if (tournamentId.value !== requestTournamentId) return false
   if (updated) {
     isApplyingTournamentForm.value = true
     applyAccessForm(updated.auth, { preserveExistingPassword: true })
@@ -3263,10 +3266,12 @@ async function saveTournamentName() {
 
 async function saveTournamentNotice() {
   if (!canSaveTournamentNotice.value || isSavingNotice.value) return
+  const requestTournamentId = tournamentId.value
   noticeSaveError.value = ''
   noticeSaved.value = false
   isSavingNotice.value = true
   const ok = await saveTournament({ includeName: false, includeInfo: true })
+  if (tournamentId.value !== requestTournamentId) return
   isSavingNotice.value = false
   if (!ok) {
     noticeSaveError.value = tournamentStore.error ?? t('重要なお知らせの更新に失敗しました。')
@@ -3296,10 +3301,12 @@ async function flushTournamentAutosave() {
   if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value)
     return
   if (isSavingTournamentAutosave.value) return
+  const requestTournamentId = tournamentId.value
   pendingTournamentAutosave.value = false
   isSavingTournamentAutosave.value = true
   tournamentAutosaveStatus.value = 'saving'
   await saveTournament({ includeName: false, includeInfo: false })
+  if (tournamentId.value !== requestTournamentId) return
   isSavingTournamentAutosave.value = false
   if (pendingTournamentAutosave.value) {
     void flushTournamentAutosave()
@@ -3341,19 +3348,22 @@ async function saveRoundDefaults() {
 
 async function saveTournamentBreakSettings() {
   if (!tournament.value || isSavingTournamentBreak.value) return
+  const targetTournament = tournament.value
+  const requestTournamentId = String(targetTournament._id)
   isSavingTournamentBreak.value = true
   tournamentBreakSaveError.value = ''
   tournamentBreakSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const normalizedBreak = normalizeTournamentBreakConfig(tournamentBreakForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: requestTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       break: normalizedBreak,
     },
   })
+  if (tournamentId.value !== requestTournamentId) return
   isSavingTournamentBreak.value = false
   if (!updated?._id) {
     tournamentBreakSaveError.value =
@@ -3375,19 +3385,22 @@ async function saveTournamentBreakSettings() {
 
 async function saveTournamentTeamRankingSettings() {
   if (!tournament.value || isSavingTournamentTeamRanking.value) return
+  const targetTournament = tournament.value
+  const requestTournamentId = String(targetTournament._id)
   isSavingTournamentTeamRanking.value = true
   tournamentTeamRankingSaveError.value = ''
   tournamentTeamRankingSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const normalizedTeamRanking = normalizeTournamentTeamRankingConfig(tournamentTeamRankingForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: requestTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       team_ranking_priority: normalizedTeamRanking,
     },
   })
+  if (tournamentId.value !== requestTournamentId) return
   isSavingTournamentTeamRanking.value = false
   if (!updated?._id) {
     tournamentTeamRankingSaveError.value =
@@ -3409,21 +3422,24 @@ async function saveTournamentTeamRankingSettings() {
 
 async function saveTournamentAdjudicatorRankingSettings() {
   if (!tournament.value || isSavingTournamentAdjudicatorRanking.value) return
+  const targetTournament = tournament.value
+  const requestTournamentId = String(targetTournament._id)
   isSavingTournamentAdjudicatorRanking.value = true
   tournamentAdjudicatorRankingSaveError.value = ''
   tournamentAdjudicatorRankingSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
+  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
   delete nextUserDefined.submission_policy
   const normalizedAdjudicatorRanking = normalizeTournamentAdjudicatorRankingConfig(
     tournamentAdjudicatorRankingForm
   )
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: requestTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       adjudicator_ranking_priority: normalizedAdjudicatorRanking,
     },
   })
+  if (tournamentId.value !== requestTournamentId) return
   isSavingTournamentAdjudicatorRanking.value = false
   if (!updated?._id) {
     tournamentAdjudicatorRankingSaveError.value =
