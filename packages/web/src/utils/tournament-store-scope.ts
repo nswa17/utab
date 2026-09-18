@@ -27,7 +27,8 @@ export function createTournamentStoreScope() {
   }
 
   function isActive(tournamentId: string) {
-    return activeTournamentId.value === normalizeTournamentId(tournamentId)
+    const normalized = normalizeTournamentId(tournamentId)
+    return activeTournamentId.value === null || activeTournamentId.value === normalized
   }
 
   function advanceGeneration(tournamentId: string) {
