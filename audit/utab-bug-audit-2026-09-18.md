@@ -2732,3 +2732,306 @@ Three examples are particularly important:
 As a result, recent fixes can be locally correct and globally wrong.
 
 The highest-priority recent-change regressions are the non-atomic round lifecycle introduced in PR #33 and the institution-priority direction mismatch exposed by PR #30's semantic change. The cross-tournament sequence invalidation from PR #33 is the clearest example where a regression test itself points directly at the missing dimension: tournament scope.
+
+
+## Phase 9 — Static bug-pattern sweep
+
+### Scope and method
+
+Phase 9 searched the current tree for bug-prone static patterns rather than treating every occurrence as a defect. The sweep covered:
+
+- TODO/FIXME markers;
+- `any`, unsafe casts, and non-null assumptions;
+- swallowed/floating asynchronous work;
+- sort comparators and in-place mutation;
+- truthiness and `||` / `??` defaults;
+- ObjectId/string comparisons;
+- date/time handling;
+- randomization and seed handling;
+- recursive import/export conversion;
+- numeric/array boundary assumptions.
+
+High-frequency patterns such as `as any` were only retained when a concrete invariant could be shown to fail.
+
+No production code was changed in this phase.
+
+### P9-01 — HIGH: speaker ranking comparator is non-antisymmetric and can produce wrong compiled speaker rankings
+
+Status: confirmed correctness bug.
+Area:
+- packages/core/src/general/sortings.ts
+- packages/core/src/results/results.ts
+
+`compileSpeakerResults()` assigns final rankings with `speakerComparer`.
+
+The comparator currently behaves approximately as:
+
+    if (left.sum < right.sum) return 1
+    if (left.average < right.average) return 1
+    return -1
+
+The second condition is evaluated even when `left.sum > right.sum`.
+
+A concrete counterexample is:
+
+    A: sum=140, average=70
+    B: sum=80,  average=80
+
+Then:
+
+    compare(A, B) = 1   // because 70 < 80
+    compare(B, A) = 1   // because 80 < 140
+
+So both directions claim that the left item should come after the right item.
+
+This violates comparator anti-symmetry and gives `Array.sort()` no coherent ordering. The resulting ranking is therefore engine/order dependent rather than a defined ranking policy.
+
+This is reachable in normal compiled output because the server maps core `compiled_speaker_results` directly. Unlike team and adjudicator custom ranking, the server does not replace speaker ranking with a newer comparator.
+
+The defect is especially plausible when speakers have different participation counts: `sum` and `average` can naturally point in different directions.
+
+Recommended regression tests:
+
+1. Assert comparator laws:
+   - `compare(x, x) === 0`
+   - `sign(compare(a,b)) === -sign(compare(b,a))`.
+2. Compile two speakers where total and average disagree and assert the chosen ranking policy explicitly.
+3. Repeat with reversed input order and verify identical rankings.
+
+Recommended fix:
+- decide whether speaker ranking is sum-first or average-first;
+- implement a genuine lexicographic comparator;
+- return 0 on complete equality.
+
+### P9-02 — MEDIUM: multiple core comparators never return 0 on ties, violating the JavaScript sort contract
+
+Status: confirmed systemic correctness/reproducibility defect.
+Area: packages/core/src/general/sortings.ts.
+
+Several comparators use two-way expressions such as:
+
+    a > b ? 1 : -1
+
+with no equality branch.
+
+Examples include:
+
+- `sortDecorator` ID fallback;
+- `allocationComparer`;
+- `allocationSlightnessComparer`;
+- `allocationClosenessComparer`;
+- `speakerSimpleComparer`;
+- `teamSimpleComparer`;
+- `adjudicatorSimpleComparer`;
+- `adjudicatorComparer`;
+- `teamComparer` at complete equality;
+- adjudicator sorting with pre-evaluation;
+- the older `sortVenues` helper.
+
+For equal inputs this can yield:
+
+    compare(a, b) = -1
+    compare(b, a) = -1
+
+instead of 0.
+
+This matters beyond cosmetic ordering. These comparators are used in paths that determine:
+
+- result ranking/tie grouping;
+- allocation room ordering;
+- venue assignment order;
+- adjudicator matching order.
+
+`insertRanking()` also assumes comparator semantics very specifically: it increments rank only when the comparator returns exactly `1`; all other values are treated as not-worse/tied. Feeding it invalid comparators makes ordering and tie detection depend on incidental sort behavior.
+
+Current sorting tests exercise non-tied examples but do not assert comparator algebra.
+
+Recommended fix:
+- normalize all comparators to negative / zero / positive semantics;
+- add shared property tests for reflexivity/anti-symmetry/transitivity;
+- preserve a separate deterministic tie-breaker where a stable total order is required rather than encoding “tie” as `-1`.
+
+### P9-03 — MEDIUM: tournament backup import converts arbitrary ISO-looking user strings into Date objects
+
+Status: confirmed backup round-trip data-fidelity bug.
+Area:
+- packages/server/src/controllers/tournament-export.ts
+- packages/server/src/controllers/tournament-import.ts
+
+The export path first performs a JSON clone:
+
+    JSON.parse(JSON.stringify(value))
+
+so both genuine BSON Dates and ordinary strings are represented as JSON strings in the backup.
+
+The import path then recursively walks every value and applies:
+
+    if (ISO_DATE_PATTERN.test(value)) return new Date(value)
+
+without checking the field name or schema.
+
+Therefore a legitimate user string such as:
+
+    userDefinedData.note = "2026-09-18T12:34:56.000Z"
+
+round-trips as a Date rather than a string.
+
+The same issue can affect arbitrary nested custom metadata or payload fields whose text happens to exactly match the accepted timestamp pattern.
+
+The backup format has discarded the type information needed to distinguish:
+
+    actual Date
+    ordinary string that looks like a Date
+
+and the importer guesses globally.
+
+Recommended regression test:
+1. store a nested custom string equal to a valid ISO timestamp;
+2. export tournament;
+3. import bundle;
+4. assert the value is still a string;
+5. independently assert known timestamp fields still restore as Date values.
+
+Recommended fix:
+- use schema/key-aware restoration for known date fields, or
+- serialize BSON/Date types with explicit type metadata such as Extended JSON.
+
+### P9-04 — MEDIUM: raw speaker-result API accepts arbitrary score-vector lengths, while aggregation silently truncates to the shortest vector
+
+Status: confirmed validation/aggregation mismatch.
+Area:
+- packages/server/src/routes/raw-results.ts
+- packages/core/src/results/results.ts
+- packages/core/src/results/checks.ts
+
+The raw speaker route validates only:
+
+    scores: z.array(z.number())
+
+It does not require a vector length matching the tournament style.
+
+The core aggregation combines multiple raw results for the same speaker/round with:
+
+    limit = Math.min(left.length, right.length)
+
+and drops all elements beyond the shortest input.
+
+No speaker-results precheck validates score-vector dimensions.
+
+So accepted inputs such as:
+
+    voter A: [75, 0, 0]
+    voter B: [76]
+
+produce a one-element aggregate; positions 2 and 3 from voter A disappear silently.
+
+This is worse than rejecting malformed input because the stored raw results remain individually visible while compiled output loses data during aggregation.
+
+Recommended regression test:
+- submit two raw speaker results for one speaker/round with different vector lengths;
+- compilation should reject the inconsistent data rather than truncate it.
+
+Recommended fix:
+- validate raw `scores` length against the resolved tournament style on create/update;
+- additionally make core summarization throw on unequal vector lengths instead of silently truncating.
+
+### P9-05 — LOW/MEDIUM: service-account idempotency completion is persisted only after the response has finished
+
+Status: confirmed durability/race gap.
+Area: packages/server/src/middleware/service-account-idempotency.ts.
+
+The middleware creates an `in_progress` idempotency row before the request.
+
+After the HTTP response emits `finish`, it launches a fire-and-forget update:
+
+    in_progress -> completed
+
+For 5xx responses it similarly launches a fire-and-forget delete.
+
+Consequences:
+
+1. a retry can arrive after the original request has already returned successfully but before the completion update commits and receive:
+   `409 A request with this X-Idempotency-Key is still in progress`;
+2. a process crash after the successful response but before the update persists can leave a completed operation recorded as `in_progress` until TTL;
+3. the analogous 5xx cleanup can also be lost.
+
+The integration test verifies ordinary replay and normally passes because the asynchronous DB write usually finishes quickly. It does not establish the stronger durability invariant across the response boundary or process failure.
+
+Recommended fix:
+- persist the replayable completed record before committing the successful response, or otherwise make completion recovery explicit;
+- add a delayed-persistence/immediate-retry test and a stale-`in_progress` recovery policy.
+
+### P9-06 — LOW/MEDIUM: audit logging is best-effort after response completion, so successful sensitive mutations do not guarantee an audit record
+
+Status: confirmed durability gap; severity depends on the intended compliance guarantees.
+Area: packages/server/src/middleware/audit-log.ts.
+
+Audit entries are created from a `finish` handler with a fire-and-forget promise:
+
+    void AuditLogModel.create(...).catch(logger.warn)
+
+Therefore the user-visible mutation can complete successfully even if:
+
+- the audit database write fails;
+- the process terminates immediately after the response;
+- shutdown begins before the write completes.
+
+The existing audit integration test explicitly polls until the asynchronous row appears. That confirms the current best-effort design rather than a durability guarantee.
+
+This is not necessarily wrong if audit logs are explicitly documented as telemetry. It is a defect if they are intended as a security/compliance audit trail for actions such as privacy erasure or service-token revocation.
+
+Recommended action:
+- document the guarantee explicitly;
+- if audit durability is required, make sensitive mutations and audit persistence transactional/outbox-backed or otherwise durable before acknowledging success.
+
+### Static patterns investigated but not retained as bugs
+
+#### getWeightedScore denominator-only weighting
+
+At first glance `getWeightedScore()` appears to omit multiplying each score by its weight.
+
+The built-in style model shows why this is not sufficient evidence of a bug: reply speeches with weight 0.5 are stored on a half-scale range (for example 30–45 with default 37.5). Dividing the sparse raw score by the 0.5 slot weight normalizes 37.5 to a full-scale equivalent of 75.
+
+Without contrary domain evidence, this is treated as intentional normalization rather than a defect.
+
+#### ObjectId/string comparisons
+
+Most tournament/entity comparison paths normalize IDs through `String(...)`, and no new cross-tournament ObjectId-equality defect was confirmed in this sweep.
+
+#### random allocation seeds
+
+Core random allocation incorporates time/randomness in several modes. This reduces reproducibility but appears consistent with explicit random allocation semantics. No preview/save mismatch was demonstrated here.
+
+#### high volume of `as any`
+
+Many casts are present at Mongo/API adaptation boundaries. They weaken static checking, but Phase 9 did not classify casts by count alone. Only casts participating in a concrete broken invariant were retained.
+
+### Test gaps exposed by Phase 9
+
+The most useful additions are not more snapshot/source-string tests. They are invariant tests:
+
+1. comparator algebra tests for every exported comparator;
+2. speaker ranking permutation-invariance tests;
+3. backup export/import type-preservation tests;
+4. raw score-vector dimension tests;
+5. idempotency tests with delayed completion persistence;
+6. fault-injected audit persistence tests if audit durability is part of the contract.
+
+### Phase 9 conclusion
+
+The static sweep found a concentrated problem in old core ranking code rather than a broad collection of miscellaneous syntax smells.
+
+The most important new correctness issue is `speakerComparer`: it is not merely missing an equality case; it can return “greater than” in both directions for two unequal speakers, so final speaker rankings can be wrong and input-order/engine dependent.
+
+The broader comparator family has the same contract weakness on ties and should be fixed as one unit.
+
+Outside ranking, the strongest data-integrity issue is the backup importer’s global ISO-string-to-Date conversion. The raw speaker-result path has a similar boundary problem: permissive input is accepted and only later silently truncated by aggregation.
+
+The recurring theme is that several boundaries infer structure instead of validating or preserving it explicitly:
+
+    comparator ordering
+    JSON type restoration
+    score-vector dimensions
+    asynchronous durability
+
+Those are better Phase 10 targets than mechanically reducing `any` counts.
