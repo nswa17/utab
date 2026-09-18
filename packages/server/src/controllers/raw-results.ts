@@ -1,7 +1,13 @@
 import type { Request, RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
-import { Types } from 'mongoose'
+import { Types, type Connection } from 'mongoose'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { getRoundModel } from '../models/round.js'
+import {
+  acquireRoundWriteLease,
+  releaseRoundWriteLease,
+  type RoundWriteLease,
+} from '../services/round-write-guard.service.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
@@ -128,13 +134,17 @@ type PlainRecord = Record<string, unknown>
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
 type RawResultCrudDocument = {
-  set: (update: PlainRecord) => void
-  save: () => Promise<unknown>
+  r?: unknown
 }
 
 type RawResultCrudModel = {
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<unknown[]>
   findOne: (filter: PlainRecord) => { exec: () => Promise<RawResultCrudDocument | null> }
+  findOneAndUpdate: (
+    filter: PlainRecord,
+    update: PlainRecord,
+    options: { new: boolean }
+  ) => { lean: () => { exec: () => Promise<unknown | null> } }
   findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<unknown | null> } }
   deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
 }
@@ -145,6 +155,70 @@ type RawResultCrudOptions = {
   notFoundMessage: string
 }
 
+type RawRoundLeaseOutcome =
+  | { ok: true; leases: RoundWriteLease[] }
+  | { ok: false; reason: 'missing' | 'conflict'; round: number }
+
+async function releaseRawRoundLeases(
+  connection: Connection,
+  leases: RoundWriteLease[]
+): Promise<void> {
+  await Promise.all(leases.map((lease) => releaseRoundWriteLease(connection, lease)))
+}
+
+async function acquireRawRoundLeases(
+  connection: Connection,
+  tournamentId: string,
+  rounds: number[]
+): Promise<RawRoundLeaseOutcome> {
+  const uniqueRounds = Array.from(new Set(rounds)).sort((left, right) => left - right)
+  const leases: RoundWriteLease[] = []
+  const RoundModel = getRoundModel(connection)
+
+  for (const round of uniqueRounds) {
+    const roundDoc = await RoundModel.findOne({ tournamentId, round })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (!roundDoc) {
+      await releaseRawRoundLeases(connection, leases)
+      return { ok: false, reason: 'missing', round }
+    }
+    const lease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      round,
+      String((roundDoc as any)._id)
+    )
+    if (!lease) {
+      await releaseRawRoundLeases(connection, leases)
+      return { ok: false, reason: 'conflict', round }
+    }
+    leases.push(lease)
+  }
+
+  return { ok: true, leases }
+}
+
+function rawRoundWriteError(
+  res: Parameters<RequestHandler>[1],
+  outcome: Exclude<RawRoundLeaseOutcome, { ok: true; leases: RoundWriteLease[] }>
+): void {
+  if (outcome.reason === 'missing') {
+    notFound(res, `Round ${outcome.round} not found`)
+    return
+  }
+  res.status(409).json({
+    data: null,
+    errors: [
+      {
+        name: 'Conflict',
+        message: `Round ${outcome.round} changed concurrently; retry raw-result write`,
+      },
+    ],
+  })
+}
+
 function createRawResultCrudHandlers(options: RawResultCrudOptions): {
   create: RequestHandler
   update: RequestHandler
@@ -152,12 +226,29 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
   deleteMany: RequestHandler
 } {
   const create: RequestHandler = async (req, res, next) => {
+    let roundLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const isBulk = Array.isArray(req.body)
       const payload = isBulk ? req.body : [req.body]
       const tournamentId = requireSingleTournamentPayload(res, payload)
       if (!tournamentId) return
+
+      const rounds = payload.map((item: any) => Number(item?.r))
+      if (rounds.some((round) => !Number.isInteger(round) || round < 1)) {
+        badRequest(res, 'Raw results must reference a valid round')
+        return
+      }
+
       const connection = await getTournamentConnection(tournamentId)
+      const leaseOutcome = await acquireRawRoundLeases(connection, tournamentId, rounds)
+      if (!leaseOutcome.ok) {
+        rawRoundWriteError(res, leaseOutcome)
+        return
+      }
+      roundLeases = leaseOutcome.leases
+      leaseConnection = connection
+
       const Model = options.getModel(connection)
       const docs: Array<PlainRecord & { _id: Types.ObjectId }> = payload.map((item: any) => ({
         _id: new Types.ObjectId(),
@@ -191,15 +282,26 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
       next(err)
+    } finally {
+      if (leaseConnection && roundLeases.length > 0) {
+        try {
+          await releaseRawRoundLeases(leaseConnection, roundLeases)
+        } catch {
+          // Coordination state fails closed if release cannot be persisted.
+        }
+      }
     }
   }
 
   const update: RequestHandler = async (req, res, next) => {
+    let roundLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const { id: docId } = req.params
       const { tournamentId, ...rest } = req.body as { tournamentId?: string } & PlainRecord
       if (!ensureTournamentId(res, tournamentId)) return
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
+
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
       const existing = await Model.findOne({ _id: docId, tournamentId }).exec()
@@ -207,8 +309,47 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         notFound(res, options.notFoundMessage)
         return
       }
-      existing.set(rest)
-      const updated = await existing.save()
+
+      const sourceRound = Number(existing.r)
+      const targetRound = rest.r === undefined ? sourceRound : Number(rest.r)
+      if (!Number.isInteger(targetRound) || targetRound < 1) {
+        badRequest(res, 'Raw result must reference a valid round')
+        return
+      }
+
+      const leaseOutcome = await acquireRawRoundLeases(connection, tournamentId, [targetRound])
+      if (!leaseOutcome.ok) {
+        rawRoundWriteError(res, leaseOutcome)
+        return
+      }
+      roundLeases = leaseOutcome.leases
+      leaseConnection = connection
+
+      const updated = await Model.findOneAndUpdate(
+        {
+          _id: docId,
+          tournamentId,
+          r: sourceRound,
+        },
+        {
+          $set: rest,
+        },
+        { new: true }
+      )
+        .lean()
+        .exec()
+      if (!updated) {
+        res.status(409).json({
+          data: null,
+          errors: [
+            {
+              name: 'Conflict',
+              message: 'Raw result changed concurrently; retry update',
+            },
+          ],
+        })
+        return
+      }
       res.json({ data: updated, errors: [] })
     } catch (err) {
       if (isDuplicateKeyError(err)) {
@@ -219,6 +360,14 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
       next(err)
+    } finally {
+      if (leaseConnection && roundLeases.length > 0) {
+        try {
+          await releaseRawRoundLeases(leaseConnection, roundLeases)
+        } catch {
+          // Coordination state fails closed if release cannot be persisted.
+        }
+      }
     }
   }
 
