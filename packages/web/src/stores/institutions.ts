@@ -120,7 +120,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       await api.delete(`/institutions/${institutionId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      institutions.value = institutions.value.filter((item) => item._id !== institutionId)
+        institutions.value = institutions.value.filter((item) => item._id !== institutionId)
       }
       return true
     } catch (err: any) {
@@ -145,13 +145,13 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       const res = await api.delete('/institutions', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
+      const deletedCount = Number(res.data?.data?.deletedCount)
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
+        const deletedIds = new Set(normalizedIds)
       institutions.value = institutions.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
-      const deletedCount = Number(res.data?.data?.deletedCount)
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
