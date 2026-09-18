@@ -147,10 +147,13 @@ async function persistTerminalResponse(input: {
     }
   }
 
-  logger.warn(
+  logger.error(
     { err: lastError, actorId, idempotencyKey, statusCode },
-    'failed to persist terminal idempotency response; record remains fail-closed'
+    'failed to durably persist terminal idempotency response'
   )
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to durably persist terminal idempotency response')
 }
 
 export const handleServiceAccountIdempotency: RequestHandler = async (req, res, next) => {
@@ -211,25 +214,50 @@ export const handleServiceAccountIdempotency: RequestHandler = async (req, res, 
       throw err
     }
 
-    let responseBody: unknown
-    let hasJsonResponse = false
     const originalJson = res.json.bind(res)
-    res.json = ((body: unknown) => {
-      hasJsonResponse = true
-      responseBody = body
-      return originalJson(body)
-    }) as typeof res.json
+    let terminalResponseStarted = false
 
-    res.on('finish', () => {
+    res.json = ((body: unknown) => {
+      if (terminalResponseStarted) {
+        return originalJson(body)
+      }
+      terminalResponseStarted = true
+
       const statusCode = res.statusCode
-      const storedResponse = hasJsonResponse ? responseBody : { data: null, errors: [] }
       void persistTerminalResponse({
         actorId,
         idempotencyKey,
         statusCode,
-        responseBody: storedResponse,
-      })
-    })
+        responseBody: body,
+      }).then(
+        () => {
+          originalJson(body)
+        },
+        (error) => {
+          logger.error(
+            { err: error, actorId, idempotencyKey, statusCode },
+            'withholding terminal response because idempotency completion was not durable'
+          )
+          if (res.headersSent) {
+            res.destroy(error instanceof Error ? error : undefined)
+            return
+          }
+          res.status(503)
+          originalJson({
+            data: null,
+            errors: [
+              {
+                name: 'ServiceUnavailable',
+                message:
+                  'Unable to durably record the idempotent response; retry with the same key later',
+              },
+            ],
+          })
+        }
+      )
+
+      return res
+    }) as typeof res.json
 
     next()
   } catch (err) {
