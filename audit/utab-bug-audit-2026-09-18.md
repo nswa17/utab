@@ -2299,3 +2299,436 @@ Phase 7 found that UTab's read-side race handling is uneven rather than absent: 
 The most concrete defect is AdminRoundResult selecting a draw by round number alone even though the draw store can intentionally contain multiple tournaments. A second systemic problem is that late mutations from Tournament A can invalidate Tournament B's correct fetch and insert A objects into current-tournament stores.
 
 The remaining findings show the same architectural theme: route identity, request identity, and stored-data identity are often tracked separately rather than as one compound state invariant. Encoding tournamentId into store scope/selectors and applying the existing latest-request-gate pattern to mutations would remove several classes of bugs at once.
+
+
+## Phase 8 — Recent-change regression audit
+
+### Scope and method
+
+Phase 8 reviewed the recent workflow-heavy change series rather than auditing the current tree as if every defect were equally old.
+
+The main change sets examined were:
+
+- PR #29 / 02928dd — Improve tournament ops UI and allocation handling
+- PR #30 / 415b86d — Clarify priority order and sort venue allocation
+- PR #31 / a866527 — Improve tournament workflow and result exports
+- PR #32 / d419cce — Improve ballot workflow and allocation warnings
+- PR #33 / b05f06d — Implement Gmail-requested UTab improvements
+
+For each change set the audit followed:
+
+    changed assumption
+      -> impacted invariant
+      -> current implementation
+      -> tests added with the change
+      -> missing counterexample
+
+This phase intentionally distinguishes:
+
+1. defects introduced by a recent change;
+2. old defects made reachable or more likely by a recent change;
+3. intentional behavior changes that lack migration/backward-compatibility handling;
+4. areas reviewed where no high-confidence regression was found.
+
+No production code was changed in this phase.
+
+### P8-01 — HIGH: PR #33's round renumber/delete lifecycle is non-atomic across many collections and can leave a tournament partially destroyed
+
+Origin: PR #33 / b05f06d.
+Status: confirmed recent partial-failure hazard.
+Area: packages/server/src/controllers/rounds.ts.
+
+PR #33 correctly recognized that changing or deleting a round number has referential consequences. It added lifecycle propagation across:
+
+- Round,
+- Draw,
+- Submission,
+- Result,
+- RawTeamResult,
+- RawSpeakerResult,
+- RawAdjudicatorResult,
+- Team.details,
+- Adjudicator.details,
+- Venue.details,
+- nested source_rounds in rounds/draws/tournament config.
+
+The success-path integration test is broad and valuable: it creates all of these references, renumbers Round 1 -> 2, checks that they moved, deletes the round, and checks that they disappeared.
+
+The problem is that the new implementation performs these destructive updates as independent writes without a transaction or compensating rollback.
+
+For deletion, the order is approximately:
+
+    deleteRoundDependencies()
+      -> delete draw/submissions/results/raw rows in Promise.all
+    delete Round document
+    delete entity detail rows
+    rewrite nested source_rounds
+
+If the first step succeeds and the Round delete or a later cleanup fails, the Round can remain while its ballots/results/draw are already gone.
+
+For renumbering, the operation does:
+
+    Round.round -> temporary negative number
+    move references old -> temporary
+    move references temporary -> target
+    update Round with requested fields
+    rewrite nested source_rounds
+
+moveRoundReferences itself updates multiple collections concurrently. A failure after only some writes complete can produce a tournament where the Round, draw, submissions, raw rows, and entity details disagree on the round number.
+
+The temporary round number reduces unique-key collisions but does not provide atomicity.
+
+The current integration coverage proves the happy path and duplicate-target precheck. It does not inject a write failure after some dependencies have moved/deleted and assert rollback.
+
+Impact:
+- silent loss of ballots/raw results/draws on a failed round deletion;
+- mixed round numbering after a failed renumber;
+- downstream compilation and break source_rounds can reference a state that never existed consistently.
+
+Recommended regression test:
+- inject failure in one dependency write after at least one earlier write succeeds;
+- assert every collection remains on the original round after the request fails;
+- repeat for delete and renumber.
+
+Recommended fix:
+- use one Mongo transaction/session for the lifecycle operation where deployment topology supports transactions;
+- otherwise implement explicit prepare/rollback with captured preimages rather than treating a long sequence of writes as one operation.
+
+### P8-02 — HIGH/MEDIUM: PR #30 changed institution priority semantics, but class-based adjudicator allocation still interprets the number in the opposite direction
+
+Origin: PR #30 / 415b86d.
+Status: confirmed semantic regression/inconsistency.
+Area:
+- packages/core/src/allocations/common/institution-priority.ts
+- packages/core/src/allocations/adjudicators.ts
+- packages/core/src/allocations/adjudicators/adjfilters.ts
+- packages/core/src/allocations/teams/filters.ts
+- admin/docs terminology introduced by PR #30.
+
+PR #30 deliberately redefined institution priority in the UI/docs as an ordering:
+
+    smaller number = conflict should be avoided earlier/more strongly
+    priority 1 = highest avoidance priority
+
+Most of the core was adapted correctly. The histogram path sorts priorities ascending and compares the number of priority-1 conflicts before priority-2 conflicts.
+
+However class-based adjudicator allocation still uses:
+
+    weightedCommonScore(left, right, priorityMap)
+
+which currently computes:
+
+    sum(priority number for each common institution)
+
+and buildRolePenalty minimizes that value.
+
+Therefore, for otherwise equal candidates:
+
+    candidate A conflicts with priority-1 institution -> penalty 1
+    candidate B conflicts with priority-10 institution -> penalty 10
+
+The class-based selector prefers the smaller penalty, so it prefers candidate A: exactly the conflict that the new UI semantics say should be avoided first.
+
+This does not affect every allocation path. Standard team/adjudicator filters using the lexicographic histogram have the intended smaller-number-first behavior. The inconsistency is specifically dangerous because the same stored institution.priority means opposite things depending on allocation algorithm.
+
+Minimal regression test:
+- one room, two equivalent adjudicators;
+- adjudicator A has a conflict in institution priority 1;
+- adjudicator B has a conflict in institution priority 10;
+- expected: choose B;
+- current class-based penalty ordering chooses A.
+
+Recommended fix:
+- remove raw numeric summation from priority-order semantics;
+- use the same lexicographic priority histogram/penalty vector in class-based selection that the other allocation paths use.
+
+### P8-03 — HIGH/MEDIUM: PR #33's stale-fetch fix is only correct within one tournament and creates the cross-tournament mutation race from Phase 7
+
+Origin: PR #33 / b05f06d.
+Status: confirmed recent regression pattern; same root cause as P7-02.
+Area:
+- packages/web/src/stores/teams.ts
+- speakers.ts
+- adjudicators.ts
+- venues.ts
+- institutions.ts
+- related current-scope entity stores.
+
+PR #33 added an important same-tournament regression test:
+
+    start GET(tournament-1)
+    perform bulk delete(tournament-1)
+    delete completes
+    stale GET completes
+    deleted item must not reappear
+
+To enforce that, successful bulk deletes now call:
+
+    advanceFetchSequence()
+
+The test is correct for one tournament. The sequence counter, however, is global to the store rather than scoped by tournamentId.
+
+Missing counterexample:
+
+    current A state
+    start bulkDelete(A)
+    navigate to B
+    start fetch(B), sequence = N
+    bulkDelete(A) completes
+    advanceFetchSequence() -> N+1
+    fetch(B) completes with N and is discarded
+
+The store can then continue exposing A data while the route is B. For create mutations the same architecture can actively insert an A entity before invalidating B's fetch.
+
+So the recent fix solved:
+
+    stale read after write within A
+
+by introducing/strengthening:
+
+    write in A invalidates read in B
+
+The added tests encode only request age, not request scope.
+
+Recommended regression test:
+- deferred DELETE/POST for tournament A;
+- deferred GET for tournament B;
+- let B request start before A mutation completes;
+- complete A mutation, then B GET;
+- expected final store scope/data = B.
+
+Recommended fix:
+- sequence/generation keys must include tournamentId, or state should be cached by tournamentId;
+- an A mutation must never invalidate a B read.
+
+### P8-04 — MEDIUM: PR #33 silently changed missing allow_low_tie_win from “allowed” to “disallowed” with no data migration
+
+Origin: PR #33 / b05f06d.
+Status: confirmed backward-compatibility regression unless the behavior change was intentionally defined as retroactive.
+Area:
+- packages/server/src/controllers/submissions.ts
+- packages/server/src/controllers/rounds.ts
+- packages/server/src/services/response-sanitizer.ts
+- packages/web/src/views/user/participant/round/ballot/UserRoundBallotEntry.vue
+- packages/web/src/views/admin/AdminTournamentSubmissions.vue
+- packages/web/src/utils/round-defaults.ts.
+
+Before PR #33, the effective default was:
+
+    allow_low_tie_win !== false
+
+so a pre-existing round with no explicit field allowed the draw/tie path.
+
+PR #33 changed both server validation and Web interpretation to:
+
+    allow_low_tie_win === true
+
+and changed new-round defaults from true to false.
+
+Changing the default for newly created rounds is a product decision. The regression is that the same condition was also applied to historical documents that do not have the field.
+
+No migration/backfill for allow_low_tie_win was found.
+
+Therefore an old/imported tournament containing:
+
+    userDefinedData: { ... }   // allow_low_tie_win absent
+
+changes semantics merely by deploying the new version:
+
+    before #33: draw permitted
+    after #33: draw rejected/hidden
+
+The public sanitizer also now emits false for an omitted legacy value, so clients cannot distinguish “old field absent” from an explicitly configured false.
+
+Recommended regression test:
+- persist a round document in the pre-#33 shape with allow_low_tie_win absent;
+- upgrade/read through current code;
+- assert explicitly chosen compatibility behavior.
+
+Recommended fix:
+- either backfill legacy missing values to true before adopting false as the new explicit default,
+- or version the setting/default by data/schema version;
+- do not silently reinterpret absence in historical data.
+
+### P8-05 — MEDIUM: PR #31's bulk report ZIP can mix a historical compiled snapshot with current live ballots
+
+Origin: PR #31 / a866527.
+Status: confirmed provenance regression; expands P6 historical-report findings.
+Area:
+- packages/web/src/views/admin/AdminTournamentCompiled.vue
+- packages/web/src/utils/detailed-results-export.ts.
+
+PR #31 added useful detailed vote CSVs and a bulk ZIP.
+
+The ranking/result files are built from the currently selected compiled object, which can be a saved historical snapshot.
+
+The detailed vote file is built from:
+
+    submissions.submissions
+
+which is the live current submission list fetched from the server.
+
+That means one ZIP can contain:
+
+    team_results.csv     -> historical compiled snapshot at time T1
+    speaker_results.csv  -> historical compiled snapshot at time T1
+    detailed ballots     -> live submissions after edits at T2
+
+If an administrator corrects a ballot after saving a compiled snapshot and later downloads that old snapshot, the archive can contain rankings produced from the old ballot and a detailed-vote file showing the corrected ballot.
+
+The ZIP is technically valid; the defect is archival consistency.
+
+Recommended regression test:
+1. create ballot version A;
+2. save compiled snapshot S;
+3. edit ballot to version B;
+4. reopen/export S;
+5. assert all files in S's archive refer to one defined provenance point.
+
+Recommended fix:
+- store or reconstruct submission provenance with the compiled snapshot;
+- or clearly make the detailed-vote file an explicitly named LIVE/CURRENT attachment rather than presenting it as part of one historical result package.
+
+### P8-06 — LOW/MEDIUM: PR #31 introduced detailed vote export without correction timestamps
+
+Origin: PR #31 / a866527.
+Status: confirmed recent provenance omission; same issue previously recorded as P6-08.
+Area: packages/web/src/utils/detailed-results-export.ts.
+
+The newly introduced DetailedResultsExportRow contains:
+
+    submitted_at
+
+from Submission.createdAt, but no updated_at.
+
+Administrator corrections update the payload and updatedAt while preserving createdAt.
+
+So the export can show corrected ballot contents under the timestamp of the original ballot without indicating that a correction occurred.
+
+The existing comment-sheet exporter already preserves created and updated timestamps, so the omission is inconsistent with another export path.
+
+Recommended fix:
+- add updated_at;
+- add a regression test where createdAt != updatedAt and verify both appear.
+
+### P8-07 — LOW/MEDIUM: PR #32 hardcoded admin score-editor step=1 despite built-in 0.5-unit scoring styles
+
+Origin: PR #32 / d419cce.
+Status: confirmed frontend/style-contract regression.
+Area:
+- packages/web/src/views/admin/AdminTournamentSubmissions.vue
+- packages/server/src/seed/styles.ts.
+
+PR #32 intentionally replaced several numeric inputs from:
+
+    step="0.1"
+
+to:
+
+    step="1"
+
+and added a source-level test that asserts step=1 and rejects step=0.1.
+
+That assumption is false for built-in styles.
+
+Examples in the current style seed:
+
+- North American reply speech: unit = 0.5, default = 37.5
+- Asian reply speech: unit = 0.5, default = 37.5
+
+Thus a valid score such as 37.5 is native to UTab's own style definition while the administrator correction UI advertises whole-number increments.
+
+This is primarily an editor/contract bug, not proof that the backend rejects manually typed decimals. But it makes the correction UI disagree with the scoring model, and spinner/HTML step behavior is wrong for legitimate half-point speeches.
+
+The regression test added with the change tests the hardcoded implementation rather than the domain invariant.
+
+Recommended regression test:
+- load North American/Asian style;
+- edit reply score;
+- expected input step derives from range.unit and accepts/increments by 0.5.
+
+Recommended fix:
+- bind step to the role/style numeric range unit;
+- do the same for feedback using adjudicator_range.unit;
+- avoid tests that assert a literal step value independently of style.
+
+### P8-08 — MEDIUM: PR #33's round lifecycle tests are broad but verify only success, so they give unusually strong false confidence around the most destructive new code
+
+Origin: PR #33 / b05f06d.
+Status: test-gap finding, supporting P8-01.
+Area: packages/server/test/integration.part2.test.ts.
+
+The new integration case "moves and removes all round-scoped references when a round is renumbered and deleted" is one of the strongest success-path tests in the repository. It covers draw, submission, generic result, all three raw-result collections, entity details, round-level source_rounds, and tournament-level source_rounds.
+
+Because it touches almost exactly the same surface as P8-01, its omission matters: it contains no fault injection between the multi-collection writes.
+
+This is a useful example of a recurring recent-change testing pattern:
+
+    broad end-to-end success coverage
+    + narrow duplicate/precondition coverage
+    - no mid-operation failure coverage
+
+For destructive orchestration, that leaves the critical invariant untested:
+
+    request failure => persistent state is unchanged
+
+This should become an explicit transactional regression-test category rather than adding more success-path assertions.
+
+### Recent changes investigated without a new high-confidence regression
+
+#### PR #29 — Improve tournament ops UI and allocation handling
+
+The submission duplicate helper correctly includes round in its duplicate key and normalizes the ballot team pair order. No cross-round duplicate false positive was found there.
+
+The operations-hub changes were also later strengthened with request gates. Several Phase 7 races are in simpler/current-scope pages rather than evidence of a new #29 hub regression.
+
+#### PR #30 — venue allocation priority ordering itself
+
+The venue allocator added by #30 sorts available venues by smaller priority number first, with venue ID as deterministic tie-breaker, then assigns them to win-sorted rooms. The core test reflects the intended documented semantics. The confirmed #30 issue is the institution-priority interpretation in the class-based adjudicator path, not the venue sort.
+
+#### PR #31 — ZIP byte construction
+
+The browser ZIP writer computes CRC32, local headers, central-directory entries, UTF-8 flags, duplicate-name checks, and end-of-central-directory records in a coherent way. No high-confidence archive-format defect was found. P8-05/P8-06 concern the provenance of the data placed into the archive.
+
+#### PR #32 — ordinary participant double-click protection
+
+The participant confirmation flow disables submission while submissions.loading is true and has an explicit confirmation countdown. The remaining timeout ambiguity is P7-05, not a simple missing busy guard introduced by #32.
+
+#### PR #33 — same-tournament stale-fetch intent
+
+The new entity bulk-delete test correctly prevents an older fetch in the same tournament from resurrecting a deleted entity. The bug is that the mechanism lacks tournament scope, not that the same-tournament test is wrong.
+
+### Change-to-regression map
+
+| Change | Intended improvement | Regression / missing invariant |
+| --- | --- | --- |
+| PR #30 | smaller-number priority ordering | class-based adjudicator path still minimizes numeric sum, reversing institution-priority meaning |
+| PR #31 | detailed CSV + bulk ZIP | historical compiled data can be packaged with live ballots; corrections lack updated_at |
+| PR #32 | simpler numeric ballot editing | hardcoded step=1 conflicts with built-in 0.5-unit reply scores |
+| PR #33 | stale-read protection after mutations | global sequence lets tournament A invalidate tournament B fetch |
+| PR #33 | safer round renumber/delete propagation | many destructive writes have no transaction/rollback |
+| PR #33 | default draws/ties off unless explicitly enabled | old records with missing field are silently reinterpreted |
+
+### Regression-test priorities before the fix phase
+
+1. Fault-injected round delete/renumber rollback tests.
+2. Class-based institution-priority direction test (priority 1 vs priority 10).
+3. Cross-tournament A-mutation/B-fetch deferred-promise tests for every current-scope entity store.
+4. Legacy missing allow_low_tie_win compatibility test.
+5. Historical compiled snapshot + later ballot edit + bulk ZIP provenance test.
+6. Built-in half-point style admin-edit test.
+7. Detailed export createdAt/updatedAt correction test.
+
+### Phase 8 conclusion
+
+The recent changes are not simply low-quality patches; many add useful validation and regression coverage. The recurring weakness is that tests mirror the local bug being fixed too closely.
+
+Three examples are particularly important:
+
+- stale-fetch tests model one tournament, while the store is reused across tournaments;
+- round lifecycle tests model complete success, while the implementation spans many independent destructive writes;
+- numeric-input tests assert a literal UI step instead of deriving the invariant from the selected style.
+
+As a result, recent fixes can be locally correct and globally wrong.
+
+The highest-priority recent-change regressions are the non-atomic round lifecycle introduced in PR #33 and the institution-priority direction mismatch exposed by PR #30's semantic change. The cross-tournament sequence invalidation from PR #33 is the clearest example where a regression test itself points directly at the missing dimension: tournament scope.
