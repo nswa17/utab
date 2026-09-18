@@ -31,9 +31,25 @@ describe('submissions store', () => {
     mockedApi.delete.mockReset()
   })
 
-  it('handles timeout-like cancellation errors on ballot submission', async () => {
+  it('reconciles an ambiguous ballot retry with an existing participant submission', async () => {
     const store = useSubmissionsStore()
-    mockedApi.post.mockRejectedValueOnce({ code: 'ERR_CANCELED' })
+    const existing = {
+      _id: 'ballot-existing',
+      type: 'ballot',
+      round: 1,
+      payload: {
+        teamAId: 'team-b',
+        teamBId: 'team-a',
+        submittedEntityId: 'judge-1',
+      },
+    }
+    mockedApi.post.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { errors: [{ message: 'already submitted' }] },
+      },
+    })
+    mockedApi.get.mockResolvedValueOnce({ data: { data: [existing] } })
 
     const result = await store.submitBallot({
       tournamentId: 'tournament-1',
@@ -42,10 +58,48 @@ describe('submissions store', () => {
       teamBId: 'team-b',
       scoresA: [75],
       scoresB: [72],
+      submittedEntityId: 'judge-1',
+    })
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/submissions/ballots', {
+      tournamentId: 'tournament-1',
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [72],
+      submittedEntityId: 'judge-1',
+    })
+    expect(mockedApi.get).toHaveBeenCalledWith('/submissions/mine', {
+      params: {
+        tournamentId: 'tournament-1',
+        submittedEntityId: 'judge-1',
+        type: 'ballot',
+        round: 1,
+      },
+    })
+    expect(result).toEqual(existing)
+    expect(store.error).toBeNull()
+    expect(store.loading).toBe(false)
+  })
+
+  it('reports an ambiguous network failure without claiming the submission failed', async () => {
+    const store = useSubmissionsStore()
+    mockedApi.post.mockRejectedValueOnce({ code: 'ERR_NETWORK' })
+    mockedApi.get.mockResolvedValueOnce({ data: { data: [] } })
+
+    const result = await store.submitBallot({
+      tournamentId: 'tournament-1',
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [72],
+      submittedEntityId: 'judge-1',
     })
 
     expect(result).toBeNull()
-    expect(store.error).toContain('timed out')
+    expect(store.error).toContain('送信結果を確認できませんでした')
     expect(store.loading).toBe(false)
   })
 
@@ -136,10 +190,44 @@ describe('submissions store', () => {
     expect(store.error).toBe('Forbidden')
   })
 
-  it('submits feedback payloads with abort signal', async () => {
+  it('submits feedback without a client-side abort deadline', async () => {
     const store = useSubmissionsStore()
     const created = { _id: 'feedback-1', type: 'feedback' }
     mockedApi.post.mockResolvedValueOnce({ data: { data: created } })
+
+    const payload = {
+      tournamentId: 'tournament-1',
+      round: 2,
+      adjudicatorId: 'adj-1',
+      score: 8,
+      submittedEntityId: 'team-1',
+    }
+    const result = await store.submitFeedback(payload)
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/submissions/feedback', payload)
+    expect(result).toEqual(created)
+    expect(store.error).toBeNull()
+    expect(store.loading).toBe(false)
+  })
+
+  it('reconciles duplicate feedback with the already stored submission', async () => {
+    const store = useSubmissionsStore()
+    const existing = {
+      _id: 'feedback-existing',
+      type: 'feedback',
+      round: 2,
+      payload: {
+        adjudicatorId: 'adj-1',
+        submittedEntityId: 'team-1',
+      },
+    }
+    mockedApi.post.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { errors: [{ message: 'already submitted' }] },
+      },
+    })
+    mockedApi.get.mockResolvedValueOnce({ data: { data: [existing] } })
 
     const result = await store.submitFeedback({
       tournamentId: 'tournament-1',
@@ -149,20 +237,8 @@ describe('submissions store', () => {
       submittedEntityId: 'team-1',
     })
 
-    expect(mockedApi.post).toHaveBeenCalledWith(
-      '/submissions/feedback',
-      {
-        tournamentId: 'tournament-1',
-        round: 2,
-        adjudicatorId: 'adj-1',
-        score: 8,
-        submittedEntityId: 'team-1',
-      },
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    )
-    expect(result).toEqual(created)
+    expect(result).toEqual(existing)
     expect(store.error).toBeNull()
-    expect(store.loading).toBe(false)
   })
 
   it('updates submission payload by id', async () => {
