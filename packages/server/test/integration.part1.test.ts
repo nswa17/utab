@@ -1527,7 +1527,19 @@ describe('Server integration', () => {
     expect(compiledAfterPreview.status).toBe(200)
     expect(compiledAfterPreview.body.data).toHaveLength(0)
 
-    const staleSaveRes = await agent.post('/api/compiled').send({
+    const missingPreviewTokensRes = await agent.post('/api/v1/compiled').send({
+      tournamentId,
+      source: 'raw',
+      options: {
+        include_labels: ['teams'],
+      },
+    })
+    expect(missingPreviewTokensRes.status).toBe(400)
+    expect(missingPreviewTokensRes.body.errors?.[0]?.message).toContain(
+      'preview_signature and revision are required'
+    )
+
+    const staleSaveRes = await agent.post('/api/v1/compiled').send({
       tournamentId,
       source: 'raw',
       options: {
@@ -1539,7 +1551,7 @@ describe('Server integration', () => {
     expect(staleSaveRes.status).toBe(409)
     expect(staleSaveRes.body.errors[0].name).toBe('PreviewStale')
 
-    const saveRes = await agent.post('/api/compiled').send({
+    const saveRes = await agent.post('/api/v1/compiled').send({
       tournamentId,
       source: 'raw',
       options: {
