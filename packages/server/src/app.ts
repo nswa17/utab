@@ -72,7 +72,6 @@ export function createApp(): express.Express {
   )
 
   app.use(httpLogger)
-  app.use(auditRequestLogger)
 
   function mountApiNamespace(prefix: '/api' | '/api/v1', options?: { deprecated?: boolean }) {
     app.use(prefix, attachServiceAccountPrincipal)
@@ -92,6 +91,8 @@ export function createApp(): express.Express {
     app.use(`${prefix}/raw-results`, express.json({ limit: jsonBodyLimits.rawResults }))
     app.use(prefix, express.json({ limit: jsonBodyLimits.default }))
     app.use(prefix, handleServiceAccountIdempotency)
+
+    app.use(prefix, auditRequestLogger)
 
     if (options?.deprecated) {
       app.use(prefix, (_req, res, next) => {
