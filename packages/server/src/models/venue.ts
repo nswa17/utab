@@ -2,7 +2,12 @@ import { Schema, type Connection, type InferSchemaType, type Model } from 'mongo
 
 const venueDetailSchema = new Schema(
   {
-    r: { type: Number, required: true },
+    r: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: Number.isInteger, message: 'detail round must be an integer' },
+    },
     available: { type: Boolean, default: true },
     priority: { type: Number, default: 1 },
   },
@@ -22,7 +27,17 @@ const venueSchema = new Schema(
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
     name: { type: String, required: true },
     template: { type: venueTemplateSchema, default: () => ({}) },
-    details: { type: [venueDetailSchema], default: [] },
+    details: {
+      type: [venueDetailSchema],
+      default: [],
+      validate: {
+        validator: (details: Array<{ r?: number }>) => {
+          const rounds = details.map((detail) => Number(detail?.r))
+          return new Set(rounds).size === rounds.length
+        },
+        message: 'detail rounds must be unique',
+      },
+    },
     userDefinedData: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
