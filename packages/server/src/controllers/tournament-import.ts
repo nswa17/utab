@@ -10,8 +10,11 @@ import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
 import {
   adjudicatorDetailsSchema,
+  adjudicatorTemplateSchema,
   teamDetailsSchema,
+  teamTemplateSchema,
   venueDetailsSchema,
+  venueTemplateSchema,
 } from '../schemas/entity-details.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
@@ -178,28 +181,30 @@ async function ensureImportedStyle(
   return { styleId: candidateId, createdStyleId: candidateId }
 }
 
-function validateImportedEntityDetails(collectionName: string, docs: unknown[]): void {
-  const schema =
+function validateImportedEntityState(collectionName: string, docs: unknown[]): void {
+  const schemas =
     collectionName === 'teams'
-      ? teamDetailsSchema
+      ? { details: teamDetailsSchema, template: teamTemplateSchema }
       : collectionName === 'adjudicators'
-        ? adjudicatorDetailsSchema
+        ? { details: adjudicatorDetailsSchema, template: adjudicatorTemplateSchema }
         : collectionName === 'venues'
-          ? venueDetailsSchema
+          ? { details: venueDetailsSchema, template: venueTemplateSchema }
           : null
-  if (!schema) return
+  if (!schemas) return
 
   docs.forEach((doc, index) => {
     const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
-    if (record.details === undefined) return
-    const parsed = schema.safeParse(record.details)
-    if (parsed.success) return
-    const issue = parsed.error.issues[0]
-    const suffix = issue?.path?.length ? ` at details.${issue.path.join('.')}` : ''
-    throw new TournamentImportError(
-      400,
-      `Invalid ${collectionName} details in backup at index ${index}${suffix}: ${issue?.message ?? 'invalid details'}`
-    )
+    for (const field of ['template', 'details'] as const) {
+      if (record[field] === undefined) continue
+      const parsed = schemas[field].safeParse(record[field])
+      if (parsed.success) continue
+      const issue = parsed.error.issues[0]
+      const suffix = issue?.path?.length ? ` at ${field}.${issue.path.join('.')}` : ''
+      throw new TournamentImportError(
+        400,
+        `Invalid ${collectionName} ${field} in backup at index ${index}${suffix}: ${issue?.message ?? `invalid ${field}`}`
+      )
+    }
   })
 }
 
@@ -453,7 +458,7 @@ async function importTournamentFromBundle(
         throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
-      validateImportedEntityDetails(collectionName, docs)
+      validateImportedEntityState(collectionName, docs)
       const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
       if (revivedDocs.length > 0) {
         await db.collection(collectionName).insertMany(revivedDocs, { ordered: true })
