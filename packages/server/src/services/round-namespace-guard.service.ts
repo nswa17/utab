@@ -1,4 +1,5 @@
 import { Schema, type Connection, type InferSchemaType, type Model } from 'mongoose'
+import { isDuplicateKeyError } from './mongo-error.service.js'
 
 export const ROUND_NAMESPACE_LOCK_COLLECTION = 'round_namespace_locks'
 
@@ -31,11 +32,18 @@ export async function acquireRoundNamespaceLease(
   tournamentId: string
 ): Promise<RoundNamespaceLease | null> {
   const LockModel = getRoundNamespaceLockModel(connection)
-  await LockModel.updateOne(
-    { _id: tournamentId },
-    { $setOnInsert: { locked: false, epoch: 0, touchedAt: new Date() } },
-    { upsert: true }
-  ).exec()
+  try {
+    await LockModel.updateOne(
+      { _id: tournamentId },
+      { $setOnInsert: { locked: false, epoch: 0, touchedAt: new Date() } },
+      { upsert: true }
+    ).exec()
+  } catch (error) {
+    // Two processes can initialize the per-tournament lock document at the
+    // same time. The unique _id makes one upsert lose; both may proceed to
+    // the atomic claim below.
+    if (!isDuplicateKeyError(error)) throw error
+  }
 
   const claimed = await LockModel.findOneAndUpdate(
     { _id: tournamentId, locked: { $ne: true } },
