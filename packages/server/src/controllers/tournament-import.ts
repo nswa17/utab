@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { RequestHandler } from 'express'
 import { Types } from 'mongoose'
 import { getAuthenticatedActorId } from '../middleware/auth.js'
+import { logger } from '../middleware/logging.js'
 import { AuditLogModel } from '../models/audit-log.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
@@ -308,6 +309,132 @@ function reviveAuditLogDocument(doc: unknown, tournamentId: string): PlainObject
   }
 }
 
+type ImportCleanupFailure = {
+  step: string
+  errorName: string
+  errorMessage: string
+}
+
+function describeCleanupError(error: unknown): { errorName: string; errorMessage: string } {
+  if (error instanceof Error) {
+    return {
+      errorName: error.name || 'Error',
+      errorMessage: error.message || 'Unknown cleanup error',
+    }
+  }
+  return {
+    errorName: 'Error',
+    errorMessage: String(error),
+  }
+}
+
+async function cleanupFailedTournamentImport(input: {
+  tournamentId: string
+  actorUserId?: string
+  createdStyleId: number | null
+  originalError: unknown
+}): Promise<void> {
+  const { tournamentId, actorUserId, createdStyleId, originalError } = input
+  const cleanupSteps: Array<{ step: string; run: () => Promise<unknown> }> = [
+    {
+      step: 'tournament',
+      run: () => TournamentModel.deleteOne({ _id: tournamentId }).exec(),
+    },
+    {
+      step: 'audit_logs',
+      run: () => AuditLogModel.deleteMany({ tournamentId }).exec(),
+    },
+    {
+      step: 'memberships',
+      run: () => TournamentMemberModel.deleteMany({ tournamentId }).exec(),
+    },
+    {
+      step: 'tournament_database',
+      run: () => dropTournamentDatabase(tournamentId),
+    },
+  ]
+
+  if (actorUserId) {
+    cleanupSteps.push({
+      step: 'user_tournament_reference',
+      run: () =>
+        UserModel.updateMany(
+          { _id: actorUserId },
+          { $pull: { tournaments: tournamentId } }
+        ).exec(),
+    })
+  }
+  if (createdStyleId !== null) {
+    cleanupSteps.push({
+      step: 'created_style',
+      run: () => StyleModel.deleteOne({ id: createdStyleId }).exec(),
+    })
+  }
+
+  const settled = await Promise.allSettled(cleanupSteps.map((item) => item.run()))
+  const failures: ImportCleanupFailure[] = settled.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return []
+    return [
+      {
+        step: cleanupSteps[index].step,
+        ...describeCleanupError(result.reason),
+      },
+    ]
+  })
+
+  if (failures.length === 0) return
+
+  const original = describeCleanupError(originalError)
+  const repairMetadata = {
+    source: 'tournament-import',
+    repairRequired: true,
+    failedSteps: failures,
+    originalError: original,
+    createdStyleId,
+  }
+
+  logger.error(
+    {
+      tournamentId,
+      actorUserId: actorUserId ?? null,
+      ...repairMetadata,
+    },
+    'tournament import cleanup incomplete'
+  )
+
+  try {
+    await AuditLogModel.create({
+      tournamentId,
+      action: 'tournament.import.cleanup_failed',
+      actorUserId,
+      targetType: 'tournament',
+      targetId: tournamentId,
+      metadata: repairMetadata,
+    })
+  } catch (auditError) {
+    const auditFailure = describeCleanupError(auditError)
+    failures.push({
+      step: 'cleanup_failure_audit_record',
+      ...auditFailure,
+    })
+    logger.error(
+      {
+        tournamentId,
+        actorUserId: actorUserId ?? null,
+        auditFailure,
+        failedSteps: failures,
+      },
+      'failed to persist tournament import cleanup repair record'
+    )
+  }
+
+  const failedStepNames = failures.map((failure) => failure.step).join(', ')
+  throw new TournamentImportError(
+    500,
+    `Tournament import failed and cleanup was incomplete (repair required: ${failedStepNames})`
+  )
+}
+
 async function attachOrganizerMembership(
   session: Record<string, unknown> | undefined,
   tournamentId: string
@@ -445,24 +572,12 @@ async function importTournamentFromBundle(
       importedAuditLogs: revivedAuditLogs.length,
     }
   } catch (error) {
-    const cleanupTasks: Promise<unknown>[] = [
-      TournamentModel.deleteOne({ _id: tournamentId }).exec(),
-      AuditLogModel.deleteMany({ tournamentId }).exec(),
-      TournamentMemberModel.deleteMany({ tournamentId }).exec(),
-      dropTournamentDatabase(tournamentId),
-    ]
-    if (actorUserId) {
-      cleanupTasks.push(
-        UserModel.updateMany(
-          { _id: actorUserId },
-          { $pull: { tournaments: tournamentId } }
-        ).exec()
-      )
-    }
-    if (createdStyleId !== null) {
-      cleanupTasks.push(StyleModel.deleteOne({ id: createdStyleId }).exec())
-    }
-    await Promise.allSettled(cleanupTasks)
+    await cleanupFailedTournamentImport({
+      tournamentId,
+      actorUserId,
+      createdStyleId,
+      originalError: error,
+    })
     throw error
   }
 }
