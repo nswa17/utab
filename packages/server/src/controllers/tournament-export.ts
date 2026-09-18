@@ -4,6 +4,7 @@ import { AuditLogModel } from '../models/audit-log.js'
 import { StyleModel } from '../models/style.js'
 import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { ROUND_NAMESPACE_LOCK_COLLECTION } from '../services/round-namespace-guard.service.js'
 import { buildZip } from '../services/zip.js'
 import { escapeCsvCell } from '../services/csv.service.js'
 import { badRequest, notFound } from './shared/http-errors.js'
@@ -89,6 +90,28 @@ function parseJsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function sanitizeTournamentCollectionForExport(
+  collectionName: string,
+  docs: unknown[]
+): unknown[] {
+  if (collectionName !== 'rounds') return docs
+  return docs.map((doc) => {
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return doc
+    const {
+      roundActiveWriteCount: _roundActiveWriteCount,
+      roundActiveWriteTouchedAt: _roundActiveWriteTouchedAt,
+      roundMutationLocked: _roundMutationLocked,
+      roundMutationEpoch: _roundMutationEpoch,
+      ...logicalRound
+    } = doc as Record<string, unknown>
+    void _roundActiveWriteCount
+    void _roundActiveWriteTouchedAt
+    void _roundMutationLocked
+    void _roundMutationEpoch
+    return logicalRound
+  })
+}
+
 function extractFileNameFromCollection(collectionName: string): string {
   const normalized = collectionName.trim().replace(/[^a-zA-Z0-9._-]/g, '_')
   return normalized.length > 0 ? normalized : 'collection'
@@ -153,7 +176,12 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
     const list = await db.listCollections({}, { nameOnly: true }).toArray()
     const collectionNames = list
       .map((item) => String(item.name ?? ''))
-      .filter((name) => name.length > 0 && !name.startsWith('system.'))
+      .filter(
+        (name) =>
+          name.length > 0 &&
+          !name.startsWith('system.') &&
+          name !== ROUND_NAMESPACE_LOCK_COLLECTION
+      )
       .sort((a, b) => a.localeCompare(b))
 
     const collectionEntries = await Promise.all(
@@ -161,7 +189,7 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
         const docs = await db.collection(collectionName).find({}).toArray()
         return {
           collectionName,
-          docs: parseJsonClone(docs),
+          docs: parseJsonClone(sanitizeTournamentCollectionForExport(collectionName, docs)),
         }
       })
     )
