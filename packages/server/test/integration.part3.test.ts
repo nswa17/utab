@@ -1732,6 +1732,46 @@ describe('Server integration', () => {
       'Invalid teams details in backup'
     )
     expect(await TournamentModel.countDocuments({ name: 'Invalid details backup' }).exec()).toBe(0)
+
+    const invalidTemplateBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid template backup',
+          collectionNames: ['venues'],
+          collectionFiles: [
+            { path: 'json/collections/venues.json', collectionName: 'venues' },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid template backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/venues.json',
+        value: [{ name: 'Malformed imported venue', template: ['invalid'] }],
+      },
+    ])
+
+    const invalidTemplateRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidTemplateBundle)
+    expect(invalidTemplateRes.status).toBe(400)
+    expect(invalidTemplateRes.body.errors[0].message).toContain(
+      'Invalid venues template in backup'
+    )
+    expect(await TournamentModel.countDocuments({ name: 'Invalid template backup' }).exec()).toBe(0)
   })
 
 })
