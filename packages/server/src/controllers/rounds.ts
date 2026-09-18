@@ -1018,17 +1018,18 @@ async function restoreRoundDeletionSnapshot(
       ).exec()
     })
   }
-  if (snapshot.tournamentReference) {
+  const tournamentReference = snapshot.tournamentReference
+  if (tournamentReference) {
     await attempt(async () => {
       await TournamentModel.updateOne(
         {
           _id: tournamentId,
           $or: [
-            { user_defined_data: snapshot.tournamentReference?.rewritten },
-            { user_defined_data: snapshot.tournamentReference?.original },
+            { user_defined_data: tournamentReference.rewritten },
+            { user_defined_data: tournamentReference.original },
           ],
         },
-        { $set: { user_defined_data: snapshot.tournamentReference.original } }
+        { $set: { user_defined_data: tournamentReference.original } }
       ).exec()
     })
   }
