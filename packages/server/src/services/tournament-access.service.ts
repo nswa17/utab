@@ -2,6 +2,9 @@ import { hashPassword } from './hash.service.js'
 
 type PlainObject = Record<string, unknown>
 
+export const TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS = 24 * 60 * 60 * 1000
+export const TOURNAMENT_ACCESS_INACTIVITY_TTL_MS = 2 * 60 * 60 * 1000
+
 export interface TournamentAccessConfig {
   required: boolean
   password?: string
