@@ -8,7 +8,7 @@ import {
   register,
   revokeServiceToken,
 } from '../controllers/auth.js'
-import { requireAuth, requireOrganizer } from '../middleware/auth.js'
+import { requireAuth, requireSuperuser } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
@@ -49,13 +49,13 @@ router.get('/me', requireAuth, me)
 router.post('/logout', logout)
 router.get(
   '/service-token-revocations',
-  requireOrganizer,
+  requireSuperuser,
   validateRequest(listRevocationsSchema),
   listServiceTokenRevocations
 )
 router.post(
   '/service-token-revocations',
-  requireOrganizer,
+  requireSuperuser,
   validateRequest(revokeTokenSchema),
   revokeServiceToken
 )
