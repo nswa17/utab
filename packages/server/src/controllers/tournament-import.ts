@@ -81,6 +81,12 @@ function normalizeNumber(value: unknown, fallback: number): number {
   return fallback
 }
 
+function normalizePositiveInteger(value: unknown, fallback: number, field: string): number {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return value
+  throw new TournamentImportError(400, `Backup tournament ${field} must be a positive integer`)
+}
+
 function normalizeNumberArray(value: unknown, fallback: number[]): number[] {
   if (!Array.isArray(value)) return fallback
   const normalized = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
@@ -372,8 +378,16 @@ async function importTournamentFromBundle(
     name: normalizeString(tournamentSnapshot.name, normalizeString(metadata.tournamentName, 'Tournament')),
     style: sourceStyleId,
     options: asRecord(tournamentSnapshot.options),
-    total_round_num: normalizeNumber(tournamentSnapshot.total_round_num, 4),
-    current_round_num: normalizeNumber(tournamentSnapshot.current_round_num, 1),
+    total_round_num: normalizePositiveInteger(
+      tournamentSnapshot.total_round_num,
+      4,
+      'total_round_num'
+    ),
+    current_round_num: normalizePositiveInteger(
+      tournamentSnapshot.current_round_num,
+      1,
+      'current_round_num'
+    ),
     preev_weights: normalizeNumberArray(tournamentSnapshot.preev_weights, [0, 0, 0, 0, 0, 0]),
     auth: mergedAuth.auth,
     user_defined_data: asRecord(tournamentSnapshot.user_defined_data),
