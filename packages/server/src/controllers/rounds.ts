@@ -1671,6 +1671,8 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
 }
 
 export const updateRoundBreak: RequestHandler = async (req, res, next) => {
+  let mutationLease: RoundMutationLease | null = null
+  let mutationConnection: Connection | null = null
   try {
     const { id } = req.params
     const {
@@ -1688,14 +1690,41 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
     const TeamModel = getTeamModel(connection)
-    const roundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
-    if (!roundDoc) {
+    const initialRoundDoc = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!initialRoundDoc) {
       notFound(res, 'Round not found')
       return
     }
-    const roundNumber = Number((roundDoc as any).round)
+    const roundNumber = Number((initialRoundDoc as any).round)
     if (!Number.isInteger(roundNumber) || roundNumber < 1) {
       badRequest(res, 'Invalid round number')
+      return
+    }
+
+    mutationLease = await acquireRoundMutationLease(connection, tournamentId, id, roundNumber)
+    if (!mutationLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round has active writes; retry break update' }],
+      })
+      return
+    }
+    mutationConnection = connection
+
+    const roundDoc = await RoundModel.findOne({
+      _id: id,
+      tournamentId,
+      round: roundNumber,
+      roundMutationLocked: true,
+      roundMutationEpoch: mutationLease.epoch,
+    })
+      .lean()
+      .exec()
+    if (!roundDoc) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+      })
       return
     }
 
@@ -1751,7 +1780,13 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     )
 
     const updatedRound = await RoundModel.findOneAndUpdate(
-      { _id: id, tournamentId },
+      {
+        _id: id,
+        tournamentId,
+        round: roundNumber,
+        roundMutationLocked: true,
+        roundMutationEpoch: mutationLease.epoch,
+      },
       { $set: { userDefinedData: nextUserDefined } },
       { new: true }
     )
@@ -1759,7 +1794,10 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updatedRound) {
-      notFound(res, 'Round not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+      })
       return
     }
 
@@ -1771,25 +1809,38 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
         roundBreakEnabled && normalizedBreak.participants.length > 0
           ? new Set(normalizedBreak.participants.map((participant) => participant.teamId))
           : new Set<string>(teams.map((team) => String(team._id)))
-      const ops: any[] = teams.map((team) => {
+      const ops: any[] = teams.flatMap((team) => {
         const teamId = String(team._id)
         const available = selectedTeamIds.has(teamId)
-        return {
-          updateOne: {
-            filter: { _id: team._id, tournamentId },
-            update: {
-              $set: {
-                details: upsertTeamRoundDetail(
-                  team.details,
-                  roundNumber,
-                  team.template,
-                  available
-                ) as any,
-                template: normalizeTeamTemplate(team.template),
+        const template = normalizeTeamTemplate(team.template)
+        return [
+          {
+            updateOne: {
+              filter: { _id: team._id, tournamentId, 'details.r': roundNumber },
+              update: { $set: { 'details.$[roundDetail].available': available } },
+              arrayFilters: [{ 'roundDetail.r': roundNumber }],
+            },
+          },
+          {
+            updateOne: {
+              filter: {
+                _id: team._id,
+                tournamentId,
+                details: { $not: { $elemMatch: { r: roundNumber } } },
+              },
+              update: {
+                $push: {
+                  details: {
+                    r: roundNumber,
+                    available,
+                    conflicts: [...template.conflicts],
+                    speakers: [...template.speakers],
+                  },
+                },
               },
             },
           },
-        }
+        ]
       })
       if (ops.length > 0) {
         const result = await TeamModel.bulkWrite(ops, { ordered: false })
@@ -1807,6 +1858,14 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
     })
   } catch (err) {
     next(err)
+  } finally {
+    if (mutationLease && mutationConnection) {
+      try {
+        await releaseRoundMutationLease(mutationConnection, mutationLease)
+      } catch {
+        // A failed release leaves the round fail-closed until operator recovery.
+      }
+    }
   }
 }
 
