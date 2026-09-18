@@ -23,6 +23,16 @@ const roundSchema = new Schema(
   { timestamps: true }
 )
 
+roundSchema.set('toJSON', {
+  transform: (_doc, ret: Record<string, unknown>) => {
+    delete ret.roundActiveWriteCount
+    delete ret.roundActiveWriteTouchedAt
+    delete ret.roundMutationLocked
+    delete ret.roundMutationEpoch
+    return ret
+  },
+})
+
 roundSchema.index({ tournamentId: 1, round: 1 }, { unique: true })
 
 export type Round = InferSchemaType<typeof roundSchema>
