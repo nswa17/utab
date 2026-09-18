@@ -24,6 +24,20 @@ describe('Admin refresh gates', () => {
     expect(source).toContain('sectionLoading.value = foregroundRefreshCount > 0')
   })
 
+  it('ignores stale setup-setting save completions after tournament navigation', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('const requestTournamentId = String(targetTournament._id)')
+    expect(source).toContain('if (tournamentId.value !== requestTournamentId) return false')
+    expect(source).toContain('if (tournamentId.value !== requestTournamentId) return')
+    expect(source).toContain('normalizeTournamentBreakConfig(updated.user_defined_data?.break)')
+    expect(source).toContain(
+      'normalizeTournamentTeamRankingConfig(updated.user_defined_data?.team_ranking_priority)'
+    )
+    expect(source).toContain(
+      'normalizeTournamentAdjudicatorRankingConfig(\n      updated.user_defined_data?.adjudicator_ranking_priority'
+    )
+  })
+
   it('guards rounds page refresh and loading state across overlapping fetches', () => {
     const source = load('src/views/admin/AdminTournamentRounds.vue')
     expect(source).toContain('createLatestRequestGate')
