@@ -501,7 +501,7 @@ describe('Server integration', () => {
     )
     expect(activeEntry).toBeUndefined()
 
-    const inactiveListRes = await agent.get(
+    const inactiveListRes = await superuser.get(
       '/api/v1/auth/service-token-revocations?active=false&limit=20'
     )
     expect(inactiveListRes.status).toBe(200)
