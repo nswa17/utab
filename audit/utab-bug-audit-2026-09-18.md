@@ -5809,3 +5809,178 @@ The explicit invariant is now:
 > An audited business mutation is not allowed to begin unless at least one durable audit row for that operation has already been persisted.
 
 The remaining boundary is outcome certainty, not record existence. A crash after reservation and after some business side effects but before finalization can leave `outcome=pending`; that state is intentionally preserved as evidence requiring reconciliation rather than being silently deleted or guessed as success/failure.
+
+
+## Phase 39 — Phase 6 correctness closure re-audit (P6-01 / P6-02 / P6-04)
+
+This phase revisited the three Phase 6 findings that were still missing explicit closure entries after later fixes changed the relevant compiler behavior.
+
+### P6-01 — missing drawn matchup / ballot completeness
+
+**Status before this re-audit: partially fixed.**
+
+The current submission-source compiler already had a draw-vs-normalized-ballot sweep:
+
+- it derives canonical matchup keys from each selected Draw row;
+- it registers `missing_ballot` when no normalized ballot exists for a drawn matchup;
+- drawn team IDs are added to the team-instance pool even when their matchup has no submission, so warn/exclude compilation does not silently erase those teams from the standings.
+
+That closes the original submission-source counterexample.
+
+However, the re-audit found that the analogous raw-source path still had the original conceptual gap:
+
+- `buildCompiledPayloadFromRaw()` selected raw rows and Draws;
+- but `compile_warnings` was hard-coded to `[]`;
+- `missing_data_policy='error'` was not applied to draw completeness;
+- team instances were built only from teams already present in raw team results.
+
+Therefore a selected Draw matchup with no raw team result rows could still disappear silently from a raw compile.
+
+#### Raw-source repair
+
+Raw compilation now derives a canonical team-group key for each selected Draw allocation row and each raw team result (`id + opponents`).
+
+For every selected drawn matchup:
+
+1. all drawn team IDs are added to the expected team pool;
+2. if no raw team result exists for the matchup, a `missing_ballot` issue is registered;
+3. if the matchup has some raw rows but a drawn team has no corresponding raw team row, a `missing_team_result` issue is registered;
+4. the common `finalizeMissingDataIssues()` policy is applied:
+   - `error` -> HTTP 400;
+   - `warn` -> compile succeeds with explicit warnings;
+   - `exclude` -> compile succeeds without warning text;
+5. drawn teams are included in `teamInstances` even if they have no raw rows, preventing silent disappearance under warn/exclude.
+
+The team-group canonicalization supports both the existing two-team `gov/opp` shape and multi-team array / `og/oo/cg/co` Draw representations.
+
+Implementation commit:
+
+- `2cac7dc7734874e7856e2b12db63871f565f95b4` — enforce selected-Draw completeness for raw compilation.
+
+#### P6-01 regression
+
+A new integration regression creates one round with two drawn matchups, A-B and C-D, while providing data only for A-B.
+
+It verifies:
+
+- submission compile + `missing_data_policy='error'` rejects with the missing C-D ballot;
+- raw compile + `missing_data_policy='error'` rejects with the missing C-D raw matchup;
+- raw compile + `missing_data_policy='warn'` succeeds with a warning;
+- all four drawn teams remain present in the warn-mode compiled team results.
+
+The fixture is seeded directly for the submission case because the test is specifically about historical/imported compiler input; current participant identity hardening correctly rejects the old synthetic `judge-a` API submission fixture.
+
+Regression commits:
+
+- `78b43464100a24c9602bbe85163643f53548b262` — add Phase 6 closure regressions;
+- `568d394c0004193f16170a3d69ad06bd3bf10fca` — seed the historical missing-matchup fixture directly.
+
+**P6-01 is closed for selected Draw matchups in both submission and raw compile sources.**
+
+Explicit scope: completeness is enforced against Draws in the selected compile rounds. A round outside the selected compile scope is intentionally not treated as missing data.
+
+### P6-02 — scoreless rounds becoming numeric-zero tiebreak input
+
+**Status: already fixed by later core aggregation changes; regression added here.**
+
+The original Phase 6 bug was caused by aggregate code converting nullable per-round values through expressions equivalent to:
+
+    Number(result.sum ?? 0)
+    Number(result.margin ?? 0)
+    Number(result.opponent_average ?? 0)
+
+The current core no longer does this.
+
+For full team compilation:
+
+- `result.sum` is appended only when non-null and finite;
+- `result.margin` is appended only when non-null and finite;
+- `result.opponent_average` is appended only when non-null and finite;
+- aggregate fields remain `null` when there are no applicable scored observations.
+
+Therefore a legitimate scoreless round contributes wins/sides/opponents but does **not** inject a zero into score-derived averages or margins.
+
+The submission compiler still uses the full speaker-integration overload when team results exist even if a particular round has no speaker score. That is now safe because the integrated round result has nullable score metrics and the core aggregation explicitly skips those nulls.
+
+#### P6-02 regression
+
+A core regression compiles two rounds:
+
+- round 1 has speaker scores 80 vs 70;
+- round 2 has a valid team result but no speaker score rows.
+
+It verifies:
+
+- round-2 detail `sum` remains `null`;
+- aggregate sums remain 80 / 70 rather than being diluted by zero;
+- averages remain 80 / 70;
+- margins and average margins remain +10 / -10;
+- opponent averages remain 70 / 80.
+
+Regression commit:
+
+- `4e18e020295103601b5d18feab701223aacc1b76` — lock scoreless-round null aggregation semantics.
+
+**P6-02 is closed.**
+
+### P6-04 — duplicate average with inconsistent speaker identity
+
+**Status: already fixed by later duplicate-normalization hardening; explicit regression added here.**
+
+The current `mergeAverageBallotGroup()` no longer chooses the first non-empty speaker assignment and attach averaged positional scores to it blindly.
+
+After orienting duplicate ballots to a common team order, it now:
+
+1. extracts the speaker assignment vector from every duplicate;
+2. computes distinct non-empty assignments independently for both teams;
+3. if either team has more than one distinct speaker assignment, throws HTTP 400:
+
+       Cannot average duplicate ballots with different speaker assignments: ...
+
+4. only performs positional score/Best/POI/matter/manner averaging when speaker identity is consistent across the duplicate group.
+
+This is deliberately fail-closed rather than attempting to infer how scores belonging to different speakers should be redistributed.
+
+#### P6-04 regression
+
+A historical/imported duplicate group is inserted directly:
+
+- duplicate 1 assigns Team A slot 1 to Speaker A1;
+- duplicate 2 assigns the same slot to Speaker A2;
+- both rows have the same submitting actor/matchup and therefore form one duplicate-normalization group.
+
+Compile with `merge_policy='average'` must return 400 with the speaker-assignment mismatch message.
+
+Regression commit:
+
+- `78b43464100a24c9602bbe85163643f53548b262`.
+
+**P6-04 is closed.**
+
+### Verification
+
+CI run `35401307983` at `568d394c0004193f16170a3d69ad06bd3bf10fca`:
+
+- lint/server typecheck: success;
+- Web typecheck: success;
+- core: **24/24 files, 118/118 tests passed**;
+  - the additional test is the P6-02 scoreless-round regression;
+- server `integration.part3.test.ts`: **20/20 tests passed**;
+  - includes the P6-01 submission/raw missing-matchup regression;
+  - includes the P6-04 mismatched-speaker duplicate-average regression;
+- server total: **163 passed / 1 failed**.
+
+The sole server failure remains the pre-existing participant-history authorization-message assertion in `integration.part4.test.ts`.
+
+The branch-wide Web test failures are also unchanged and unrelated:
+
+- entity bulk-delete store tests;
+- institution store tests.
+
+### Phase 6 closure result
+
+The three Phase 6 findings selected for this re-audit now have executable closure evidence:
+
+- **P6-01: closed** — selected drawn matchups cannot silently disappear in either submission or raw compilation under the missing-data contract;
+- **P6-02: closed** — scoreless rounds remain nullable for score-derived metrics and do not contribute artificial zeroes;
+- **P6-04: closed** — average duplicate normalization rejects inconsistent speaker identity instead of misattributing averaged scores.
