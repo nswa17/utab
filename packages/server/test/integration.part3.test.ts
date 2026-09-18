@@ -1168,17 +1168,7 @@ describe('Server integration', () => {
   })
 
   it('restores a tournament from an exported backup zip', async () => {
-    const agent = request.agent(app)
-
-    const registerRes = await agent
-      .post('/api/auth/register')
-      .send({ username: 'bundle-import-user', password: 'password123', role: 'organizer' })
-    expect(registerRes.status).toBe(201)
-
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .send({ username: 'bundle-import-user', password: 'password123' })
-    expect(loginRes.status).toBe(200)
+    const { agent, userId } = await createSuperuserAgent('bundle-import-superuser')
 
     const customStyleId = 9301
     const styleRes = await agent.post('/api/styles').send({
@@ -1239,8 +1229,8 @@ describe('Server integration', () => {
     const originalAuditLog = await AuditLogModel.create({
       tournamentId,
       action: 'team.create',
-      actorUserId: String(loginRes.body.data.userId),
-      actorRole: 'organizer',
+      actorUserId: userId,
+      actorRole: 'superuser',
       targetType: 'team',
       targetId: String(createdTeam._id),
       metadata: { source: 'integration-test' },
