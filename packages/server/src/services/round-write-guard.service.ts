@@ -44,7 +44,7 @@ export async function acquireRoundWriteLease(
   const claimed = await RoundModel.findOneAndUpdate(
     filter,
     {
-      $inc: { roundActiveWriteCount: 1 },
+      $inc: { roundActiveWriteCount: 1, roundMutationEpoch: 0 },
       $set: { roundActiveWriteTouchedAt: new Date() },
     },
     { new: true }
