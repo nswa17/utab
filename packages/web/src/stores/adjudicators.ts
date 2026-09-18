@@ -22,6 +22,7 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
   }
 
   async function fetchAdjudicators(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
     if (scopeChanged) adjudicators.value = []
     beginRequest()
