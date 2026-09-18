@@ -1299,24 +1299,38 @@ export const updateRound: RequestHandler = async (req, res, next) => {
         return
       }
       const temporaryRound = -2_000_000_000
-      await RoundModel.updateOne(
+      const claimed = await RoundModel.updateOne(
         { _id: id, tournamentId, round: previousRound },
         { $set: { round: temporaryRound } }
       ).exec()
+      if (claimed.matchedCount !== 1) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+        })
+        return
+      }
       await moveRoundReferences(connection, tournamentId, [
         { from: previousRound, to: temporaryRound },
       ])
       await moveRoundReferences(connection, tournamentId, [{ from: temporaryRound, to: nextRound }])
     }
     const updated = await RoundModel.findOneAndUpdate(
-      { _id: id, tournamentId },
+      {
+        _id: id,
+        tournamentId,
+        ...(previousRound !== nextRound ? { round: -2_000_000_000 } : { round: previousRound }),
+      },
       { $set: update },
       { new: true }
     )
       .lean()
       .exec()
     if (!updated) {
-      notFound(res, 'Round not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently' }],
+      })
       return
     }
     if (previousRound !== nextRound) {
