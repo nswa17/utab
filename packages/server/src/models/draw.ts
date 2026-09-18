@@ -14,7 +14,12 @@ const allocationRowSchema = new Schema(
 const drawSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
-    round: { type: Number, required: true },
+    round: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: Number.isInteger, message: 'round must be an integer' },
+    },
     allocation: { type: [allocationRowSchema], default: [] },
     drawOpened: { type: Boolean, default: false },
     allocationOpened: { type: Boolean, default: false },
