@@ -57,13 +57,10 @@ export const useDrawsStore = defineStore('draws', () => {
       const sameTournament = draws.value.filter(
         (item) => String(item.tournamentId) === String(tournamentId)
       )
-      const otherTournaments = draws.value.filter(
-        (item) => String(item.tournamentId) !== String(tournamentId)
-      )
       const mergedTournamentDraws = sameTournament
         .filter((item) => Number(item.round) !== normalizedRound)
         .concat(fetched)
-      draws.value = otherTournaments.concat(mergedTournamentDraws)
+      draws.value = mergedTournamentDraws
       return draws.value
     } catch (err: any) {
       if (sequence !== fetchSequence.value) {
