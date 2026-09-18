@@ -1859,6 +1859,19 @@ import CompiledSnapshotSelect from '@/components/common/CompiledSnapshotSelect.v
 import { api } from '@/utils/api'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { normalizeTournamentTeamNum, resolveTournamentStyle } from '@/utils/tournament-style'
+import {
+  drawTeamGroupKey,
+  drawTeamId,
+  drawTeamIds,
+  drawTeamPositionColumns,
+  drawTeamPositions,
+  editableDrawTeamNum,
+  inferDrawTeamNum,
+  normalizeDrawTeams,
+  serializeDrawTeams,
+  setDrawTeamId,
+  type DrawTeamPosition,
+} from '@/utils/draw-teams'
 import type { DrawPreviewRow } from '@/types/draw-preview'
 import type { BreakCutoffTiePolicy, BreakSeeding, RoundBreakConfig } from '@/types/round'
 import { formatCompiledSnapshotOptionLabel } from '@/utils/compiled-snapshot'
@@ -1950,7 +1963,13 @@ const emit = defineEmits<{
 }>()
 
 type RequestScope = 'all' | 'teams' | 'adjudicators' | 'venues'
-type AllocationSortKey = 'match' | 'venue' | 'gov' | 'opp' | 'chairs' | 'panels' | 'trainees'
+type AllocationSortKey =
+  | 'match'
+  | 'venue'
+  | DrawTeamPosition
+  | 'chairs'
+  | 'panels'
+  | 'trainees'
 type AllocationSortDirection = 'asc' | 'desc'
 const JUDGE_CLASS_VALUES = ['A', 'B', 'C'] as const
 const JUDGE_CLASS_LABELS: Record<(typeof JUDGE_CLASS_VALUES)[number], string> = {
@@ -2139,8 +2158,11 @@ const useScopedReferenceRoundSelections = ref(false)
 const allocationImportText = ref('')
 const allocationImportError = ref<string | null>(null)
 const allocationImportInfo = ref<string | null>(null)
-const allocationImportTemplate =
-  'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,Room 2,Team C,Team D,Judge D,,Judge E'
+const allocationImportTemplate = computed(() =>
+  editableTeamNum.value === 4
+    ? 'match,venue,og,oo,cg,co,chairs,panels,trainees\n1,Room 1,Team A,Team B,Team C,Team D,Judge A,Judge B|Judge C,\n2,Room 2,Team E,Team F,Team G,Team H,Judge D,,Judge E'
+    : 'match,venue,gov,opp,chairs,panels,trainees\n1,Room 1,Team A,Team B,Judge A,Judge B|Judge C,\n2,Room 2,Team C,Team D,Judge D,,Judge E'
+)
 const allocationImportTemplateFilename = computed(
   () => `round_${round.value}_draw_import_template.csv`
 )
@@ -2597,9 +2619,23 @@ const style = computed(() =>
     tournament.value
   )
 )
-const isTwoTeamStyle = computed(() => normalizeTournamentTeamNum(style.value?.team_num) === 2)
-const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
-const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
+const resolvedTeamNum = computed(() => normalizeTournamentTeamNum(style.value?.team_num))
+const editableTeamNum = computed(() => editableDrawTeamNum(resolvedTeamNum.value))
+const isSupportedTeamStyle = computed(() => editableTeamNum.value !== null)
+const isTwoTeamStyle = computed(() => editableTeamNum.value === 2)
+const teamPositionColumns = computed(() =>
+  editableTeamNum.value ? drawTeamPositionColumns(style.value, editableTeamNum.value) : []
+)
+const govLabel = computed(() =>
+  teamPositionColumns.value.find(
+    (item) => item.key === (editableTeamNum.value === 4 ? 'og' : 'gov')
+  )?.label ?? getSideShortLabel(style.value, 'gov', 'Gov')
+)
+const oppLabel = computed(() =>
+  teamPositionColumns.value.find(
+    (item) => item.key === (editableTeamNum.value === 4 ? 'oo' : 'opp')
+  )?.label ?? getSideShortLabel(style.value, 'opp', 'Opp')
+)
 const priorRounds = computed(() =>
   roundsStore.rounds
     .filter((item) => item.round < round.value)
@@ -3082,34 +3118,44 @@ const venueShuffleEnabled = computed(() => autoOptions.value.venueAllocationMode
 
 const allocationChanged = computed(() => allocationSnapshot() !== savedSnapshot.value)
 
+function currentEditableTeamNum(): 2 | 4 {
+  return editableTeamNum.value ?? inferDrawTeamNum(allocation.value[0]?.teams)
+}
+
 function createEmptyAllocationRow(): DrawAllocationRow {
+  const teamNum = editableTeamNum.value ?? 2
   return {
     venue: '',
-    teams: { gov: '', opp: '' },
+    teams: normalizeDrawTeams([], teamNum),
     chairs: [],
     panels: [],
     trainees: [],
   }
 }
 
-function cloneAllocation(rows: DrawAllocationRow[]) {
-  return rows.map((row) => ({
-    venue: row.venue ?? '',
-    teams: { gov: row.teams.gov, opp: row.teams.opp },
-    chairs: [...(row.chairs ?? [])],
-    panels: [...(row.panels ?? [])],
-    trainees: [...(row.trainees ?? [])],
-  }))
+function cloneAllocation(rows: any[]): DrawAllocationRow[] {
+  const preferredTeamNum = editableTeamNum.value
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const teamNum = preferredTeamNum ?? inferDrawTeamNum(row?.teams)
+    return {
+      venue: row?.venue ?? '',
+      teams: normalizeDrawTeams(row?.teams, teamNum),
+      chairs: [...(row?.chairs ?? [])],
+      panels: [...(row?.panels ?? [])],
+      trainees: [...(row?.trainees ?? [])],
+    }
+  })
 }
 
 function allocationSnapshot() {
+  const teamNum = currentEditableTeamNum()
   return JSON.stringify({
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
     allocation: allocation.value.map((row) => ({
       venue: row.venue ?? '',
-      teams: { gov: row.teams.gov ?? '', opp: row.teams.opp ?? '' },
+      teams: serializeDrawTeams(row.teams, teamNum),
       chairs: row.chairs ?? [],
       panels: row.panels ?? [],
       trainees: row.trainees ?? [],
