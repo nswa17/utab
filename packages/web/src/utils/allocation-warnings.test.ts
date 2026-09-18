@@ -231,6 +231,63 @@ describe('allocation warnings', () => {
     })
   })
 
+  it('evaluates conflicts and availability across all four BP team slots', () => {
+    const bp = buildRowWarningStates({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { og: 'og', oo: 'oo', cg: 'cg', co: 'co' },
+          chairs: ['adj-1'],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      isTeamAvailable: (teamId) => teamId !== 'cg',
+      isAdjudicatorAvailable: () => true,
+      isVenueAvailable: () => true,
+      teamInstitutions: (teamId) => (teamId === 'og' || teamId === 'co' ? ['school-a'] : []),
+      adjudicatorInstitutions: () => [],
+      institutionCategory: () => 'institution',
+      adjudicatorConflicts: () => [],
+      teamWin: () => undefined,
+      teamPastOpponents: (teamId) => (teamId === 'oo' ? ['cg'] : []),
+      teamPastSides: (teamId) => (teamId === 'cg' ? ['cg', 'cg'] : []),
+      adjudicatorJudgedTeams: () => [],
+    })
+
+    const warnings = bp[0].warnings
+    expect(
+      warnings.find(
+        (warning) =>
+          warning.code === 'team_unavailable' && warning.params.teamId === 'cg'
+      )
+    ).toBeTruthy()
+    expect(
+      warnings.find(
+        (warning) =>
+          warning.code === 'team_same_institution' &&
+          warning.params.teamAId === 'og' &&
+          warning.params.teamBId === 'co'
+      )
+    ).toBeTruthy()
+    expect(
+      warnings.find(
+        (warning) =>
+          warning.code === 'team_past_match' &&
+          warning.params.teamAId === 'oo' &&
+          warning.params.teamBId === 'cg'
+      )
+    ).toBeTruthy()
+    expect(
+      warnings.find(
+        (warning) =>
+          warning.code === 'team_side_imbalance' &&
+          warning.params.teamId === 'cg' &&
+          warning.params.side === 'cg'
+      )
+    ).toBeTruthy()
+  })
+
   it('builds entity index with max severity and row references', () => {
     const index = buildEntityWarningIndex(warnings)
     const team1 = index.get(warningEntityKey('team', 'team-1'))
