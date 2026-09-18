@@ -158,7 +158,7 @@
 - [x] `pnpm -C packages/server test` で統合テストを実行。
 
 **現行差分（2026-09-18）**
-- teams/speakers/adjudicators/venues/institutions/rounds/draws/tournaments の participant-facing read は `requireTournamentView` 系の境界を使う。
+- teams/speakers/adjudicators/venues/institutions/rounds/draws の participant-facing read と Tournament の direct get は `requireTournamentView` 系の境界を使う。Tournament list は公開可視性フィルタ + public DTO で返す。
 - results / compiled / raw-results は GET を含め `requireTournamentAdmin`。2026-02 の「results/compiled は閲覧系」「raw-results GET は Access」という記述は履歴であり、現行権限仕様ではない。
 
 **編集候補ファイル**
@@ -181,7 +181,7 @@
 ## Phase 4: 公開レスポンスの制限
 **目標**
 - 公開APIのレスポンスを安全な最小限に制限する。
-- createdBy / submittedBy / userDefinedData 等の内部情報を遮断。
+- createdBy / submittedBy / raw userDefinedData 等の内部情報を遮断し、participant に必要な設定だけ明示 allowlist で再構成する。
 
 **主要タスク**
 - 公開レスポンス用のサニタイズ関数を導入。
