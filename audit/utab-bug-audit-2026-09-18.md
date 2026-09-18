@@ -860,3 +860,387 @@ Highest-confidence findings:
 - strict adjusted pairing does not perform meaningful adjustment.
 
 Phase 4 should inspect server state transitions with special attention to whether controller-level validation independently contains malformed core output. Production fixes remain deferred to the dedicated regression/fix phase.
+
+
+## Phase 4 — server state-transition / DB-consistency audit
+
+### Scope and method
+
+Phase 4 focused on state transitions that span more than one document or collection, especially operations with a read -> validate -> multiple writes pattern.
+
+The main consistency invariants used were:
+
+- a round number change must move the Round document and every round-scoped reference as one logical state transition;
+- deleting a round must either remove the round and all dependent data, or leave the pre-delete state intact;
+- a write validated against a round/draw must not be committed later against a different state without detecting staleness;
+- break metadata and per-team availability must describe the same participant set;
+- submitted ballots/feedback must retain the historical context under which they were accepted;
+- a compiled snapshot should be derived from one coherent logical state;
+- a failed destructive/privacy operation should have explicit semantics for partial completion;
+- concurrent mutations must not overwrite unrelated changes by replacing stale full-document arrays.
+
+No production code was changed in this phase.
+
+A repository-wide search found no controller use of MongoDB startSession/withTransaction. The supplied Docker/VPS deployment also runs a standalone MongoDB service rather than a replica set, so multi-document transactions are not available in the current default deployment topology without an infrastructure change. This makes CAS, atomic targeted updates, compensation, operation journals, and explicit repair paths especially important.
+
+### P4-01 — HIGH: concurrent round renumber can split the Round number from all dependent data
+
+Status: confirmed by a concrete request interleaving.
+Area: packages/server/src/controllers/rounds.ts.
+Impact: draw/submission/result/raw-result/entity-detail data can end up assigned to a different round number than the Round document.
+
+Single-round renumber uses a fixed temporary value:
+
+    temporaryRound = -2000000000
+
+The flow is:
+
+    read Round at previousRound
+    check target conflict
+    update Round previous -> temporary
+    move dependent references previous -> temporary
+    move dependent references temporary -> target
+    findOneAndUpdate Round to target
+    rewrite nested source_round references
+
+The first update filters on the old round number, but its matchedCount is never checked. The final Round update has no expected version or expected round condition.
+
+A normal two-request interleaving is sufficient:
+
+Initial state:
+
+    Round R has round = 1
+    dependent records have round/r = 1
+
+Request A wants 1 -> 2.
+Request B wants 1 -> 3.
+Both read R while it is still round 1 and both pass their conflict checks.
+
+Then:
+
+    A: Round 1 -> TEMP succeeds
+    B: Round 1 -> TEMP matches zero documents; result is ignored
+
+    A: dependencies 1 -> TEMP
+    B: dependencies 1 -> TEMP sees nothing
+
+    A: dependencies TEMP -> 2
+    B: dependencies TEMP -> 3 sees nothing
+
+    A: final Round update -> 2
+    B: final Round update -> 3
+
+The final state can therefore be:
+
+    Round document: round = 3
+    draws/submissions/raw results/entity details: round = 2
+
+No exceptional infrastructure failure is required; two ordinary admin requests are enough.
+
+Bulk renumber has the same general vulnerability. It uses per-request temporary round values and multiple phases of unversioned multi-collection writes. Two concurrent bulk/single renumber operations do not share an operation lock or epoch.
+
+Existing tests cover duplicate target conflicts in sequential requests, not concurrent renumbering.
+
+### P4-02 — HIGH: stale writers can recreate orphaned old-round data during renumber/delete
+
+Status: confirmed from request lifecycles.
+Area: rounds.ts, draws.ts, submissions.ts.
+Impact: a round can be renumbered/deleted successfully while a previously validated request writes new data under the old round number afterward.
+
+Validation and commit are not tied to a round version.
+
+Representative ballot race:
+
+    1. ballot request reads/validates Round 1 and its Draw 1
+    2. admin renumbers Round 1 -> Round 2
+       existing submissions/draws/results are migrated
+    3. original ballot request resumes
+    4. SubmissionModel.create writes a new submission with round = 1
+
+The database now contains a submission for a round that no longer exists.
+
+Equivalent windows exist for draw creation/upsert: the controller verifies that a Round exists early in the request, then saves the draw later without proving that the same round state still exists.
+
+A destructive variant exists with delete versus renumber:
+
+    1. delete request reads Round R with round = 1
+    2. concurrent renumber moves R and its references to round = 2
+    3. delete request deletes dependencies for round = 1, now deleting little/nothing
+    4. delete request deletes R by _id, which is now Round 2
+
+Dependent data migrated to round 2 remains, but its Round document is gone.
+
+This family needs a round mutation version/epoch or a stronger operation lock propagated through all round-scoped writes.
+
+### P4-03 — HIGH: break participant metadata and team availability can diverge under concurrent updates
+
+Status: confirmed by a concrete interleaving.
+Area: updateRoundBreak in rounds.ts.
+Impact: the Round can name one break field while a different set of teams is marked available for that break round.
+
+updateRoundBreak performs two independent state transitions:
+
+    1. findOneAndUpdate Round.userDefinedData with break participants
+    2. bulkWrite every Team.details array to synchronize availability
+
+There is no transaction and no Round version/CAS check. The team details are calculated from a team snapshot read before the Round write.
+
+Example:
+
+    Request A selects teams A,B
+    Request B selects teams C,D
+
+    A writes Round metadata = A,B
+    B writes Round metadata = C,D
+    B writes team availability = C,D
+    A writes team availability = A,B
+
+Final state:
+
+    Round break.participants = C,D
+    available teams in that round = A,B
+
+All calls can return success.
+
+The same full-array team writes can also overwrite an unrelated concurrent edit to team round details.
+
+Sequential tests verify the intended A,B -> A,B state, but no concurrency regression exists.
+
+### P4-04 — HIGH: submitted ballots/feedback are reinterpreted using the current draw at compile time
+
+Status: confirmed; sequentially reproducible, no race required.
+Area: submissions.ts + compiled.ts.
+Impact: already accepted historical submissions can silently change side history and adjudicator experience after an admin edits the draw.
+
+A ballot stores teamAId/teamBId, winner/draw, speaker IDs, scores, etc. It does not store the side assignment or draw version under which it was accepted.
+
+A feedback submission stores adjudicatorId and score/comment. It does not store the teams that adjudicator was judging or the draw version.
+
+Compilation from submissions loads the current Draw collection and reconstructs:
+
+    sideByRoundTeam from current draw allocation
+    judgedTeamsByRoundAdj from current draw allocation
+
+Then it creates raw team results using the current side map, and raw adjudicator results using the current judged-team map.
+
+Deterministic reproduction:
+
+    1. save/open Draw 1 with Team A = gov, Team B = opp, Judge J assigned
+    2. submit a valid ballot and/or feedback
+    3. admin edits the still-unlocked draw
+       - swap A/B sides, and/or
+       - move Judge J to another matchup
+    4. compile from submissions
+
+The ballot's historical side is now derived from the edited draw rather than the draw seen when the ballot was accepted. Judge J's judged_teams can likewise change to the new matchup.
+
+If a submitted team no longer appears in the edited draw, compilation can fall back to the default teamA=gov/teamB=opp assumption, creating a different form of historical reinterpretation.
+
+This affects future allocation because compiled past_sides and adjudicator judged-team history feed allocation logic. It can therefore propagate beyond display/reporting into later-round pairings and adjudicator allocation.
+
+The draw model has an optimistic __v mechanism, but Submission does not persist draw id/version/hash and draws are not automatically frozen once submissions exist.
+
+Recommended invariant: submission-time allocation context must be immutable or explicitly versioned. A practical design is to store drawId/drawVersion plus canonical sides/judged teams in the normalized submission, or refuse draw-semantic edits after accepted submissions unless an explicit migration/revalidation operation is performed.
+
+### P4-05 — HIGH: round create/delete operations are not failure-atomic and can lose data on ordinary write failure
+
+Status: confirmed by control flow.
+Area: rounds.ts.
+Impact: API can return failure after a partially committed destructive transition.
+
+Round creation:
+
+    RoundModel.create / insertMany
+    then syncEntityRoundDetailsForCreate
+
+If team/adjudicator/venue synchronization fails, the newly created Round remains in the database. There is no rollback of the Round or compensation for whichever entity bulk writes already succeeded.
+
+Round deletion is more dangerous:
+
+    deleteRoundDependencies:
+        delete draws
+        delete submissions
+        delete results
+        delete raw team results
+        delete raw speaker results
+        delete raw adjudicator results
+        all launched through Promise.all
+
+    then delete Round
+    then remove entity round details
+    then rewrite source_round references
+
+If one dependency deletion rejects, Promise.all rejects, but the other deletion operations are already in flight and can succeed. The Round deletion step is skipped. The API can therefore return 5xx while the Round still exists but some ballots/results/draws have already been irreversibly deleted.
+
+If deletion of the Round succeeds but later entity-detail cleanup or source-round rewriting fails, the opposite partial state is produced.
+
+bulkDeleteRounds has the same structure.
+
+Existing tests exercise normal deletion and reference rewriting, not failure injection across each write boundary.
+
+### P4-06 — MEDIUM/HIGH: stale full-array read/modify/write helpers can overwrite concurrent edits
+
+Status: confirmed pattern with multiple concrete sites.
+Area: rounds.ts and privacy.ts, with additional effects on Draw.userDefinedData.
+
+Several maintenance functions read an entire document/array, modify it in application memory, then replace the full field with $set and no expected-version filter.
+
+Examples:
+
+- syncEntityRoundDetailsForCreate/Delete replaces complete Team.details, Adjudicator.details, and Venue.details arrays.
+- updateRoundBreak replaces complete Team.details arrays for every team.
+- removeSpeakerRefsFromTeams replaces complete team template/details speaker arrays.
+- removeAdjudicatorRefsFromDraws replaces complete draw allocation arrays.
+- rewriteStoredRoundReferences replaces Round.userDefinedData and Draw.userDefinedData from a stale read.
+
+Concrete lost-update pattern:
+
+    maintenance request reads Team.details
+    normal admin request edits another round detail and commits
+    maintenance request writes its stale reconstructed Team.details
+    admin edit disappears
+
+The Draw reference-rewrite path is especially misleading: it increments __v but does not filter on the version it originally read. If a normal optimistic draw update commits between the rewrite read and rewrite write, the rewrite can overwrite the newer userDefinedData and then increment the version, making the stale overwrite look like a fresh revision.
+
+Targeted positional/array-filter updates or expected-version filters are preferable to whole-array replacement.
+
+### P4-07 — MEDIUM/HIGH: compiled payloads are not read from a coherent database snapshot
+
+Status: confirmed architectural consistency gap; reproduction requires concurrency timing.
+Area: compiled.ts.
+Impact: a saved compiled snapshot can combine entities/submissions/draws/round metadata from different logical moments.
+
+Compilation from submissions starts independent queries for:
+
+    teams
+    adjudicators
+    submissions
+    draws
+    rounds
+
+using Promise.all, but they are separate Mongo reads with no shared snapshot transaction/session.
+
+If an admin edits a draw, round, team roster, or submission while these reads are executing, different query results can reflect different sides of the change.
+
+The preview/save signature mechanism is useful but does not eliminate this:
+
+- the preview itself can be built from a mixed read;
+- createCompiled can be called without preview_signature/revision for backward compatibility;
+- even when tokens are supplied, the save rebuild detects differences between two compiled payloads, not whether either payload came from a coherent database snapshot.
+
+This is especially relevant because side/adjudicator history is reconstructed by joining submissions against draws.
+
+A coherent compile requires either a database snapshot transaction, a logical tournament/round revision checked around the read set, or retry-until-stable semantics.
+
+### P4-08 — MEDIUM/HIGH: hard-delete privacy erasure can be marked failed after irreversible partial mutation
+
+Status: confirmed by control flow.
+Area: privacy.ts + erasure-requests.ts.
+
+Speaker hard-delete:
+
+    clear matching submission comments
+    in parallel:
+        remove speaker refs from teams
+        delete raw speaker results
+    delete Speaker document
+
+Adjudicator hard-delete is analogous, with draw refs and raw adjudicator results.
+
+There is no transaction or compensation.
+
+If one parallel operation succeeds and another fails, the request transitions to failed but the successful mutation is not undone. Submission comments are cleared before the hard-delete branch and are also not restored.
+
+A retry may eventually converge toward full erasure, but the state label failed does not mean the tournament is unchanged. This distinction matters for operators and compliance workflows.
+
+The erasure request status transition itself is comparatively strong: approved -> running uses a conditional update, so duplicate concurrent execution is guarded. Existing tests verify failed request status, but not the exact residual data after failure.
+
+### P4-09 — MEDIUM: service-account idempotency can amplify partial 5xx mutations
+
+Status: confirmed interaction risk.
+Area: service-account-idempotency.ts plus non-atomic mutation endpoints.
+
+The idempotency middleware deletes an in_progress record after any 5xx response. This is reasonable for operations assumed not to have committed, but several Phase-4 endpoints can mutate multiple collections and only then fail.
+
+Example:
+
+    round deletion deletes some dependencies
+    later dependency write fails -> 5xx
+    idempotency record is deleted
+    client retries same key
+    operation executes again against already-partially-mutated state
+
+Thus service-account idempotency does not provide exactly-once semantics for these multi-step endpoints.
+
+A second, lower-severity issue is that completion persistence runs asynchronously on response finish. If updating the idempotency record fails after a successful response, the record can remain in_progress until TTL and subsequent identical requests receive 409 rather than replaying the successful result.
+
+### P4-10 — MEDIUM: import cleanup is best-effort and cleanup failures are discarded
+
+Status: confirmed; failure-path issue only.
+Area: tournament-import.ts.
+
+Import has a reasonable explicit cleanup path: delete central tournament/audit/membership state, pull the user reference, drop the per-tournament DB, and remove a newly created style.
+
+However cleanup is executed with Promise.allSettled and the rejected cleanup results are not surfaced or persisted. The original import error is rethrown regardless.
+
+If the import fails after some collection inserts and one cleanup operation also fails, an orphan Tournament record, membership, style, user reference, or tournament database may remain with no repair record indicating which cleanup step failed.
+
+This is less likely than the round-state bugs but should be logged/alerted as an incomplete-import repair condition rather than silently discarded.
+
+### Positive controls found in Phase 4
+
+Not every stateful path is weak. Several mechanisms are worth preserving:
+
+1. Existing Draw updates use optimistic locking through __v and return conflict when the expected version no longer matches.
+2. Draw creation relies on a unique tournamentId+round index.
+3. Ballot and feedback duplicate prevention is backed by a unique dedupeKey index, so the pre-check race is contained by MongoDB uniqueness.
+4. Erasure request execution uses a conditional approved -> running transition, preventing two normal executors from starting the same request.
+5. Tournament creation has explicit membership rollback.
+6. Tournament deletion snapshots central metadata and attempts restoration if central cleanup or database drop fails.
+7. Compiled preview/save hashes the rebuilt payload and can reject an explicitly supplied stale preview token.
+
+These controls show that the codebase already uses the right primitives in isolated places; the main issue is that the same concurrency discipline is not applied consistently to round lifecycle and historical submission context.
+
+### Test gaps exposed by this phase
+
+High-value missing regressions:
+
+- two concurrent renumbers of the same Round to different targets;
+- renumber concurrent with ballot creation;
+- delete concurrent with renumber;
+- draw save concurrent with round delete/renumber;
+- two concurrent break-participant updates with syncTeamAvailability=true;
+- failure injection after Round creation but before all entity detail syncs finish;
+- failure injection in each dependency deletion during round delete;
+- ballot submission -> draw side swap -> compile, asserting original side history remains stable;
+- feedback submission -> adjudicator moved to another matchup -> compile, asserting judged teams remain submission-time teams;
+- concurrent draw/submission edits during compile;
+- hard-delete erasure failure after one destructive branch succeeds;
+- service-account retry after a partial mutation ends in 5xx.
+
+Current tests cover normal round migration/reference rewriting and sequential break availability sync, but do not exercise these interleavings.
+
+### Remediation priority for the later fix phase
+
+1. Preserve immutable submission-time draw context, or prevent semantic draw edits after submissions.
+2. Add a round lifecycle revision/epoch or operation lock and require it on renumber/delete and every round-scoped write.
+3. Make break metadata + team availability one guarded logical transition; avoid full-array stale writes.
+4. Add server-side compensation/operation journaling for round create/delete because the current default Mongo deployment is standalone.
+5. Replace full-array maintenance writes with targeted atomic updates and/or expected-version filters.
+6. Give compilation coherent-read semantics via a revision envelope/retry-until-stable design, or move deployment to a topology supporting snapshot transactions.
+7. Define partial-failure semantics and repair/retry state for destructive privacy/import operations.
+8. Revisit service-account idempotency only after endpoint mutation semantics are made failure-atomic.
+
+### Phase 4 conclusion
+
+Phase 4 found several state-integrity bugs that are more serious than ordinary missing rollback.
+
+The strongest findings are:
+
+- concurrent round renumber can leave the Round and its dependent records on different round numbers;
+- stale in-flight ballot/draw writes can recreate old-round orphan data after renumber/delete;
+- concurrent break updates can make break.participants disagree with team availability;
+- accepted ballots/feedback are reinterpreted against the current editable draw during compilation;
+- round deletion can partially and irreversibly delete data while the Round itself survives.
+
+The submission-time draw reinterpretation is particularly important because it is sequentially reproducible and can silently alter historical data without any server error.
