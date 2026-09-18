@@ -61,6 +61,26 @@ describe('allocation history', () => {
     expect(teamAdjudicatorIdsFromAllocation(rows, 'team-a')).toEqual(['adj-1', 'adj-2', 'adj-3'])
   })
 
+  it('tracks every opponent and BP position in a four-team row', () => {
+    const rows = [
+      {
+        teams: { og: 'og', oo: 'oo', cg: 'cg', co: 'co' },
+        chairs: ['adj-bp'],
+        panels: [],
+        trainees: [],
+      },
+    ]
+    expect(pastOpponentIdsFromAllocation(rows, 'cg')).toEqual(['og', 'oo', 'co'])
+    expect(pastSidesFromAllocation(rows, 'cg')).toEqual(['cg'])
+    expect(adjudicatorJudgedTeamIdsFromAllocation(rows, 'adj-bp')).toEqual([
+      'og',
+      'oo',
+      'cg',
+      'co',
+    ])
+    expect(teamAdjudicatorIdsFromAllocation(rows, 'co')).toEqual(['adj-bp'])
+  })
+
   it('lists prior Chair/Panel co-adjudicators and excludes trainees', () => {
     const rows = priorAllocationRows(draws, 'tournament-1', 3)
     expect(coAdjudicatorIdsFromAllocation(rows, 'adj-2')).toEqual(['adj-1'])
