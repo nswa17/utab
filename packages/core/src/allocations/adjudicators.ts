@@ -16,8 +16,8 @@ import * as adjfilters from './adjudicators/adjfilters.js'
 import { galeShapley } from './adjudicators/matchings.js'
 import * as traditionalMatchings from './adjudicators/traditional_matchings.js'
 import {
+  buildInstitutionPriorityHistogram,
   normalizeInstitutionPriorityMap,
-  weightedCommonScore,
 } from './common/institution-priority.js'
 import type { AllocationConfig, Draw, NumbersOfAdjudicators } from '../types/allocations.js'
 import type { AdjudicatorEntity, TeamEntity } from '../types/domain.js'
@@ -177,6 +177,27 @@ function classPenaltyForRole(role: ClassBasedRole, judgeClass: JudgeClass): numb
   return judgeClass === 'C' ? 0 : judgeClass === 'B' ? 1 : 2
 }
 
+function buildInstitutionPenaltyVector(
+  teamInstitutionIds: number[],
+  adjudicatorInstitutionIds: number[],
+  priorityMap: Record<number, number>
+): number[] {
+  const histogram = buildInstitutionPriorityHistogram(
+    teamInstitutionIds,
+    adjudicatorInstitutionIds,
+    priorityMap
+  )
+  const priorities = Array.from(
+    new Set([
+      1,
+      ...Object.values(priorityMap)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ])
+  ).sort((left, right) => left - right)
+  return priorities.map((priority) => histogram[priority] ?? 0)
+}
+
 function buildRolePenalty(
   role: ClassBasedRole,
   row: ClassBasedRow,
@@ -192,9 +213,14 @@ function buildRolePenalty(
   const compiled = findOne(compiledAdjudicatorResults, adjudicator.id)
   const priorityMap = normalizeInstitutionPriorityMap(config.institution_priority_map)
   const strengthScore = getAdjudicatorScore(adjudicator, compiledAdjudicatorResults, config)
+  const institutionPenalty = buildInstitutionPenaltyVector(
+    row.teamInstitutionIds,
+    institutionIds,
+    priorityMap
+  )
   return [
     countCommon(row.square.teams, conflictTeams),
-    weightedCommonScore(row.teamInstitutionIds, institutionIds, priorityMap),
+    ...institutionPenalty,
     classPenaltyForRole(role, judgeClass),
     countCommon(row.square.teams, compiled.judged_teams ?? []),
     role === 'chairs' ? -strengthScore : strengthScore,
