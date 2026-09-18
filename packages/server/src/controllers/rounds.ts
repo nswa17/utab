@@ -1666,6 +1666,8 @@ export const getRound: RequestHandler = async (req, res, next) => {
 }
 
 export const createRound: RequestHandler = async (req, res, next) => {
+  let namespaceLease: RoundNamespaceLease | null = null
+  let namespaceConnection: Connection | null = null
   try {
     if (Array.isArray(req.body)) {
       const payload = req.body as Array<{
@@ -1690,6 +1692,15 @@ export const createRound: RequestHandler = async (req, res, next) => {
       const roundDefaults = normalizeRoundDefaults(tournamentUserDefined.round_defaults)
       const connection = await getTournamentConnection(tournamentId)
       const RoundModel = getRoundModel(connection)
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry round creation' }],
+        })
+        return
+      }
+      namespaceConnection = connection
       const proposedRounds = payload.map((item) => Number(item.round))
       if (new Set(proposedRounds).size !== proposedRounds.length) {
         res
@@ -1834,6 +1845,15 @@ export const createRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry round creation' }],
+      })
+      return
+    }
+    namespaceConnection = connection
     const roundId = new Types.ObjectId()
     const created = await RoundModel.create({
       _id: roundId,
@@ -1896,6 +1916,14 @@ export const createRound: RequestHandler = async (req, res, next) => {
       return
     }
     next(err)
+  } finally {
+    if (namespaceLease && namespaceConnection) {
+      try {
+        await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
   }
 }
 
