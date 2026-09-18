@@ -68,6 +68,64 @@ describe('results/compileTeamResults (advanced)', () => {
     expect(team2?.win).toBe(0.5)
   })
 
+  it('does not coerce scoreless rounds into zero aggregate tiebreak values', () => {
+    const teams = [
+      {
+        id: 't1',
+        details: [
+          { r: 1, speakers: ['s1'] },
+          { r: 2, speakers: ['s1'] },
+        ],
+      },
+      {
+        id: 't2',
+        details: [
+          { r: 1, speakers: ['s2'] },
+          { r: 2, speakers: ['s2'] },
+        ],
+      },
+    ]
+    const speakers = [{ id: 's1' }, { id: 's2' }]
+    const rawTeamResults = [
+      { id: 't1', r: 1, win: 1, opponents: ['t2'], side: 'gov' },
+      { id: 't2', r: 1, win: 0, opponents: ['t1'], side: 'opp' },
+      { id: 't1', r: 2, win: 0, opponents: ['t2'], side: 'opp' },
+      { id: 't2', r: 2, win: 1, opponents: ['t1'], side: 'gov' },
+    ]
+    const rawSpeakerResults = [
+      { id: 's1', r: 1, scores: [80] },
+      { id: 's2', r: 1, scores: [70] },
+    ]
+    const style = { team_num: 2, score_weights: [1] }
+
+    const compiled = compileTeamResults(
+      teams,
+      speakers,
+      rawTeamResults,
+      rawSpeakerResults,
+      [1, 2],
+      style
+    )
+    const team1 = compiled.find((row) => row.id === 't1')
+    const team2 = compiled.find((row) => row.id === 't2')
+
+    expect(team1?.details[0]?.sum).toBe(80)
+    expect(team2?.details[0]?.sum).toBe(70)
+    expect(team1?.details[1]?.sum).toBeNull()
+    expect(team2?.details[1]?.sum).toBeNull()
+
+    expect(team1?.sum).toBe(80)
+    expect(team2?.sum).toBe(70)
+    expect(team1?.average).toBe(80)
+    expect(team2?.average).toBe(70)
+    expect(team1?.margin).toBe(10)
+    expect(team2?.margin).toBe(-10)
+    expect(team1?.average_margin).toBe(10)
+    expect(team2?.average_margin).toBe(-10)
+    expect(team1?.opponent_average).toBe(70)
+    expect(team2?.opponent_average).toBe(80)
+  })
+
   it('keeps bye rounds without opponents from producing infinite margins', () => {
     const integrated = integrateTeamAndSpeakerResults(
       [{ id: 't1', details: [{ r: 1, speakers: ['s1'] }] }] as any,
