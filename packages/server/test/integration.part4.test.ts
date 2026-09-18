@@ -1274,6 +1274,17 @@ describe('Server integration', () => {
     })
     expect(invalidProtectedCreate.status).toBe(400)
 
+    const weakProtectedCreate = await organizer.post('/api/tournaments').send({
+      name: 'Weak Protected Open',
+      style: 1,
+      options: {},
+      auth: { access: { required: true, password: 'short' } },
+    })
+    expect(weakProtectedCreate.status).toBe(400)
+    expect(weakProtectedCreate.body.errors?.[0]?.message).toBe(
+      'Tournament access password must be at least 8 characters'
+    )
+
     const tournamentRes = await organizer.post('/api/tournaments').send({
       name: 'Validation Open',
       style: 1,
@@ -1291,6 +1302,14 @@ describe('Server integration', () => {
       auth: { access: { password: 123 } },
     })
     expect(invalidPasswordPatch.status).toBe(400)
+
+    const weakPasswordPatch = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
+      auth: { access: { password: 'short' } },
+    })
+    expect(weakPasswordPatch.status).toBe(400)
+    expect(weakPasswordPatch.body.errors?.[0]?.message).toBe(
+      'Tournament access password must be at least 8 characters'
+    )
 
     const invalidNamePatch = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
       name: '',
