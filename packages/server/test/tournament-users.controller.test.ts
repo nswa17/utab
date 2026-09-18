@@ -64,6 +64,43 @@ beforeEach(() => {
 })
 
 describe('tournament user membership consistency', () => {
+  it('scopes tournament user responses to the administered tournament', async () => {
+    const existingUser = {
+      _id: userId,
+      username: 'existing-user',
+      role: 'audience',
+      tournaments: ['507f1f77bcf86cd799439099', '507f1f77bcf86cd799439088'],
+      save: vi.fn(async function (this: any) {
+        return this
+      }),
+      toJSON() {
+        return this
+      },
+    }
+    mocks.findUser.mockReturnValue(writeResult(existingUser))
+
+    const req = {
+      params: { id: tournamentId },
+      body: { username: 'existing-user', password: 'password123', role: 'audience' },
+    }
+    const res = createResponse()
+    const next = vi.fn()
+
+    await addTournamentUser(req as never, res as never, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId,
+        username: 'existing-user',
+        role: 'audience',
+        tournaments: [tournamentId],
+      }),
+      errors: [],
+    })
+  })
+
   it('restores an existing user when membership attachment fails', async () => {
     const membershipError = new Error('membership update failed')
     const existingUser = {
