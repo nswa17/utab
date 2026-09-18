@@ -1,10 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
-import { i18n } from '@/i18n'
 import type { Submission } from '@/types/submission'
-
-const SUBMISSION_TIMEOUT_MS = 15000
 
 export interface BallotSubmissionPayload {
   tournamentId: string
@@ -75,23 +72,70 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     participantFetchSequence.value += 1
   }
 
-  async function postWithTimeout(path: string, payload: unknown, timeoutMs = SUBMISSION_TIMEOUT_MS) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+  async function postSubmission(path: string, payload: unknown) {
+    const res = await api.post(path, payload)
+    return res.data?.data ?? null
+  }
+
+  async function findExistingParticipantSubmission(params: {
+    tournamentId: string
+    submittedEntityId?: string
+    type: 'ballot' | 'feedback'
+    round: number
+    matches: (submission: Submission) => boolean
+  }): Promise<Submission | null> {
+    const submittedEntityId = String(params.submittedEntityId ?? '').trim()
+    if (!submittedEntityId) return null
+
     try {
-      const res = await api.post(path, payload, { signal: controller.signal })
-      return res.data?.data ?? null
-    } catch (err: any) {
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
-        error.value = i18n.global.t(
-          '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
-        )
-        return null
-      }
-      throw err
-    } finally {
-      clearTimeout(timer)
+      const res = await api.get('/submissions/mine', {
+        params: {
+          tournamentId: params.tournamentId,
+          submittedEntityId,
+          type: params.type,
+          round: params.round,
+        },
+      })
+      const rows = Array.isArray(res.data?.data) ? (res.data.data as Submission[]) : []
+      return rows.find(params.matches) ?? null
+    } catch {
+      return null
     }
+  }
+
+  async function reconcileBallotSubmission(
+    payload: BallotSubmissionPayload
+  ): Promise<Submission | null> {
+    const expectedPair = [String(payload.teamAId), String(payload.teamBId)].sort()
+    return findExistingParticipantSubmission({
+      tournamentId: payload.tournamentId,
+      submittedEntityId: payload.submittedEntityId,
+      type: 'ballot',
+      round: payload.round,
+      matches: (submission) => {
+        const submittedPayload = submission.payload as Record<string, unknown> | undefined
+        const pair = [
+          String(submittedPayload?.teamAId ?? ''),
+          String(submittedPayload?.teamBId ?? ''),
+        ].sort()
+        return pair[0] === expectedPair[0] && pair[1] === expectedPair[1]
+      },
+    })
+  }
+
+  async function reconcileFeedbackSubmission(
+    payload: FeedbackSubmissionPayload
+  ): Promise<Submission | null> {
+    return findExistingParticipantSubmission({
+      tournamentId: payload.tournamentId,
+      submittedEntityId: payload.submittedEntityId,
+      type: 'feedback',
+      round: payload.round,
+      matches: (submission) => {
+        const submittedPayload = submission.payload as Record<string, unknown> | undefined
+        return String(submittedPayload?.adjudicatorId ?? '') === String(payload.adjudicatorId)
+      },
+    })
   }
 
   async function fetchSubmissions(params: {
@@ -162,9 +206,22 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     beginRequest()
     error.value = null
     try {
-      return await postWithTimeout('/submissions/ballots', payload)
+      return await postSubmission('/submissions/ballots', payload)
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
+      const isDuplicate = Number(err?.response?.status) === 409
+      const isAmbiguousNetworkFailure = !err?.response
+      if (isDuplicate || isAmbiguousNetworkFailure) {
+        const existing = await reconcileBallotSubmission(payload)
+        if (existing) {
+          error.value = null
+          return existing
+        }
+      }
+      error.value =
+        err?.response?.data?.errors?.[0]?.message ??
+        (isAmbiguousNetworkFailure
+          ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
+          : 'Failed to submit ballot')
       return null
     } finally {
       endRequest()
@@ -175,9 +232,22 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     beginRequest()
     error.value = null
     try {
-      return await postWithTimeout('/submissions/feedback', payload)
+      return await postSubmission('/submissions/feedback', payload)
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
+      const isDuplicate = Number(err?.response?.status) === 409
+      const isAmbiguousNetworkFailure = !err?.response
+      if (isDuplicate || isAmbiguousNetworkFailure) {
+        const existing = await reconcileFeedbackSubmission(payload)
+        if (existing) {
+          error.value = null
+          return existing
+        }
+      }
+      error.value =
+        err?.response?.data?.errors?.[0]?.message ??
+        (isAmbiguousNetworkFailure
+          ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
+          : 'Failed to submit feedback')
       return null
     } finally {
       endRequest()
