@@ -2246,8 +2246,16 @@ describe('Server integration', () => {
     const restoredRound3 = (restoredRoundsRes.body.data as Array<any>).find(
       (row) => Number(row.round) === 3
     )
-    expect(restoredRound3.teamAllocationOpened).toBe(true)
-    expect(restoredRound3.adjudicatorAllocationOpened).toBe(true)
+
+    const restoredPublicRoundsRes = await request(app)
+      .get('/api/rounds')
+      .query({ tournamentId: restoredTournamentId, public: '1' })
+    expect(restoredPublicRoundsRes.status).toBe(200)
+    const restoredPublicRound3 = (restoredPublicRoundsRes.body.data as Array<any>).find(
+      (row) => Number(row.round) === 3
+    )
+    expect(restoredPublicRound3.teamAllocationOpened).toBe(true)
+    expect(restoredPublicRound3.adjudicatorAllocationOpened).toBe(true)
 
     const restoredDrawsRes = await organizer
       .get('/api/draws')
