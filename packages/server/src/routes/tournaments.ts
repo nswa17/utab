@@ -72,11 +72,48 @@ const accessSchema = {
 }
 const tournamentUserSchema = {
   params: z.object({ id: z.string() }),
-  body: z.object({
-    username: z.string().trim().min(1),
-    password: z.string().min(6),
-    role: z.enum(['organizer', 'adjudicator', 'speaker', 'audience']),
-  }),
+  body: z
+    .object({
+      username: z.string().trim().min(1),
+      password: z.string().min(6),
+      role: z.enum(['organizer', 'adjudicator', 'speaker', 'audience']),
+      entityType: z.enum(['team', 'speaker', 'adjudicator']).optional(),
+      entityId: z.string().trim().min(1).optional(),
+    })
+    .superRefine((value, ctx) => {
+      const hasType = value.entityType !== undefined
+      const hasId = value.entityId !== undefined
+      if (hasType !== hasId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [hasType ? 'entityId' : 'entityType'],
+          message: 'entityType and entityId must be provided together',
+        })
+        return
+      }
+      if (!hasType || !hasId) return
+      if (value.role === 'adjudicator' && value.entityType !== 'adjudicator') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['entityType'],
+          message: 'adjudicator users must bind to an adjudicator entity',
+        })
+      }
+      if (value.role === 'speaker' && !['speaker', 'team'].includes(value.entityType)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['entityType'],
+          message: 'speaker users must bind to a speaker or team entity',
+        })
+      }
+      if ((value.role === 'organizer' || value.role === 'audience') && hasType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['entityType'],
+          message: 'organizer/audience users cannot bind participant entities',
+        })
+      }
+    }),
 }
 
 const tournamentUserDeleteSchema = {
