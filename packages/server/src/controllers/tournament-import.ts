@@ -8,6 +8,11 @@ import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
+import {
+  adjudicatorDetailsSchema,
+  teamDetailsSchema,
+  venueDetailsSchema,
+} from '../schemas/entity-details.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
 import { extractZip } from '../services/zip.js'
@@ -171,6 +176,31 @@ async function ensureImportedStyle(
   while (await StyleModel.exists({ id: candidateId }).exec()) candidateId += 1
   await StyleModel.create({ ...snapshot, id: candidateId })
   return { styleId: candidateId, createdStyleId: candidateId }
+}
+
+function validateImportedEntityDetails(collectionName: string, docs: unknown[]): void {
+  const schema =
+    collectionName === 'teams'
+      ? teamDetailsSchema
+      : collectionName === 'adjudicators'
+        ? adjudicatorDetailsSchema
+        : collectionName === 'venues'
+          ? venueDetailsSchema
+          : null
+  if (!schema) return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    if (record.details === undefined) return
+    const parsed = schema.safeParse(record.details)
+    if (parsed.success) return
+    const issue = parsed.error.issues[0]
+    const suffix = issue?.path?.length ? ` at details.${issue.path.join('.')}` : ''
+    throw new TournamentImportError(
+      400,
+      `Invalid ${collectionName} details in backup at index ${index}${suffix}: ${issue?.message ?? 'invalid details'}`
+    )
+  })
 }
 
 function deriveCollectionName(path: string): string {
@@ -423,6 +453,7 @@ async function importTournamentFromBundle(
         throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
+      validateImportedEntityDetails(collectionName, docs)
       const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
       if (revivedDocs.length > 0) {
         await db.collection(collectionName).insertMany(revivedDocs, { ordered: true })
