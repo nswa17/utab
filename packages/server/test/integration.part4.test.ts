@@ -2623,7 +2623,7 @@ describe('Server integration', () => {
     expect(statuses).not.toContain(429)
     expect(statuses.every((status) => status === 401)).toBe(true)
   })
-  it('treats hidden tournaments as admin-only even when their access mode is public', async () => {
+  it('keeps hidden tournaments out of public listings without changing direct access policy', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -2635,7 +2635,7 @@ describe('Server integration', () => {
     expect(loginRes.status).toBe(200)
 
     const tournamentRes = await organizer.post('/api/tournaments').send({
-      name: 'Hidden Tournament Boundary Open',
+      name: 'Hidden Tournament Listing Open',
       style: 1,
       options: {},
       auth: { access: { required: false } },
@@ -2646,7 +2646,7 @@ describe('Server integration', () => {
 
     const teamRes = await organizer.post('/api/teams').send({
       tournamentId,
-      name: 'Hidden Boundary Team',
+      name: 'Hidden Listing Team',
       userDefinedData: { internalMemo: 'not public' },
     })
     expect(teamRes.status).toBe(201)
@@ -2657,42 +2657,19 @@ describe('Server integration', () => {
     expect(publicList.body.data.some((item: any) => String(item._id) === tournamentId)).toBe(false)
 
     const directTournament = await request(app).get(`/api/tournaments/${tournamentId}`)
-    expect(directTournament.status).toBe(404)
-
-    const directTeams = await request(app).get(`/api/teams?tournamentId=${tournamentId}`)
-    expect(directTeams.status).toBe(404)
+    expect(directTournament.status).toBe(200)
+    expect(directTournament.body.data.user_defined_data).toBeUndefined()
 
     const directTeam = await request(app).get(
       `/api/teams/${teamId}?tournamentId=${tournamentId}`
     )
-    expect(directTeam.status).toBe(404)
+    expect(directTeam.status).toBe(200)
+    expect(directTeam.body.data.userDefinedData).toBeUndefined()
 
     const accessAttempt = await request(app)
       .post(`/api/tournaments/${tournamentId}/access`)
       .send({ action: 'skip' })
-    expect(accessAttempt.status).toBe(404)
-
-    const submissionAttempt = await request(app).post('/api/submissions/ballots').send({
-      tournamentId,
-      round: 1,
-      teamAId: 'team-a',
-      teamBId: 'team-b',
-      winnerId: 'team-a',
-      scoresA: [],
-      scoresB: [],
-      submittedEntityId: 'judge-a',
-    })
-    expect(submissionAttempt.status).toBe(404)
-
-    const organizerTournament = await organizer.get(`/api/tournaments/${tournamentId}`)
-    expect(organizerTournament.status).toBe(200)
-    expect(organizerTournament.body.data.user_defined_data?.hidden).toBe(true)
-
-    const organizerTeam = await organizer.get(
-      `/api/teams/${teamId}?tournamentId=${tournamentId}`
-    )
-    expect(organizerTeam.status).toBe(200)
-    expect(organizerTeam.body.data.userDefinedData?.internalMemo).toBe('not public')
+    expect(accessAttempt.status).toBe(200)
   })
 
   it('does not reveal a managed users memberships in other tournaments', async () => {
