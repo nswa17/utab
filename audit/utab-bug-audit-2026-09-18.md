@@ -1244,3 +1244,329 @@ The strongest findings are:
 - round deletion can partially and irreversibly delete data while the Round itself survives.
 
 The submission-time draw reinterpretation is particularly important because it is sequentially reproducible and can silently alter historical data without any server error.
+
+
+## Phase 5 — authorization / tournament isolation / public-data audit
+
+### Scope and method
+
+Phase 5 audited the authorization boundary rather than only checking whether routes have middleware attached. The review traced:
+
+- global role versus tournament-scoped membership;
+- public View versus tournament Access versus tournament Admin;
+- identity binding for participant submissions;
+- cross-tournament/global resources such as styles and service-token revocations;
+- public response sanitization;
+- object lookup filters and mixed-tournament payloads;
+- legacy /api versus canonical /api/v1 behavior;
+- tournament password storage and access-session expiry.
+
+The current security roadmap was used as the intended access-control contract because it explicitly defines View, Access, and Admin as separate capabilities and marks the corresponding phases complete.
+
+No production code was changed in this phase.
+
+### P5-01 — HIGH: requireTournamentAccess is currently identical to public View, allowing unauthenticated writes to passwordless tournaments
+
+Status: confirmed implementation/spec regression.
+Area: packages/server/src/middleware/auth.ts and routes/submissions.ts.
+Impact: unauthenticated internet clients can create ballot/feedback records in a public/passwordless tournament without first obtaining a tournament-access session.
+
+The security design explicitly distinguishes:
+
+    View:
+      public tournament -> unauthenticated read allowed
+
+    Access:
+      submissions/result sending -> tournament-access session or admin required
+      regardless of auth.access.required
+
+The current implementation collapses the two:
+
+    requireTournamentView(...)   -> requireTournamentRole(...)
+    requireTournamentAccess(...) -> requireTournamentRole(...)
+
+Inside requireTournamentRole, after membership/session checks:
+
+    if (isPublic) {
+      next()
+      return
+    }
+
+Therefore a public tournament bypasses the access-session requirement entirely.
+
+The affected participant writes are:
+
+    POST /submissions/ballots
+    POST /submissions/feedback
+
+which are guarded by requireTournamentAccess.
+
+This is not merely theoretical. An existing integration test creates a tournament and later submits feedback using a fresh request(app) call and expects HTTP 201. A prior /tournaments/:id/access request is also made with a separate non-agent request, so no session cookie is carried to the submission. The test therefore currently locks in the bypass.
+
+The fix should restore Access as a distinct predicate:
+
+- organizer/superuser admin: allow;
+- valid tournamentAccess session/version: allow;
+- possibly explicitly authenticated participant membership if that is the chosen product model;
+- public visibility by itself must not satisfy Access.
+
+The normal /api/submissions limiter reduces spam volume but does not restore authorization.
+
+### P5-02 — HIGH: ballot/feedback submitter identity is caller-selected and not bound to an authenticated entity
+
+Status: confirmed integrity vulnerability.
+Area: submissions.ts + participant web identity flow.
+Impact: a caller who can access the tournament can impersonate an allocated adjudicator/team/speaker and can submit first under that identity, potentially blocking the legitimate submission through deduplication.
+
+The server resolves the actor as:
+
+    submittedEntityId if supplied
+    otherwise session userId
+
+The supplied entity ID is validated for tournament existence and current draw eligibility, but no server-side relationship proves that the caller controls that adjudicator/team/speaker identity.
+
+Examples:
+
+- ballot UI explicitly lets the user select the submitter adjudicator;
+- feedback UI lets the user select the team/speaker/adjudicator actor;
+- participant identity is persisted in browser localStorage;
+- TournamentMember maps userId -> role but does not map a user to a concrete team, speaker, or adjudicator entity.
+
+This means authorization currently answers "is this entity allowed to submit?" but not "is the requester this entity?"
+
+An attacker does not need to guess opaque IDs in normal operation. Public entity/draw endpoints expose the IDs needed by the participant UI when those entities/allocations are published.
+
+The dedupe index strengthens the denial effect: if an attacker submits a valid ballot as Judge J for matchup A-B first, the legitimate Judge J later receives the duplicate-submission conflict.
+
+P5-01 makes this remotely exploitable without any session for passwordless tournaments. Even after P5-01 is corrected, entity impersonation remains possible for any holder of the shared tournament-access credential unless identities are bound separately.
+
+A durable design needs an authenticated participant/entity binding or a per-entity submission capability/token. Client-side selection/localStorage is not an identity proof.
+
+### P5-03 — CRITICAL: any self-registered organizer can mutate global Styles used by other tournaments
+
+Status: confirmed cross-tenant privilege failure.
+Area: routes/styles.ts, controllers/styles.ts, global StyleModel.
+Impact: an arbitrary newly registered organizer can change scoring/role/style configuration consumed by tournaments they do not administer.
+
+The application intentionally allows organizer self-registration. Tournament administration elsewhere is correctly constrained by TournamentMember.
+
+Styles are different:
+
+    POST   /styles      -> requireOrganizer
+    PATCH  /styles/:id  -> requireOrganizer
+    DELETE /styles/:id  -> requireOrganizer
+
+requireOrganizer checks only the global User.role/service-account role. It does not require superuser or a tournament-scoped privilege.
+
+StyleModel is global, and Tournament documents reference styles by numeric style ID.
+
+updateStyle protects only a change of the numeric style ID when a tournament references it. It does not prevent modification of the content of an in-use style. Thus a freshly self-registered organizer can PATCH style 1, 2, etc. and alter fields such as:
+
+    team_num
+    score_weights
+    score ranges
+    speaker sequence
+    side labels
+    roles
+    adjudicator ranges
+
+Those fields are read by ballot validation, compilation, participant UI, and other tournament workflows. The attacker therefore does not need membership in the victim tournament.
+
+The built-in-style seed does not self-heal this on restart: seedStyles uses $setOnInsert, so an existing modified style remains modified.
+
+This violates the documented rule that organizer authority is limited to created/member tournaments and creates a direct cross-tenant integrity/availability path.
+
+Recommended boundary: global style mutation should be superuser-only, or styles should become tournament-owned/versioned immutable resources.
+
+### P5-04 — HIGH: any self-registered organizer can list and globally revoke service-account tokens
+
+Status: confirmed global privilege failure.
+Area: routes/auth.ts, controllers/auth.ts, ServiceTokenRevocationModel.
+Impact: an ordinary organizer can revoke service credentials outside that organizer's tournament scope.
+
+The routes are:
+
+    GET  /auth/service-token-revocations  -> requireOrganizer
+    POST /auth/service-token-revocations  -> requireOrganizer
+
+Again, requireOrganizer is a global role check, and organizer is self-registerable.
+
+Service-token revocation state is global and keyed by jti. Token verification rejects a token whenever its jti is found in this global collection; there is no tournament or org restriction on the revocation action.
+
+The integration suite explicitly demonstrates a newly registered ordinary organizer revoking a service token and causing subsequent bearer-token use to return 401.
+
+Knowledge of the jti is required, but it is not necessarily secret. Audit records for service-account requests include serviceAccountJti; a tournament admin can read audit logs for their tournament and can therefore learn a jti used there. If that token is shared across multiple tournament scopes, the organizer can revoke it globally.
+
+The listing endpoint also exposes global revocation metadata (jti, reason, revokedBy, timestamps) to every organizer.
+
+Recommended boundary: token revocation/listing should be superuser/platform-admin scoped, or explicitly constrained to an organization model that is cryptographically/authoritatively bound to the token.
+
+### P5-05 — HIGH: newly created or rotated tournament access passwords are persisted in plaintext until startup maintenance hashes them
+
+Status: confirmed secret-at-rest regression.
+Area: tournament-access.service.ts, tournaments.ts, startup maintenance.
+Impact: current tournament access passwords are stored as plaintext in central MongoDB for the lifetime of the running server after create/rotation.
+
+mergeTournamentAuth is async but does not hash a supplied password. When incoming access.password is a non-empty string it does:
+
+    password = nextPassword
+    passwordHash = undefined
+
+and emits:
+
+    accessPayload.password = password
+
+createTournament/updateTournament then persist that auth object.
+
+accessTournament supports both passwordHash verification and a plaintext fallback, so the plaintext representation is actively used.
+
+There is a startup maintenance routine that converts legacy access.password to passwordHash, but it runs only during startup data maintenance. Thus:
+
+    server starts
+    organizer creates/rotates tournament password
+    plaintext password is stored
+    it remains plaintext until a later successful restart/maintenance pass
+
+The security roadmap marks passwordHash normalization as implemented, so this is not only a hardening preference; it is a regression from the documented design.
+
+API response sanitization correctly hides password/passwordHash from clients, but that does not protect database-at-rest secrecy.
+
+The write path should hash immediately and should never persist a newly supplied plaintext tournament password.
+
+### P5-06 — MEDIUM: the documented two-hour inactivity expiry for tournament access sessions is not implemented
+
+Status: confirmed documentation/implementation mismatch.
+Area: auth middleware + tournaments access controller.
+
+The roadmap states that tournament access expires after a 24-hour absolute limit or two hours of inactivity.
+
+The stored session entry contains grantedAt, expiresAt, and version. hasSessionTournamentAccess checks only:
+
+    sessionAccess.expiresAt > now
+    sessionAccess.version === current access version
+
+No last-active timestamp is stored or refreshed and no two-hour inactivity check exists.
+
+Thus an access grant can remain valid for essentially 24 hours after the last use.
+
+Password rotation still invalidates old sessions through the version check, which is a positive control.
+
+### P5-07 — MEDIUM: tournament user management leaks a user's memberships in other tournaments
+
+Status: confirmed cross-tournament metadata disclosure.
+Area: controllers/tournament-users.ts.
+
+An organizer administering tournament A can add an existing global username to A. The response serializer returns:
+
+    userId
+    username
+    role for the current membership
+    tournaments: user.tournaments
+
+user.tournaments is the complete legacy/global list of tournament IDs for that user, not just tournament A.
+
+The remove endpoint similarly returns all remaining tournament IDs.
+
+Therefore an organizer who knows another user's username can add that account to their tournament and learn identifiers of unrelated tournaments to which the account belongs, including tournaments omitted from the public tournament list.
+
+No passwordHash is leaked, and this does not by itself grant access to those other tournaments, but the response exceeds the caller's tournament scope.
+
+Recommended response: return only current-tournament membership information; global membership summaries should be self/superuser data.
+
+### P5-08 — MEDIUM hardening: tournament access password attempts use only the generic API limiter and have no password-strength floor
+
+Status: confirmed configuration gap; practical severity depends on organizer password choices.
+Area: app.ts, tournament access route/schema.
+
+POST /tournaments/:id/access is not under the stronger /auth limiter. It receives only the generic API/IP limits (default API limit is much higher than the authentication-specific limit).
+
+Tournament auth input is accepted through a generic auth record; mergeTournamentAuth requires only a non-empty string for the access password, with no minimum length/entropy requirement.
+
+A weak tournament password is therefore exposed to a relatively permissive online guessing surface.
+
+This is secondary to P5-01 because public tournaments currently do not require Access at all, but it matters for protected tournaments.
+
+### P5-09 — LOW: audit tournament-id fallback has an accidental discarded expression
+
+Status: confirmed low-impact logic bug.
+Area: middleware/audit-log.ts.
+
+resolveTournamentId contains:
+
+    const fromRequest =
+      getRequestValue(req, 'tournamentId') ??
+      getRequestValue(req, 'id')
+      getResponseDataValue(responseBody, 'tournamentId')
+
+Because there is no nullish-coalescing operator before the final function call, JavaScript parses the last call as a separate expression statement. Its return value is discarded.
+
+This is syntactically valid, which is consistent with the successful current-main CI run, but the intended response-body fallback is not part of fromRequest.
+
+Most audited mutation routes already carry tournamentId in request params/body, and tournament.create has a special response fallback, so the observed security effect is low. It can nevertheless cause missing tournament attribution for future/edge audit events that rely on response data.
+
+### P5-10 — LOW/spec reconciliation: public response DTOs have intentionally drifted from the older written allowlist
+
+Status: not classified as a vulnerability without a newer product decision.
+
+The original security roadmap public allowlist is narrower than current DTO behavior. Current code/tests intentionally expose some participant-facing fields such as:
+
+- selected tournament style overrides;
+- participant-safe Round.userDefinedData flags;
+- teamAllocationOpened/adjudicatorAllocationOpened;
+- adjudicator allocation while team draw is closed if allocationOpened is true.
+
+These values are needed by current participant workflows and have explicit unit/integration coverage. This appears to be product evolution rather than an accidental leak.
+
+The roadmap should be updated so future audits do not mistake intentional participant data for exposure.
+
+### Items investigated and rejected/reduced
+
+1. Audit-log global leak: route-level middleware is only requireAuth, but listAuditLogs performs a controller-level authorization check. Non-superusers must provide tournamentId and must pass hasTournamentAdminAccess for that tournament. No cross-tournament audit-log read was established.
+
+2. Basic entity IDOR: team/speaker/adjudicator/venue/institution get/update/delete operations use tournament-scoped models/filters and update/delete filters include both _id and tournamentId. Existing boundary tests also exercise foreign IDs. No direct cross-tournament object read/write was established.
+
+3. Mixed-tournament bulk payload bypass: requireTournamentAdmin derives the tournamentId from the first array item, but the shared CRUD controller then requires every item to have the same tournamentId before mutation. No mixed-ID privilege bypass was found.
+
+4. Hidden tournament direct URL: user_defined_data.hidden removes a tournament from the participant public list. The current user manual defines the setting as list visibility, not as an access-control boundary. Direct-by-ID access is therefore treated as unlisted behavior, not a confirmed authorization bug.
+
+5. Raw-results public exposure: older roadmap text describes requireTournamentAccess on raw-result GETs, but current routes use requireTournamentAdmin for raw team/speaker/adjudicator result endpoints. No current public raw-result leak was found.
+
+6. /api versus /api/v1 drift: both namespaces are mounted through the same createRoutes() factory and share the same authentication, scope, rate-limit, parsing, and idempotency middleware. Legacy /api only adds deprecation/sunset headers. No current handler-level security divergence was found.
+
+7. Superuser self-registration: explicitly blocked in the register controller.
+
+8. Tournament-admin membership revocation: requireTournamentAdmin queries current TournamentMember state rather than trusting a stale session tournament list, so removal takes effect on subsequent admin checks.
+
+### Positive controls worth preserving
+
+- Tournament-admin writes are generally scoped to current TournamentMember organizer membership.
+- Service-account tournament_ids are checked when deriving tournament membership/admin authority.
+- Public entity responses use explicit sanitizers rather than raw document passthrough.
+- Tournament access password rotation increments access.version and invalidates old access-session versions.
+- Sensitive privacy operations require tournament admin and reauthentication.
+- Audit-log reads perform their own tournament-admin check.
+- Submission duplication is backed by a database unique index, containing simple request races.
+- /api and /api/v1 currently share one router factory, avoiding duplicated authorization implementations.
+
+### Remediation priority for the later fix phase
+
+1. Lock global Style mutations to a platform/superuser boundary or redesign styles as tenant-owned immutable/versioned resources.
+2. Split requireTournamentAccess from requireTournamentView and enforce a real access grant on submission writes.
+3. Introduce authenticated entity binding/capabilities for ballot and feedback submitters.
+4. Restrict service-token revocation/listing to platform authority or a real organization boundary.
+5. Hash tournament access passwords on the write path and eliminate newly persisted plaintext.
+6. Restore/document inactivity expiration for tournament-access sessions.
+7. Remove cross-tournament membership lists from tournament-admin user-management responses.
+8. Add access-password-specific throttling/password policy.
+9. Repair the audit fallback expression and update public DTO documentation.
+
+### Phase 5 conclusion
+
+Phase 5 found two separate classes of serious authorization defects:
+
+- tenant-boundary failures: a self-registered organizer can mutate global styles and can globally revoke service tokens;
+- participant-write identity failures: public visibility currently satisfies submission Access, and submittedEntityId is not cryptographically/authentically bound to the requester.
+
+The global Style mutation is the strongest Phase-5 finding because it gives an arbitrary self-registered organizer a direct path to alter scoring/style behavior used by tournaments they do not administer.
+
+The access-control roadmap also reveals two regressions from previously marked-complete security work: View and Access have collapsed back into the same predicate, and newly supplied tournament access passwords are again persisted as plaintext until startup maintenance.
