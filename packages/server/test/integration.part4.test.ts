@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createServer, type Server } from 'node:http'
-import { beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { TournamentMemberModel } from '../src/models/tournament-member.js'
 import { TournamentModel } from '../src/models/tournament.js'
 import { UserModel } from '../src/models/user.js'
@@ -2900,6 +2900,157 @@ describe('Server integration', () => {
     const storedTeamC = storedTeams.find((team: any) => String(team._id) === teamCId) as any
     const storedTeamCDetail = storedTeamC?.details?.find((item: any) => Number(item?.r) === 2)
     expect(storedTeamCDetail?.conflicts).toEqual(['keep-c'])
+  })
+
+
+  it('rolls back round create/delete when an ordinary database write fails', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'round-failure-atomic-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'round-failure-atomic-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Failure Atomic Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Failure Atomic Team A',
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Failure Atomic Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getRoundModel } = await import('../src/models/round.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const { getResultModel } = await import('../src/models/result.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
+    const TeamModel = getTeamModel(connection)
+    const DrawModel = getDrawModel(connection)
+    const ResultModel = getResultModel(connection)
+
+    const createFailureSpy = vi
+      .spyOn(TeamModel as any, 'bulkWrite')
+      .mockRejectedValueOnce(new Error('injected round-detail create failure'))
+
+    const failedCreate = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: { no_speaker_score: true },
+    })
+    expect(failedCreate.status).toBe(500)
+    createFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeNull()
+    const teamsAfterFailedCreate = await TeamModel.find({ tournamentId }).lean().exec()
+    expect(
+      teamsAfterFailedCreate.every(
+        (team: any) =>
+          !Array.isArray(team.details) ||
+          team.details.every((detail: any) => Number(detail?.r) !== 1)
+      )
+    ).toBe(true)
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: { no_speaker_score: true },
+    })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const allocation = [
+      {
+        venue: null,
+        teams: { gov: teamAId, opp: teamBId },
+        chairs: [],
+        panels: [],
+        trainees: [],
+      },
+    ]
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const resultRes = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { marker: 'restore-me' },
+    })
+    expect(resultRes.status).toBe(201)
+
+    const dependencyFailureSpy = vi
+      .spyOn(DrawModel as any, 'deleteMany')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected dependency delete failure')
+        },
+      }))
+
+    const failedDependencyDelete = await organizer.delete(
+      `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+    )
+    expect(failedDependencyDelete.status).toBe(500)
+    dependencyFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ _id: roundId, tournamentId }).lean().exec()).toBeTruthy()
+    expect(await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await ResultModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+
+    const entityCleanupFailureSpy = vi
+      .spyOn(TeamModel as any, 'updateMany')
+      .mockImplementationOnce(() => ({
+        exec: async () => {
+          throw new Error('injected entity detail cleanup failure')
+        },
+      }))
+
+    const failedPostRoundDelete = await organizer.delete(
+      `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+    )
+    expect(failedPostRoundDelete.status).toBe(500)
+    entityCleanupFailureSpy.mockRestore()
+
+    expect(await RoundModel.findOne({ _id: roundId, tournamentId }).lean().exec()).toBeTruthy()
+    expect(await DrawModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+    expect(await ResultModel.findOne({ tournamentId, round: 1 }).lean().exec()).toBeTruthy()
+
+    const teamsAfterRollback = await TeamModel.find({ tournamentId }).lean().exec()
+    expect(
+      teamsAfterRollback.every(
+        (team: any) =>
+          Array.isArray(team.details) &&
+          team.details.some((detail: any) => Number(detail?.r) === 1)
+      )
+    ).toBe(true)
+
+    const finalDelete = await organizer.delete(
+      `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+    )
+    expect(finalDelete.status).toBe(200)
+    expect(await RoundModel.findOne({ _id: roundId, tournamentId }).lean().exec()).toBeNull()
   })
 
 })
