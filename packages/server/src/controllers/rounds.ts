@@ -1363,18 +1363,73 @@ export const createRound: RequestHandler = async (req, res, next) => {
           },
         }
         return {
+          _id: new Types.ObjectId(),
           ...item,
           userDefinedData: applyBreakConstraintsToUserDefined(
             buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, item.userDefinedData)
           ),
+          roundActiveWriteCount: 0,
+          roundMutationLocked: true,
+          roundMutationEpoch: 1,
         }
       })
-      const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
-      await syncEntityRoundDetailsForCreate(
-        tournamentId,
-        preparedPayload.map((item) => Number(item.round))
-      )
-      res.status(201).json({ data: created, errors: [] })
+      const createdIds = preparedPayload.map((item) => item._id)
+      let created: any[]
+      try {
+        created = await RoundModel.insertMany(preparedPayload, { ordered: true })
+      } catch (createError) {
+        try {
+          await RoundModel.deleteMany({ _id: { $in: createdIds }, tournamentId }).exec()
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [createError, rollbackError],
+            'Failed to roll back partial bulk round creation'
+          )
+        }
+        throw createError
+      }
+
+      let rollbackDetails: () => Promise<void> = async () => {}
+      try {
+        rollbackDetails = await syncEntityRoundDetailsForCreate(
+          tournamentId,
+          preparedPayload.map((item) => Number(item.round))
+        )
+        const unlockResult = await RoundModel.updateMany(
+          {
+            _id: { $in: createdIds },
+            tournamentId,
+            roundMutationLocked: true,
+            roundMutationEpoch: 1,
+          },
+          { $set: { roundMutationLocked: false, roundActiveWriteTouchedAt: new Date() } }
+        ).exec()
+        if (unlockResult.matchedCount !== preparedPayload.length) {
+          throw new Error('Failed to finalize bulk round creation')
+        }
+      } catch (operationError) {
+        const rollbackErrors: unknown[] = []
+        try {
+          await rollbackDetails()
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+        try {
+          await RoundModel.deleteMany({ _id: { $in: createdIds }, tournamentId }).exec()
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+        if (rollbackErrors.length > 0) {
+          throw new AggregateError(
+            [operationError, ...rollbackErrors],
+            'Failed to roll back bulk round creation'
+          )
+        }
+        throw operationError
+      }
+
+      const finalized = await RoundModel.find({ _id: { $in: createdIds }, tournamentId }).exec()
+      res.status(201).json({ data: finalized, errors: [] })
       return
     }
 
@@ -1421,7 +1476,9 @@ export const createRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
+    const roundId = new Types.ObjectId()
     const created = await RoundModel.create({
+      _id: roundId,
       tournamentId,
       round,
       name,
@@ -1433,9 +1490,46 @@ export const createRound: RequestHandler = async (req, res, next) => {
       userDefinedData: applyBreakConstraintsToUserDefined(
         buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
       ),
+      roundActiveWriteCount: 0,
+      roundMutationLocked: true,
+      roundMutationEpoch: 1,
     })
-    await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
-    res.status(201).json({ data: created.toJSON(), errors: [] })
+
+    let rollbackDetails: () => Promise<void> = async () => {}
+    try {
+      rollbackDetails = await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
+      const released = await releaseRoundMutationLease(connection, {
+        roundId: String(roundId),
+        tournamentId,
+        round: Number(round),
+        epoch: 1,
+      })
+      if (!released) {
+        throw new Error('Failed to finalize round creation')
+      }
+    } catch (operationError) {
+      const rollbackErrors: unknown[] = []
+      try {
+        await rollbackDetails()
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      try {
+        await RoundModel.deleteMany({ _id: roundId, tournamentId }).exec()
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [operationError, ...rollbackErrors],
+          'Failed to roll back round creation'
+        )
+      }
+      throw operationError
+    }
+
+    const finalized = await RoundModel.findOne({ _id: roundId, tournamentId }).exec()
+    res.status(201).json({ data: finalized?.toJSON() ?? created.toJSON(), errors: [] })
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
       res
