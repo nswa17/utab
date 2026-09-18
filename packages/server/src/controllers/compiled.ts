@@ -2048,15 +2048,166 @@ async function buildCompiledPayloadFromSubmissions(
   return { payload: compiled, connection }
 }
 
+type CompileSourceKind = 'submissions' | 'raw'
+
+function revisionRows(rows: any[]): Array<{ id: string; updatedAt: string | null }> {
+  return rows
+    .map((row: any) => ({
+      id: String(row?._id ?? ''),
+      updatedAt:
+        row?.updatedAt instanceof Date
+          ? row.updatedAt.toISOString()
+          : row?.updatedAt
+            ? new Date(row.updatedAt).toISOString()
+            : null,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+}
+
+async function readCompileSourceRevision(
+  connection: Connection,
+  tournamentId: string,
+  source: CompileSourceKind
+): Promise<string> {
+  const tournament = await TournamentModel.findById(tournamentId)
+    .select({ _id: 1, style: 1, updatedAt: 1 })
+    .lean()
+    .exec()
+
+  if (!tournament) return sha256Hex('missing-tournament')
+
+  const commonQueries = await Promise.all([
+    getTeamModel(connection)
+      .find({ tournamentId })
+      .select({ _id: 1, updatedAt: 1 })
+      .lean()
+      .exec(),
+    getAdjudicatorModel(connection)
+      .find({ tournamentId })
+      .select({ _id: 1, updatedAt: 1 })
+      .lean()
+      .exec(),
+    getDrawModel(connection)
+      .find({ tournamentId })
+      .select({ _id: 1, updatedAt: 1, __v: 1 })
+      .lean()
+      .exec(),
+    getRoundModel(connection)
+      .find({ tournamentId })
+      .select({ _id: 1, updatedAt: 1 })
+      .lean()
+      .exec(),
+  ])
+
+  const sourceRows =
+    source === 'raw'
+      ? await Promise.all([
+          getRawTeamResultModel(connection)
+            .find({ tournamentId })
+            .select({ _id: 1, updatedAt: 1 })
+            .lean()
+            .exec(),
+          getRawSpeakerResultModel(connection)
+            .find({ tournamentId })
+            .select({ _id: 1, updatedAt: 1 })
+            .lean()
+            .exec(),
+          getRawAdjudicatorResultModel(connection)
+            .find({ tournamentId })
+            .select({ _id: 1, updatedAt: 1 })
+            .lean()
+            .exec(),
+        ])
+      : [
+          await getSubmissionModel(connection)
+            .find({ tournamentId })
+            .select({ _id: 1, updatedAt: 1 })
+            .lean()
+            .exec(),
+        ]
+
+  const style =
+    typeof (tournament as any).style === 'number'
+      ? await StyleModel.findOne({ id: (tournament as any).style })
+          .select({ _id: 1, updatedAt: 1 })
+          .lean()
+          .exec()
+      : null
+
+  const seed = {
+    tournament: {
+      id: String((tournament as any)._id ?? ''),
+      updatedAt:
+        (tournament as any).updatedAt instanceof Date
+          ? (tournament as any).updatedAt.toISOString()
+          : (tournament as any).updatedAt
+            ? new Date((tournament as any).updatedAt).toISOString()
+            : null,
+      style: (tournament as any).style ?? null,
+    },
+    style: style
+      ? {
+          id: String((style as any)._id ?? ''),
+          updatedAt:
+            (style as any).updatedAt instanceof Date
+              ? (style as any).updatedAt.toISOString()
+              : (style as any).updatedAt
+                ? new Date((style as any).updatedAt).toISOString()
+                : null,
+        }
+      : null,
+    teams: revisionRows(commonQueries[0] as any[]),
+    adjudicators: revisionRows(commonQueries[1] as any[]),
+    draws: revisionRows(commonQueries[2] as any[]).map((row, index) => ({
+      ...row,
+      version: Number((commonQueries[2] as any[])[index]?.__v ?? 0),
+    })),
+    rounds: revisionRows(commonQueries[3] as any[]),
+    source:
+      source === 'raw'
+        ? {
+            rawTeams: revisionRows(sourceRows[0] as any[]),
+            rawSpeakers: revisionRows(sourceRows[1] as any[]),
+            rawAdjudicators: revisionRows(sourceRows[2] as any[]),
+          }
+        : {
+            submissions: revisionRows(sourceRows[0] as any[]),
+          },
+  }
+
+  return sha256Hex(stableSerialize(seed))
+}
+
+function compileUnstableError(): Error {
+  const err = new Error('Tournament data changed repeatedly while compiling; retry')
+  ;(err as any).status = 409
+  ;(err as any).code = 'CompileUnstable'
+  return err
+}
+
 export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],
   compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
-  return source === 'raw'
-    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
-    : buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
+  const compileSource: CompileSourceKind = source === 'raw' ? 'raw' : 'submissions'
+  const connection = await getTournamentConnection(tournamentId)
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const revisionBefore = await readCompileSourceRevision(connection, tournamentId, compileSource)
+    const built =
+      compileSource === 'raw'
+        ? await buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
+        : await buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
+    const revisionAfter = await readCompileSourceRevision(connection, tournamentId, compileSource)
+
+    if (revisionBefore === revisionAfter) {
+      return built
+    }
+  }
+
+  throw compileUnstableError()
 }
 
 function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
