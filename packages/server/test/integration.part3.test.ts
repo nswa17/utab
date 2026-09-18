@@ -1220,11 +1220,28 @@ describe('Server integration', () => {
       details: [{ r: 1, available: true, conflicts: [], speakers: ['sp1', 'sp2'] }],
       userDefinedData: { isoLookingUserText },
     })
-    await RoundModel.create({
+    const createdRound = await RoundModel.create({
       tournamentId,
       round: 1,
       name: 'Round 1',
       motions: ['This House would restore from backups.'],
+    })
+    await RoundModel.collection.updateOne(
+      { _id: createdRound._id },
+      {
+        $set: {
+          roundActiveWriteCount: 3,
+          roundActiveWriteTouchedAt: new Date('2026-09-18T12:00:00.000Z'),
+          roundMutationLocked: true,
+          roundMutationEpoch: 41,
+        },
+      }
+    )
+    await connection.db?.collection('round_namespace_locks').insertOne({
+      _id: tournamentId,
+      locked: true,
+      epoch: 12,
+      touchedAt: new Date('2026-09-18T12:00:00.000Z'),
     })
     const originalAuditLog = await AuditLogModel.create({
       tournamentId,
@@ -1263,6 +1280,18 @@ describe('Server integration', () => {
         expect.objectContaining({ collectionName: 'teams' }),
       ])
     )
+    expect(
+      collectionFiles.some((entry) => entry.collectionName === 'round_namespace_locks')
+    ).toBe(false)
+
+    const roundsFile = collectionFiles.find((entry) => entry.collectionName === 'rounds')
+    const roundsEntry = extractedEntries.find((entry) => entry.path === roundsFile?.path)
+    const exportedRounds = JSON.parse(roundsEntry?.content.toString('utf8') ?? '[]') as any[]
+    expect(exportedRounds).toHaveLength(1)
+    expect(exportedRounds[0]?.roundActiveWriteCount).toBeUndefined()
+    expect(exportedRounds[0]?.roundActiveWriteTouchedAt).toBeUndefined()
+    expect(exportedRounds[0]?.roundMutationLocked).toBeUndefined()
+    expect(exportedRounds[0]?.roundMutationEpoch).toBeUndefined()
 
     const collectionJsonEntries = extractedEntries.filter(
       (entry) => entry.path.startsWith('json/collections/') && entry.path.endsWith('.json')
@@ -1322,6 +1351,19 @@ describe('Server integration', () => {
     expect(restoredRounds).toHaveLength(1)
     expect(restoredRounds[0]?.name).toBe('Round 1')
     expect(String(restoredRounds[0]?.tournamentId)).toBe(restoredTournamentId)
+
+    const restoredRawRound = await restoredConnection.db?.collection('rounds').findOne({
+      _id: restoredRounds[0]?._id,
+    })
+    expect(restoredRawRound?.roundActiveWriteCount).toBeUndefined()
+    expect(restoredRawRound?.roundActiveWriteTouchedAt).toBeUndefined()
+    expect(restoredRawRound?.roundMutationLocked).toBeUndefined()
+    expect(restoredRawRound?.roundMutationEpoch).toBeUndefined()
+    const restoredCollectionNames =
+      (await restoredConnection.db?.listCollections({}, { nameOnly: true }).toArray())?.map(
+        (entry) => String(entry.name)
+      ) ?? []
+    expect(restoredCollectionNames).not.toContain('round_namespace_locks')
 
     const restoredLogs = await AuditLogModel.find({ tournamentId: restoredTournamentId }).lean().exec()
     expect(restoredLogs).toHaveLength(2)
