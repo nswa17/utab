@@ -451,21 +451,30 @@ describe('Server integration', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(beforeRevoke.status).toBe(200)
 
-    const revokeRes = await agent.post('/api/v1/auth/service-token-revocations').send({
+    const organizerRevokeRes = await agent
+      .post('/api/v1/auth/service-token-revocations')
+      .send({
+        jti: revokedJti,
+        reason: 'organizer must not revoke global service tokens',
+      })
+    expect(organizerRevokeRes.status).toBe(403)
+
+    const { agent: superuser } = await createSuperuserAgent('token-revoker-superuser')
+    const revokeRes = await superuser.post('/api/v1/auth/service-token-revocations').send({
       jti: revokedJti,
       reason: 'token compromised',
     })
     expect(revokeRes.status).toBe(201)
     expect(revokeRes.body.data.jti).toBe(revokedJti)
 
-    const listRes = await agent.get('/api/v1/auth/service-token-revocations?active=true&limit=20')
+    const listRes = await superuser.get('/api/v1/auth/service-token-revocations?active=true&limit=20')
     expect(listRes.status).toBe(200)
     const listed = (listRes.body.data.items as Array<{ jti: string }>).find(
       (item) => item.jti === revokedJti
     )
     expect(listed).toBeTruthy()
 
-    const duplicateRevokeRes = await agent.post('/api/v1/auth/service-token-revocations').send({
+    const duplicateRevokeRes = await superuser.post('/api/v1/auth/service-token-revocations').send({
       jti: revokedJti,
       reason: 'duplicate request',
     })
@@ -483,7 +492,7 @@ describe('Server integration', () => {
       { $set: { expireAt: expiredAt } }
     ).exec()
 
-    const activeListRes = await agent.get(
+    const activeListRes = await superuser.get(
       '/api/v1/auth/service-token-revocations?active=true&limit=20'
     )
     expect(activeListRes.status).toBe(200)
@@ -657,14 +666,26 @@ describe('Server integration', () => {
     )
     expect(publicCompiled.status).toBe(401)
 
-    const openAccessSkipRes = await request(app)
+    const unauthenticatedSubmission = await request(app)
+      .post('/api/submissions/feedback')
+      .send({
+        tournamentId,
+        round: 1,
+        adjudicatorId,
+        score: 6,
+        submittedEntityId: teamId,
+      })
+    expect(unauthenticatedSubmission.status).toBe(401)
+
+    const publicAgent = request.agent(app)
+    const openAccessSkipRes = await publicAgent
       .post(`/api/tournaments/${tournamentId}/access`)
       .send({
         action: 'skip',
       })
     expect(openAccessSkipRes.status).toBe(200)
 
-    const publicSubmission = await request(app).post('/api/submissions/feedback').send({
+    const publicSubmission = await publicAgent.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
       adjudicatorId,
@@ -3622,7 +3643,7 @@ describe('Server integration', () => {
       id: speakerId,
       from_id: speakerId,
       r: 1,
-      scores: [75],
+      scores: [75, 0, 0, 0],
     })
     expect(rawSpeakerRes.status).toBe(201)
 
