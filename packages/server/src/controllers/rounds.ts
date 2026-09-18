@@ -1375,9 +1375,8 @@ export const createRound: RequestHandler = async (req, res, next) => {
         }
       })
       const createdIds = preparedPayload.map((item) => item._id)
-      let created: any[]
       try {
-        created = await RoundModel.insertMany(preparedPayload, { ordered: true })
+        await RoundModel.insertMany(preparedPayload, { ordered: true })
       } catch (createError) {
         try {
           await RoundModel.deleteMany({ _id: { $in: createdIds }, tournamentId }).exec()
