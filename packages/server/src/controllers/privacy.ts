@@ -431,39 +431,65 @@ export async function executeSpeakerPersonalDataErase(
   const RawSpeakerResultModel = getRawSpeakerResultModel(connection)
 
   const mode: EraseMode = eraseMode === 'hard_delete' ? 'hard_delete' : 'anonymize'
-  const existing = await SpeakerModel.findOne({ _id: entityId, tournamentId })
-    .select({ _id: 1 })
-    .lean()
-    .exec()
-  if (!existing) return null
+  const snapshot = await captureSpeakerEraseSnapshot(connection, tournamentId, entityId)
+  if (!snapshot) return null
 
-  const clearResult = await SubmissionModel.updateMany(
-    {
-      tournamentId,
-      $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
-    },
-    { $unset: { 'payload.comment': '' } }
-  ).exec()
-
-  if (mode === 'hard_delete') {
-    await Promise.all([
-      removeSpeakerRefsFromTeams(connection, tournamentId, entityId),
-      RawSpeakerResultModel.deleteMany({
-        tournamentId,
-        $or: [{ id: entityId }, { from_id: entityId }],
-      }).exec(),
-    ])
-    await SpeakerModel.deleteOne({ _id: entityId, tournamentId }).exec()
-  } else {
-    await SpeakerModel.updateOne(
-      { _id: entityId, tournamentId },
+  let clearResult: { modifiedCount?: number } = { modifiedCount: 0 }
+  try {
+    clearResult = await SubmissionModel.updateMany(
       {
-        $set: {
-          name: buildRedactedLabel('speaker', entityId),
-          userDefinedData: {},
-        },
-      }
+        tournamentId,
+        $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
+      },
+      { $unset: { 'payload.comment': '' } }
     ).exec()
+
+    if (mode === 'hard_delete') {
+      await Promise.all([
+        removeSpeakerRefsFromTeams(connection, tournamentId, entityId),
+        RawSpeakerResultModel.deleteMany({
+          tournamentId,
+          $or: [{ id: entityId }, { from_id: entityId }],
+        }).exec(),
+      ])
+      const deleteResult = await SpeakerModel.deleteOne({ _id: entityId, tournamentId }).exec()
+      if (deleteResult.deletedCount !== 1) {
+        const err = new Error('Speaker changed while hard-delete erasure was running')
+        err.name = 'EraseConflict'
+        ;(err as any).status = 409
+        throw err
+      }
+    } else {
+      const updateResult = await SpeakerModel.updateOne(
+        { _id: entityId, tournamentId },
+        {
+          $set: {
+            name: buildRedactedLabel('speaker', entityId),
+            userDefinedData: {},
+          },
+        }
+      ).exec()
+      if (updateResult.matchedCount !== 1) {
+        const err = new Error('Speaker changed while anonymization was running')
+        err.name = 'EraseConflict'
+        ;(err as any).status = 409
+        throw err
+      }
+    }
+  } catch (operationError) {
+    try {
+      if (mode === 'hard_delete') {
+        await restoreSpeakerEraseSnapshot(connection, tournamentId, entityId, snapshot)
+      } else {
+        await restoreSubmissionComments(connection, tournamentId, snapshot.submissionComments)
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [operationError, rollbackError],
+        'Speaker personal-data erasure failed and rollback was incomplete'
+      )
+    }
+    throw operationError
   }
 
   return {
@@ -489,46 +515,72 @@ export async function executeAdjudicatorPersonalDataErase(
   const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(connection)
 
   const mode: EraseMode = eraseMode === 'hard_delete' ? 'hard_delete' : 'anonymize'
-  const existing = await AdjudicatorModel.findOne({ _id: entityId, tournamentId })
-    .select({ _id: 1 })
-    .lean()
-    .exec()
-  if (!existing) return null
+  const snapshot = await captureAdjudicatorEraseSnapshot(connection, tournamentId, entityId)
+  if (!snapshot) return null
 
-  const clearResult = await SubmissionModel.updateMany(
-    {
-      tournamentId,
-      $or: [
-        { 'payload.adjudicatorId': entityId },
-        { 'payload.submittedEntityId': entityId },
-        { submittedBy: entityId },
-      ],
-    },
-    { $unset: { 'payload.comment': '' } }
-  ).exec()
-
-  if (mode === 'hard_delete') {
-    await Promise.all([
-      removeAdjudicatorRefsFromDraws(connection, tournamentId, entityId),
-      RawAdjudicatorResultModel.deleteMany({
-        tournamentId,
-        $or: [{ id: entityId }, { from_id: entityId }],
-      }).exec(),
-    ])
-    await AdjudicatorModel.deleteOne({ _id: entityId, tournamentId }).exec()
-  } else {
-    await AdjudicatorModel.updateOne(
-      { _id: entityId, tournamentId },
+  let clearResult: { modifiedCount?: number } = { modifiedCount: 0 }
+  try {
+    clearResult = await SubmissionModel.updateMany(
       {
-        $set: {
-          name: buildRedactedLabel('adjudicator', entityId),
-          preev: 0,
-          template: { available: false, conflicts: [], conflict_teams: [] },
-          details: [],
-          userDefinedData: {},
-        },
-      }
+        tournamentId,
+        $or: [
+          { 'payload.adjudicatorId': entityId },
+          { 'payload.submittedEntityId': entityId },
+          { submittedBy: entityId },
+        ],
+      },
+      { $unset: { 'payload.comment': '' } }
     ).exec()
+
+    if (mode === 'hard_delete') {
+      await Promise.all([
+        removeAdjudicatorRefsFromDraws(connection, tournamentId, entityId),
+        RawAdjudicatorResultModel.deleteMany({
+          tournamentId,
+          $or: [{ id: entityId }, { from_id: entityId }],
+        }).exec(),
+      ])
+      const deleteResult = await AdjudicatorModel.deleteOne({ _id: entityId, tournamentId }).exec()
+      if (deleteResult.deletedCount !== 1) {
+        const err = new Error('Adjudicator changed while hard-delete erasure was running')
+        err.name = 'EraseConflict'
+        ;(err as any).status = 409
+        throw err
+      }
+    } else {
+      const updateResult = await AdjudicatorModel.updateOne(
+        { _id: entityId, tournamentId },
+        {
+          $set: {
+            name: buildRedactedLabel('adjudicator', entityId),
+            preev: 0,
+            template: { available: false, conflicts: [], conflict_teams: [] },
+            details: [],
+            userDefinedData: {},
+          },
+        }
+      ).exec()
+      if (updateResult.matchedCount !== 1) {
+        const err = new Error('Adjudicator changed while anonymization was running')
+        err.name = 'EraseConflict'
+        ;(err as any).status = 409
+        throw err
+      }
+    }
+  } catch (operationError) {
+    try {
+      if (mode === 'hard_delete') {
+        await restoreAdjudicatorEraseSnapshot(connection, tournamentId, entityId, snapshot)
+      } else {
+        await restoreSubmissionComments(connection, tournamentId, snapshot.submissionComments)
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [operationError, rollbackError],
+        'Adjudicator personal-data erasure failed and rollback was incomplete'
+      )
+    }
+    throw operationError
   }
 
   return {
