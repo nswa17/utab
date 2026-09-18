@@ -277,6 +277,79 @@ async function authorizeParticipantSubmissionActor(input: {
   }
 }
 
+async function authorizeParticipantSubmissionReadActor(input: {
+  connection: Connection
+  tournamentId: string
+  round?: number
+  submittedEntityId?: string
+  sessionUserId?: string
+  isAdmin: boolean
+}): Promise<ActorAuthorizationOutcome> {
+  const claimedActor = String(input.submittedEntityId ?? '').trim()
+
+  if (input.isAdmin) {
+    const actor = resolveSubmissionActor(claimedActor, input.sessionUserId)
+    return actor
+      ? { ok: true, actor }
+      : { ok: false, status: 403, message: 'Submission actor is required' }
+  }
+
+  const userId = String(input.sessionUserId ?? '').trim()
+  if (!userId) {
+    return {
+      ok: false,
+      status: 401,
+      message: 'Authenticated participant identity is required for submissions',
+    }
+  }
+
+  const membership = await TournamentMemberModel.findOne({
+    tournamentId: input.tournamentId,
+    userId,
+  })
+    .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
+    .lean()
+    .exec()
+
+  const boundType = String((membership as any)?.entityType ?? '').trim() as ParticipantEntityType
+  const boundId = String((membership as any)?.entityId ?? '').trim()
+  if (!membership || !boundId || !['team', 'speaker', 'adjudicator'].includes(boundType)) {
+    return {
+      ok: false,
+      status: 403,
+      message: 'Participant account is not bound to a tournament entity',
+    }
+  }
+
+  if (claimedActor === boundId) {
+    return { ok: true, actor: claimedActor }
+  }
+
+  if (
+    boundType === 'speaker' &&
+    Number.isInteger(input.round) &&
+    Number(input.round) >= 1 &&
+    claimedActor
+  ) {
+    const belongs = await speakerBelongsToTeamForRound(
+      input.connection,
+      input.tournamentId,
+      claimedActor,
+      boundId,
+      Number(input.round)
+    )
+    if (belongs) {
+      return { ok: true, actor: claimedActor }
+    }
+  }
+
+  return {
+    ok: false,
+    status: 403,
+    message: 'submittedEntityId does not match the authenticated participant identity',
+  }
+}
+
 function respondActorAuthorizationFailure(
   res: Parameters<RequestHandler>[1],
   outcome: Extract<ActorAuthorizationOutcome, { ok: false }>
@@ -1326,11 +1399,29 @@ export const listParticipantSubmissions: RequestHandler = async (req, res, next)
     }
 
     const connection = await getTournamentConnection(tournamentId)
-    const SubmissionModel = getSubmissionModel(connection)
+    const isAdmin = await hasTournamentAdminAccess(req, tournamentId)
+    const roundNumber = round === undefined ? undefined : Number(round)
+    const actorAuthorization = await authorizeParticipantSubmissionReadActor({
+      connection,
+      tournamentId,
+      round: roundNumber,
+      submittedEntityId: actor,
+      sessionUserId: req.session?.userId,
+      isAdmin,
+    })
+    if (!actorAuthorization.ok) {
+      respondActorAuthorizationFailure(res, actorAuthorization)
+      return
+    }
 
+    const SubmissionModel = getSubmissionModel(connection)
+    const authorizedActor = actorAuthorization.actor
     const filter: Record<string, unknown> = {
       tournamentId,
-      $or: [{ 'payload.submittedEntityId': actor }, { submittedBy: actor }],
+      $or: [
+        { 'payload.submittedEntityId': authorizedActor },
+        { submittedBy: authorizedActor },
+      ],
     }
     if (type) filter.type = type
     if (round !== undefined) filter.round = Number(round)
