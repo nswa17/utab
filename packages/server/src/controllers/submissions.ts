@@ -1281,10 +1281,6 @@ export const listSubmissions: RequestHandler = async (req, res, next) => {
     }
 
     if (!ensureTournamentId(res, tournamentId)) return
-    if (!resolveSubmissionActor(submittedEntityId, req.session?.userId)) {
-      badRequest(res, 'submittedEntityId or authenticated user is required')
-      return
-    }
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
@@ -1395,6 +1391,10 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
     }
 
     if (!ensureTournamentId(res, tournamentId)) return
+    if (!resolveSubmissionActor(submittedEntityId, req.session?.userId)) {
+      badRequest(res, 'submittedEntityId or authenticated user is required')
+      return
+    }
 
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
