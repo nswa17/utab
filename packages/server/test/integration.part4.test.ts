@@ -4008,7 +4008,7 @@ describe('Server integration', () => {
     const otherTeamFeedback = await speakerUser.post('/api/submissions/feedback').send({
       tournamentId,
       round: 1,
-      adjudicatorId: judge2Id,
+      adjudicatorId: judge1Id,
       score: 8,
       submittedEntityId: teamBId,
     })
