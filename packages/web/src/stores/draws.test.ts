@@ -69,7 +69,7 @@ describe('draws store', () => {
     expect(store.draws.map((item) => item._id)).toEqual(
       expect.arrayContaining(['draw-r1', 'draw-r2', 'draw-r3'])
     )
-    expect(store.draws.some((item) => item._id === 'draw-other').toBe(false)
+    expect(store.draws.some((item) => item._id === 'draw-other')).toBe(false)
     expect(store.draws.some((item) => item._id === 'draw-r1' && item.drawOpened)).toBe(true)
   })
 
