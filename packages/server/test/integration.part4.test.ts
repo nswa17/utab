@@ -1730,7 +1730,7 @@ describe('Server integration', () => {
     }
   })
 
-  it('allows only tournament admins to read participant submission history', async () => {
+  it('requires tournament access and participant identity binding for submission history', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
       .post('/api/auth/register')
@@ -1791,10 +1791,18 @@ describe('Server integration', () => {
       .send({ username: 'submission-history-audience', password: 'password123' })
     expect(audienceLogin.status).toBe(200)
 
+    const audienceAccess = await audience
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'skip' })
+    expect(audienceAccess.status).toBe(200)
+
     const audienceList = await audience.get(
       `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=ballot&submittedEntityId=team-a`
     )
     expect(audienceList.status).toBe(403)
+    expect(String(audienceList.body.errors?.[0]?.message ?? '')).toContain(
+      'not bound to a tournament entity'
+    )
 
     const organizerList = await organizer.get(
       `/api/submissions/mine?tournamentId=${tournamentId}&round=1&type=ballot&submittedEntityId=team-a`
