@@ -8,8 +8,18 @@
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="allocationImportInfo" class="muted import-info">{{ allocationImportInfo }}</p>
+    <div v-if="!isTwoTeamStyle" class="card stack">
+      <strong>{{ $t('この対戦表エディタは現在2チーム戦のみ対応しています。') }}</strong>
+      <p class="muted">
+        {{
+          $t(
+            'この形式の対戦表はServer/Coreでは保持できますが、この画面で編集・自動生成すると情報を失う可能性があるため操作を停止しています。'
+          )
+        }}
+      </p>
+    </div>
 
-    <div class="card stack" v-if="unsubmittedEnabled && !isEmbeddedRoute">
+    <div class="card stack" v-if="isTwoTeamStyle && unsubmittedEnabled && !isEmbeddedRoute">
       <div class="row">
         <strong>{{ $t('未提出') }}</strong>
       </div>
@@ -45,6 +55,7 @@
     </div>
 
     <section
+      v-if="isTwoTeamStyle"
       :class="[
         'stack',
         'allocation-board',
@@ -3523,6 +3534,10 @@ function removeRow(index: number) {
 }
 
 async function save() {
+  if (!isTwoTeamStyle.value) {
+    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+    return
+  }
   if (!referenceSelectionConfirmed.value) {
     openNotice(t('先に参照ラウンドを確定してください。'))
     return
@@ -3569,6 +3584,10 @@ async function save() {
 
 function openAutoGenerateModal() {
   requestError.value = null
+  if (!isTwoTeamStyle.value) {
+    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+    return
+  }
   if (locked.value) {
     openNotice(t('ドローがロックされているため自動生成できません。'))
     return
@@ -3596,6 +3615,10 @@ function closeAutoGenerateModal() {
 
 function openAllocationImportModal() {
   allocationImportError.value = null
+  if (!isTwoTeamStyle.value) {
+    openNotice(t('この対戦表エディタは現在2チーム戦のみ対応しています。'))
+    return
+  }
   allocationImportText.value = ''
   if (isBreakRound.value) {
     openNotice(t('ブレイクラウンドのため取り込みできません。'))
@@ -3620,6 +3643,10 @@ async function handleAllocationImportFile(event: Event) {
 
 function applyAllocationImport() {
   allocationImportError.value = null
+  if (!isTwoTeamStyle.value) {
+    allocationImportError.value = t('この対戦表エディタは現在2チーム戦のみ対応しています。')
+    return
+  }
   allocationImportInfo.value = null
   if (isBreakRound.value) {
     allocationImportError.value = t('ブレイクラウンドのため取り込みできません。')
@@ -3847,6 +3874,10 @@ function estimatedRequiredAdjudicatorCountForRequest() {
 
 async function requestAllocation() {
   requestError.value = null
+  if (!isTwoTeamStyle.value) {
+    requestError.value = t('この対戦表エディタは現在2チーム戦のみ対応しています。')
+    return
+  }
   if (locked.value) {
     requestError.value = t('ドローがロックされているため自動生成できません。')
     return
