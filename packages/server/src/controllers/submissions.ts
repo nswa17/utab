@@ -1623,6 +1623,14 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       return
     }
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
 
@@ -1645,13 +1653,5 @@ export const deleteSubmission: RequestHandler = async (req, res, next) => {
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
-  } finally {
-    if (roundWriteLease && leaseConnection) {
-      try {
-        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
-      } catch {
-        // Stale write counters self-heal before structural round mutation.
-      }
-    }
   }
 }
