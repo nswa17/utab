@@ -393,4 +393,49 @@ describe('compiled store', () => {
     })
     expect(store.previewState).toBeNull()
   })
+  it('does not let a preview from the previous tournament appear after switching tournaments', async () => {
+    const store = useCompiledStore()
+    const previewDeferred = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => previewDeferred.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'compiled-b',
+          payload: {
+            compiled_team_results: [{ id: 'team-b' }],
+          },
+        },
+      },
+    })
+
+    const previewPromise = store.runPreview('tournament-a', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    await store.fetchLatest('tournament-b')
+
+    previewDeferred.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'team-a' }],
+          },
+          preview_signature: 'sig-a',
+          revision: 'rev-a',
+        },
+      },
+    })
+    const stalePreview = await previewPromise
+
+    expect(stalePreview).toBeNull()
+    expect(store.previewState).toBeNull()
+    expect(store.compiled).toEqual({
+      _id: 'compiled-b',
+      compiled_team_results: [{ id: 'team-b' }],
+    })
+  })
+
 })
