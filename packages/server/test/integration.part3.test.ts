@@ -1985,6 +1985,26 @@ describe('Server integration', () => {
     ).toBe(true)
     expect(teamsOnlyPublicDraw.body.data[0].allocation[0].chairs).toEqual([])
 
+    const stagedRow = prelimAllocation[0]
+    const stagedTeamIds = Array.isArray(stagedRow.teams)
+      ? stagedRow.teams.map((value: unknown) => String(value))
+      : Object.values(stagedRow.teams ?? {}).map((value) => String(value))
+    const stagedBallotBeforeFullPublication = await request(app)
+      .post('/api/submissions/ballots')
+      .send({
+        tournamentId,
+        round: 1,
+        teamAId: stagedTeamIds[0],
+        teamBId: stagedTeamIds[1],
+        winnerId: stagedTeamIds[0],
+        speakerIdsA: [speakerIdByTeamId.get(stagedTeamIds[0])],
+        speakerIdsB: [speakerIdByTeamId.get(stagedTeamIds[1])],
+        scoresA: [76],
+        scoresB: [72],
+        submittedEntityId: String(stagedRow.chairs?.[0] ?? ''),
+      })
+    expect(stagedBallotBeforeFullPublication.status).toBe(400)
+
     const publishAllRes = await organizer.post('/api/draws').send({
       tournamentId,
       round: 1,
