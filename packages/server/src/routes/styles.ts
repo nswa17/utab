@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { createStyle, deleteStyle, listStyles, updateStyle } from '../controllers/styles.js'
-import { requireOrganizer } from '../middleware/auth.js'
+import { requireSuperuser } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
 
 const router: Router = Router()
@@ -34,8 +34,8 @@ const updateSchema = {
 const deleteSchema = { params: z.object({ id: z.string() }) }
 
 router.get('/', listStyles)
-router.post('/', requireOrganizer, validateRequest(createSchema), createStyle)
-router.patch('/:id', requireOrganizer, validateRequest(updateSchema), updateStyle)
-router.delete('/:id', requireOrganizer, validateRequest(deleteSchema), deleteStyle)
+router.post('/', requireSuperuser, validateRequest(createSchema), createStyle)
+router.patch('/:id', requireSuperuser, validateRequest(updateSchema), updateStyle)
+router.delete('/:id', requireSuperuser, validateRequest(deleteSchema), deleteStyle)
 
 export { router as styleRouter }
