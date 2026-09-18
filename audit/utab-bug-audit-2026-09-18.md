@@ -5462,3 +5462,181 @@ This is compensation-based atomicity, not a Mongo multi-document transaction. Ex
 - compensation restores logical round identity/content, but internal timestamps/version counters may advance and are not claimed to be bit-for-bit rollback.
 
 The remaining lifecycle problem is therefore crash recovery/persistent transaction journaling rather than the ordinary caught-write-failure counterexample originally recorded under P8-01.
+
+
+## Phase 37 — Service-account idempotency terminal-response durability (P9-05)
+
+P9-05 was revisited after Phase 18 fixed the separate "delete the key after 5xx" problem.
+
+### Previous durability gap
+
+The middleware created the service-account idempotency row as `in_progress` before invoking a mutation, but it did not persist the terminal response until the HTTP response emitted `finish`.
+
+That ordering was:
+
+1. execute the mutation;
+2. send the terminal HTTP response to the caller;
+3. after `finish`, asynchronously attempt `in_progress -> completed`.
+
+Even with retry-on-write-failure and fail-closed `in_progress` semantics, this left a real response-boundary durability gap:
+
+- the caller could observe a 2xx/4xx/5xx terminal response while the replay record was still `in_progress`;
+- an immediate retry could therefore receive `409 still in progress` after the original request had already returned;
+- a process crash after the response was delivered but before completion persistence could permanently lose the replayable terminal response while leaving the mutation committed.
+
+The last case was the core P9-05 counterexample: a **successful response was externally visible before the idempotency guarantee for that response was durable**.
+
+### Contract selected
+
+The contract is now **durable-before-response**.
+
+For service-account POST/PATCH/DELETE requests protected by an idempotency key, a JSON terminal response is not committed to the socket until the idempotency row has durably transitioned to `completed` with:
+
+- terminal HTTP status;
+- terminal response body;
+- completion timestamp.
+
+Conceptually:
+
+    mutation finishes
+        |
+        v
+    response object exists in memory
+        |
+        v
+    persist in_progress -> completed
+        |
+        +-- success --> send original terminal response
+        |
+        +-- failure --> withhold original response and return fail-closed 503
+
+This removes the old `response -> finish -> persist` window.
+
+### Persistence failure semantics
+
+Completion persistence still retries three times.
+
+If all attempts fail, the middleware now throws from the persistence helper instead of logging and silently allowing the original response to stand.
+
+The original mutation response is withheld. If headers have not been sent, the caller receives a 503 stating that:
+
+- the terminal idempotent response could not be made durable;
+- the request may already have been applied;
+- the idempotency key is blocked.
+
+The original `in_progress` row is intentionally preserved.
+
+This is preferable to either unsafe alternative:
+
+- deleting/reusing the key could execute an already-applied mutation again;
+- treating an old `in_progress` record as automatically retryable cannot distinguish "crashed before mutation" from "mutation committed, response record lost."
+
+A same-key retry therefore remains fail-closed with 409 while that `in_progress` record exists.
+
+### Process-crash behavior after this change
+
+There is still an unavoidable interval between the endpoint mutation committing and the terminal idempotency write committing.
+
+A process crash in that interval can leave `in_progress`.
+
+The important contract change is that **the client has not yet received the endpoint's terminal response during that interval**. Therefore UTab no longer claims a successful/replayable response that was never durably recorded.
+
+Recovery of an abandoned `in_progress` key remains an operational ambiguity rather than being papered over by unsafe automatic re-execution.
+
+### Implementation
+
+Middleware:
+
+- `packages/server/src/middleware/service-account-idempotency.ts`
+
+Changes:
+
+- removed terminal persistence from the response `finish` event;
+- wrapped the JSON terminal-response boundary;
+- terminal persistence is awaited internally before the original JSON response is emitted;
+- completion persistence failure is surfaced as an ambiguous/fail-closed 503;
+- replay of already-completed records remains unchanged.
+
+Commits:
+
+- `2cbade644b890147c89ba610b20bc363b8dbd026` — persist idempotent terminal response before send;
+- `284ca596a09ba62374aad4120e63aa4bde3c14d1` — describe persistence failure as an ambiguous possibly-applied request.
+
+### Fault-injection regressions
+
+`packages/server/test/integration.part1.test.ts` now has two durability-specific tests.
+
+#### 1. Delayed completion persistence
+
+The test intercepts the exact `in_progress -> completed` database write and blocks it behind a gate.
+
+It verifies that while the completion write is blocked:
+
+- the endpoint mutation has reached the idempotency completion boundary;
+- the idempotency row is still `in_progress`;
+- the HTTP request has **not resolved** to the client.
+
+After releasing the DB write:
+
+- the row becomes `completed`;
+- only then does the original 201 response resolve;
+- the same-key replay returns the stored 201 and does not re-execute the mutation.
+
+This directly tests the response-before-durability race from P9-05 rather than relying on normal database timing.
+
+#### 2. Completion persistence failure
+
+The test forces all three terminal persistence attempts to reject.
+
+It verifies:
+
+- the underlying Team mutation has executed exactly once;
+- the original 201 is not exposed;
+- the caller receives 503 instead;
+- the idempotency row remains `in_progress`;
+- a same-key retry receives 409 `still in progress`;
+- the Team mutation is not executed a second time.
+
+The existing 5xx replay regression was also strengthened: after the initial 500 returns, the test now reads the idempotency row **immediately**, without polling, and requires it already to be `completed` with `responseStatus=500`.
+
+Test commits:
+
+- `1828de5b73981221b6c7619efde3ed1430ea5ec7` — add delayed-persistence and persistence-failure regressions;
+- `3e7abdf24cb09a827f886a70ef94241021dc8f99` — require 5xx completion to be durable before response;
+- `49c1606528ab12eb974daa8079346ce6ddc0890e` — remove a test-only dependency on Mongo's raw ObjectId representation inside a Mixed field.
+
+### Verification
+
+Push CI run `35397590655` at `49c1606528ab12eb974daa8079346ce6ddc0890e`:
+
+- lint/server TypeScript build: success;
+- Web typecheck: success;
+- core: **24/24 files, 117/117 tests**;
+- server `integration.part1.test.ts`: **42/42 tests passed**, including:
+  - normal idempotent replay;
+  - durable 5xx replay;
+  - delayed-completion response gating;
+  - terminal-persistence fail-closed behavior.
+
+The branch-wide test job remains red only because of previously identified unrelated failures:
+
+- the Web entity bulk-delete/institution store tests;
+- the participant-history authorization-message assertion in `integration.part4.test.ts`.
+
+In the same run, server totals were **158 passed / 1 failed**, with the sole server failure being that pre-existing participant-history assertion.
+
+The subsequent head `284ca596a09ba62374aad4120e63aa4bde3c14d1` only changes the wording of the 503 ambiguity message; lint/typecheck is green there as well.
+
+### P9-05 status and explicit boundary
+
+**P9-05 is closed for the terminal-response durability invariant.**
+
+A service-account terminal response is no longer externally committed before its replay record is durable.
+
+Remaining explicit boundary:
+
+- a crash after endpoint side effects but before idempotency completion can still leave an abandoned `in_progress` row;
+- UTab deliberately does **not** auto-expire that state into an immediate re-execution permission, because the server cannot know whether the original mutation committed;
+- resolving abandoned `in_progress` records safely would require endpoint-specific reconciliation, a persistent mutation/result journal, or transactional coupling between the business mutation and the idempotency record.
+
+That remaining problem is crash reconciliation, not the old "successful response was sent before its idempotency record existed durably" race.
