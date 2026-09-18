@@ -2,7 +2,10 @@ import type { Request, RequestHandler } from 'express'
 import { Types } from 'mongoose'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
-import { getTournamentAccessConfig } from '../services/tournament-access.service.js'
+import {
+  getTournamentAccessConfig,
+  TOURNAMENT_ACCESS_INACTIVITY_TTL_MS,
+} from '../services/tournament-access.service.js'
 
 type Role = 'superuser' | 'organizer' | 'adjudicator' | 'speaker' | 'audience'
 type TournamentMemberRole = Exclude<Role, 'superuser'>
@@ -129,13 +132,23 @@ function hasSessionTournamentAccess(req: Request, tournamentId: string, auth: un
   if (!sessionAccess) return false
 
   const now = Date.now()
-  if (sessionAccess.expiresAt <= now) {
+  const lastActivityAt = sessionAccess.lastActivityAt ?? sessionAccess.grantedAt
+  if (
+    sessionAccess.expiresAt <= now ||
+    lastActivityAt + TOURNAMENT_ACCESS_INACTIVITY_TTL_MS <= now
+  ) {
     delete req.session?.tournamentAccess?.[String(tournamentId)]
     return false
   }
 
   const config = getTournamentAccessConfig(auth)
-  return sessionAccess.version === config.version
+  if (sessionAccess.version !== config.version) {
+    delete req.session?.tournamentAccess?.[String(tournamentId)]
+    return false
+  }
+
+  sessionAccess.lastActivityAt = now
+  return true
 }
 
 export async function hasTournamentAdminAccess(req: Request, tournamentId: string): Promise<boolean> {
