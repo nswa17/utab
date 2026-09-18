@@ -110,4 +110,91 @@ describe('entity stores race handling', () => {
     expect(store.teams).toEqual([{ _id: 'team-created', name: 'Created Team' } as any])
     expect(store.loading).toBe(false)
   })
+  it('does not let a mutation from the previous tournament contaminate the newly fetched tournament', async () => {
+    const store = useTeamsStore()
+    const createDeferredResponse = createDeferred<any>()
+    const fetchDeferredResponse = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => createDeferredResponse.promise)
+    mockedApi.get.mockImplementationOnce(() => fetchDeferredResponse.promise)
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Late Team A',
+    })
+
+    const fetchPromise = store.fetchTeams('tournament-b')
+
+    createDeferredResponse.resolve({
+      data: {
+        data: {
+          _id: 'team-a-late',
+          tournamentId: 'tournament-a',
+          name: 'Late Team A',
+        },
+      },
+    })
+    await createPromise
+
+    fetchDeferredResponse.resolve({
+      data: {
+        data: [
+          {
+            _id: 'team-b-current',
+            tournamentId: 'tournament-b',
+            name: 'Current Team B',
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-b-current',
+        tournamentId: 'tournament-b',
+        name: 'Current Team B',
+      },
+    ] as any)
+    expect(store.error).toBeNull()
+  })
+
+  it('does not surface an error from a mutation belonging to the previous tournament', async () => {
+    const store = useTeamsStore()
+    const createDeferredResponse = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => createDeferredResponse.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            _id: 'team-b-current',
+            tournamentId: 'tournament-b',
+            name: 'Current Team B',
+          },
+        ],
+      },
+    })
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Late Team A',
+    })
+    await store.fetchTeams('tournament-b')
+
+    createDeferredResponse.reject({
+      response: { data: { errors: [{ message: 'Tournament A write failed' }] } },
+    })
+    await createPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-b-current',
+        tournamentId: 'tournament-b',
+        name: 'Current Team B',
+      },
+    ] as any)
+    expect(store.error).toBeNull()
+  })
+
 })
