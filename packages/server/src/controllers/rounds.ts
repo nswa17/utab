@@ -1199,7 +1199,7 @@ async function rewriteStoredRoundReferences(
     DrawModel.find({ tournamentId }).select({ _id: 1 }).lean().exec(),
   ])
 
-  await Promise.all([
+  const results = await Promise.allSettled([
     ...rounds.map((round: any) =>
       rewriteRoundUserDefinedDataCas(RoundModel, tournamentId, round._id, rewrite)
     ),
@@ -1208,6 +1208,12 @@ async function rewriteStoredRoundReferences(
     ),
     rewriteTournamentUserDefinedDataCas(tournamentId, rewrite),
   ])
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to rewrite stored round references')
+  }
 }
 
 type RoundMovePlan = RoundMove & {
@@ -1398,7 +1404,13 @@ async function moveRoundPlanReferences(
         .exec()
     )
   }
-  await Promise.all(operations)
+  const results = await Promise.allSettled(operations)
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (errors.length > 0) {
+    throw new AggregateError(errors, `Failed to move round references from ${from} to ${to}`)
+  }
 }
 
 async function moveRoundPlansToTemporary(
@@ -1406,11 +1418,17 @@ async function moveRoundPlansToTemporary(
   tournamentId: string,
   plans: RoundMovePlan[]
 ): Promise<void> {
-  await Promise.all(
+  const results = await Promise.allSettled(
     plans.map((plan) =>
       moveRoundPlanReferences(connection, tournamentId, plan, plan.from, plan.temporary)
     )
   )
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to move round references to temporary namespace')
+  }
 }
 
 async function moveRoundPlansToTarget(
@@ -1418,11 +1436,17 @@ async function moveRoundPlansToTarget(
   tournamentId: string,
   plans: RoundMovePlan[]
 ): Promise<void> {
-  await Promise.all(
+  const results = await Promise.allSettled(
     plans.map((plan) =>
       moveRoundPlanReferences(connection, tournamentId, plan, plan.temporary, plan.to)
     )
   )
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to move round references to target namespace')
+  }
 }
 
 async function restoreRoundMovePlans(
