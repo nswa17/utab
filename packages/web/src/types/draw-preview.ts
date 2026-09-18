@@ -20,6 +20,7 @@ export type DrawPreviewRow = {
   venueLabel: string
   govName: string
   oppName: string
+  teamNames?: Record<string, string>
   winLabel: string
   winTotal: number
   winGap: number
