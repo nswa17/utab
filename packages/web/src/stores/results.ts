@@ -110,7 +110,7 @@ export const useResultsStore = defineStore('results', () => {
       await api.delete(`/results/${resultId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
-      results.value = results.value.filter((item) => item._id !== resultId)
+        results.value = results.value.filter((item) => item._id !== resultId)
       }
       return true
     } catch (err: any) {
