@@ -161,17 +161,11 @@ async function restoreSubmissionComments(
 }
 
 async function restoreDeletedDocuments(Model: any, docs: any[]): Promise<void> {
-  if (docs.length === 0) return
-  await Model.bulkWrite(
-    docs.map((doc) => ({
-      updateOne: {
-        filter: { _id: doc._id },
-        update: { $setOnInsert: doc },
-        upsert: true,
-      },
-    })),
-    { ordered: false }
-  )
+  for (const doc of docs) {
+    const existing = await Model.exists({ _id: doc._id })
+    if (existing) continue
+    await Model.create(doc)
+  }
 }
 
 async function captureSpeakerEraseSnapshot(
