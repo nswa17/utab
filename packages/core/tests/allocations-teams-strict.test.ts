@@ -28,6 +28,42 @@ describe('allocations/teams/strict_matchings', () => {
     matches.forEach((match) => expect(match).toHaveLength(2))
   })
 
+  it('uses adjusted pairing to reduce side-history imbalance', () => {
+    const teams = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+    const compiledTeamResults = [
+      { id: 1, win: 2, past_sides: ['gov', 'gov', 'gov'] },
+      { id: 2, win: 2, past_sides: ['gov', 'gov'] },
+      { id: 3, win: 2, past_sides: ['opp', 'opp', 'opp'] },
+      { id: 4, win: 2, past_sides: ['opp', 'opp'] },
+    ]
+    const config = { style: { team_num: 2 } }
+
+    const sorted = strictMatching(teams, compiledTeamResults, config, {
+      pairing_method: 'sort',
+      position_method: 'adjusted',
+      avoid_conflict: false,
+    }) as number[][]
+    const adjusted = strictMatching(teams, compiledTeamResults, config, {
+      pairing_method: 'adjusted',
+      position_method: 'adjusted',
+      avoid_conflict: false,
+    }) as number[][]
+
+    const normalizePairs = (matches: number[][]) =>
+      matches
+        .map((match) => [...match].sort((left, right) => left - right))
+        .sort((left, right) => left[0] - right[0])
+
+    expect(normalizePairs(sorted)).toEqual([
+      [1, 2],
+      [3, 4],
+    ])
+    expect(normalizePairs(adjusted)).toEqual([
+      [1, 3],
+      [2, 4],
+    ])
+  })
+
   it('swaps teams to reduce institution conflicts when avoid_conflict is enabled', () => {
     const teams = [
       { id: 1, details: [{ r: 1, conflicts: [1] }] },
