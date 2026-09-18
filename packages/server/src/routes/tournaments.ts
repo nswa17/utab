@@ -18,6 +18,7 @@ import {
   requireTournamentView,
 } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
+import { authRateLimiter, authSlowDown } from '../middleware/rate-limit.js'
 
 const router: Router = Router()
 
@@ -153,7 +154,7 @@ router.delete(
   validateRequest(idParamSchema),
   deleteTournament
 )
-router.post('/:id/access', validateRequest(accessSchema), accessTournament)
+router.post('/:id/access', authSlowDown, authRateLimiter, validateRequest(accessSchema), accessTournament)
 router.post('/:id/exit', validateRequest(idParamSchema), exitTournamentAccess)
 router.post(
   '/:id/users',
