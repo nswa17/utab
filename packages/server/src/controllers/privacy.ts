@@ -48,13 +48,6 @@ function normalizeRefs(targetRefs: string[] | undefined): string[] {
     .slice(0, 20)
 }
 
-function normalizeStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((item) => String(item ?? '').trim())
-    .filter((item) => item.length > 0)
-}
-
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
 async function removeSpeakerRefsFromTeams(
@@ -63,51 +56,18 @@ async function removeSpeakerRefsFromTeams(
   speakerId: string
 ): Promise<void> {
   const TeamModel = getTeamModel(connection)
-  const teams = await TeamModel.find({
-    tournamentId,
-    $or: [{ 'template.speakers': speakerId }, { 'details.speakers': speakerId }],
-  })
-    .select({ _id: 1, template: 1, details: 1 })
-    .lean()
-    .exec()
-
-  if (teams.length === 0) return
-
-  const operations = teams
-    .map((team: any) => {
-      const currentTemplate = team?.template && typeof team.template === 'object' ? team.template : {}
-      const nextTemplateSpeakers = normalizeStringList(currentTemplate.speakers).filter(
-        (item) => item !== speakerId
-      )
-      const currentDetails = Array.isArray(team?.details) ? team.details : []
-      const nextDetails = currentDetails.map((detail: any) => {
-        const nextSpeakers = normalizeStringList(detail?.speakers).filter((item) => item !== speakerId)
-        return {
-          ...(detail && typeof detail === 'object' ? detail : {}),
-          speakers: nextSpeakers,
-        }
-      })
-
-      return {
-        updateOne: {
-          filter: { _id: team._id, tournamentId },
-          update: {
-            $set: {
-              template: {
-                ...currentTemplate,
-                speakers: nextTemplateSpeakers,
-              },
-              details: nextDetails,
-            },
-          },
-        },
-      }
-    })
-    .filter((operation) => Boolean(operation))
-
-  if (operations.length > 0) {
-    await TeamModel.bulkWrite(operations, { ordered: false })
-  }
+  await TeamModel.updateMany(
+    {
+      tournamentId,
+      $or: [{ 'template.speakers': speakerId }, { 'details.speakers': speakerId }],
+    },
+    {
+      $pull: {
+        'template.speakers': speakerId,
+        'details.$[].speakers': speakerId,
+      },
+    }
+  ).exec()
 }
 
 async function removeAdjudicatorRefsFromDraws(
@@ -116,42 +76,24 @@ async function removeAdjudicatorRefsFromDraws(
   adjudicatorId: string
 ): Promise<void> {
   const DrawModel = getDrawModel(connection)
-  const draws = await DrawModel.find({
-    tournamentId,
-    $or: [
-      { 'allocation.chairs': adjudicatorId },
-      { 'allocation.panels': adjudicatorId },
-      { 'allocation.trainees': adjudicatorId },
-    ],
-  })
-    .select({ _id: 1, allocation: 1 })
-    .lean()
-    .exec()
-
-  if (draws.length === 0) return
-
-  const operations = draws
-    .map((draw: any) => {
-      const allocation = Array.isArray(draw?.allocation) ? draw.allocation : []
-      const nextAllocation = allocation.map((row: any) => ({
-        ...(row && typeof row === 'object' ? row : {}),
-        chairs: normalizeStringList(row?.chairs).filter((item) => item !== adjudicatorId),
-        panels: normalizeStringList(row?.panels).filter((item) => item !== adjudicatorId),
-        trainees: normalizeStringList(row?.trainees).filter((item) => item !== adjudicatorId),
-      }))
-
-      return {
-        updateOne: {
-          filter: { _id: draw._id, tournamentId },
-          update: { $set: { allocation: nextAllocation } },
-        },
-      }
-    })
-    .filter((operation) => Boolean(operation))
-
-  if (operations.length > 0) {
-    await DrawModel.bulkWrite(operations, { ordered: false })
-  }
+  await DrawModel.updateMany(
+    {
+      tournamentId,
+      $or: [
+        { 'allocation.chairs': adjudicatorId },
+        { 'allocation.panels': adjudicatorId },
+        { 'allocation.trainees': adjudicatorId },
+      ],
+    },
+    {
+      $pull: {
+        'allocation.$[].chairs': adjudicatorId,
+        'allocation.$[].panels': adjudicatorId,
+        'allocation.$[].trainees': adjudicatorId,
+      },
+      $inc: { __v: 1 },
+    }
+  ).exec()
 }
 
 export async function executeSpeakerPersonalDataErase(
