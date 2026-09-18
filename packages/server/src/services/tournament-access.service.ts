@@ -4,7 +4,7 @@ type PlainObject = Record<string, unknown>
 
 export const TOURNAMENT_ACCESS_ABSOLUTE_TTL_MS = 24 * 60 * 60 * 1000
 export const TOURNAMENT_ACCESS_INACTIVITY_TTL_MS = 2 * 60 * 60 * 1000
-export const TOURNAMENT_ACCESS_PASSWORD_MIN_LENGTH = 8
+export const TOURNAMENT_ACCESS_PASSWORD_MIN_LENGTH = 10
 
 export interface TournamentAccessConfig {
   required: boolean
