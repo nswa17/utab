@@ -3537,3 +3537,88 @@ This does not close the broader Phase 4 family:
 
 Operational tradeoff: because correctness is fail-closed, a process crash after acquiring a lease can leave coordination state that blocks structural mutation. The implementation intentionally does not use a time-based override, because force-expiring a genuinely long-running writer without a transaction/fencing commit would recreate P4-02. Recovery/lease ownership for multi-process crash tolerance should be designed together with the P4-05 atomicity work rather than weakening this invariant.
 
+## Phase 13 — Break metadata / team-availability coordination (P4-03)
+
+P4-03 was addressed after the Round-scoped write protocol from Phase 12 was in place.
+
+### Invariant
+
+For `PATCH /rounds/:id/break` with `syncTeamAvailability=true`, competing break updates must not interleave the Round break metadata transition with the Team availability transition.
+
+The operation now owns the target Round's mutation lease for the complete metadata + availability critical section.
+
+This gives the following behavior:
+
+- two break updates for the same Round cannot execute their write phases concurrently;
+- renumber/delete cannot run through the break transition;
+- guarded Round-scoped writers cannot enter while the break transition is in progress;
+- ordinary `PATCH /rounds/:id` cannot overwrite `userDefinedData` while the break mutation lease is held;
+- the Round is re-read after the lease is acquired, so an update that completed before lease acquisition is merged from fresh state instead of an earlier stale snapshot.
+
+If the mutation lease cannot be acquired, the break endpoint returns HTTP 409 rather than starting a partial concurrent transition.
+
+Implementation commit:
+
+- `c7da9a8d9d222c6d293f18161cdfa5189487272c` — serialize break updates with Round mutation leases.
+
+### Team availability write shape
+
+The old implementation rebuilt and `$set` the complete `Team.details` array from the Team snapshot read before the Round write.
+
+That amplified P4-03 into the P4-06 stale-array problem: an unrelated concurrent change to another detail field could be overwritten by break synchronization.
+
+Break synchronization now updates only:
+
+    details[roundNumber].available
+
+for an existing round detail.
+
+If the round detail does not exist, it is appended conditionally. Existing `conflicts` and `speakers` are not replaced merely to synchronize availability.
+
+This does not solve every stale-array site in P4-06, but removes this particular break-update overwrite path.
+
+### Regression coverage
+
+Added to:
+
+- `packages/server/test/integration.part4.test.ts`
+
+The regression verifies:
+
+1. a competing Round mutation lease makes the break endpoint return 409;
+2. after that lease is released, the break update succeeds;
+3. persisted Round break participants match the submitted participant set;
+4. Team availability for the break round matches that participant set;
+5. unrelated Team detail content (`conflicts`) survives the availability synchronization.
+
+Test commit:
+
+- `e2eecddf62d05809e1f811c5dd08fab988e52b1e` — test break update Round coordination.
+
+### CI
+
+GitHub Actions run:
+
+- `35377796579`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-03 status and boundaries
+
+**P4-03 is closed for concurrent break-configuration updates through the supported break endpoint when Team availability synchronization is requested.**
+
+Intentional/remaining boundaries:
+
+- `syncTeamAvailability=false` explicitly requests metadata-only behavior, so equality between participants and availability is not an invariant in that mode.
+- a later explicit Team edit may intentionally change availability independently of the break participant list; the API currently permits that product behavior.
+- database/write failure between the Round update and the Team bulk write is still not failure-atomic. That is P4-05, not a concurrency interleaving, and remains open.
+- other full-array maintenance paths listed under P4-06 remain open even though the break synchronization path no longer replaces the complete Team details array.
+
+The next high-value server-consistency target is therefore P4-05 (failure atomicity of round lifecycle operations), with P4-06 as a closely related follow-up.
+
