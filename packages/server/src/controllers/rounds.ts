@@ -21,6 +21,11 @@ import {
   type RoundMutationLease,
 } from '../services/round-write-guard.service.js'
 import {
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
+import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
   type CompileOptionsInput,
@@ -1205,57 +1210,367 @@ async function rewriteStoredRoundReferences(
   ])
 }
 
-async function moveRoundReferences(
+type RoundMovePlan = RoundMove & {
+  temporary: number
+  drawIds: unknown[]
+  submissionIds: unknown[]
+  resultIds: unknown[]
+  rawTeamResultIds: unknown[]
+  rawSpeakerResultIds: unknown[]
+  rawAdjudicatorResultIds: unknown[]
+  teamIds: unknown[]
+  adjudicatorIds: unknown[]
+  venueIds: unknown[]
+}
+
+type RoundReferenceRewriteSnapshotItem = {
+  id: unknown
+  original: unknown
+  rewritten: unknown
+}
+
+type RoundReferenceRewriteSnapshot = {
+  rounds: RoundReferenceRewriteSnapshotItem[]
+  draws: RoundReferenceRewriteSnapshotItem[]
+  tournament: { original: unknown; rewritten: unknown } | null
+}
+
+async function captureRoundMovePlans(
+  connection: Connection,
+  tournamentId: string,
+  moves: Array<RoundMove & { temporary: number }>
+): Promise<RoundMovePlan[]> {
+  const DrawModel = getDrawModel(connection)
+  const SubmissionModel = getSubmissionModel(connection)
+  const ResultModel = getResultModel(connection)
+  const RawTeamResultModel = getRawTeamResultModel(connection)
+  const RawSpeakerResultModel = getRawSpeakerResultModel(connection)
+  const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(connection)
+  const TeamModel = getTeamModel(connection)
+  const AdjudicatorModel = getAdjudicatorModel(connection)
+  const VenueModel = getVenueModel(connection)
+
+  const plans: RoundMovePlan[] = []
+  for (const move of moves) {
+    const [
+      draws,
+      submissions,
+      results,
+      rawTeamResults,
+      rawSpeakerResults,
+      rawAdjudicatorResults,
+      teams,
+      adjudicators,
+      venues,
+    ] = await Promise.all([
+      DrawModel.find({ tournamentId, round: move.from }).select({ _id: 1 }).lean().exec(),
+      SubmissionModel.find({ tournamentId, round: move.from }).select({ _id: 1 }).lean().exec(),
+      ResultModel.find({ tournamentId, round: move.from }).select({ _id: 1 }).lean().exec(),
+      RawTeamResultModel.find({ tournamentId, r: move.from }).select({ _id: 1 }).lean().exec(),
+      RawSpeakerResultModel.find({ tournamentId, r: move.from }).select({ _id: 1 }).lean().exec(),
+      RawAdjudicatorResultModel.find({ tournamentId, r: move.from }).select({ _id: 1 }).lean().exec(),
+      TeamModel.find({ tournamentId, 'details.r': move.from }).select({ _id: 1 }).lean().exec(),
+      AdjudicatorModel.find({ tournamentId, 'details.r': move.from })
+        .select({ _id: 1 })
+        .lean()
+        .exec(),
+      VenueModel.find({ tournamentId, 'details.r': move.from }).select({ _id: 1 }).lean().exec(),
+    ])
+    const ids = (rows: any[]) => rows.map((row) => row._id)
+    plans.push({
+      ...move,
+      drawIds: ids(draws),
+      submissionIds: ids(submissions),
+      resultIds: ids(results),
+      rawTeamResultIds: ids(rawTeamResults),
+      rawSpeakerResultIds: ids(rawSpeakerResults),
+      rawAdjudicatorResultIds: ids(rawAdjudicatorResults),
+      teamIds: ids(teams),
+      adjudicatorIds: ids(adjudicators),
+      venueIds: ids(venues),
+    })
+  }
+  return plans
+}
+
+function idFilter(ids: unknown[]): Record<string, unknown> {
+  return { _id: { $in: ids } }
+}
+
+async function moveRoundPlanReferences(
+  connection: Connection,
+  tournamentId: string,
+  plan: RoundMovePlan,
+  from: number,
+  to: number
+): Promise<void> {
+  const operations: Promise<unknown>[] = []
+  if (plan.drawIds.length > 0) {
+    operations.push(
+      getDrawModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.drawIds), round: from },
+          { $set: { round: to }, $inc: { __v: 1 } }
+        )
+        .exec()
+    )
+  }
+  if (plan.submissionIds.length > 0) {
+    operations.push(
+      getSubmissionModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.submissionIds), round: from },
+          { $set: { round: to } }
+        )
+        .exec()
+    )
+  }
+  if (plan.resultIds.length > 0) {
+    operations.push(
+      getResultModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.resultIds), round: from },
+          { $set: { round: to } }
+        )
+        .exec()
+    )
+  }
+  if (plan.rawTeamResultIds.length > 0) {
+    operations.push(
+      getRawTeamResultModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.rawTeamResultIds), r: from },
+          { $set: { r: to } }
+        )
+        .exec()
+    )
+  }
+  if (plan.rawSpeakerResultIds.length > 0) {
+    operations.push(
+      getRawSpeakerResultModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.rawSpeakerResultIds), r: from },
+          { $set: { r: to } }
+        )
+        .exec()
+    )
+  }
+  if (plan.rawAdjudicatorResultIds.length > 0) {
+    operations.push(
+      getRawAdjudicatorResultModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.rawAdjudicatorResultIds), r: from },
+          { $set: { r: to } }
+        )
+        .exec()
+    )
+  }
+  if (plan.teamIds.length > 0) {
+    operations.push(
+      getTeamModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.teamIds), 'details.r': from },
+          { $set: { 'details.$[detail].r': to } },
+          { arrayFilters: [{ 'detail.r': from }] }
+        )
+        .exec()
+    )
+  }
+  if (plan.adjudicatorIds.length > 0) {
+    operations.push(
+      getAdjudicatorModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.adjudicatorIds), 'details.r': from },
+          { $set: { 'details.$[detail].r': to } },
+          { arrayFilters: [{ 'detail.r': from }] }
+        )
+        .exec()
+    )
+  }
+  if (plan.venueIds.length > 0) {
+    operations.push(
+      getVenueModel(connection)
+        .updateMany(
+          { tournamentId, ...idFilter(plan.venueIds), 'details.r': from },
+          { $set: { 'details.$[detail].r': to } },
+          { arrayFilters: [{ 'detail.r': from }] }
+        )
+        .exec()
+    )
+  }
+  await Promise.all(operations)
+}
+
+async function moveRoundPlansToTemporary(
+  connection: Connection,
+  tournamentId: string,
+  plans: RoundMovePlan[]
+): Promise<void> {
+  await Promise.all(
+    plans.map((plan) =>
+      moveRoundPlanReferences(connection, tournamentId, plan, plan.from, plan.temporary)
+    )
+  )
+}
+
+async function moveRoundPlansToTarget(
+  connection: Connection,
+  tournamentId: string,
+  plans: RoundMovePlan[]
+): Promise<void> {
+  await Promise.all(
+    plans.map((plan) =>
+      moveRoundPlanReferences(connection, tournamentId, plan, plan.temporary, plan.to)
+    )
+  )
+}
+
+async function restoreRoundMovePlans(
+  connection: Connection,
+  tournamentId: string,
+  plans: RoundMovePlan[]
+): Promise<void> {
+  const errors: unknown[] = []
+  const attemptAll = async (operations: Array<() => Promise<void>>) => {
+    const results = await Promise.allSettled(operations.map((operation) => operation()))
+    results.forEach((result) => {
+      if (result.status === 'rejected') errors.push(result.reason)
+    })
+  }
+
+  await attemptAll(
+    plans.map(
+      (plan) => () =>
+        moveRoundPlanReferences(connection, tournamentId, plan, plan.to, plan.temporary)
+    )
+  )
+  await attemptAll(
+    plans.map(
+      (plan) => () =>
+        moveRoundPlanReferences(connection, tournamentId, plan, plan.temporary, plan.from)
+    )
+  )
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to restore renumbered round references')
+  }
+}
+
+async function captureRoundReferenceRewriteSnapshot(
   connection: Connection,
   tournamentId: string,
   moves: RoundMove[]
-): Promise<void> {
-  for (const move of moves) {
-    await Promise.all([
-      getDrawModel(connection)
-        .updateMany(
-          { tournamentId, round: move.from },
-          { $set: { round: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getSubmissionModel(connection)
-        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
-        .exec(),
-      getResultModel(connection)
-        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
-        .exec(),
-      getRawTeamResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
-        .exec(),
-      getRawSpeakerResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
-        .exec(),
-      getRawAdjudicatorResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
-        .exec(),
-      getTeamModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
-      getAdjudicatorModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
-      getVenueModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
-    ])
+): Promise<RoundReferenceRewriteSnapshot> {
+  const rewrite: RoundReferenceRewrite = {
+    movedRoundByNumber: new Map(moves.map((move) => [move.from, move.to])),
+    deletedRounds: new Set(),
   }
+  const RoundModel = getRoundModel(connection)
+  const DrawModel = getDrawModel(connection)
+  const [rounds, draws, tournament] = await Promise.all([
+    RoundModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
+    DrawModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
+    TournamentModel.findById(tournamentId).select({ user_defined_data: 1 }).lean().exec(),
+  ])
+  const changedItems = (rows: any[], key: 'userDefinedData') =>
+    rows.flatMap((row) => {
+      const original = row?.[key]
+      const rewritten = rewriteNestedRoundReferences(original, rewrite)
+      return rewritten.changed
+        ? [{ id: row._id, original, rewritten: rewritten.value }]
+        : []
+    })
+  const tournamentOriginal = (tournament as any)?.user_defined_data
+  const tournamentRewritten = rewriteNestedRoundReferences(tournamentOriginal, rewrite)
+  return {
+    rounds: changedItems(rounds as any[], 'userDefinedData'),
+    draws: changedItems(draws as any[], 'userDefinedData'),
+    tournament:
+      tournament && tournamentRewritten.changed
+        ? { original: tournamentOriginal, rewritten: tournamentRewritten.value }
+        : null,
+  }
+}
+
+async function restoreRoundReferenceRewriteSnapshot(
+  connection: Connection,
+  tournamentId: string,
+  snapshot: RoundReferenceRewriteSnapshot
+): Promise<void> {
+  const RoundModel = getRoundModel(connection)
+  const DrawModel = getDrawModel(connection)
+  const errors: unknown[] = []
+
+  const restoreRoundItem = async (item: RoundReferenceRewriteSnapshotItem) => {
+    const result = await RoundModel.updateOne(
+      { _id: item.id, tournamentId, userDefinedData: item.rewritten },
+      { $set: { userDefinedData: item.original } }
+    ).exec()
+    if (result.matchedCount === 1) return
+    const unchanged = await RoundModel.exists({
+      _id: item.id,
+      tournamentId,
+      userDefinedData: item.original,
+    }).exec()
+    if (!unchanged) throw new Error('Round metadata changed during renumber rollback')
+  }
+
+  const restoreDrawItem = async (item: RoundReferenceRewriteSnapshotItem) => {
+    const result = await DrawModel.updateOne(
+      { _id: item.id, tournamentId, userDefinedData: item.rewritten },
+      { $set: { userDefinedData: item.original }, $inc: { __v: 1 } }
+    ).exec()
+    if (result.matchedCount === 1) return
+    const unchanged = await DrawModel.exists({
+      _id: item.id,
+      tournamentId,
+      userDefinedData: item.original,
+    }).exec()
+    if (!unchanged) throw new Error('Draw metadata changed during renumber rollback')
+  }
+
+  const operations: Promise<unknown>[] = [
+    ...snapshot.rounds.map((item) => restoreRoundItem(item)),
+    ...snapshot.draws.map((item) => restoreDrawItem(item)),
+  ]
+  if (snapshot.tournament) {
+    operations.push(
+      (async () => {
+        const item = snapshot.tournament!
+        const result = await TournamentModel.updateOne(
+          { _id: tournamentId, user_defined_data: item.rewritten },
+          { $set: { user_defined_data: item.original } }
+        ).exec()
+        if (result.matchedCount === 1) return
+        const unchanged = await TournamentModel.exists({
+          _id: tournamentId,
+          user_defined_data: item.original,
+        }).exec()
+        if (!unchanged) throw new Error('Tournament metadata changed during renumber rollback')
+      })()
+    )
+  }
+
+  const results = await Promise.allSettled(operations)
+  results.forEach((result) => {
+    if (result.status === 'rejected') errors.push(result.reason)
+  })
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to restore round-reference metadata')
+  }
+}
+
+async function restoreRoundDocuments(Model: any, snapshots: any[]): Promise<void> {
+  if (snapshots.length === 0) return
+  await Model.bulkWrite(
+    snapshots.map((snapshot) => ({
+      replaceOne: {
+        filter: { _id: snapshot._id },
+        replacement: snapshot,
+        upsert: true,
+      },
+    })),
+    { ordered: false }
+  )
 }
 
 function ensureTournamentId(
