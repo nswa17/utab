@@ -3747,3 +3747,127 @@ The important remaining boundaries are explicit:
 
 The next remaining Phase 4 target is **P4-06: stale full-array read/modify/write helpers can overwrite concurrent edits**.
 
+## Phase 15 — Stale full-array maintenance writes (P4-06)
+
+P4-06 was completed by revisiting every concrete maintenance path named in the original finding.
+
+Several of those sites had already been narrowed while fixing P4-03/P4-05:
+
+- Round create no longer reconstructs and replaces complete Team/Adjudicator/Venue `details` arrays. Missing round details are appended conditionally.
+- Round delete removes only matching round details with targeted `$pull`.
+- Break availability synchronization changes only the target round's `available` value (or conditionally appends a missing detail) rather than replacing the complete Team `details` array.
+
+Phase 15 addresses the remaining privacy and metadata-rewrite sites.
+
+### Privacy reference cleanup
+
+`removeSpeakerRefsFromTeams` previously:
+
+1. read complete Team template/details structures;
+2. removed the target speaker in memory;
+3. replaced complete `template` and `details` fields.
+
+A normal Team edit that committed between steps 1 and 3 could therefore disappear.
+
+The helper now performs a direct MongoDB `$pull` from:
+
+- `template.speakers`;
+- every `details[].speakers` array.
+
+No unrelated Team field is reconstructed or replaced.
+
+`removeAdjudicatorRefsFromDraws` previously rebuilt complete Draw allocation arrays from a stale snapshot. It now directly `$pull`s the erased adjudicator from every allocation row's:
+
+- `chairs`;
+- `panels`;
+- `trainees`.
+
+The Draw update also increments `__v`. This is important because normal Draw writes use optimistic version checks: a normal writer holding a pre-erasure Draw snapshot will now fail its stale version check rather than writing the removed adjudicator back into the allocation.
+
+Commit:
+
+- `a69fd81eb96990aa5db9d1c32971879b200778fd` — avoid stale full-array privacy rewrites.
+
+### Stored round-reference metadata
+
+`rewriteStoredRoundReferences` previously read all Round/Draw/Tournament metadata, recursively rewrote `source_rounds`, then wrote the reconstructed complete metadata back without proving that the value was still the one originally read.
+
+The Draw path incremented `__v`, but did not filter on the version that had been read. That could convert a stale overwrite into an apparently newer revision.
+
+The rewrite now uses compare-and-set with retry:
+
+- **Round**: read current `userDefinedData`, compute the rewrite, update only if `userDefinedData` still equals the value read. On mismatch, re-read and recompute.
+- **Draw**: read current `userDefinedData` and `__v`, compute the rewrite, update only at that exact `__v`, and increment the version. On mismatch, re-read and recompute.
+- **Tournament**: read current `user_defined_data`, update only if it still equals the value read, otherwise re-read and recompute.
+
+Each path retries at most five times. Persistent contention fails the lifecycle operation instead of overwriting a newer metadata edit.
+
+Commit:
+
+- `2fff5f7f1968e5580b21e258c44ba3125b15415f` — use CAS for round-reference metadata rewrites.
+
+### Concurrent-edit regression coverage
+
+Added to `packages/server/test/integration.part4.test.ts`.
+
+Privacy regression:
+
+- injects an unrelated Team detail edit immediately before speaker-reference cleanup;
+- verifies speaker references are removed while the concurrent `conflicts` edit survives;
+- injects an unrelated Draw allocation edit immediately before adjudicator-reference cleanup;
+- verifies the adjudicator reference is removed, the concurrent venue edit survives, and the Draw version advances.
+
+Commit:
+
+- `b7feeb3d32f76062c8bf57fa1652d37265268e7f` — test privacy cleanup against concurrent edits.
+
+Metadata CAS regression:
+
+- deletes Round 1 while Round 2 and its Draw contain nested `source_rounds: [1, 2]`;
+- injects a concurrent Round metadata edit after the rewrite has read its stale value but before the CAS write;
+- injects a concurrent Draw metadata edit plus version increment at the analogous point;
+- verifies the first stale CAS attempts lose the race;
+- verifies the retry reads the newer values;
+- verifies both concurrent edits survive while `source_rounds` is correctly rewritten to `[2]`.
+
+Commit:
+
+- `58d8249d5eaeae48fe1a8d0954fae3f455a0023c` — test metadata rewrite CAS under concurrent edits.
+
+### CI
+
+Final head before this log update:
+
+- `58d8249d5eaeae48fe1a8d0954fae3f455a0023c`
+
+GitHub Actions:
+
+- run `35381269788`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-06 status and boundaries
+
+**P4-06 is closed for the concrete stale read/modify/write maintenance sites identified in Phase 4.**
+
+The repaired sites are:
+
+- Round create entity-detail maintenance;
+- Round delete entity-detail maintenance;
+- break Team-availability synchronization;
+- speaker-reference removal from Teams;
+- adjudicator-reference removal from Draws;
+- Round/Draw/Tournament stored round-reference rewrites.
+
+This does not prohibit an API whose explicit contract is to replace a complete field from replacing that field. For example, an administrator deliberately submitting a new complete entity `details` value is a different operation from a maintenance helper reconstructing an old full array behind the administrator's back.
+
+The privacy anonymization branch also intentionally replaces the erased entity's identifying state; preservation of concurrent edits to the entity being anonymized is not its contract.
+
+The next unresolved Phase 4 issue is **P4-07: compilation reads multiple collections without a coherent snapshot**.
+
