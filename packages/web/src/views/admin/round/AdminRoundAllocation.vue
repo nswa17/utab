@@ -8,12 +8,12 @@
     </div>
     <p v-if="allocationChanged" class="muted">{{ $t('未保存の変更があります。') }}</p>
     <p v-if="allocationImportInfo" class="muted import-info">{{ allocationImportInfo }}</p>
-    <div v-if="!isTwoTeamStyle" class="card stack">
-      <strong>{{ $t('この対戦表エディタは現在2チーム戦のみ対応しています。') }}</strong>
+    <div v-if="!isSupportedTeamStyle" class="card stack">
+      <strong>{{ $t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。') }}</strong>
       <p class="muted">
         {{
           $t(
-            'この形式の対戦表はServer/Coreでは保持できますが、この画面で編集・自動生成すると情報を失う可能性があるため操作を停止しています。'
+            'この形式の対戦表はServer/Coreでは保持できますが、この画面では安全に編集できないため操作を停止しています。'
           )
         }}
       </p>
@@ -55,7 +55,7 @@
     </div>
 
     <section
-      v-if="isTwoTeamStyle"
+      v-if="isSupportedTeamStyle"
       :class="[
         'stack',
         'allocation-board',
@@ -262,20 +262,16 @@
                         @click="setAllocationSort('venue')"
                       />
                     </th>
-                    <th class="team-col">
+                    <th
+                      v-for="position in teamPositionColumns"
+                      :key="`team-head-${position.key}`"
+                      class="team-col"
+                    >
                       <SortHeaderButton
-                        :label="govLabel"
+                        :label="position.label"
                         compact
-                        :indicator="allocationSortIndicator('gov')"
-                        @click="setAllocationSort('gov')"
-                      />
-                    </th>
-                    <th class="team-col">
-                      <SortHeaderButton
-                        :label="oppLabel"
-                        compact
-                        :indicator="allocationSortIndicator('opp')"
-                        @click="setAllocationSort('opp')"
+                        :indicator="allocationSortIndicator(position.key)"
+                        @click="setAllocationSort(position.key)"
                       />
                     </th>
                     <th class="adjudicator-col">
