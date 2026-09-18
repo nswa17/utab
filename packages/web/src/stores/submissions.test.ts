@@ -343,4 +343,61 @@ describe('submissions store', () => {
     ] as any)
   })
 
+  it('rejects an old admin response after a participant fetch activates another tournament', async () => {
+    const store = useSubmissionsStore()
+    const oldAdmin = createDeferred<any>()
+    const currentParticipant = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => oldAdmin.promise)
+      .mockImplementationOnce(() => currentParticipant.promise)
+
+    const oldRequest = store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    const currentRequest = store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-b',
+      submittedEntityId: 'team-b',
+    })
+
+    currentParticipant.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-b',
+            tournamentId: 'tournament-b',
+            type: 'feedback',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    await currentRequest
+
+    oldAdmin.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-a-late',
+            tournamentId: 'tournament-a',
+            type: 'ballot',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    const staleResult = await oldRequest
+
+    expect(staleResult).toEqual([])
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-b',
+        tournamentId: 'tournament-b',
+        type: 'feedback',
+        round: 1,
+        payload: {},
+      },
+    ] as any)
+  })
+
 })
