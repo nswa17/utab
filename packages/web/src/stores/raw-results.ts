@@ -79,14 +79,21 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   async function createRawResults(label: RawLabel, payload: any | any[]) {
+    const tournamentId = String(
+      (Array.isArray(payload) ? payload[0]?.tournamentId : payload?.tournamentId) ?? ''
+    )
     beginRequest()
-    error.value = null
+    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      error.value = null
+    }
     try {
       const res = await api.post(`/raw-results/${label}`, payload)
       const created = res.data?.data ?? []
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create raw results'
+      if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create raw results'
+      }
       return null
     } finally {
       endRequest()
