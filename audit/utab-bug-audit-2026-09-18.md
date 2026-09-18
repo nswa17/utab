@@ -4025,3 +4025,170 @@ Important boundaries:
 
 The next unresolved Phase 4 finding is **P4-08: privacy hard-delete can fail after irreversible partial mutation**.
 
+## Phase 17 — Privacy hard-delete failure compensation (P4-08)
+
+P4-08 was addressed with explicit pre-mutation snapshots and compensating rollback.
+
+The privacy erasure path cannot rely on MongoDB multi-document transactions in every supported deployment, so hard-delete now follows the same compensating-atomicity model used for Round lifecycle work.
+
+### Snapshot before mutation
+
+Before mutating a Speaker hard-delete, the server captures:
+
+- the Speaker document;
+- matching Submission comments that are about to be cleared;
+- exactly which Teams contain the Speaker in the template speaker list;
+- exactly which Team round details contain the Speaker;
+- raw Speaker result documents whose `id` or `from_id` references the Speaker.
+
+Before mutating an Adjudicator hard-delete, the server captures:
+
+- the Adjudicator document;
+- matching Submission comments;
+- exactly which Draw allocation rows/roles contain the Adjudicator;
+- raw Adjudicator result documents whose `id` or `from_id` references the Adjudicator.
+
+Commit:
+
+- `66568b8cbb45db4fc5cbaa400acd8cea24287b90` — add privacy erasure rollback snapshots.
+
+### Compensation behavior
+
+The existing successful hard-delete semantics remain:
+
+Speaker:
+
+1. clear matching submission comments;
+2. remove Speaker references from Teams;
+3. delete matching raw Speaker results;
+4. delete the Speaker.
+
+Adjudicator:
+
+1. clear matching submission comments;
+2. remove Adjudicator references from Draw allocations;
+3. delete matching raw Adjudicator results;
+4. delete the Adjudicator.
+
+If any step throws, the server now attempts to restore all state represented by the snapshot before propagating the original failure.
+
+Speaker rollback restores:
+
+- a missing Speaker document;
+- missing raw Speaker results;
+- only the Team template/round speaker references that existed before execution;
+- cleared submission comments, but only when the comment field is still absent.
+
+Adjudicator rollback restores:
+
+- a missing Adjudicator document;
+- missing raw Adjudicator results;
+- only the specific Draw allocation row/role references that existed before execution;
+- cleared submission comments, again only when the field is still absent.
+
+Draw restoration verifies that the allocation row still has the same Team matchup before re-adding the Adjudicator. If the allocation itself changed concurrently, rollback fails loudly instead of writing the reference into a different debate.
+
+Draw rollback increments `__v`, preserving compatibility with normal optimistic Draw writes.
+
+Relevant commits:
+
+- `29193b7f72e02f2d4b3b34cb2881d4897fa4d45c` — avoid overwriting surviving privacy documents on rollback;
+- `f1feb5445ebb38b5ba479d13ec364e9a5d25e36d` — compensate failed privacy erasure mutations;
+- `4d6b4480c8b00c4a00da58cf537c6e7c4ce343c0` — restore only documents actually missing after a failed erasure.
+
+### Anonymization failure behavior
+
+The same execution wrapper also improves `anonymize` mode.
+
+Anonymization is a single-document entity update, so no entity snapshot restoration is needed after an ordinary failed update. However submission comments are cleared before that update.
+
+If the anonymization update fails, previously cleared comments are now restored from the snapshot.
+
+The entity update/delete result is also checked. A target that disappears or changes such that the final mutation matches no document is treated as an `EraseConflict` (409) instead of returning a false successful erasure result.
+
+### Avoiding a P4-06 regression
+
+Rollback does not generally replace complete current Team/Draw documents with old snapshots.
+
+Instead:
+
+- Team speaker references are re-added with targeted `$addToSet`;
+- submission comments are restored only if `payload.comment` is still absent;
+- Draw adjudicator references are re-added only to the original allocation index when the Team matchup still matches;
+- entity/raw documents are inserted only if their original `_id` is currently absent.
+
+Thus an unrelated concurrent edit to a surviving document is not intentionally replaced by a stale pre-erasure copy.
+
+### Failure-injection regression
+
+Added to:
+
+- `packages/server/test/integration.part4.test.ts`.
+
+The regression creates a Speaker and Adjudicator with:
+
+- live Team/Draw references;
+- matching raw results;
+- matching Submission comments.
+
+It then injects a failure at the final entity-delete step.
+
+This is deliberately late: by that point the preceding comment clearing, reference removal, and raw-result deletion have already completed.
+
+After the injected Speaker delete failure, the test verifies:
+
+- the Speaker still exists with its original identity;
+- Team template speaker reference is restored;
+- Team round-detail speaker reference is restored;
+- raw Speaker result is restored;
+- Submission comment is restored.
+
+The Adjudicator case verifies the analogous properties:
+
+- Adjudicator still exists;
+- original Draw chair reference is restored;
+- raw Adjudicator result is restored;
+- Submission comment is restored.
+
+Commit:
+
+- `474be9961e764757e8a3386a9b54048da19e2281` — privacy hard-delete failure-compensation regression.
+
+The first test run exposed a rollback implementation issue: using `$setOnInsert` with a complete snapshot containing `_id` could make rollback itself fail when the target entity had survived the injected delete failure.
+
+That path was changed to check for document existence and insert only genuinely missing documents.
+
+### CI
+
+Final implementation head before this log update:
+
+- `4d6b4480c8b00c4a00da58cf537c6e7c4ce343c0`
+
+GitHub Actions:
+
+- run `35384468509`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-08 status and boundaries
+
+**P4-08 is closed for ordinary caught failures during Speaker/Adjudicator personal-data erasure.**
+
+A failed hard-delete no longer normally means that comments/references/raw data were irreversibly removed while the workflow is merely labelled `failed`.
+
+Important boundaries remain:
+
+- this is compensation, not a crash-safe database transaction;
+- process termination between destructive writes cannot run in-memory rollback;
+- an independent second database failure during rollback can still leave partial state. That condition is surfaced as an `AggregateError` stating that rollback was incomplete;
+- if the exact Draw allocation row needed for Adjudicator restoration has concurrently changed to a different matchup, restoration refuses to guess where the old reference belongs;
+- direct/out-of-band database mutation remains outside the application coordination model.
+
+The next unresolved Phase 4 finding is **P4-09: service-account idempotency can amplify partial 5xx mutations**.
+
