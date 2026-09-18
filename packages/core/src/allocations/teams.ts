@@ -109,7 +109,7 @@ function getTeamRanksWeighted(
 ): Record<number, number[]> {
   sillyLogger(getTeamRanksWeighted, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
-  const weights = Array(filterFunctions.length).map((_value, index) => 1 / (index + 1))
+  const weights = Array.from({ length: filterFunctions.length }, (_value, index) => 1 / (index + 1))
   for (const team of teams) {
     const others = teams.filter((other) => team.id !== other.id)
     others.sort(
@@ -136,10 +136,14 @@ function getTeamRanksCustom(
 ): Record<number, number[]> {
   sillyLogger(getTeamRanksCustom, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
+  const effectiveWeights = filterFunctions.map((_, index) => {
+    const value = Number(weights[index])
+    return Number.isFinite(value) ? value : 1
+  })
   for (const team of teams) {
     const others = teams.filter((other) => team.id !== other.id)
     others.sort(
-      integrateFilterFunctions(team, filterFunctions, weights, {
+      integrateFilterFunctions(team, filterFunctions, effectiveWeights, {
         teams: allTeams,
         r,
         compiled_team_results: compiledTeamResults,
@@ -389,7 +393,8 @@ function getTeamDrawStrict(
   config: AllocationConfig,
   options: TeamDrawAlgorithmOptions = {}
 ): Draw {
-  const matching = strictMatching(teams, compiledTeamResults, config, { ...options, round: r })
+  const availableTeams = filterAvailable(teams, r)
+  const matching = strictMatching(availableTeams, compiledTeamResults, config, { ...options, round: r })
   const teamAllocation = getTeamAllocationFromStrictMatching(matching as number[][])
   return { r, allocation: teamAllocation }
 }
