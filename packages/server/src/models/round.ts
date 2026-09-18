@@ -15,6 +15,10 @@ const roundSchema = new Schema(
       trainee: { type: Number, default: 0 },
     },
     userDefinedData: { type: Schema.Types.Mixed, default: {} },
+    roundActiveWriteCount: { type: Number, default: 0, select: false },
+    roundActiveWriteTouchedAt: { type: Date, default: null, select: false },
+    roundMutationLocked: { type: Boolean, default: false, select: false },
+    roundMutationEpoch: { type: Number, default: 0, select: false },
   },
   { timestamps: true }
 )
