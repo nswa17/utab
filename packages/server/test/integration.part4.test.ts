@@ -3466,6 +3466,18 @@ describe('Server integration', () => {
       })
       expect(blockedRenumber.status).toBe(409)
       expect(blockedRenumber.body.errors?.[0]?.message).toContain('namespace')
+
+      const blockedDelete = await organizer.delete(
+        `/api/rounds/${roundOneId}?tournamentId=${tournamentId}`
+      )
+      expect(blockedDelete.status).toBe(409)
+      expect(blockedDelete.body.errors?.[0]?.message).toContain('namespace')
+
+      const blockedBulkDelete = await organizer.delete(
+        `/api/rounds?tournamentId=${tournamentId}&ids=${bulkIds.get(3)}`
+      )
+      expect(blockedBulkDelete.status).toBe(409)
+      expect(blockedBulkDelete.body.errors?.[0]?.message).toContain('namespace')
     } finally {
       await releaseRoundNamespaceLease(connection, namespaceLease)
     }
