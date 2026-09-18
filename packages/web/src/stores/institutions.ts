@@ -9,7 +9,6 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
   const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
@@ -22,25 +21,21 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchInstitutions(tournamentId: string) {
-    tournamentScope.activate(tournamentId)
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) institutions.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/institutions', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       institutions.value = res.data?.data ?? []
       return institutions.value
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load institutions'
@@ -57,14 +52,17 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     priority?: number
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/institutions', payload)
       const created = res.data?.data
-      if (created && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        institutions.value = [created, ...institutions.value]
+      if (created) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          institutions.value = [created, ...institutions.value]
+        }
       }
       return created
     } catch (err: any) {
@@ -85,6 +83,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     priority?: number
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
@@ -96,11 +95,13 @@ export const useInstitutionsStore = defineStore('institutions', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated && tournamentScope.isActive(payload.tournamentId)) {
-        advanceFetchSequence()
-        institutions.value = institutions.value.map((item) =>
-          item._id === updated._id ? updated : item
-        )
+      if (updated) {
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          institutions.value = institutions.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
@@ -114,12 +115,13 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   }
 
   async function deleteInstitution(tournamentId: string, institutionId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/institutions/${institutionId}`, { params: { tournamentId } })
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         institutions.value = institutions.value.filter((item) => item._id !== institutionId)
       }
       return true
@@ -139,6 +141,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
@@ -146,10 +149,10 @@ export const useInstitutionsStore = defineStore('institutions', () => {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
       const deletedCount = Number(res.data?.data?.deletedCount)
+      tournamentScope.invalidateFetches(tournamentId)
       if (tournamentScope.isActive(tournamentId)) {
-        advanceFetchSequence()
         const deletedIds = new Set(normalizedIds)
-      institutions.value = institutions.value.filter(
+        institutions.value = institutions.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
       }
