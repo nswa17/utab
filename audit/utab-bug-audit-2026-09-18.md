@@ -3367,3 +3367,173 @@ The next work should not be another broad sweep. The highest-value remaining wor
 
 Both need an explicit invariant before implementation because a local patch that only narrows the race window would not close the underlying defect.
 
+## Phase 12 — Round-scoped write coordination (P4-02)
+
+Phase 12 focused narrowly on P4-02: a request could validate Round R, a concurrent renumber/delete could then move or remove R, and the already-validated request could still create data under the obsolete round number. The same concurrency gap also allowed delete-vs-renumber to delete a Round by id after its numeric round had changed.
+
+### Coordination invariant
+
+Round-bound writes and structural Round mutations now share an explicit database-backed invariant:
+
+1. a normal Round-bound writer must hold a write lease on the exact Round document before committing;
+2. a structural mutation (renumber/delete) may acquire its mutation lease only when the active writer count is zero;
+3. once a mutation lease is held, no new writer may acquire a lease;
+4. leases are fenced by a monotonically increasing mutation epoch, so a release from an earlier epoch cannot modify the state of a later mutation;
+5. structural mutation state is fail-closed. There is deliberately no timeout that can declare a still-running writer stale and thereby reopen the original race.
+
+This is implemented in:
+
+- `packages/server/src/services/round-write-guard.service.ts`
+- hidden coordination fields on `Round`:
+  - `roundActiveWriteCount`
+  - `roundActiveWriteTouchedAt`
+  - `roundMutationLocked`
+  - `roundMutationEpoch`
+
+The fields are `select:false` and are removed by the Round JSON transform, so they do not become part of the public/admin Round DTO.
+
+Relevant commits:
+
+- `815cbe8815b6c0b77fdd403a91a9bc833f4491cb` — add Round coordination state;
+- `b1792c21380425ca5ee3501859cb58a54315f3ea` — add write/mutation lease service;
+- `8d6e573b9c670d7f381a61c6b9888d59c999aea8` — remove timeout-based stale-writer override and keep the invariant fail-closed;
+- `0678efcc13ad58e69991a2916e4b63ef20679f6f` — initialize the mutation epoch atomically for pre-existing Round documents that predate the new fields.
+
+The legacy compatibility detail is important. Without the `$inc: { roundMutationEpoch: 0 }` initialization, a write lease acquired on an old Round lacking the epoch field would normalize the missing epoch to zero in memory, but its release filter `roundMutationEpoch: 0` would not match the still-missing database field. That would leak `roundActiveWriteCount`. The final regression test explicitly removes all coordination fields before exercising the guard.
+
+### Submission writes
+
+Ballot and feedback normalization now returns the exact Round document id it validated.
+
+Before create commits, the controller acquires a write lease using both:
+
+- the requested numeric round; and
+- the validated Round document id.
+
+Therefore this sequence is now rejected:
+
+    validate old Round 1
+    concurrent admin renumbers/deletes Round 1
+    stale request attempts to acquire write lease for old Round id + round 1
+    -> lease acquisition fails; HTTP 409; no submission is inserted
+
+The same guard is applied to submission updates. Updates additionally filter on the previously read submission round and version so a Round-reference move that happened before commit cannot be overwritten by a stale submission update.
+
+Relevant final commits include:
+
+- `3719171e677d304f64381efb5192e850bcd2160b` — final submission lease cleanup scope;
+- earlier implementation commit `e559dde43b57c000c95e4316717ae004fef88404`.
+
+### Draw writes
+
+Both persistent draw paths are guarded:
+
+- `POST /draws` / draw upsert;
+- `POST /draws/generate` when `save=true`.
+
+The writer lease is tied to the Round id that was read before validation/generation. A concurrent structural mutation therefore cannot pass between Round validation and draw persistence.
+
+Read-only generation (`save=false`) does not acquire a write lease.
+
+Commit:
+
+- `4557cbb367d36f9de5bbd5b24d15628ce1409886` — coordinate draw writes with structural Round mutations.
+
+### Stored Result writes
+
+The same protection was added to the generic stored Result create/update paths.
+
+Create requires the target Round document and holds its write lease through persistence.
+
+Update acquires the target Round lease and uses a stale-write filter on the old result round/version. If the source Round was renumbered after the result was read, the update can no longer move the migrated record back to the obsolete round.
+
+Commit:
+
+- `be27121dd2483f434bea87ff752b5ffc40945762` — coordinate stored Result writes.
+
+### Renumber and delete
+
+Single Round renumber and delete now acquire a mutation lease against the exact Round id and expected numeric round before moving/deleting dependent records.
+
+Consequences:
+
+- an active submission/draw/result writer makes renumber/delete return HTTP 409 rather than racing it;
+- once renumber/delete owns the mutation lease, new guarded writers return HTTP 409;
+- delete can no longer read Round 1, race a renumber to Round 2, then delete the Round-2 document by id while deleting only Round-1 dependencies.
+
+Renumbering uses a per-Round unique negative temporary number derived from the Round ObjectId instead of one shared sentinel. This removes an avoidable collision between concurrent/bulk temporary moves.
+
+Bulk renumber/delete obtains mutation leases in deterministic id order and releases already-acquired leases if the complete set cannot be claimed.
+
+Relevant commits:
+
+- `b28e6de6c799705ff1d1fb02b73ed9e34d4cf002` — shared multi-Round mutation lease helpers;
+- `ddfac4a3e410d1ace7e4701b9a4aab58c6aa5f2e` — unique temporary round numbers;
+- `62edc9724eb9b62d3b048b9451d06f05f3b98e3f` — single renumber/delete guard;
+- `cf4360c0d8c055ecd49c0de14ee5f27f159166ed` — bulk mutation guard.
+
+An intermediate refactor accidentally displaced `previewBreakCandidates`; it was restored from the pre-refactor source in `151176fb62c00c887a1d0105d9eddc57da3dfb72`. Subsequent branch-wide CI is green.
+
+### Executable regression
+
+`packages/server/test/integration.part4.test.ts` now contains a Round coordination regression that verifies:
+
+1. internal coordination fields are not exposed in a newly created Round response;
+2. the guard works for a legacy Round whose coordination fields are manually removed;
+3. an acquired normal write lease blocks both renumber and delete;
+4. an acquired mutation lease blocks a new direct write lease;
+5. the same mutation lease blocks real API writes through:
+   - draw upsert,
+   - ballot submission,
+   - stored Result creation;
+6. after leases are released normally, renumber succeeds and the renamed Round can subsequently be deleted.
+
+The final compatibility extension is in:
+
+- `e293c651f5851b0d700d98406ed655669529ac1e`.
+
+### Raw-result contract reconciliation
+
+During the sweep I checked whether raw-result CRUD should also be forced through the Round guard.
+
+It should not be folded into P4-02 without a separate product-contract change. Existing integration coverage intentionally creates raw result rows for `r=1` without first creating a Round document. Raw results are therefore currently an independent raw-data layer keyed by `r`, not a Round-bound write API with the same existence invariant as submissions/draws/results.
+
+A provisional attempt to require Round leases for raw results was reverted after this contract was confirmed. Final tree commits restoring the established behavior are:
+
+- `5365fcdebb992afc7fc6c21911743a413157c794`;
+- `4d0f8c25bcbafe271c4acaefb61fd1539a43dbb4`.
+
+If raw results should instead become strict Round children, that should be a separate migration/API decision with corresponding import/legacy semantics, not an incidental concurrency patch.
+
+### Final CI
+
+Final head before this log update:
+
+- `e293c651f5851b0d700d98406ed655669529ac1e`
+
+GitHub Actions:
+
+- run `35376712911`
+- conclusion: **success**
+- lint: success
+- tests: success
+- build: success
+- test-file summaries:
+  - core: 24/24
+  - web: 66/66
+  - server: 12/12
+
+### P4-02 status and remaining boundaries
+
+**P4-02 is closed for the Round-bound API paths identified in the finding: submissions and persistent draws; stored Results were guarded at the same boundary as an additional hardening step. Delete-vs-renumber is also serialized by the same Round mutation lease.**
+
+This does not close the broader Phase 4 family:
+
+- **P4-03 remains**: break metadata and Team availability are still a two-part state transition and can diverge under concurrent break updates.
+- **P4-05 remains**: the mutation lease prevents concurrency races but does not make multi-collection renumber/delete failure-atomic. A database/write failure midway through dependency migration can still leave partial state.
+- **P4-06 remains**: stale full-array maintenance writes can still overwrite unrelated concurrent edits.
+- **P4-07 remains**: compilation still lacks a coherent multi-collection snapshot.
+- The target-round namespace race is also not fully solved by P4-02 coordination: a new Round can still race into a renumber target after the initial target-conflict check. That belongs with the remaining Round lifecycle atomicity/namespace work rather than the stale-writer bug fixed here.
+
+Operational tradeoff: because correctness is fail-closed, a process crash after acquiring a lease can leave coordination state that blocks structural mutation. The implementation intentionally does not use a time-based override, because force-expiring a genuinely long-running writer without a transaction/fencing commit would recreate P4-02. Recovery/lease ownership for multi-process crash tolerance should be designed together with the P4-05 atomicity work rather than weakening this invariant.
+
