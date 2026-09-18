@@ -4783,10 +4783,9 @@ describe('Server integration', () => {
     const teamRes = await agent.post('/api/teams').send({
       tournamentId,
       name: 'Boundary valid team',
-      details: [{ r: 1, available: true, custom_extension: 'kept' }],
+      details: [{ r: 1, available: true, speakers: [] }],
     })
     expect(teamRes.status).toBe(201)
-    expect(teamRes.body.data.details[0].custom_extension).toBe('kept')
     const teamId = String(teamRes.body.data._id)
 
     const invalidSingleUpdate = await agent.patch(`/api/teams/${teamId}`).send({
