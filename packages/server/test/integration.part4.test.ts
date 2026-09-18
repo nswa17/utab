@@ -3269,4 +3269,165 @@ describe('Server integration', () => {
     expect(Number((storedDraw as any)?.__v ?? 0)).toBeGreaterThan(versionBefore)
   })
 
+
+  it('retries round-reference rewrites without overwriting concurrent metadata edits', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'round-reference-cas-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'round-reference-cas-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Reference CAS Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const round1Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    const round2Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Round 2',
+      userDefinedData: {
+        custom: { source_rounds: [1, 2], note: 'round-before' },
+      },
+    })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+    const round1Id = String(round1Res.body.data._id)
+    const round2Id = String(round2Res.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'CAS Team A',
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'CAS Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 2,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+      userDefinedData: {
+        custom: { source_rounds: [1, 2], note: 'draw-before' },
+      },
+    })
+    expect(drawRes.status).toBe(201)
+    const drawId = String(drawRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getRoundModel } = await import('../src/models/round.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
+    const DrawModel = getDrawModel(connection)
+
+    const originalRoundUpdateOne = RoundModel.updateOne.bind(RoundModel)
+    let roundInjected = false
+    const roundUpdateSpy = vi
+      .spyOn(RoundModel as any, 'updateOne')
+      .mockImplementation((filter: any, update: any, options?: any) => {
+        const isReferenceRewrite =
+          String(filter?._id ?? '') === round2Id &&
+          Object.prototype.hasOwnProperty.call(filter ?? {}, 'userDefinedData') &&
+          update?.$set?.userDefinedData
+        if (!roundInjected && isReferenceRewrite) {
+          roundInjected = true
+          return {
+            exec: async () => {
+              const originalValue = filter.userDefinedData ?? {}
+              await originalRoundUpdateOne(
+                { _id: round2Id, tournamentId },
+                {
+                  $set: {
+                    userDefinedData: {
+                      ...originalValue,
+                      concurrentRoundEdit: 'keep-round',
+                    },
+                  },
+                }
+              ).exec()
+              return await originalRoundUpdateOne(filter, update, options).exec()
+            },
+          } as any
+        }
+        return originalRoundUpdateOne(filter, update, options) as any
+      })
+
+    const originalDrawUpdateOne = DrawModel.updateOne.bind(DrawModel)
+    let drawInjected = false
+    const drawUpdateSpy = vi
+      .spyOn(DrawModel as any, 'updateOne')
+      .mockImplementation((filter: any, update: any, options?: any) => {
+        const isReferenceRewrite =
+          String(filter?._id ?? '') === drawId &&
+          Object.prototype.hasOwnProperty.call(filter ?? {}, '__v') &&
+          update?.$set?.userDefinedData
+        if (!drawInjected && isReferenceRewrite) {
+          drawInjected = true
+          return {
+            exec: async () => {
+              const current = await DrawModel.findOne({ _id: drawId, tournamentId }).lean().exec()
+              await originalDrawUpdateOne(
+                { _id: drawId, tournamentId },
+                {
+                  $set: {
+                    userDefinedData: {
+                      ...((current as any)?.userDefinedData ?? {}),
+                      concurrentDrawEdit: 'keep-draw',
+                    },
+                  },
+                  $inc: { __v: 1 },
+                }
+              ).exec()
+              return await originalDrawUpdateOne(filter, update, options).exec()
+            },
+          } as any
+        }
+        return originalDrawUpdateOne(filter, update, options) as any
+      })
+
+    const deleteRes = await organizer.delete(
+      `/api/rounds/${round1Id}?tournamentId=${tournamentId}`
+    )
+    roundUpdateSpy.mockRestore()
+    drawUpdateSpy.mockRestore()
+
+    expect(deleteRes.status).toBe(200)
+    expect(roundInjected).toBe(true)
+    expect(drawInjected).toBe(true)
+
+    const storedRound2 = await RoundModel.findOne({ _id: round2Id, tournamentId }).lean().exec()
+    expect((storedRound2 as any)?.userDefinedData?.concurrentRoundEdit).toBe('keep-round')
+    expect((storedRound2 as any)?.userDefinedData?.custom?.source_rounds).toEqual([2])
+
+    const storedDraw2 = await DrawModel.findOne({ _id: drawId, tournamentId }).lean().exec()
+    expect((storedDraw2 as any)?.userDefinedData?.concurrentDrawEdit).toBe('keep-draw')
+    expect((storedDraw2 as any)?.userDefinedData?.custom?.source_rounds).toEqual([2])
+  })
+
 })
