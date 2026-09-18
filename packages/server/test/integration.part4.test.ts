@@ -291,7 +291,10 @@ describe('Server integration', () => {
       score: 8,
       submittedEntityId: teamIdA,
     })
-    expect(feedbackAfterAccess.status).toBe(201)
+    expect(feedbackAfterAccess.status).toBe(403)
+    expect(feedbackAfterAccess.body.errors?.[0]?.message).toContain(
+      'Participant account is not bound to a tournament entity'
+    )
 
     const exitAccessRes = await audience.post(`/api/tournaments/${tournamentId}/exit`).send()
     expect(exitAccessRes.status).toBe(200)
