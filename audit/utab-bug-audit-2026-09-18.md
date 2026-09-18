@@ -324,3 +324,305 @@ These are audit-process observations, not confirmed user-facing bugs.
 The repository map is complete enough to begin targeted auditing. No Phase-1 observation is yet classified as a confirmed major bug.
 
 Recommended next audit phase remains Phase 2: test/CI semantic coverage mapping, using this attack-surface inventory to identify untested behavior rather than merely counting tests.
+
+
+## Phase 2 — test and CI semantic coverage audit
+
+### Scope and status
+
+Phase 2 maps the existing tests and CI checks onto the Phase-1 attack surface. The goal is not raw line coverage; it is to identify which correctness/security invariants have regression protection and which high-risk behaviors remain untested.
+
+No production code was changed in this phase.
+
+### Current CI baseline
+
+The latest CI run on the audited `main` baseline `6438f0b3b9586a96fe40e2ea887950bee34c3571` completed successfully on 2026-08-16.
+
+CI currently performs:
+
+1. frozen pnpm install,
+2. root `pnpm lint`,
+3. root `pnpm lint:web`,
+4. root `pnpm test`,
+5. root `pnpm build`.
+
+The test job therefore exercises all three workspace packages through Turbo, and the final build gives the web package a full Vue typecheck through `typecheck:ci`.
+
+### Important distinction: CI green does not include several configured checks
+
+The following are not currently enforced by CI:
+
+1. **Core/server ESLint is not run.**  
+   Root `pnpm lint` is:
+   ```text
+   pnpm -C packages/core build && pnpm -C packages/server build
+   ```
+   even though both packages define actual ESLint scripts.
+
+2. **Web ESLint is not configured.**  
+   `packages/web` still has `"lint": "echo 'lint not yet configured'"`. CI does run TypeScript/Vue checks, but not lint rules.
+
+3. **Coverage is configured but not collected in CI.**  
+   All Vitest configs contain V8 coverage settings, but tests are invoked as `vitest run`, not `vitest run --coverage`. There are no thresholds/gates.
+
+4. **OpenAPI validation is not run by workspace CI.**  
+   `contracts/package.json` provides `validate:openapi`, but `contracts` is outside `pnpm-workspace.yaml` (`packages/*` only), and CI never enters `contracts`. Therefore schema validity/API-contract checks can regress while CI remains green.
+
+5. **CI tests Node 20.11 only.**  
+   The repository `.nvmrc` recommends Node 24. Runtime compatibility with the recommended local version is not a CI matrix target.
+
+These are process/test blind spots, not confirmed runtime bugs.
+
+### Core semantic coverage
+
+Core coverage is relatively strong for deterministic algorithm behavior.
+
+Existing tests cover:
+
+- two-team allocation basics,
+- power pairing brackets and pullups,
+- one-up-one-down conflict reduction,
+- strict matching,
+- minimum-warning pairing,
+- institution priority handling,
+- repeated-opponent and school-pairing avoidance,
+- side balancing,
+- random/seeded allocation paths,
+- adjudicator filters and class-based allocation,
+- traditional/standard adjudicator paths,
+- venue priority/shuffle/shortage behavior,
+- result checks,
+- tied results,
+- bye rounds and non-infinite margins,
+- speaker integration,
+- adjudicator result compilation,
+- DBHandler CRUD/composite raw-result identity.
+
+Notable strengths:
+
+- conflict-priority semantics have explicit regression tests;
+- min-warning pairing tests include a 34-team repeated-school scenario;
+- tie/fractional win behavior and bye margins are explicitly protected;
+- seeded randomness is exercised.
+
+Remaining algorithmic gaps worth targeting in Phase 3:
+
+1. Property/invariant tests are limited. Examples not systematically exercised:
+   - every available team appears at most once,
+   - no adjudicator occupies two simultaneous slots,
+   - no venue is assigned twice,
+   - output cardinality matches the feasible input cardinality,
+   - permutations of equivalent inputs do not alter invariant outcomes,
+   - generated allocations always reference existing/available entities.
+
+2. Larger randomized fields are only sparsely tested outside a few targeted cases.
+
+3. BP/4-team positional-history logic has lighter edge coverage than two-team pairing.
+
+4. Failure behavior for duplicated IDs, inconsistent historical result sets, and malformed-but-type-compatible domain objects is not comprehensively property-tested.
+
+5. Results compilation tests are good on representative examples but not exhaustive over missing/duplicate round data and ordering invariance.
+
+### Server semantic coverage
+
+The server suite is stronger than the raw count of 12 files suggests because four integration files are very large and exercise many complete workflows.
+
+Strongly covered areas include:
+
+- health and legacy/v1 deprecation behavior,
+- sampled legacy/v1 payload parity,
+- CORS/origin checks,
+- session registration/login/logout,
+- service-account scope enforcement,
+- required service-account idempotency key,
+- service-token revocation,
+- request body limits,
+- tournament membership/access control,
+- cross-tournament isolation,
+- public response sanitization,
+- hidden round/draw behavior,
+- tournament access/password maintenance,
+- audit-log pagination/filtering,
+- CRUD conflict handling,
+- unique draw-per-round index,
+- round renumber/delete reference movement,
+- raw-result validation/conflict handling,
+- style reference integrity,
+- ballot validation across score/identity/draw constraints,
+- duplicate ballot rejection,
+- **concurrent duplicate ballot rejection**,
+- duplicate feedback rejection,
+- admin submission update/delete,
+- submission-based compilation,
+- compile preview/save stale detection,
+- break candidate derivation and bracket advancement,
+- import/export happy-path round-trip,
+- personal-data erasure,
+- erasure request lifecycle,
+- explicit failure-state test when erasure execution throws,
+- tournament create/delete/member attach/remove rollback behavior,
+- dev-tools authorization and idempotent fill behavior.
+
+This is enough coverage that subsequent phases should not assume obvious CRUD/auth mistakes; the highest expected yield is now in unusual state combinations, concurrency, and partial failure.
+
+### Server gaps prioritized for later phases
+
+#### A. Concurrency coverage is narrow
+
+Only one clearly targeted server race regression was found: concurrent duplicate ballot submission.
+
+No equivalent explicit concurrency regression was found for:
+
+- duplicate feedback submissions,
+- same-key service-account idempotency requests arriving concurrently,
+- simultaneous compile/save requests,
+- concurrent draw generation/upsert,
+- concurrent round renumber/update/delete,
+- tournament access password/version changes during active requests,
+- import/delete or other destructive lifecycle overlap.
+
+These are high-value audit targets because many controllers perform read-validate-write sequences.
+
+#### B. Failure-injection/atomicity tests cover only selected lifecycle operations
+
+Good rollback tests exist for:
+
+- tournament creation,
+- tournament deletion,
+- tournament membership add/remove,
+- erasure request state transition after erase failure.
+
+Equivalent failure injection was not found for other multi-write workflows such as:
+
+- round renumber/delete reference migration,
+- hard-delete privacy cleanup across references,
+- tournament import after partial collection creation,
+- draw/allocation replacement,
+- compilation snapshot persistence,
+- submission -> raw/compiled side effects where applicable.
+
+This does not imply these paths are broken; it means partial-failure correctness is largely unproven by tests.
+
+#### C. Tournament import is tested mainly as a valid round-trip
+
+The integration suite verifies that an exported tournament bundle can be restored. Explicit adversarial tests were not found for:
+
+- malformed ZIP/container data,
+- malformed/missing manifest fields,
+- corrupted collection payloads,
+- dangling cross-document references,
+- conflicting duplicate IDs,
+- oversized decompressed content,
+- interrupted/partial import cleanup.
+
+Import is therefore a priority input-validation and atomicity surface for later inspection.
+
+#### D. Legacy/v1 parity is sampled, not systematic
+
+There are explicit parity checks for health, team list, personal-data erasure, and erasure workflows. The server mounts the same router under both namespaces, which reduces risk, but middleware/deprecation behavior still differs by prefix.
+
+A route-by-route parity matrix is not present. This is lower priority than core/state correctness but remains useful before removing legacy compatibility.
+
+#### E. Route wiring coverage is uneven for generic CRUD
+
+The suite heavily exercises shared entity CRUD machinery, but not every method of every entity route is directly invoked. Examples include some update/delete combinations for adjudicators, speakers, institutions, and venues.
+
+Because these controllers share `createTournamentEntityCrudHandlers`, this is mostly a route-wiring regression risk rather than independent business-logic risk.
+
+### Web semantic coverage
+
+Web tests are broad in utilities and Pinia race handling.
+
+Strongly covered areas include:
+
+- auth store behavior,
+- compiled/draw/raw-result/submission/tournament stores,
+- stale/latest request handling,
+- concurrent loading-state behavior,
+- entity bulk-delete behavior,
+- public-viewing store behavior,
+- router auth/admin guards,
+- allocation warning/baseline/history helpers,
+- ballot prefill and score helpers,
+- break-round helpers,
+- CSV/entity/draw import helpers,
+- result/export utility functions,
+- duplicate-submission and expected-submission accounting,
+- admin allocation/workflow/compiled/setup views,
+- participant home,
+- participant ballot entry.
+
+The codebase already contains several explicit race-regression tests for stores, which is a positive sign.
+
+### Web gaps prioritized for later phases
+
+1. **Participant feedback entry lacks a direct component regression test.**  
+   `UserRoundBallotEntry.vue` has a dedicated test suite; `UserRoundFeedbackEntry.vue` does not appear in test code. Since feedback is one of only two participant write workflows, this is a high-value UI gap.
+
+2. **Admin round-result workflow has limited direct component coverage.**  
+   `AdminRoundResult.vue` appears in reload/navigation testing but does not have a focused behavior suite comparable to allocation/compiled/setup.
+
+3. Several orchestration composables/helpers are tested only indirectly:
+   - `useCompileWorkflow.ts`,
+   - `useParticipantIdentity.ts`,
+   - `useParticipantMode.ts`,
+   - `compile-include-labels.ts`,
+   - `tournament-team-ranking.ts`,
+   - `tournament-break.ts`.
+
+4. Large admin views are partly protected by smoke/workflow tests, but their full internal state spaces are too large for the current example-based tests to establish strong coverage.
+
+### API contract coverage
+
+The live router inventory has roughly 120 route operations. The checked-in OpenAPI contract describes 22 operations over 16 paths.
+
+Consequences:
+
+- the contract is intentionally/operationally partial;
+- contract validation cannot detect drift for most endpoints;
+- generated/external clients cannot rely on it as a complete server surface;
+- CI currently does not validate even the partial contract.
+
+Treat this as documentation/contract debt rather than a runtime defect unless external clients depend on undocumented behavior.
+
+### Risk-oriented coverage matrix
+
+| Area | Current regression protection | Main remaining blind spot |
+| --- | --- | --- |
+| core team allocation | strong | invariant/property fuzzing |
+| adjudicator allocation | good | extreme cardinalities/invariants |
+| venue allocation | moderate-good | global uniqueness/property tests |
+| result compilation | good examples | ordering/missing/duplicate invariants |
+| auth/tournament isolation | strong | access-version races |
+| participant ballot | strong | more race/state interleavings |
+| participant feedback | moderate | concurrency + UI component coverage |
+| rounds/draws | good examples | concurrent mutation + partial failure |
+| compiled snapshots | good workflow coverage | concurrent saves/reads |
+| tournament lifecycle | strong | import partial failure |
+| import/export | happy-path good | malformed/adversarial input |
+| privacy erase | moderate-good | hard-delete partial-write failure |
+| service-account auth | good | concurrent idempotency semantics |
+| web stores | good | tournament-switch/state-reset completeness |
+| UI orchestration | mixed | feedback/result paths, huge views |
+| OpenAPI | weak/partial | most routes undocumented + not CI-validated |
+| static lint | weak | core/server ESLint not run |
+| code coverage enforcement | absent | no CI coverage measurement/threshold |
+
+### Findings disposition
+
+No major runtime bug was confirmed during Phase 2.
+
+The most important output of this phase is that the audit should **not** spend Phase 3 rechecking already well-covered ordinary behavior. The best bug-finding targets are:
+
+1. core invariant/property counterexamples,
+2. concurrent feedback/idempotency/draw/compile operations,
+3. multi-collection partial failure,
+4. malformed tournament import,
+5. participant feedback UI,
+6. state-reset/tournament-switch races.
+
+### Phase 2 conclusion
+
+Existing tests are substantial and the audited main commit is CI-green. The main weakness is not absence of tests overall; it is lack of systematic invariant, concurrency, partial-failure, and adversarial-input testing around the highest-risk stateful workflows.
+
+Proceed to Phase 3 with core algorithm correctness/invariant auditing, using counterexample-oriented tests rather than broad duplicate coverage of existing examples.
