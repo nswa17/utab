@@ -305,7 +305,7 @@ function resolveRoundBallotRules(roundDoc: unknown): {
     winnerPolicyToken ? ({ winner_policy: winnerPolicyToken } as any) : undefined,
     DEFAULT_COMPILE_OPTIONS
   )
-  const allowDraw = userDefinedData.allow_low_tie_win === true
+  const allowDraw = userDefinedData.allow_low_tie_win !== false
   const allowWinnerScoreMismatch =
     typeof userDefinedData.allow_score_winner_mismatch === 'boolean'
       ? userDefinedData.allow_score_winner_mismatch
