@@ -16,6 +16,11 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
 import {
+  acquireRoundMutationLease,
+  releaseRoundMutationLease,
+  type RoundMutationLease,
+} from '../services/round-write-guard.service.js'
+import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
   type CompileOptionsInput,
@@ -69,6 +74,37 @@ type RoundDefaults = {
 }
 
 type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+
+async function acquireRoundMutationLeases(
+  connection: Connection,
+  tournamentId: string,
+  targets: Array<{ id: string; round: number }>
+): Promise<RoundMutationLease[] | null> {
+  const acquired: RoundMutationLease[] = []
+  const orderedTargets = [...targets].sort((left, right) => left.id.localeCompare(right.id))
+  for (const target of orderedTargets) {
+    const lease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      target.id,
+      target.round
+    )
+    if (lease) {
+      acquired.push(lease)
+      continue
+    }
+    await Promise.all(acquired.map((current) => releaseRoundMutationLease(connection, current)))
+    return null
+  }
+  return acquired
+}
+
+async function releaseRoundMutationLeases(
+  connection: Connection,
+  leases: RoundMutationLease[]
+): Promise<void> {
+  await Promise.all(leases.map((lease) => releaseRoundMutationLease(connection, lease)))
+}
 const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
 
 function asRecord(value: unknown): Record<string, unknown> {
