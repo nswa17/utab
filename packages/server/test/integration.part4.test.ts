@@ -2783,4 +2783,123 @@ describe('Server integration', () => {
   })
 
 
+
+  it('serializes break configuration and team availability updates for a round', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'break-write-guard-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'break-write-guard-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Break Write Guard Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const round1Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    const round2Res = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 2,
+      name: 'Break Round',
+    })
+    expect(round1Res.status).toBe(201)
+    expect(round2Res.status).toBe(201)
+    const roundId = String(round2Res.body.data._id)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Break Guard Team A',
+      details: [{ r: 2, available: true, conflicts: ['keep-a'], speakers: [] }],
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Break Guard Team B',
+      details: [{ r: 2, available: true, conflicts: ['keep-b'], speakers: [] }],
+    })
+    const teamCRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Break Guard Team C',
+      details: [{ r: 2, available: true, conflicts: ['keep-c'], speakers: [] }],
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    expect(teamCRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+    const teamCId = String(teamCRes.body.data._id)
+
+    const breakPayload = {
+      tournamentId,
+      break: {
+        enabled: true,
+        source_rounds: [1],
+        size: 2,
+        cutoff_tie_policy: 'manual',
+        seeding: 'fixed_bracket',
+        participants: [
+          { teamId: teamAId, seed: 1 },
+          { teamId: teamBId, seed: 2 },
+        ],
+      },
+      syncTeamAvailability: true,
+    }
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundMutationLease,
+      releaseRoundMutationLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const { getRoundModel } = await import('../src/models/round.js')
+    const { getTeamModel } = await import('../src/models/team.js')
+    const connection = await getTournamentConnection(tournamentId)
+
+    const competingLease = await acquireRoundMutationLease(connection, tournamentId, roundId, 2)
+    expect(competingLease).toBeTruthy()
+    if (!competingLease) throw new Error('expected competing round mutation lease')
+
+    const blockedBreakUpdate = await organizer.patch(`/api/rounds/${roundId}/break`).send(breakPayload)
+    expect(blockedBreakUpdate.status).toBe(409)
+    expect(blockedBreakUpdate.body.errors?.[0]?.message).toContain('active writes')
+
+    await releaseRoundMutationLease(connection, competingLease)
+
+    const updateRes = await organizer.patch(`/api/rounds/${roundId}/break`).send(breakPayload)
+    expect(updateRes.status).toBe(200)
+
+    const storedRound = await getRoundModel(connection)
+      .findOne({ _id: roundId, tournamentId })
+      .lean()
+      .exec()
+    const storedParticipants = ((storedRound as any)?.userDefinedData?.break?.participants ?? []).map(
+      (participant: any) => String(participant.teamId)
+    )
+    expect(storedParticipants).toEqual([teamAId, teamBId])
+
+    const storedTeams = await getTeamModel(connection).find({ tournamentId }).lean().exec()
+    const availability = new Map(
+      storedTeams.map((team: any) => {
+        const detail = Array.isArray(team.details)
+          ? team.details.find((item: any) => Number(item?.r) === 2)
+          : null
+        return [String(team._id), detail?.available !== false]
+      })
+    )
+    expect(availability.get(teamAId)).toBe(true)
+    expect(availability.get(teamBId)).toBe(true)
+    expect(availability.get(teamCId)).toBe(false)
+
+    const storedTeamC = storedTeams.find((team: any) => String(team._id) === teamCId) as any
+    const storedTeamCDetail = storedTeamC?.details?.find((item: any) => Number(item?.r) === 2)
+    expect(storedTeamCDetail?.conflicts).toEqual(['keep-c'])
+  })
+
 })
