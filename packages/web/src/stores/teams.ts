@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Team } from '@/types/team'
 
 export const useTeamsStore = defineStore('teams', () => {
@@ -9,6 +10,7 @@ export const useTeamsStore = defineStore('teams', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -26,6 +28,7 @@ export const useTeamsStore = defineStore('teams', () => {
   }
 
   async function fetchTeams(tournamentId: string) {
+    tournamentScope.activate(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -57,13 +60,15 @@ export const useTeamsStore = defineStore('teams', () => {
     try {
       const res = await api.post('/teams', payload)
       const created = res.data?.data
-      if (created) {
+      if (created && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         teams.value = [created, ...teams.value]
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create team'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create team'
+      }
       return null
     } finally {
       endRequest()
@@ -89,13 +94,15 @@ export const useTeamsStore = defineStore('teams', () => {
         userDefinedData: payload.userDefinedData,
       })
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
         teams.value = teams.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update team'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update team'
+      }
       return null
     } finally {
       endRequest()
@@ -107,11 +114,15 @@ export const useTeamsStore = defineStore('teams', () => {
     error.value = null
     try {
       await api.delete(`/teams/${teamId}`, { params: { tournamentId } })
-      advanceFetchSequence()
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
       teams.value = teams.value.filter((item) => item._id !== teamId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete team'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete team'
+      }
       return false
     } finally {
       endRequest()
@@ -130,13 +141,17 @@ export const useTeamsStore = defineStore('teams', () => {
       const res = await api.delete('/teams', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
+      if (tournamentScope.isActive(tournamentId)) {
+        advanceFetchSequence()
       const deletedIds = new Set(normalizedIds)
       teams.value = teams.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete teams'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete teams'
+      }
       return null
     } finally {
       endRequest()
