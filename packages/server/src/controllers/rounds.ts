@@ -1099,6 +1099,82 @@ function rewriteNestedRoundReferences(
   return changed ? { value: next, changed: true } : { value, changed: false }
 }
 
+async function rewriteRoundUserDefinedDataCas(
+  RoundModel: ReturnType<typeof getRoundModel>,
+  tournamentId: string,
+  roundId: unknown,
+  rewrite: RoundReferenceRewrite
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const current = await RoundModel.findOne({ _id: roundId, tournamentId })
+      .select({ userDefinedData: 1 })
+      .lean()
+      .exec()
+    if (!current) return
+    const original = (current as any)?.userDefinedData
+    const rewritten = rewriteNestedRoundReferences(original, rewrite)
+    if (!rewritten.changed) return
+    const result = await RoundModel.updateOne(
+      { _id: roundId, tournamentId, userDefinedData: original },
+      { $set: { userDefinedData: rewritten.value } }
+    ).exec()
+    if (result.matchedCount === 1) return
+  }
+  throw new Error('Round metadata changed repeatedly during round-reference rewrite')
+}
+
+async function rewriteDrawUserDefinedDataCas(
+  DrawModel: ReturnType<typeof getDrawModel>,
+  tournamentId: string,
+  drawId: unknown,
+  rewrite: RoundReferenceRewrite
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const current = await DrawModel.findOne({ _id: drawId, tournamentId })
+      .select({ userDefinedData: 1, __v: 1 })
+      .lean()
+      .exec()
+    if (!current) return
+    const original = (current as any)?.userDefinedData
+    const rewritten = rewriteNestedRoundReferences(original, rewrite)
+    if (!rewritten.changed) return
+    const rawVersion = (current as any)?.__v
+    const version = Number.isInteger(rawVersion) ? Number(rawVersion) : null
+    const result = await DrawModel.updateOne(
+      {
+        _id: drawId,
+        tournamentId,
+        ...(version === null ? { __v: { $exists: false } } : { __v: version }),
+      },
+      { $set: { userDefinedData: rewritten.value }, $inc: { __v: 1 } }
+    ).exec()
+    if (result.matchedCount === 1) return
+  }
+  throw new Error('Draw metadata changed repeatedly during round-reference rewrite')
+}
+
+async function rewriteTournamentUserDefinedDataCas(
+  tournamentId: string,
+  rewrite: RoundReferenceRewrite
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const tournament = await TournamentModel.findById(tournamentId)
+      .select({ user_defined_data: 1 })
+      .lean()
+      .exec()
+    if (!tournament) return
+    const original = (tournament as any)?.user_defined_data
+    const rewritten = rewriteNestedRoundReferences(original, rewrite)
+    if (!rewritten.changed) return
+    const result = await TournamentModel.updateOne(
+      { _id: tournamentId, user_defined_data: original },
+      { $set: { user_defined_data: rewritten.value } }
+    ).exec()
+    if (result.matchedCount === 1) return
+  }
+  throw new Error('Tournament metadata changed repeatedly during round-reference rewrite')
+}
+
 async function rewriteStoredRoundReferences(
   connection: Connection,
   tournamentId: string,
@@ -1113,52 +1189,19 @@ async function rewriteStoredRoundReferences(
 
   const RoundModel = getRoundModel(connection)
   const DrawModel = getDrawModel(connection)
-  const [rounds, draws, tournament] = await Promise.all([
-    RoundModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
-    DrawModel.find({ tournamentId }).select({ _id: 1, userDefinedData: 1 }).lean().exec(),
-    TournamentModel.findById(tournamentId).select({ user_defined_data: 1 }).lean().exec(),
+  const [rounds, draws] = await Promise.all([
+    RoundModel.find({ tournamentId }).select({ _id: 1 }).lean().exec(),
+    DrawModel.find({ tournamentId }).select({ _id: 1 }).lean().exec(),
   ])
 
-  const roundOps = rounds.flatMap((round: any) => {
-    const rewritten = rewriteNestedRoundReferences(round?.userDefinedData, rewrite)
-    return rewritten.changed
-      ? [
-          {
-            updateOne: {
-              filter: { _id: round._id, tournamentId },
-              update: { $set: { userDefinedData: rewritten.value } },
-            },
-          },
-        ]
-      : []
-  })
-  const drawOps = draws.flatMap((draw: any) => {
-    const rewritten = rewriteNestedRoundReferences(draw?.userDefinedData, rewrite)
-    return rewritten.changed
-      ? [
-          {
-            updateOne: {
-              filter: { _id: draw._id, tournamentId },
-              update: { $set: { userDefinedData: rewritten.value }, $inc: { __v: 1 } },
-            },
-          },
-        ]
-      : []
-  })
-  const tournamentRewrite = rewriteNestedRoundReferences(
-    (tournament as any)?.user_defined_data,
-    rewrite
-  )
-
   await Promise.all([
-    roundOps.length > 0 ? RoundModel.bulkWrite(roundOps, { ordered: true }) : Promise.resolve(),
-    drawOps.length > 0 ? DrawModel.bulkWrite(drawOps, { ordered: true }) : Promise.resolve(),
-    tournament && tournamentRewrite.changed
-      ? TournamentModel.updateOne(
-          { _id: tournamentId },
-          { $set: { user_defined_data: tournamentRewrite.value } }
-        ).exec()
-      : Promise.resolve(),
+    ...rounds.map((round: any) =>
+      rewriteRoundUserDefinedDataCas(RoundModel, tournamentId, round._id, rewrite)
+    ),
+    ...draws.map((draw: any) =>
+      rewriteDrawUserDefinedDataCas(DrawModel, tournamentId, draw._id, rewrite)
+    ),
+    rewriteTournamentUserDefinedDataCas(tournamentId, rewrite),
   ])
 }
 
