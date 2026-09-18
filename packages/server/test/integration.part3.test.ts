@@ -1300,12 +1300,65 @@ describe('Server integration', () => {
     expect(collectionJsonEntries.map((entry) => entry.path).sort()).toEqual(
       collectionFiles.map((entry) => entry.path).sort()
     )
+    const legacyLockPath = 'json/collections/round_namespace_locks.json'
+    const legacyCollectionFiles = [
+      ...collectionFiles,
+      { path: legacyLockPath, collectionName: 'round_namespace_locks' },
+    ]
+    const legacyEntries = extractedEntries
+      .map((entry) => {
+        if (entry.path === 'metadata.json') {
+          const legacyMetadata = {
+            ...metadata,
+            collectionCount: legacyCollectionFiles.length,
+            collectionNames: legacyCollectionFiles.map((item) => item.collectionName),
+            collectionFiles: legacyCollectionFiles,
+          }
+          return {
+            ...entry,
+            content: Buffer.from(JSON.stringify(legacyMetadata), 'utf8'),
+          }
+        }
+        if (entry.path === roundsFile?.path) {
+          const legacyRounds = (JSON.parse(entry.content.toString('utf8')) as any[]).map((round) => ({
+            ...round,
+            roundActiveWriteCount: 9,
+            roundActiveWriteTouchedAt: '2026-09-18T12:00:00.000Z',
+            roundMutationLocked: true,
+            roundMutationEpoch: 99,
+          }))
+          return {
+            ...entry,
+            content: Buffer.from(JSON.stringify(legacyRounds), 'utf8'),
+          }
+        }
+        return entry
+      })
+      .concat([
+        {
+          path: legacyLockPath,
+          content: Buffer.from(
+            JSON.stringify([
+              {
+                _id: tournamentId,
+                locked: true,
+                epoch: 99,
+                touchedAt: '2026-09-18T12:00:00.000Z',
+              },
+            ]),
+            'utf8'
+          ),
+        } as (typeof extractedEntries)[number],
+      ])
+    const legacyCollectionJsonEntries = legacyEntries.filter(
+      (entry) => entry.path.startsWith('json/collections/') && entry.path.endsWith('.json')
+    )
     const reorderedBundle = buildZip(
       [
-        ...extractedEntries.filter(
+        ...legacyEntries.filter(
           (entry) => !entry.path.startsWith('json/collections/') || !entry.path.endsWith('.json')
         ),
-        ...[...collectionJsonEntries].reverse(),
+        ...[...legacyCollectionJsonEntries].reverse(),
       ].map((entry) => ({
         path: entry.path,
         content: entry.content,
