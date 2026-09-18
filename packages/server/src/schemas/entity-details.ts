@@ -2,6 +2,29 @@ import { z } from 'zod'
 
 const positiveRoundSchema = z.number().int().min(1)
 
+export const teamTemplateSchema = z
+  .object({
+    available: z.boolean().optional(),
+    conflicts: z.array(z.string().min(1)).optional(),
+    speakers: z.array(z.string().min(1)).optional(),
+  })
+  .passthrough()
+
+export const adjudicatorTemplateSchema = z
+  .object({
+    available: z.boolean().optional(),
+    conflicts: z.array(z.string().min(1)).optional(),
+    conflict_teams: z.array(z.string().min(1)).optional(),
+  })
+  .passthrough()
+
+export const venueTemplateSchema = z
+  .object({
+    available: z.boolean().optional(),
+    priority: z.number().finite().optional(),
+  })
+  .passthrough()
+
 export const teamDetailSchema = z
   .object({
     r: positiveRoundSchema,
