@@ -22,6 +22,7 @@ export const useTeamsStore = defineStore('teams', () => {
   }
 
   async function fetchTeams(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
     if (scopeChanged) teams.value = []
     beginRequest()
