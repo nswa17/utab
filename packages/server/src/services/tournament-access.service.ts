@@ -1,3 +1,5 @@
+import { hashPassword } from './hash.service.js'
+
 type PlainObject = Record<string, unknown>
 
 export interface TournamentAccessConfig {
@@ -68,14 +70,19 @@ export async function mergeTournamentAuth(
   let password = existingAccess.password
   let passwordHash = existingAccess.passwordHash
 
+  // Normalize legacy plaintext immediately on any write path without changing
+  // the logical password or access-session version.
+  if (password && !passwordHash) {
+    passwordHash = await hashPassword(password)
+    password = undefined
+  }
+
   if (hasOwn(incomingAccess, 'password')) {
     const nextPassword = incomingAccess.password
     if (typeof nextPassword === 'string' && nextPassword.length > 0) {
-      if (nextPassword !== existingAccess.password || !existingAccess.password || existingAccess.passwordHash) {
-        accessPasswordUpdated = true
-      }
-      password = nextPassword
-      passwordHash = undefined
+      accessPasswordUpdated = true
+      password = undefined
+      passwordHash = await hashPassword(nextPassword)
     } else if (nextPassword === null || nextPassword === '') {
       if (existingAccess.password || existingAccess.passwordHash) {
         accessPasswordUpdated = true
