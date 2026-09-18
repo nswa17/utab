@@ -2385,7 +2385,7 @@ const teamStrictPairingOptions = computed(() => [
   {
     value: 'adjusted',
     label: t('調整'),
-    description: t('候補全体を比較して、偏りが小さい組み方を選びます。'),
+    description: t('候補全体を比較し、サイド配置後の履歴偏りの合計が最小になる組み方を選びます。'),
   },
 ])
 
