@@ -4770,3 +4770,124 @@ Implementation commit:
 **P5-09 is closed.**
 
 P5-10 remains documentation/spec reconciliation rather than a confirmed runtime vulnerability.
+
+
+## Phase 25 — Versioned compile-save preview contract (P6-07)
+
+P6-07 was repaired without breaking the legacy compatibility namespace.
+
+### Previous behavior
+
+The server always rebuilt the compile payload before save, but `preview_signature` and `revision` were optional. A caller could therefore save a fresh current computation that it had never previewed.
+
+### Repair
+
+For `/api/v1/compiled*` save requests, both preview tokens are now mandatory.
+
+- missing either token -> HTTP 400 with an explicit instruction to run compile preview first;
+- supplied tokens -> rebuilt payload is compared against the preview signature/revision as before;
+- stale tokens -> existing HTTP 409 `PreviewStale` behavior remains.
+
+The deprecated `/api` compatibility namespace retains the older optional-token contract for now. This isolates the compatibility exception instead of weakening the current versioned API.
+
+Implementation commit:
+
+- `ffaa8c88412d46c6bb0ac024969bb2c847eddbaa` — require preview tokens on versioned compile saves.
+
+Regression coverage:
+
+- `16e4a29b91d40360aab76c860e0676c5d07a182e` — verifies v1 missing-token rejection and successful/stale token paths.
+
+### P6-07 status
+
+**P6-07 is closed for the current /api/v1 contract.**
+
+Legacy `/api` remains an explicit compatibility boundary until that namespace is retired.
+
+## Phase 26 — Detailed result correction timestamps (P6-08)
+
+P6-08 was repaired.
+
+Detailed result export rows now contain both:
+
+- `submitted_at` from `createdAt`;
+- `updated_at` from `updatedAt`.
+
+This makes organizer corrections visible instead of presenting corrected contents only under the original submission timestamp.
+
+Implementation:
+
+- `912450f335de79498a872c58985b5a20f181b16b` — add `updated_at` to detailed exports;
+- `d07753d28747f7aee4f57ffdc3c08f38c26a5b36` — regression coverage.
+
+The compiled-report localized column map was also updated to provide the new `updated_at` label.
+
+### P6-08 status
+
+**P6-08 is closed.**
+
+## Phase 27 — Compiled report provenance and historical export scope (P6-05)
+
+P6-05 was addressed at the report-contract layer.
+
+### Previous behavior
+
+A historical compiled snapshot could be selected while the bulk ZIP silently combined:
+
+- ranking CSVs from that stored snapshot;
+- participant/entity data from the current database;
+- detailed ballots from the current submission store;
+- current draw-derived sides and current labels;
+- submissions from rounds outside the selected snapshot.
+
+The ZIP therefore looked like one coherent historical artifact even though several files came from different points in time.
+
+### Repair
+
+Detailed vote rows used from the compiled-report page are now restricted to the round set stored in the selected compiled payload.
+
+Bulk ZIP current-data files are explicitly named:
+
+- `current_participants.csv`;
+- `current_snapshot_round_results.csv`.
+
+The ZIP also contains `report_provenance.txt`, recording:
+
+- export generation timestamp;
+- compiled snapshot id;
+- compiled snapshot creation time;
+- compile source;
+- snapshot round numbers;
+- which files come from the stored compiled snapshot;
+- which files are generated from current live entity/submission/draw state;
+- an explicit warning that `current_*` files can reflect edits made after the compiled snapshot.
+
+Correction time is additionally visible through the P6-08 `updated_at` column.
+
+Implementation:
+
+- `5de7e1ca7e1d9d24487f2f991030b5b32e89df1b` — scope live detail rows and add explicit provenance;
+- `7db69821e6abffcdec95d0e131c7146cdeb7b2cc` — align detailed-export controls with snapshot-scoped rows;
+- `7b2182ba4b9de8ca4a0bf1ce7e63af6532ff7732` — source-level UI regression coverage.
+
+### P6-05 status and boundary
+
+**The silent provenance-mixing defect is closed.**
+
+The ZIP no longer presents live data as though it were immutable snapshot-time input, and it no longer pulls unrelated later rounds into a historical report.
+
+A stronger archival feature remains possible in the future: persist immutable raw submissions/entity labels/draw state with each compiled snapshot. That would allow exact replay of snapshot-time detailed ballots. This phase intentionally does not duplicate all source collections into every compiled snapshot.
+
+## P6-06 re-check — multi-team speaker affiliation
+
+The original P6-06 first-team-only implementation is no longer present on the audit branch.
+
+Both raw-source and submission-source compilation now collect speaker team names into a `Set<string>` over the selected compile rounds and emit all collected names through `teams: Array.from(...)`.
+
+Thus a speaker assigned to Team A in one selected round and Team B in another is represented with both affiliations rather than whichever team happened to be visited first.
+
+This behavior was already introduced by the earlier compilation-attribution repair series (including `d25d0df7181724096e206cba228f1a364da542dd`); no additional production patch was required in this continuation.
+
+### P6-06 status
+
+**P6-06 is closed on the current audit branch.**
