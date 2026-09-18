@@ -1772,6 +1772,48 @@ describe('Server integration', () => {
       'Invalid venues template in backup'
     )
     expect(await TournamentModel.countDocuments({ name: 'Invalid template backup' }).exec()).toBe(0)
+
+    const invalidScopedRoundBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid scoped round backup',
+          collectionNames: ['draws'],
+          collectionFiles: [
+            { path: 'json/collections/draws.json', collectionName: 'draws' },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid scoped round backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/draws.json',
+        value: [{ round: 0, allocation: [] }],
+      },
+    ])
+
+    const invalidScopedRoundRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidScopedRoundBundle)
+    expect(invalidScopedRoundRes.status).toBe(400)
+    expect(invalidScopedRoundRes.body.errors[0].message).toContain(
+      'Invalid draws round in backup'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: 'Invalid scoped round backup' }).exec()
+    ).toBe(0)
   })
 
 })
