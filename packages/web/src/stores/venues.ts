@@ -22,6 +22,7 @@ export const useVenuesStore = defineStore('venues', () => {
   }
 
   async function fetchVenues(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
     if (scopeChanged) venues.value = []
     beginRequest()
