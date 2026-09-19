@@ -68,9 +68,21 @@ async function saveDrawWithOptimisticLock(params: {
     round: params.round,
     allocation: params.allocation,
     ...(params.userDefinedData !== undefined ? { userDefinedData: params.userDefinedData } : {}),
-    drawOpened: params.drawOpened ?? false,
-    allocationOpened: params.allocationOpened ?? false,
-    locked: params.locked ?? false,
+    ...(params.drawOpened !== undefined
+      ? { drawOpened: params.drawOpened }
+      : params.expected
+        ? {}
+        : { drawOpened: false }),
+    ...(params.allocationOpened !== undefined
+      ? { allocationOpened: params.allocationOpened }
+      : params.expected
+        ? {}
+        : { allocationOpened: false }),
+    ...(params.locked !== undefined
+      ? { locked: params.locked }
+      : params.expected
+        ? {}
+        : { locked: false }),
   }
 
   if (params.expected) {
