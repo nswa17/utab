@@ -17,10 +17,11 @@ describe('Admin refresh gates', () => {
 
   it('guards setup saves against late completion from a previous tournament', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
-    expect(source).toContain('const currentTournamentId = String(tournament.value._id)')
-    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return false')
+    expect(source).toContain('const requestTournamentId = String(targetTournament._id)')
+    expect(source).toContain('tournamentId: requestTournamentId')
+    expect(source).toContain('if (tournamentId.value !== requestTournamentId) return false')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
     expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
-    expect(source).toContain('tournamentId: currentTournamentId')
     expect(source).toContain('if (tournamentId.value === currentTournamentId) {')
     expect(source).toContain('setupRoundBreakUpdating.value = false')
   })
