@@ -4169,17 +4169,20 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
 
 async function confirmDeleteCompiled() {
   const targetId = String(deleteTargetCompiledId.value).trim()
-  if (!targetId || !tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  if (!targetId || !currentTournamentId) return
   const deletedWasSelected = targetId === selectedCompiledId.value
   deleteCompiledError.value = ''
-  const deleted = await compiledStore.deleteCompiled(tournamentId.value, targetId)
+  const deleted = await compiledStore.deleteCompiled(currentTournamentId, targetId)
+  if (tournamentId.value !== currentTournamentId) return
   if (!deleted) {
     deleteCompiledError.value = compiledStore.error ?? t('集計結果の削除に失敗しました。')
     return
   }
   emitReportMetric('cta_click', { cta: 'confirm_delete_snapshot' })
   closeDeleteCompiledModal()
-  await refreshCompiledHistory()
+  await refreshCompiledHistory(currentTournamentId)
+  if (tournamentId.value !== currentTournamentId) return
   if (baselineCompiledOptions.value.length === 0) {
     selectedCompiledId.value = ''
     compiledStore.compiled = null
