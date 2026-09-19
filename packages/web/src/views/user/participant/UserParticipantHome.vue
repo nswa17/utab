@@ -142,16 +142,32 @@
                     <div class="row draw-main">
                       <span class="muted small">{{ venueName(row.venue) }}</span>
                     </div>
-                    <div v-if="teamAllocationVisible(round.round)" class="match-sides">
-                      <div class="side-card gov-card">
-                        <span class="side-chip gov-chip">{{ govLabel }}</span>
-                        <strong>{{ teamName(row.teams.gov) }}</strong>
-                      </div>
-                      <span class="vs-chip">{{ $t('vs') }}</span>
-                      <div class="side-card opp-card">
-                        <span class="side-chip opp-chip">{{ oppLabel }}</span>
-                        <strong>{{ teamName(row.teams.opp) }}</strong>
-                      </div>
+                    <div
+                      v-if="teamAllocationVisible(round.round)"
+                      class="match-sides"
+                      :class="{ 'match-sides--four': isFourTeamStyle }"
+                    >
+                      <template v-if="!isFourTeamStyle">
+                        <div class="side-card gov-card">
+                          <span class="side-chip gov-chip">{{ govLabel }}</span>
+                          <strong>{{ teamName(row.teams.gov) }}</strong>
+                        </div>
+                        <span class="vs-chip">{{ $t('vs') }}</span>
+                        <div class="side-card opp-card">
+                          <span class="side-chip opp-chip">{{ oppLabel }}</span>
+                          <strong>{{ teamName(row.teams.opp) }}</strong>
+                        </div>
+                      </template>
+                      <template v-else>
+                        <div
+                          v-for="entry in audienceTeamEntries(row)"
+                          :key="entry.key"
+                          class="side-card"
+                        >
+                          <span class="side-chip">{{ entry.label }}</span>
+                          <strong>{{ teamName(entry.teamId) }}</strong>
+                        </div>
+                      </template>
                     </div>
                     <div
                       v-if="adjudicatorAllocationVisible(round.round)"
@@ -208,7 +224,7 @@
                           </button>
                         </th>
                         <th
-                          v-if="teamAllocationVisible(round.round)"
+                          v-if="teamAllocationVisible(round.round) && !isFourTeamStyle"
                           class="side-column-heading side-column-heading--gov"
                         >
                           <button
@@ -225,7 +241,7 @@
                           </button>
                         </th>
                         <th
-                          v-if="teamAllocationVisible(round.round)"
+                          v-if="teamAllocationVisible(round.round) && !isFourTeamStyle"
                           class="side-column-heading side-column-heading--opp"
                         >
                           <button
@@ -241,6 +257,24 @@
                             }}</span>
                           </button>
                         </th>
+                        <template v-if="teamAllocationVisible(round.round) && isFourTeamStyle">
+                          <th
+                            v-for="column in audienceTeamColumns"
+                            :key="`team-column-${column.key}`"
+                            class="side-column-heading"
+                          >
+                            <button
+                              type="button"
+                              class="table-sort"
+                              @click="setAudienceTableSort(round.round, column.key)"
+                            >
+                              <span class="table-side-heading">{{ column.label }}</span>
+                              <span class="sort-indicator">{{
+                                audienceSortIndicator(round.round, column.key)
+                              }}</span>
+                            </button>
+                          </th>
+                        </template>
                         <th v-if="adjudicatorAllocationVisible(round.round)">
                           <button
                             type="button"
@@ -290,12 +324,17 @@
                         :data-audience-match="isAudienceRowMatched(row) ? 'true' : undefined"
                       >
                         <td>{{ venueName(row.venue) }}</td>
-                        <td v-if="teamAllocationVisible(round.round)">
+                        <td v-if="teamAllocationVisible(round.round) && !isFourTeamStyle">
                           {{ teamName(row.teams.gov) }}
                         </td>
-                        <td v-if="teamAllocationVisible(round.round)">
+                        <td v-if="teamAllocationVisible(round.round) && !isFourTeamStyle">
                           {{ teamName(row.teams.opp) }}
                         </td>
+                        <template v-if="teamAllocationVisible(round.round) && isFourTeamStyle">
+                          <td v-for="entry in audienceTeamEntries(row)" :key="`team-${entry.key}`">
+                            {{ teamName(entry.teamId) }}
+                          </td>
+                        </template>
                         <td v-if="adjudicatorAllocationVisible(round.round)">
                           {{ adjudicatorNames(row.chairs) }}
                         </td>
@@ -370,6 +409,12 @@ import {
   type ParticipantMode,
 } from '@/composables/useParticipantMode'
 import { getSideShortLabel } from '@/utils/side-labels'
+import {
+  drawTeamId,
+  drawTeamPositionColumns,
+  editableDrawTeamNum,
+  type DrawTeamPosition,
+} from '@/utils/draw-teams'
 import { normalizeTournamentTeamNum, resolveTournamentStyle } from '@/utils/tournament-style'
 import { createLatestRequestGate } from '@/utils/latest-request'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
@@ -448,8 +493,13 @@ const style = computed(() =>
     tournament.value
   )
 )
-const supportsParticipantSubmissions = computed(
-  () => normalizeTournamentTeamNum(style.value?.team_num) === 2
+const participantTeamNum = computed<2 | 4>(
+  () => editableDrawTeamNum(style.value?.team_num) ?? 2
+)
+const isFourTeamStyle = computed(() => participantTeamNum.value === 4)
+const supportsParticipantSubmissions = computed(() => participantTeamNum.value === 2)
+const audienceTeamColumns = computed(() =>
+  drawTeamPositionColumns(style.value, participantTeamNum.value)
 )
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
@@ -531,7 +581,7 @@ const errorMessage = computed(
 )
 
 const roundExpanded = ref<Record<number, boolean>>({})
-type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair' | 'panel' | 'trainee'
+type AudienceSortKey = 'venue' | DrawTeamPosition | 'chair' | 'panel' | 'trainee'
 type AudienceSortDirection = 'asc' | 'desc'
 type AudienceSortState = { key: AudienceSortKey; direction: AudienceSortDirection }
 const audienceTableSortByRound = ref<Record<number, AudienceSortState>>({})
@@ -940,6 +990,13 @@ const pendingTaskPrimaryPath = computed(() => {
   )
 })
 
+function audienceTeamEntries(row: DrawAllocationRow) {
+  return audienceTeamColumns.value.map((column) => ({
+    ...column,
+    teamId: drawTeamId(row.teams, column.key, participantTeamNum.value),
+  }))
+}
+
 function audienceTeamMatchesQuery(teamId?: string) {
   const query = normalizedAudienceTeamQuery.value
   if (!query || !teamId) return false
@@ -961,8 +1018,7 @@ function isAudienceRowMatched(row: DrawAllocationRow) {
   if (!hasAudienceTeamQuery.value) return false
   const judgeIds = [...(row.chairs ?? []), ...(row.panels ?? []), ...(row.trainees ?? [])]
   return (
-    audienceTeamMatchesQuery(row?.teams?.gov) ||
-    audienceTeamMatchesQuery(row?.teams?.opp) ||
+    audienceTeamEntries(row).some((entry) => audienceTeamMatchesQuery(entry.teamId)) ||
     judgeIds.some((id) => audienceAdjudicatorMatchesQuery(id))
   )
 }
@@ -979,11 +1035,10 @@ function roundHasAudienceMatch(roundNumber: number) {
 }
 
 function preferredTeamIdForRow(row: DrawAllocationRow) {
-  const govMatched = audienceTeamMatchesQuery(row?.teams?.gov)
-  const oppMatched = audienceTeamMatchesQuery(row?.teams?.opp)
-  if (govMatched && !oppMatched) return row.teams?.gov ?? ''
-  if (oppMatched && !govMatched) return row.teams?.opp ?? ''
-  return ''
+  const matches = audienceTeamEntries(row).filter((entry) =>
+    audienceTeamMatchesQuery(entry.teamId)
+  )
+  return matches.length === 1 ? matches[0].teamId : ''
 }
 
 function rowAdjudicatorIds(row: DrawAllocationRow) {
@@ -1174,11 +1229,10 @@ function sortedAllocation(roundNumber: number) {
 
 function audienceSortValue(row: DrawAllocationRow, key: AudienceSortKey) {
   if (key === 'venue') return venueName(row.venue)
-  if (key === 'gov') return teamName(row.teams?.gov)
-  if (key === 'opp') return teamName(row.teams?.opp)
   if (key === 'panel') return adjudicatorNames(row.panels ?? [])
   if (key === 'trainee') return adjudicatorNames(row.trainees ?? [])
-  return adjudicatorNames(row.chairs ?? [])
+  if (key === 'chair') return adjudicatorNames(row.chairs ?? [])
+  return teamName(drawTeamId(row.teams, key, participantTeamNum.value))
 }
 
 function audienceSortState(roundNumber: number): AudienceSortState {
@@ -1801,6 +1855,10 @@ select {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
+}
+
+.match-sides--four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .side-card {
