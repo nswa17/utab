@@ -13,7 +13,9 @@ import { TournamentMemberModel } from '../models/tournament-member.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import {
   acquireRoundWriteLease,
+  acquireRoundWriteLeases,
   releaseRoundWriteLease,
+  releaseRoundWriteLeases,
   type RoundWriteLease,
 } from '../services/round-write-guard.service.js'
 import {
@@ -1756,7 +1758,7 @@ export const createFeedbackSubmission: RequestHandler = async (req, res, next) =
 
 export const updateSubmission: RequestHandler = async (req, res, next) => {
   let submissionType: 'ballot' | 'feedback' | null = null
-  let roundWriteLease: RoundWriteLease | null = null
+  let roundWriteLeases: RoundWriteLease[] = []
   let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
@@ -1779,8 +1781,16 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
     }
     submissionType = existing.type === 'feedback' ? 'feedback' : 'ballot'
 
-    const nextRound = round ?? Number(existing.round)
-    if (!Number.isFinite(nextRound) || nextRound < 1) {
+    const currentRound = Number((existing as any).round)
+    if (!Number.isInteger(currentRound) || currentRound < 1) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission update' }],
+      })
+      return
+    }
+    const nextRound = round ?? currentRound
+    if (!Number.isInteger(nextRound) || nextRound < 1) {
       badRequest(res, 'round must be an integer >= 1')
       return
     }
@@ -1817,19 +1827,18 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       nextPayload = normalizedFeedback.value
     }
 
-    roundWriteLease = await acquireRoundWriteLease(
-      connection,
-      tournamentId,
-      nextRound,
-      normalizedRoundId || undefined
-    )
-    if (!roundWriteLease) {
+    const acquired = await acquireRoundWriteLeases(connection, tournamentId, [
+      { round: currentRound },
+      { round: nextRound, ...(normalizedRoundId ? { expectedRoundId: normalizedRoundId } : {}) },
+    ])
+    if (!acquired) {
       res.status(409).json({
         data: null,
-        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission' }],
+        errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry submission update' }],
       })
       return
     }
+    roundWriteLeases = acquired
     leaseConnection = connection
 
     const dedupeKey =
@@ -1859,7 +1868,7 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       {
         _id: id,
         tournamentId,
-        round: Number(existing.round),
+        round: currentRound,
         __v: expectedVersion,
       },
       Object.keys(unsetPayload).length > 0
@@ -1885,10 +1894,8 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       return
     }
 
-    if (roundWriteLease && leaseConnection) {
-      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
-      roundWriteLease = null
-    }
+    await releaseRoundWriteLeases(connection, roundWriteLeases)
+    roundWriteLeases = []
     res.json({ data: updated, errors: [] })
   } catch (err) {
     if (submissionType && isDuplicateSubmissionKeyError(err)) {
@@ -1900,9 +1907,9 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
     }
     next(err)
   } finally {
-    if (roundWriteLease && leaseConnection) {
+    if (roundWriteLeases.length > 0 && leaseConnection) {
       try {
-        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+        await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
       } catch {
         // Stale write counters self-heal before structural round mutation.
       }
