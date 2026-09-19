@@ -246,4 +246,63 @@ describe('entity stores race handling', () => {
     expect(store.error).toBeNull()
   })
 
+
+  it('claims round store scope on a mutation-only first use', async () => {
+    const store = useRoundsStore()
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'round-created',
+          tournamentId: 'tournament-a',
+          round: 1,
+          name: 'Created Round',
+        },
+      },
+    })
+
+    const created = await store.createRound({
+      tournamentId: 'tournament-a',
+      round: 1,
+      name: 'Created Round',
+    })
+
+    expect(created?._id).toBe('round-created')
+    expect(store.rounds).toEqual([
+      {
+        _id: 'round-created',
+        tournamentId: 'tournament-a',
+        round: 1,
+        name: 'Created Round',
+      },
+    ] as any)
+  })
+
+  it('does not clear the active tournament round error when an inactive mutation starts', async () => {
+    const store = useRoundsStore()
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'Tournament B fetch failed' }] } },
+    })
+    await store.fetchRounds('tournament-b')
+    expect(store.error).toBe('Tournament B fetch failed')
+
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'round-a-late',
+          tournamentId: 'tournament-a',
+          round: 1,
+          name: 'Late A Round',
+        },
+      },
+    })
+    await store.createRound({
+      tournamentId: 'tournament-a',
+      round: 1,
+      name: 'Late A Round',
+    })
+
+    expect(store.rounds).toEqual([])
+    expect(store.error).toBe('Tournament B fetch failed')
+  })
+
 })
