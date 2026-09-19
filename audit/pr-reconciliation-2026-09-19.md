@@ -4,6 +4,7 @@
 
 Phase 0: COMPLETE
 Phase 1: COMPLETE
+Phase 2: COMPLETE
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -72,6 +73,57 @@ Every later phase must:
 4. update this file with the result and exact head/commit SHA;
 5. commit/push before moving to another unit.
 
+## Phase 2 dependency graph
+
+Classification semantics:
+- **independent**: no commit-ancestry or semantic prerequisite on another open audit PR; may still touch overlapping files and require merge-conflict reconciliation later.
+- **depends-on**: must be applied after the named PR (or rebased/retargeted onto its merged result).
+- **superseded-by**: the PR's intended fixes/tests are completely replaced by another open PR, so it need not merge independently.
+
+Ancestry result:
+- Every pair among #34–#40 is `diverged` with merge base exactly current `main` at `6438f0b3b9586a96fe40e2ea887950bee34c3571`.
+- Therefore none of #34–#40 contains another audit PR's commit history.
+- #41 is the only explicit stack: its PR base is `audit/boundary-type-phase9` (#40).
+
+Final classification:
+
+| PR | Classification | Dependency | Reason |
+|---|---|---|---|
+| #34 | independent | none | core allocation/vote-rate fixes and tests are unique to this PR |
+| #35 | independent | none | compiled metamorphic/revision/missing-data fixes are unique; shared core results file with #34 does not create a prerequisite |
+| #36 | independent | none | submission/draw CAS and round-move versioning are self-contained against main |
+| #37 | independent | none | tournament-membership boundary/lease changes are self-contained against main |
+| #38 | independent | none | web scope/race handling plus metadata-patch semantics are self-contained against main |
+| #39 | independent | none | import rollback, export ordering, and ballot wizard fixes are not fully contained in another PR |
+| #40 | independent | none | boundary/type/entity-namespace work is self-contained against main |
+| #41 | depends-on | #40 | PR base is #40 and Phase-10 code/test set builds on the Phase-9 entity namespace/round implementation |
+ 
+No open PR is classified `superseded-by`.
+
+### Overlap hotspots for later merge reconciliation
+
+These overlaps do **not** change the dependency classification, but should be checked after each merge:
+
+- #34 ↔ #35: `packages/core/src/results/results.ts`.
+- #36 ↔ #40: `packages/server/src/controllers/rounds.ts` and integration part 4.
+- #36 ↔ #41: `draws.ts`, `rounds.ts`, and integration part 4.
+- #38 ↔ #39: ballot entry component and its test.
+- #38 ↔ #40: tournament route plus integration part 4.
+- #38 ↔ #41: admin round-allocation component/test plus integration part 4.
+- #39 ↔ #40: tournament import and copy-tournament service.
+- #40 ↔ #41: extensive intentional overlap (entity controllers, rounds, entity namespace guard, model/tests) because #41 is stacked on #40.
+- Several otherwise independent server PRs also append to `integration.part4.test.ts`; that is a merge hotspot, not a semantic dependency.
+
+### #41 stack state
+
+The stack is logically `#40 -> #41`, but the branch ancestry is stale:
+- current #40 head: `18065df8f06d04bec9e610dfdf2feb6066b20ff3`
+- current #41 head: `e485f374ff2ce02066a3ee71f5581bdf92830a7d`
+- merge base: `f85b7cb45d1d65ef089d9842abb7bac052551ebf`
+- #41 is 57 commits ahead and 17 commits behind current #40.
+
+Do not treat that drift as a second dependency. It is a synchronization task to perform when #41 is processed after #40.
+
 ## Next phase
 
-Phase 2: determine the actual PR dependency graph from the current diffs/ancestry and classify every PR as independent, depends-on, or superseded-by. Resolve classification only; do not modify application code.
+Phase 3: audit the independent PRs one at a time. For each PR: refresh head/base, inspect the diff and changed-code neighborhoods, run/verify the relevant regression coverage and CI, fix only issues belonging to that PR, then checkpoint before moving to the next PR.
