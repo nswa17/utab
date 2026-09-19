@@ -92,6 +92,10 @@ export const createResult: RequestHandler = async (req, res, next) => {
       payload,
       createdBy: req.session.userId,
     })
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
     next(err)
@@ -179,6 +183,10 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       return
     }
 
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
     res.json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
@@ -194,6 +202,8 @@ export const updateResult: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteResult: RequestHandler = async (req, res, next) => {
+  let roundWriteLease: RoundWriteLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -202,13 +212,68 @@ export const deleteResult: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
-    const deleted = await ResultModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-    if (!deleted) {
+    const existing = await ResultModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
       notFound(res, 'Result not found')
       return
+    }
+
+    const existingRound = Number((existing as any).round)
+    const roundDoc = await getRoundModel(connection)
+      .findOne({ tournamentId, round: existingRound })
+      .select({ _id: 1 })
+      .lean()
+      .exec()
+    if (roundDoc) {
+      roundWriteLease = await acquireRoundWriteLease(
+        connection,
+        tournamentId,
+        existingRound,
+        String((roundDoc as any)._id)
+      )
+      if (!roundWriteLease) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry result deletion' }],
+        })
+        return
+      }
+      leaseConnection = connection
+    }
+
+    const rawVersion = (existing as any).__v
+    const deleted = await ResultModel.findOneAndDelete({
+      _id: id,
+      tournamentId,
+      round: existingRound,
+      ...(Number.isInteger(rawVersion)
+        ? { __v: Number(rawVersion) }
+        : { __v: { $exists: false } }),
+    })
+      .lean()
+      .exec()
+    if (!deleted) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Result changed concurrently; retry deletion' }],
+      })
+      return
+    }
+
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
     }
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (roundWriteLease && leaseConnection) {
+      try {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      } catch {
+        // Stale write counters self-heal before structural round mutation.
+      }
+    }
   }
 }
