@@ -828,7 +828,10 @@ async function moveRoundReferences(
         )
         .exec(),
       getSubmissionModel(connection)
-        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
+        .updateMany(
+          { tournamentId, round: move.from },
+          { $set: { round: move.to }, $inc: { __v: 1 } }
+        )
         .exec(),
       getResultModel(connection)
         .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
