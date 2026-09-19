@@ -28,10 +28,10 @@ import {
 
 function buildRawFilter(
   tournamentId: string,
-  params: { round?: string; id?: string; fromId?: string }
+  params: { round?: number; id?: string; fromId?: string }
 ): Record<string, unknown> {
   const filter: Record<string, unknown> = { tournamentId }
-  if (params.round !== undefined) filter.r = Number(params.round)
+  if (params.round !== undefined) filter.r = params.round
   if (params.id !== undefined) filter.id = params.id
   if (params.fromId !== undefined) filter.from_id = params.fromId
   return filter
@@ -245,7 +245,7 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
     try {
       const { tournamentId, round, id, fromId } = req.query as {
         tournamentId?: string
-        round?: string
+        round?: number
         id?: string
         fromId?: string
       }
@@ -320,7 +320,7 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, round, id, fromId } = req.query as {
       tournamentId?: string
-      round?: string
+      round?: number
       id?: string
       fromId?: string
     }
@@ -352,7 +352,7 @@ export const listRawTeamResults: RequestHandler = async (req, res, next) => {
     }
 
     const rounds = resolveRounds(
-      round !== undefined ? Number(round) : undefined,
+      round,
       rawTeamResults,
       rawSpeakerResults
     )
@@ -457,7 +457,7 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, round, id, fromId } = req.query as {
       tournamentId?: string
-      round?: string
+      round?: number
       id?: string
       fromId?: string
     }
@@ -486,7 +486,7 @@ export const listRawSpeakerResults: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const rounds = resolveRounds(round !== undefined ? Number(round) : undefined, rawSpeakerResults)
+    const rounds = resolveRounds(round, rawSpeakerResults)
     if (rounds.length === 0) {
       res.json({ data: [], errors: [] })
       return
@@ -556,7 +556,7 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
   try {
     const { tournamentId, round, id, fromId } = req.query as {
       tournamentId?: string
-      round?: string
+      round?: number
       id?: string
       fromId?: string
     }
@@ -580,7 +580,7 @@ export const listRawAdjudicatorResults: RequestHandler = async (req, res, next) 
       getAdjudicatorModel(connection).find({ tournamentId }).lean().exec(),
       getTeamModel(connection).find({ tournamentId }).lean().exec(),
     ])
-    const rounds = resolveRounds(round !== undefined ? Number(round) : undefined, rawAdjResults)
+    const rounds = resolveRounds(round, rawAdjResults)
     if (rounds.length === 0) {
       res.json({ data: [], errors: [] })
       return
