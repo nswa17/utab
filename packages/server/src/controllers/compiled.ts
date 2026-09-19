@@ -185,6 +185,7 @@ async function buildCompiledPreviewPayload(params: {
   source?: 'submissions' | 'raw'
   requestedRounds?: number[]
   compileOptions: CompileOptions
+  validationLabels?: CompileIncludeLabel[]
 }): Promise<{
   payload: CompiledPayload
   connection: Connection
@@ -195,7 +196,8 @@ async function buildCompiledPreviewPayload(params: {
     params.tournamentId,
     params.source,
     params.requestedRounds,
-    params.compileOptions
+    params.compileOptions,
+    params.validationLabels
   )
   payload.compile_source =
     payload.compile_source === 'raw' || params.source === 'raw' ? 'raw' : 'submissions'
@@ -1450,7 +1452,8 @@ async function buildCompiledPayloadFromRaw(
 async function buildCompiledPayloadFromSubmissions(
   tournamentId: string,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -1588,17 +1591,31 @@ async function buildCompiledPayloadFromSubmissions(
     missingDataIssues.push(issue)
   }
 
-  const ballotDerivedLabels = new Set(['teams', 'speakers', 'poi', 'best'])
-  const needsBallotSubmissions = compileOptions.include_labels.some((label) =>
+  const ballotDerivedLabels = new Set<CompileIncludeLabel>(['teams', 'speakers', 'poi', 'best'])
+  const validationLabelSet = new Set<CompileIncludeLabel>(
+    validationLabels ?? compileOptions.include_labels
+  )
+  const needsBallotResults = compileOptions.include_labels.some((label) =>
     ballotDerivedLabels.has(label)
   )
-  const needsFeedbackSubmissions = compileOptions.include_labels.includes('adjudicators')
-  const ballotSubmissions = needsBallotSubmissions
-    ? filteredSubmissions.filter((submission) => submission.type === 'ballot')
-    : []
-  const feedbackSubmissions = needsFeedbackSubmissions
-    ? filteredSubmissions.filter((submission) => submission.type === 'feedback')
-    : []
+  const needsFeedbackResults = compileOptions.include_labels.includes('adjudicators')
+  const validatesBallotData = Array.from(validationLabelSet).some((label) =>
+    ballotDerivedLabels.has(label)
+  )
+  const validatesTeamBallotData = validationLabelSet.has('teams')
+  const validatesSpeakerBallotData =
+    validationLabelSet.has('speakers') ||
+    validationLabelSet.has('poi') ||
+    validationLabelSet.has('best')
+  const validatesFeedbackData = validationLabelSet.has('adjudicators')
+  const ballotSubmissions =
+    needsBallotResults || validatesBallotData
+      ? filteredSubmissions.filter((submission) => submission.type === 'ballot')
+      : []
+  const feedbackSubmissions =
+    needsFeedbackResults || validatesFeedbackData
+      ? filteredSubmissions.filter((submission) => submission.type === 'feedback')
+      : []
 
   const ballotGroups = new Map<string, any[]>()
   ballotSubmissions.forEach((submission) => {
@@ -1638,7 +1655,7 @@ async function buildCompiledPayloadFromSubmissions(
     roundDocs.map((round: any) => [Number(round?.round), round])
   )
 
-  if (needsBallotSubmissions) {
+  if (validatesBallotData) {
     const submittedActorMatchKeys = new Set(
       normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
     )
@@ -1688,23 +1705,27 @@ async function buildCompiledPayloadFromSubmissions(
     const payload = (submission.payload ?? {}) as BallotPayload
     const submissionId = submission._id?.toString()
     if (!Number.isFinite(round)) {
-      registerMissingIssue({
-        code: 'invalid_round',
-        message: 'round is not a finite number in ballot submission',
-        submissionId,
-      })
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_round',
+          message: 'round is not a finite number in ballot submission',
+          submissionId,
+        })
+      }
       return
     }
 
     const teamAId = String(payload.teamAId ?? '').trim()
     const teamBId = String(payload.teamBId ?? '').trim()
     if (!teamAId || !teamBId || teamAId === teamBId) {
-      registerMissingIssue({
-        code: 'invalid_matchup',
-        message: 'teamAId/teamBId is missing or invalid in ballot submission',
-        round,
-        submissionId,
-      })
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_matchup',
+          message: 'teamAId/teamBId is missing or invalid in ballot submission',
+          round,
+          submissionId,
+        })
+      }
       return
     }
 
@@ -1714,13 +1735,17 @@ async function buildCompiledPayloadFromSubmissions(
       scoresA.some((value) => !Number.isFinite(value)) ||
       scoresB.some((value) => !Number.isFinite(value))
     if (hasInvalidScore) {
-      registerMissingIssue({
-        code: 'invalid_score',
-        message: 'score contains non-finite values in ballot submission',
-        round,
-        submissionId,
-      })
-      if (compileOptions.missing_data_policy !== 'warn') return
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_score',
+          message: 'score contains non-finite values in ballot submission',
+          round,
+          submissionId,
+        })
+        if (compileOptions.missing_data_policy !== 'warn') return
+      } else {
+        return
+      }
     }
 
     const totalA = sumScores(scoresA)
@@ -1731,7 +1756,7 @@ async function buildCompiledPayloadFromSubmissions(
     const ballotVerdict = hasNormalizedWins
       ? ({ winnerId: undefined, draw: true, inferred: false } as BallotResolution)
       : resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
-    if (!hasNormalizedWins && ballotVerdict.inferred) {
+    if (!hasNormalizedWins && ballotVerdict.inferred && validatesTeamBallotData) {
       registerMissingIssue({
         code: 'missing_verdict',
         message: 'winner/draw verdict is missing in ballot submission',
@@ -1835,7 +1860,9 @@ async function buildCompiledPayloadFromSubmissions(
       round,
       submissionId,
       missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamA',
-      registerMissingIssue,
+      registerMissingIssue: (issue) => {
+        if (validatesSpeakerBallotData) registerMissingIssue(issue)
+      },
       speakerIdsWithScores,
     })
     appendSubmissionSpeakerResults({
@@ -1849,12 +1876,14 @@ async function buildCompiledPayloadFromSubmissions(
       round,
       submissionId,
       missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamB',
-      registerMissingIssue,
+      registerMissingIssue: (issue) => {
+        if (validatesSpeakerBallotData) registerMissingIssue(issue)
+      },
       speakerIdsWithScores,
     })
   })
 
-  if (needsFeedbackSubmissions) {
+  if (validatesFeedbackData) {
     const expectedFeedbackKeys = new Set<string>()
     filteredDraws.forEach((draw: any) => {
       const round = Number(draw?.round)
@@ -1945,22 +1974,26 @@ async function buildCompiledPayloadFromSubmissions(
     const payload = (submission.payload ?? {}) as FeedbackPayload
     const submissionId = submission._id?.toString()
     if (!Number.isFinite(round)) {
-      registerMissingIssue({
-        code: 'invalid_round',
-        message: 'round is not a finite number in feedback submission',
-        submissionId,
-      })
+      if (validatesFeedbackData) {
+        registerMissingIssue({
+          code: 'invalid_round',
+          message: 'round is not a finite number in feedback submission',
+          submissionId,
+        })
+      }
       return
     }
     const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
     const score = typeof payload.score === 'number' ? payload.score : Number(payload.score)
     if (!adjudicatorId || !Number.isFinite(score)) {
-      registerMissingIssue({
-        code: 'invalid_feedback',
-        message: 'adjudicatorId or score is missing in feedback submission',
-        round,
-        submissionId,
-      })
+      if (validatesFeedbackData) {
+        registerMissingIssue({
+          code: 'invalid_feedback',
+          message: 'adjudicatorId or score is missing in feedback submission',
+          round,
+          submissionId,
+        })
+      }
       return
     }
     const judgedTeams = Array.from(judgedTeamsByRoundAdj.get(`${round}:${adjudicatorId}`) ?? [])
@@ -2211,11 +2244,17 @@ export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   return source === 'raw'
     ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
-    : buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
+    : buildCompiledPayloadFromSubmissions(
+        tournamentId,
+        requestedRounds,
+        compileOptions,
+        validationLabels
+      )
 }
 
 function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
@@ -2315,19 +2354,19 @@ const makeCreateCompiled =
 
       const requestedOptions = req.body?.options as CompileOptionsInput | undefined
       const compileOptions = normalizeCompileOptions(requestedOptions)
-      if (!requestedOptions?.include_labels) {
-        compileOptions.include_labels =
-          key === 'compiled_team_results'
-            ? ['teams']
-            : key === 'compiled_speaker_results'
-              ? ['speakers']
-              : ['adjudicators']
-      }
+      const validationLabels =
+        requestedOptions?.include_labels ??
+        (key === 'compiled_team_results'
+          ? ['teams']
+          : key === 'compiled_speaker_results'
+            ? ['speakers']
+            : ['adjudicators'])
       const buildResult = await buildCompiledPreviewPayload({
         tournamentId,
         source,
         requestedRounds,
         compileOptions,
+        validationLabels,
       })
       const providedPreview = {
         preview_signature: normalizeRequestToken(req.body?.preview_signature),
