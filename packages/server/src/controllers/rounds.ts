@@ -1774,6 +1774,8 @@ export const getRound: RequestHandler = async (req, res, next) => {
 export const createRound: RequestHandler = async (req, res, next) => {
   let namespaceLease: RoundNamespaceLease | null = null
   let namespaceConnection: Connection | null = null
+  let entityLeases: EntityNamespaceLease[] = []
+  let entityConnection: Connection | null = null
   try {
     if (Array.isArray(req.body)) {
       const payload = req.body as Array<{
@@ -1807,6 +1809,13 @@ export const createRound: RequestHandler = async (req, res, next) => {
         return
       }
       namespaceConnection = connection
+      const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!acquiredEntityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      entityLeases = acquiredEntityLeases
+      entityConnection = connection
       const proposedRounds = payload.map((item) => Number(item.round))
       if (new Set(proposedRounds).size !== proposedRounds.length) {
         res
@@ -1960,6 +1969,13 @@ export const createRound: RequestHandler = async (req, res, next) => {
       return
     }
     namespaceConnection = connection
+    const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!acquiredEntityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    entityLeases = acquiredEntityLeases
+    entityConnection = connection
     const roundId = new Types.ObjectId()
     const created = await RoundModel.create({
       _id: roundId,
@@ -2023,6 +2039,13 @@ export const createRound: RequestHandler = async (req, res, next) => {
     }
     next(err)
   } finally {
+    if (entityLeases.length > 0 && entityConnection) {
+      try {
+        await releaseRoundEntityNamespaceLeases(entityConnection, entityLeases)
+      } catch {
+        // Entity namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
     if (namespaceLease && namespaceConnection) {
       try {
         await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
