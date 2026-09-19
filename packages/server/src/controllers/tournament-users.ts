@@ -5,6 +5,10 @@ import { getAdjudicatorModel } from '../models/adjudicator.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getTeamModel } from '../models/team.js'
 import { hashPassword } from '../services/hash.service.js'
+import {
+  acquireTournamentMembershipLease,
+  releaseTournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function sanitizeTournamentUserResponse(
@@ -57,6 +61,27 @@ async function validateParticipantEntityBinding(
   return null
 }
 
+async function withTournamentMembershipLease<T>(
+  tournamentId: string,
+  username: string,
+  action: () => Promise<T>
+): Promise<{ acquired: true; value: T } | { acquired: false }> {
+  const lease = await acquireTournamentMembershipLease(tournamentId, username)
+  if (!lease) return { acquired: false }
+  try {
+    return { acquired: true, value: await action() }
+  } finally {
+    await releaseTournamentMembershipLease(lease)
+  }
+}
+
+function sendMembershipMutationConflict(res: Parameters<RequestHandler>[1]) {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Tournament membership changed concurrently; retry' }],
+  })
+}
+
 async function throwAfterRollback(
   originalError: unknown,
   rollbackTasks: Promise<unknown>[],
@@ -99,119 +124,142 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const existing = await UserModel.findOne({ username }).exec()
-    if (!existing) {
-      const passwordHash = await hashPassword(password)
-      const created = await UserModel.create({
-        username,
-        passwordHash,
-        role,
-        tournaments: [tournamentId],
-      })
-      try {
-        await TournamentMemberModel.create({
-          tournamentId,
-          userId: String(created._id),
-          role,
-          ...entityBinding,
-        })
-      } catch (membershipError) {
-        await throwAfterRollback(
-          membershipError,
-          [
-            UserModel.deleteOne({ _id: created._id }).exec(),
-            TournamentMemberModel.deleteOne({
+    const membershipResult = await withTournamentMembershipLease(
+      tournamentId,
+      username,
+      async () => {
+        const existing = await UserModel.findOne({ username }).exec()
+        if (!existing) {
+          const passwordHash = await hashPassword(password)
+          const created = await UserModel.create({
+            username,
+            passwordHash,
+            role,
+            tournaments: [tournamentId],
+          })
+          try {
+            await TournamentMemberModel.create({
               tournamentId,
               userId: String(created._id),
-            }).exec(),
-          ],
-          `Failed to add and roll back tournament user ${String(created._id)}`
-        )
-      }
-      res.status(201).json({
-        data: sanitizeTournamentUserResponse(created.toJSON(), role, entityBinding, [tournamentId]),
-        errors: [],
-      })
-      return
-    }
+              role,
+              ...entityBinding,
+            })
+          } catch (membershipError) {
+            await throwAfterRollback(
+              membershipError,
+              [
+                UserModel.deleteOne({ _id: created._id }).exec(),
+                TournamentMemberModel.deleteOne({
+                  tournamentId,
+                  userId: String(created._id),
+                }).exec(),
+              ],
+              `Failed to add and roll back tournament user ${String(created._id)}`
+            )
+          }
+          return {
+            status: 201,
+            data: sanitizeTournamentUserResponse(
+              created.toJSON(),
+              role,
+              entityBinding,
+              [tournamentId]
+            ),
+          }
+        }
 
-    const originalTournaments = (existing.tournaments || []).map((t) => String(t))
-    const previousMembership = await TournamentMemberModel.findOne({
-      tournamentId,
-      userId: String(existing._id),
-    })
-      .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
-      .lean()
-      .exec()
-    const alreadyHadTournament = originalTournaments.includes(tournamentId)
-    let saved = existing
-    try {
-      saved =
-        (await UserModel.findOneAndUpdate(
-          { _id: existing._id },
-          { $addToSet: { tournaments: tournamentId } },
-          { new: true }
-        ).exec()) ?? existing
-      await TournamentMemberModel.updateOne(
-        { tournamentId, userId: String(existing._id) },
-        {
-          $set: {
-            role,
-            ...(entityBinding.entityType && entityBinding.entityId
-              ? {
-                  entityType: entityBinding.entityType,
-                  entityId: entityBinding.entityId,
-                }
-              : {}),
-          },
-          ...(!entityBinding.entityType
-            ? { $unset: { entityType: '', entityId: '' } }
-            : {}),
-        },
-        { upsert: true }
-      ).exec()
-    } catch (membershipError) {
-      const membershipRollback = previousMembership
-        ? TournamentMemberModel.updateOne(
+        const originalTournaments = (existing.tournaments || []).map((t) => String(t))
+        const previousMembership = await TournamentMemberModel.findOne({
+          tournamentId,
+          userId: String(existing._id),
+        })
+          .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
+          .lean()
+          .exec()
+        const alreadyHadTournament = originalTournaments.includes(tournamentId)
+        let saved = existing
+        try {
+          saved =
+            (await UserModel.findOneAndUpdate(
+              { _id: existing._id },
+              { $addToSet: { tournaments: tournamentId } },
+              { new: true }
+            ).exec()) ?? existing
+          await TournamentMemberModel.updateOne(
             { tournamentId, userId: String(existing._id) },
             {
               $set: {
-                role: previousMembership.role,
-                ...(previousMembership.entityType && previousMembership.entityId
+                role,
+                ...(entityBinding.entityType && entityBinding.entityId
                   ? {
-                      entityType: previousMembership.entityType,
-                      entityId: previousMembership.entityId,
+                      entityType: entityBinding.entityType,
+                      entityId: entityBinding.entityId,
                     }
                   : {}),
               },
-              ...(!previousMembership.entityType
+              ...(!entityBinding.entityType
                 ? { $unset: { entityType: '', entityId: '' } }
                 : {}),
             },
             { upsert: true }
           ).exec()
-        : TournamentMemberModel.deleteOne({
-            tournamentId,
-            userId: String(existing._id),
-          }).exec()
-      await throwAfterRollback(
-        membershipError,
-        [
-          ...(alreadyHadTournament
-            ? []
-            : [
-                UserModel.updateOne(
-                  { _id: existing._id },
-                  { $pull: { tournaments: tournamentId } }
-                ).exec(),
-              ]),
-          membershipRollback,
-        ],
-        `Failed to add and roll back tournament user ${String(existing._id)}`
-      )
+        } catch (membershipError) {
+          const membershipRollback = previousMembership
+            ? TournamentMemberModel.updateOne(
+                { tournamentId, userId: String(existing._id) },
+                {
+                  $set: {
+                    role: previousMembership.role,
+                    ...(previousMembership.entityType && previousMembership.entityId
+                      ? {
+                          entityType: previousMembership.entityType,
+                          entityId: previousMembership.entityId,
+                        }
+                      : {}),
+                  },
+                  ...(!previousMembership.entityType
+                    ? { $unset: { entityType: '', entityId: '' } }
+                    : {}),
+                },
+                { upsert: true }
+              ).exec()
+            : TournamentMemberModel.deleteOne({
+                tournamentId,
+                userId: String(existing._id),
+              }).exec()
+          await throwAfterRollback(
+            membershipError,
+            [
+              ...(alreadyHadTournament
+                ? []
+                : [
+                    UserModel.updateOne(
+                      { _id: existing._id },
+                      { $pull: { tournaments: tournamentId } }
+                    ).exec(),
+                  ]),
+              membershipRollback,
+            ],
+            `Failed to add and roll back tournament user ${String(existing._id)}`
+          )
+        }
+        return {
+          status: 200,
+          data: sanitizeTournamentUserResponse(
+            saved.toJSON(),
+            role,
+            entityBinding,
+            [tournamentId]
+          ),
+        }
+      }
+    )
+    if (!membershipResult.acquired) {
+      sendMembershipMutationConflict(res)
+      return
     }
-    res.status(200).json({
-      data: sanitizeTournamentUserResponse(saved.toJSON(), role, entityBinding, [tournamentId]),
+    res.status(membershipResult.value.status).json({
+      data: membershipResult.value.data,
       errors: [],
     })
   } catch (err) {
@@ -245,61 +293,73 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const originalTournaments = (user.tournaments || []).map((id) => String(id))
-    const membership = await TournamentMemberModel.findOne({
+    const membershipResult = await withTournamentMembershipLease(
       tournamentId,
-      userId: String(user._id),
-    })
-      .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
-      .lean()
-      .exec()
-    const originallyHadTournament = originalTournaments.includes(tournamentId)
-    let saved = user
-    try {
-      saved =
-        (await UserModel.findOneAndUpdate(
-          { _id: user._id },
-          { $pull: { tournaments: tournamentId } },
-          { new: true }
-        ).exec()) ?? user
-      await TournamentMemberModel.deleteOne({
-        tournamentId,
-        userId: String(user._id),
-      }).exec()
-    } catch (membershipError) {
-      const rollbackTasks: Promise<unknown>[] = originallyHadTournament
-        ? [
-            UserModel.updateOne(
+      String(user.username ?? ''),
+      async () => {
+        const originalTournaments = (user.tournaments || []).map((id) => String(id))
+        const membership = await TournamentMemberModel.findOne({
+          tournamentId,
+          userId: String(user._id),
+        })
+          .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
+          .lean()
+          .exec()
+        const originallyHadTournament = originalTournaments.includes(tournamentId)
+        let saved = user
+        try {
+          saved =
+            (await UserModel.findOneAndUpdate(
               { _id: user._id },
-              { $addToSet: { tournaments: tournamentId } }
-            ).exec(),
-          ]
-        : []
-      if (membership?.role) {
-        rollbackTasks.push(
-          TournamentMemberModel.updateOne(
-            { tournamentId, userId: String(user._id) },
-            {
-              $set: {
-                role: membership.role,
-                ...(membership.entityType && membership.entityId
-                  ? { entityType: membership.entityType, entityId: membership.entityId }
-                  : {}),
-              },
-              ...(!membership.entityType
-                ? { $unset: { entityType: '', entityId: '' } }
-                : {}),
-            },
-            { upsert: true }
-          ).exec()
-        )
+              { $pull: { tournaments: tournamentId } },
+              { new: true }
+            ).exec()) ?? user
+          await TournamentMemberModel.deleteOne({
+            tournamentId,
+            userId: String(user._id),
+          }).exec()
+        } catch (membershipError) {
+          const rollbackTasks: Promise<unknown>[] = originallyHadTournament
+            ? [
+                UserModel.updateOne(
+                  { _id: user._id },
+                  { $addToSet: { tournaments: tournamentId } }
+                ).exec(),
+              ]
+            : []
+          if (membership?.role) {
+            rollbackTasks.push(
+              TournamentMemberModel.updateOne(
+                { tournamentId, userId: String(user._id) },
+                {
+                  $set: {
+                    role: membership.role,
+                    ...(membership.entityType && membership.entityId
+                      ? { entityType: membership.entityType, entityId: membership.entityId }
+                      : {}),
+                  },
+                  ...(!membership.entityType
+                    ? { $unset: { entityType: '', entityId: '' } }
+                    : {}),
+                },
+                { upsert: true }
+              ).exec()
+            )
+          }
+          await throwAfterRollback(
+            membershipError,
+            rollbackTasks,
+            `Failed to remove and roll back tournament user ${String(user._id)}`
+          )
+        }
+        return { saved, membership }
       }
-      await throwAfterRollback(
-        membershipError,
-        rollbackTasks,
-        `Failed to remove and roll back tournament user ${String(user._id)}`
-      )
+    )
+    if (!membershipResult.acquired) {
+      sendMembershipMutationConflict(res)
+      return
     }
+    const { saved, membership } = membershipResult.value
 
     if (req.session?.userId && String(req.session.userId) === String(user._id)) {
       req.session.tournaments = (req.session.tournaments ?? []).filter(
