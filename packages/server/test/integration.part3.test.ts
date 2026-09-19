@@ -1118,7 +1118,7 @@ describe('Server integration', () => {
     })
     expect(submissionCompile.status).toBe(400)
     expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(
-      'no ballot submission exists for matchup'
+      'ballot submission is missing for draw matchup'
     )
     expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(teamC)
     expect(String(submissionCompile.body.errors?.[0]?.message ?? '')).toContain(teamD)
