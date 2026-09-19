@@ -3536,6 +3536,7 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
 
 async function onSetupMotionOpenedChange(round: any, checked: boolean) {
   const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   const updated = await rounds.updateRound({
     tournamentId: currentTournamentId,
     roundId: String(round._id),
@@ -3551,6 +3552,7 @@ async function saveSetupDrawPublication(
   nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean }>
 ): Promise<boolean> {
   const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return false
   const roundNumber = Number(round?.round)
   const draw = setupRoundDraw(roundNumber)
   if (!Number.isInteger(roundNumber) || !draw) return false
@@ -3565,7 +3567,7 @@ async function saveSetupDrawPublication(
   })
   if (!updated?._id || tournamentId.value !== currentTournamentId) return false
   await draws.fetchDraws(currentTournamentId)
-  return true
+  return tournamentId.value === currentTournamentId
 }
 
 async function onSetupTeamAllocationChange(round: any, checked: boolean) {
