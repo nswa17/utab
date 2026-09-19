@@ -28,6 +28,7 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   async function fetchResults(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) results.value = []
     const sequence = advanceFetchSequence()
@@ -54,6 +55,7 @@ export const useResultsStore = defineStore('results', () => {
     round: number
     payload: Record<string, unknown>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
@@ -80,6 +82,7 @@ export const useResultsStore = defineStore('results', () => {
     round?: number
     payload?: Record<string, unknown>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
@@ -105,6 +108,7 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   async function deleteResult(tournamentId: string, resultId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
