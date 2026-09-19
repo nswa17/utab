@@ -6969,7 +6969,7 @@ The first two CI attempts exposed test-harness issues rather than implementation
 - run `35414260275`: failed after the new draw test referenced a missing helper;
 - run `35414469581`: same single failure (`createDeferred is not defined`); all other added scope/race tests passed.
 
-The helper was added in commit `2b006799fe9bc90e1d9f53b952d1f9c0893a328f`. Final CI status is recorded below once complete.
+The helper was added in commit `2b006799fe9bc90e1d9f53b952d1f9c0893a328f`. Final CI run `35414617592` passed: lint, full tests and build all succeeded.
 
 ### Cumulative-branch reconciliation
 
