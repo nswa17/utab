@@ -32,6 +32,7 @@ export const useDrawsStore = defineStore('draws', () => {
     round?: number,
     options?: { forcePublic?: boolean }
   ) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) draws.value = []
     const sequence = advanceFetchSequence()
@@ -83,6 +84,7 @@ export const useDrawsStore = defineStore('draws', () => {
     allocationOpened?: boolean
     locked?: boolean
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     error.value = null
     try {
@@ -116,6 +118,7 @@ export const useDrawsStore = defineStore('draws', () => {
   }
 
   async function deleteDraw(drawId: string, tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     error.value = null
     try {
