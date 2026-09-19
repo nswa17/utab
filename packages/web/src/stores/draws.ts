@@ -32,7 +32,8 @@ export const useDrawsStore = defineStore('draws', () => {
     round?: number,
     options?: { forcePublic?: boolean }
   ) {
-    tournamentScope.activate(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) draws.value = []
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
