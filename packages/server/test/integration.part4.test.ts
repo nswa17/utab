@@ -5277,4 +5277,219 @@ describe('Server integration', () => {
 
 
 
+  it('releases result write leases before reporting success and blocks mutation-time deletion', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'result-round-lease-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'result-round-lease-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Result Round Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const resultRes = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { marker: 'lease-result' },
+    })
+    expect(resultRes.status).toBe(201)
+    const resultId = String(resultRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundMutationLease,
+      releaseRoundMutationLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const mutationLease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      roundId,
+      1
+    )
+    expect(mutationLease).toBeTruthy()
+    if (!mutationLease) throw new Error('failed to acquire round mutation lease in result test')
+
+    try {
+      const blockedDelete = await organizer.delete(
+        `/api/results/${resultId}?tournamentId=${tournamentId}`
+      )
+      expect(blockedDelete.status).toBe(409)
+      expect(blockedDelete.body.errors?.[0]?.message).toContain('Round changed concurrently')
+    } finally {
+      await releaseRoundMutationLease(connection, mutationLease)
+    }
+
+    const deleteAfterRelease = await organizer.delete(
+      `/api/results/${resultId}?tournamentId=${tournamentId}`
+    )
+    expect(deleteAfterRelease.status).toBe(200)
+  })
+
+  it('serializes raw-result CRUD with round mutations without leaking partial multi-round leases', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'raw-round-lease-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'raw-round-lease-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Raw Round Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundsRes = await organizer.post('/api/rounds').send([
+      { tournamentId, round: 1, name: 'Round 1' },
+      { tournamentId, round: 2, name: 'Round 2' },
+    ])
+    expect(roundsRes.status).toBe(201)
+    const roundIdByNumber = new Map(
+      (roundsRes.body.data as Array<{ _id: string; round: number }>).map((round) => [
+        Number(round.round),
+        String(round._id),
+      ])
+    )
+
+    const rawRes = await organizer.post('/api/raw-results/teams').send({
+      tournamentId,
+      id: 'raw-team-a',
+      from_id: 'raw-judge-a',
+      r: 1,
+      weight: 1,
+      win: 1,
+      side: 'gov',
+      opponents: ['raw-team-b'],
+    })
+    expect(rawRes.status).toBe(201)
+    const rawId = String(rawRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundMutationLease,
+      releaseRoundMutationLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const round2Lease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      roundIdByNumber.get(2)!,
+      2
+    )
+    expect(round2Lease).toBeTruthy()
+    if (!round2Lease) throw new Error('failed to acquire round 2 mutation lease in raw test')
+
+    try {
+      const blockedBulkCreate = await organizer.post('/api/raw-results/teams').send([
+        {
+          tournamentId,
+          id: 'raw-team-bulk-1',
+          from_id: 'raw-judge-bulk',
+          r: 1,
+          weight: 1,
+          win: 1,
+          side: 'gov',
+          opponents: ['raw-team-x'],
+        },
+        {
+          tournamentId,
+          id: 'raw-team-bulk-2',
+          from_id: 'raw-judge-bulk',
+          r: 2,
+          weight: 1,
+          win: 1,
+          side: 'gov',
+          opponents: ['raw-team-y'],
+        },
+      ])
+      expect(blockedBulkCreate.status).toBe(409)
+
+      const round1Lease = await acquireRoundMutationLease(
+        connection,
+        tournamentId,
+        roundIdByNumber.get(1)!,
+        1
+      )
+      expect(round1Lease).toBeTruthy()
+      if (round1Lease) await releaseRoundMutationLease(connection, round1Lease)
+
+      const blockedPatch = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
+        tournamentId,
+        win: 0,
+      })
+      expect(blockedPatch.status).toBe(200)
+    } finally {
+      await releaseRoundMutationLease(connection, round2Lease)
+    }
+
+    const round1Lease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      roundIdByNumber.get(1)!,
+      1
+    )
+    expect(round1Lease).toBeTruthy()
+    if (!round1Lease) throw new Error('failed to acquire round 1 mutation lease in raw test')
+    try {
+      const blockedPatch = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
+        tournamentId,
+        win: 1,
+      })
+      expect(blockedPatch.status).toBe(409)
+
+      const blockedDelete = await organizer.delete(
+        `/api/raw-results/teams/${rawId}?tournamentId=${tournamentId}`
+      )
+      expect(blockedDelete.status).toBe(409)
+
+      const blockedBulkDelete = await organizer.delete(
+        `/api/raw-results/teams?tournamentId=${tournamentId}&round=1`
+      )
+      expect(blockedBulkDelete.status).toBe(409)
+    } finally {
+      await releaseRoundMutationLease(connection, round1Lease)
+    }
+
+    const patchAfterRelease = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
+      tournamentId,
+      win: 0,
+    })
+    expect(patchAfterRelease.status).toBe(200)
+
+    const deleteAfterRelease = await organizer.delete(
+      `/api/raw-results/teams/${rawId}?tournamentId=${tournamentId}`
+    )
+    expect(deleteAfterRelease.status).toBe(200)
+  })
+
+
 })
