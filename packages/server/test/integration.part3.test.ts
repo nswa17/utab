@@ -2378,4 +2378,134 @@ describe('Server integration', () => {
     expect(speakerIds).toEqual(expect.arrayContaining([speakerAId, speakerBId]))
   })
 
+  it('scopes missing-data validation to requested labels and requires configured feedback', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-feedback-coverage', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-feedback-coverage', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Feedback Coverage Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        no_speaker_score: true,
+        ballot_submitter_roles: ['chair'],
+        evaluate_from_teams: true,
+        evaluate_from_adjudicators: false,
+        evaluator_in_team: 'team',
+        chairs_always_evaluated: true,
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Feedback Coverage Team A',
+    })
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Feedback Coverage Team B',
+    })
+    const chairRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Feedback Coverage Chair',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    expect(chairRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+    const chairId = String(chairRes.body.data._id)
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [chairId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: chairId,
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const teamsOnly = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(teamsOnly.status).toBe(200)
+
+    const adjudicatorsMissing = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['adjudicators'] },
+    })
+    expect(adjudicatorsMissing.status).toBe(400)
+    expect(String(adjudicatorsMissing.body.errors?.[0]?.message ?? '')).toContain(
+      'feedback submission is missing'
+    )
+
+    const feedbackA = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 8,
+      submittedEntityId: teamAId,
+    })
+    const feedbackB = await agent.post('/api/submissions/feedback').send({
+      tournamentId,
+      round: 1,
+      adjudicatorId: chairId,
+      score: 9,
+      submittedEntityId: teamBId,
+    })
+    expect(feedbackA.status).toBe(201)
+    expect(feedbackB.status).toBe(201)
+
+    const adjudicatorsComplete = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['adjudicators'] },
+    })
+    expect(adjudicatorsComplete.status).toBe(200)
+    expect(adjudicatorsComplete.body.data.preview.compiled_adjudicator_results).toHaveLength(1)
+  })
+
 })
