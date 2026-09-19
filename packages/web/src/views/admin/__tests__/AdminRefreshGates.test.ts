@@ -15,6 +15,16 @@ describe('Admin refresh gates', () => {
     expect(source).toContain('sectionLoading.value = foregroundRefreshCount > 0')
   })
 
+  it('guards setup saves against late completion from a previous tournament', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('const currentTournamentId = String(tournament.value._id)')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return false')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
+    expect(source).toContain('tournamentId: currentTournamentId')
+    expect(source).toContain('if (tournamentId.value === currentTournamentId) {')
+    expect(source).toContain('setupRoundBreakUpdating.value = false')
+  })
+
   it('guards setup page refresh before applying tournament form state', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('createLatestRequestGate')
