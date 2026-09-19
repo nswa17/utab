@@ -3117,6 +3117,8 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
   let mutationConnection: Connection | null = null
   let namespaceLease: RoundNamespaceLease | null = null
   let namespaceConnection: Connection | null = null
+  let entityLeases: EntityNamespaceLease[] = []
+  let entityConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -3153,6 +3155,14 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       return
     }
     mutationConnection = connection
+
+    const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!acquiredEntityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    entityLeases = acquiredEntityLeases
+    entityConnection = connection
 
     const deletionSnapshot = await captureRoundDeletionSnapshot(connection, tournamentId, [
       { id, round: deletedRound },
@@ -3194,6 +3204,13 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
   } catch (err) {
     next(err)
   } finally {
+    if (entityLeases.length > 0 && entityConnection) {
+      try {
+        await releaseRoundEntityNamespaceLeases(entityConnection, entityLeases)
+      } catch {
+        // Entity namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
     if (mutationLease && mutationConnection) {
       try {
         await releaseRoundMutationLease(mutationConnection, mutationLease)
