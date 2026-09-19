@@ -4,6 +4,7 @@ import { sanitizeTeamForPublic } from '../services/response-sanitizer.js'
 import { createTournamentEntityCrudHandlers } from './shared/tournament-entity-crud.js'
 
 const handlers = createTournamentEntityCrudHandlers({
+  mutationNamespace: 'teams',
   fields: ['name', 'template', 'details', 'userDefinedData'],
   getModel: getTeamModel,
   sanitizeForPublic: sanitizeTeamForPublic,
