@@ -1913,6 +1913,10 @@ export const createRound: RequestHandler = async (req, res, next) => {
       }
 
       const finalized = await RoundModel.find({ _id: { $in: createdIds }, tournamentId }).exec()
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      entityLeases = []
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
       res.status(201).json({ data: finalized, errors: [] })
       return
     }
@@ -2029,6 +2033,10 @@ export const createRound: RequestHandler = async (req, res, next) => {
     }
 
     const finalized = await RoundModel.findOne({ _id: roundId, tournamentId }).exec()
+    await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    entityLeases = []
+    await releaseRoundNamespaceLease(connection, namespaceLease)
+    namespaceLease = null
     res.status(201).json({ data: finalized?.toJSON() ?? created.toJSON(), errors: [] })
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
@@ -2299,6 +2307,14 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
     const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
       .lean()
       .exec()
+    if (entityLeases.length > 0) {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      entityLeases = []
+    }
+    if (namespaceLease) {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
+    }
     res.json({ data: updated, errors: [] })
   } catch (err) {
     const rollbackErrors: unknown[] = []
@@ -2489,6 +2505,12 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     }
 
     mutationLeases = []
+    if (entityLeases.length > 0) {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      entityLeases = []
+    }
+    await releaseRoundNamespaceLease(connection, namespaceLease)
+    namespaceLease = null
     res.json({ data: { deletedCount: deleteResult.deletedCount }, errors: [] })
   } catch (err) {
     next(err)
