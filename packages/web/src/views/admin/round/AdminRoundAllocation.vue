@@ -3559,6 +3559,9 @@ function removeRow(index: number) {
 }
 
 async function save() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  if (!currentTournamentId) return
   if (!isSupportedTeamStyle.value || !editableTeamNum.value) {
     openNotice(t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。'))
     return
