@@ -1100,6 +1100,13 @@ describe('Server integration', () => {
     expect(teamBRes.status).toBe(201)
     const teamBId = String(teamBRes.body.data._id)
 
+    const adjudicatorRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Template Speaker Judge',
+    })
+    expect(adjudicatorRes.status).toBe(201)
+    const adjudicatorId = String(adjudicatorRes.body.data._id)
+
     const drawRes = await agent.post('/api/draws').send({
       tournamentId,
       round: 1,
@@ -1107,7 +1114,7 @@ describe('Server integration', () => {
         {
           venue: '',
           teams: { gov: teamAId, opp: teamBId },
-          chairs: [],
+          chairs: [adjudicatorId],
           panels: [],
           trainees: [],
         },
@@ -2166,7 +2173,7 @@ describe('Server integration', () => {
       winnerId: teamAId,
       scoresA: [76],
       scoresB: [74],
-      submittedEntityId: 'template-speaker-judge',
+      submittedEntityId: adjudicatorId,
     })
     expect(ballotRes.status).toBe(201)
 
