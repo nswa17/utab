@@ -123,6 +123,19 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(messages.en['付与なし']).toBe('No award')
   })
 
+  it('ignores a late ballot completion after the participant context changes', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
+    expect(source).toContain('const currentRound = Number(round.value)')
+    expect(source).toContain('const currentTeamAId = teamAId.value')
+    expect(source).toContain('const currentTeamBId = teamBId.value')
+    expect(source).toContain('const currentIdentityId = identityId.value')
+    expect(source).toContain('tournamentId.value !== currentTournamentId')
+    expect(source).toContain('teamAId.value !== currentTeamAId')
+    expect(source).toContain('teamBId.value !== currentTeamBId')
+    expect(source).toContain('identityId.value !== currentIdentityId')
+  })
+
   it('shows the submitted winner in the completion dialog', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain("{{ $t('あなたの投票') }}")
