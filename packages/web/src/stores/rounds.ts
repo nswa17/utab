@@ -89,8 +89,9 @@ export const useRoundsStore = defineStore('rounds', () => {
     weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/rounds', payload)
       const created = res.data?.data
@@ -121,8 +122,9 @@ export const useRoundsStore = defineStore('rounds', () => {
     weightsOfAdjudicators?: { chair: number; panel: number; trainee: number }
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/rounds/${payload.roundId}`, payload)
       const updated = res.data?.data
@@ -155,12 +157,13 @@ export const useRoundsStore = defineStore('rounds', () => {
       userDefinedData?: Record<string, any>
     }>
   ) {
+    const payloadTournamentId = String(payload[0]?.tournamentId ?? '')
+    if (payloadTournamentId) tournamentScope.claimIfEmpty(payloadTournamentId)
     beginRequest()
-    error.value = null
+    if (payloadTournamentId && tournamentScope.isActive(payloadTournamentId)) error.value = null
     try {
       const res = await api.patch('/rounds', payload)
       const updatedList = Array.isArray(res.data?.data) ? (res.data.data as Round[]) : []
-      const payloadTournamentId = String(payload[0]?.tournamentId ?? '')
       if (updatedList.length > 0 && tournamentScope.isActive(payloadTournamentId)) {
         advanceFetchSequence()
         const updatedById = new Map(updatedList.map((item) => [String(item._id), item]))
@@ -180,8 +183,9 @@ export const useRoundsStore = defineStore('rounds', () => {
   }
 
   async function deleteRound(tournamentId: string, roundId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/rounds/${roundId}`, { params: { tournamentId } })
       if (tournamentScope.isActive(tournamentId)) {
@@ -206,8 +210,9 @@ export const useRoundsStore = defineStore('rounds', () => {
     sourceRounds?: number[]
     size?: number
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post(`/rounds/${payload.roundId}/break/candidates`, {
         tournamentId: payload.tournamentId,
@@ -232,8 +237,9 @@ export const useRoundsStore = defineStore('rounds', () => {
     breakConfig: RoundBreakConfig
     syncTeamAvailability?: boolean
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/rounds/${payload.roundId}/break`, {
         tournamentId: payload.tournamentId,
