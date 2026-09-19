@@ -2897,6 +2897,8 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
 export const updateRoundBreak: RequestHandler = async (req, res, next) => {
   let mutationLease: RoundMutationLease | null = null
   let mutationConnection: Connection | null = null
+  let entityLeases: EntityNamespaceLease[] = []
+  let entityConnection: Connection | null = null
   try {
     const { id } = req.params
     const {
@@ -2934,6 +2936,16 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       return
     }
     mutationConnection = connection
+
+    const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId, [
+      'teams',
+    ])
+    if (!acquiredEntityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    entityLeases = acquiredEntityLeases
+    entityConnection = connection
 
     const roundDoc = await RoundModel.findOne({
       _id: id,
@@ -3083,6 +3095,13 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
   } catch (err) {
     next(err)
   } finally {
+    if (entityLeases.length > 0 && entityConnection) {
+      try {
+        await releaseRoundEntityNamespaceLeases(entityConnection, entityLeases)
+      } catch {
+        // Entity namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
     if (mutationLease && mutationConnection) {
       try {
         await releaseRoundMutationLease(mutationConnection, mutationLease)
