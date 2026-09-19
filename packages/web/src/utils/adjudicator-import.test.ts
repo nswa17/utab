@@ -150,49 +150,4 @@ describe('adjudicator import apply', () => {
     })
     expect(result.errors[0]).toContain('複数ロール')
   })
-
-  it('preserves all four team positions when importing adjudicators by match index', () => {
-    const result = applyAdjudicatorImportEntries({
-      allocation: [
-        {
-          venue: 'venue-a',
-          teams: {
-            gov: 'team-a',
-            opp: 'team-b',
-            og: 'team-a',
-            oo: 'team-b',
-            cg: 'team-c',
-            co: 'team-d',
-          },
-          chairs: [],
-          panels: [],
-          trainees: [],
-        },
-      ],
-      entries: [
-        {
-          line: 2,
-          matchIndex: 1,
-          chairTokens: ['Judge A'],
-          panelTokens: [],
-          traineeTokens: [],
-        },
-      ],
-      teams,
-      adjudicators,
-      mode: 'replace',
-    })
-
-    expect(result.errors).toEqual([])
-    expect(result.allocation[0]?.teams).toEqual({
-      gov: 'team-a',
-      opp: 'team-b',
-      og: 'team-a',
-      oo: 'team-b',
-      cg: 'team-c',
-      co: 'team-d',
-    })
-    expect(result.allocation[0]?.chairs).toEqual(['adj-a'])
-  })
-
 })
