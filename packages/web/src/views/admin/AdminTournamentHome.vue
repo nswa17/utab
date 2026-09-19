@@ -3197,11 +3197,12 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
   const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
   const currentAccess = readTournamentAccessState(targetTournament.auth)
   const currentHasPassword = currentAccess.hasPassword
-  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
+  const currentUserDefined = {
+    ...(targetTournament.user_defined_data ?? {}),
+  } as Record<string, any>
   const currentInfo =
-    nextUserDefined.info && typeof nextUserDefined.info === 'object'
-      ? { ...(nextUserDefined.info as Record<string, any>) }
+    currentUserDefined.info && typeof currentUserDefined.info === 'object'
+      ? { ...(currentUserDefined.info as Record<string, any>) }
       : {}
   const info = includeInfo
     ? {
@@ -3232,10 +3233,9 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     name: includeName ? tournamentForm.name : targetTournament.name,
     style: tournamentForm.style,
     auth: authPayload,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       hidden: tournamentForm.hidden,
-      info,
+      ...(includeInfo ? { info } : {}),
     },
   })
   if (tournamentId.value !== requestTournamentId) return false
@@ -3336,12 +3336,9 @@ function serializeRoundDefaultsForTournamentStorage() {
 
 async function saveRoundDefaults() {
   if (!tournament.value) return
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   await tournamentStore.updateTournament({
     tournamentId: tournament.value._id,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       round_defaults: serializeRoundDefaultsForTournamentStorage(),
     },
   })
@@ -3354,13 +3351,10 @@ async function saveTournamentBreakSettings() {
   isSavingTournamentBreak.value = true
   tournamentBreakSaveError.value = ''
   tournamentBreakSaved.value = false
-  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedBreak = normalizeTournamentBreakConfig(tournamentBreakForm)
   const updated = await tournamentStore.updateTournament({
     tournamentId: requestTournamentId,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       break: normalizedBreak,
     },
   })
@@ -3391,13 +3385,10 @@ async function saveTournamentTeamRankingSettings() {
   isSavingTournamentTeamRanking.value = true
   tournamentTeamRankingSaveError.value = ''
   tournamentTeamRankingSaved.value = false
-  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedTeamRanking = normalizeTournamentTeamRankingConfig(tournamentTeamRankingForm)
   const updated = await tournamentStore.updateTournament({
     tournamentId: requestTournamentId,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       team_ranking_priority: normalizedTeamRanking,
     },
   })
@@ -3428,15 +3419,12 @@ async function saveTournamentAdjudicatorRankingSettings() {
   isSavingTournamentAdjudicatorRanking.value = true
   tournamentAdjudicatorRankingSaveError.value = ''
   tournamentAdjudicatorRankingSaved.value = false
-  const nextUserDefined = { ...(targetTournament.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedAdjudicatorRanking = normalizeTournamentAdjudicatorRankingConfig(
     tournamentAdjudicatorRankingForm
   )
   const updated = await tournamentStore.updateTournament({
     tournamentId: requestTournamentId,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       adjudicator_ranking_priority: normalizedAdjudicatorRanking,
     },
   })
