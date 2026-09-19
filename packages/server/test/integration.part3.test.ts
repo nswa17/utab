@@ -2715,5 +2715,160 @@ describe('Server integration', () => {
     ).toBe(0)
   })
 
+  it('detects missing draw ballots and changes revision when result content changes', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-metamorphic', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-metamorphic', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Compile Metamorphic Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const speakerARes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Metamorphic Speaker A' })
+    const speakerBRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Metamorphic Speaker B' })
+    expect(speakerARes.status).toBe(201)
+    expect(speakerBRes.status).toBe(201)
+    const speakerAId = speakerARes.body.data._id
+    const speakerBId = speakerBRes.body.data._id
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Metamorphic Team A',
+      details: [{ r: 1, speakers: [speakerAId] }],
+    })
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Metamorphic Team B',
+      details: [{ r: 1, speakers: [speakerBId] }],
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = teamARes.body.data._id
+    const teamBId = teamBRes.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const missingWarn = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1, 1],
+      options: { missing_data_policy: 'warn', include_labels: ['teams'] },
+    })
+    expect(missingWarn.status).toBe(200)
+    expect(
+      missingWarn.body.data.preview.compile_warnings.some((message: string) =>
+        message.includes('ballot submission is missing for draw matchup')
+      )
+    ).toBe(true)
+
+    const missingError = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(missingError.status).toBe(400)
+    expect(String(missingError.body.errors?.[0]?.message ?? '')).toContain(
+      'ballot submission is missing for draw matchup'
+    )
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerAId],
+      speakerIdsB: [speakerBId],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: 'metamorphic-judge',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const previewBefore = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(previewBefore.status).toBe(200)
+
+    const listRes = await agent.get(
+      `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+    )
+    expect(listRes.status).toBe(200)
+    expect(listRes.body.data).toHaveLength(1)
+    const submissionId = listRes.body.data[0]._id
+
+    const patchRes = await agent.patch(`/api/submissions/${submissionId}`).send({
+      tournamentId,
+      payload: {
+        teamAId,
+        teamBId,
+        winnerId: teamBId,
+        speakerIdsA: [speakerAId],
+        speakerIdsB: [speakerBId],
+        scoresA: [70],
+        scoresB: [80],
+        submittedEntityId: 'metamorphic-judge',
+      },
+    })
+    expect(patchRes.status).toBe(200)
+
+    const previewAfter = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(previewAfter.status).toBe(200)
+    expect(previewAfter.body.data.preview.compiled_team_results).not.toEqual(
+      previewBefore.body.data.preview.compiled_team_results
+    )
+    expect(previewAfter.body.data.revision).not.toBe(previewBefore.body.data.revision)
+    expect(previewAfter.body.data.preview_signature).not.toBe(
+      previewBefore.body.data.preview_signature
+    )
+  })
+
+
 
 })
