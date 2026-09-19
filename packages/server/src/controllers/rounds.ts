@@ -1231,61 +1231,75 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       })
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
-    if (changes.length > 0) {
-      await RoundModel.bulkWrite(
-        changes.map((change) => ({
+    const renumberEntityLeases =
+      changes.length > 0
+        ? await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+        : []
+    if (renumberEntityLeases === null) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      if (changes.length > 0) {
+        await RoundModel.bulkWrite(
+          changes.map((change) => ({
+            updateOne: {
+              filter: { _id: change.id, tournamentId, round: change.previousRound },
+              update: { $set: { round: change.temporaryRound } },
+            },
+          })),
+          { ordered: true }
+        )
+        await moveRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.previousRound, to: change.temporaryRound }))
+        )
+        await moveRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
+        )
+      }
+      const ops = payload.map((item) => {
+        const update: Record<string, unknown> = {}
+        if (item.round !== undefined) update.round = item.round
+        if (item.name !== undefined) update.name = item.name
+        if (item.motions !== undefined) update.motions = item.motions
+        if (item.motionOpened !== undefined) update.motionOpened = item.motionOpened
+        if (item.teamAllocationOpened !== undefined)
+          update.teamAllocationOpened = item.teamAllocationOpened
+        if (item.adjudicatorAllocationOpened !== undefined)
+          update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
+        if (item.weightsOfAdjudicators !== undefined)
+          update.weightsOfAdjudicators = item.weightsOfAdjudicators
+        if (item.userDefinedData !== undefined) {
+          update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
+        }
+        return {
           updateOne: {
-            filter: { _id: change.id, tournamentId, round: change.previousRound },
-            update: { $set: { round: change.temporaryRound } },
+            filter: { _id: item.id, tournamentId },
+            update: { $set: update },
           },
-        })),
-        { ordered: true }
-      )
-      await moveRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.previousRound, to: change.temporaryRound }))
-      )
-      await moveRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
-      )
-    }
-    const ops = payload.map((item) => {
-      const update: Record<string, unknown> = {}
-      if (item.round !== undefined) update.round = item.round
-      if (item.name !== undefined) update.name = item.name
-      if (item.motions !== undefined) update.motions = item.motions
-      if (item.motionOpened !== undefined) update.motionOpened = item.motionOpened
-      if (item.teamAllocationOpened !== undefined)
-        update.teamAllocationOpened = item.teamAllocationOpened
-      if (item.adjudicatorAllocationOpened !== undefined)
-        update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
-      if (item.weightsOfAdjudicators !== undefined)
-        update.weightsOfAdjudicators = item.weightsOfAdjudicators
-      if (item.userDefinedData !== undefined) {
-        update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
+        }
+      })
+      await RoundModel.bulkWrite(ops, { ordered: true })
+      if (changes.length > 0) {
+        await rewriteStoredRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
+        )
       }
-      return {
-        updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: { $set: update },
-        },
+      const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
+        .lean()
+        .exec()
+      res.json({ data: updated, errors: [] })
+    } finally {
+      if (renumberEntityLeases.length > 0) {
+        await releaseRoundEntityNamespaceLeases(connection, renumberEntityLeases)
       }
-    })
-    await RoundModel.bulkWrite(ops, { ordered: true })
-    if (changes.length > 0) {
-      await rewriteStoredRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
-      )
     }
-    const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
-      .lean()
-      .exec()
-    res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
       res
