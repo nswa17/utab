@@ -3191,6 +3191,7 @@ async function refreshEntities() {
 
 async function saveTournament(options: { includeName?: boolean; includeInfo?: boolean } = {}) {
   if (!tournament.value) return false
+  const currentTournamentId = String(tournament.value._id)
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
   const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
@@ -3226,7 +3227,7 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     }
   }
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: currentTournamentId,
     name: includeName ? tournamentForm.name : tournament.value.name,
     style: tournamentForm.style,
     auth: authPayload,
@@ -3236,6 +3237,7 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
       info,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return false
   if (updated) {
     isApplyingTournamentForm.value = true
     applyAccessForm(updated.auth, { preserveExistingPassword: true })
@@ -3264,10 +3266,12 @@ async function saveTournamentName() {
 
 async function saveTournamentNotice() {
   if (!canSaveTournamentNotice.value || isSavingNotice.value) return
+  const currentTournamentId = tournamentId.value
   noticeSaveError.value = ''
   noticeSaved.value = false
   isSavingNotice.value = true
   const ok = await saveTournament({ includeName: false, includeInfo: true })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingNotice.value = false
   if (!ok) {
     noticeSaveError.value = tournamentStore.error ?? t('重要なお知らせの更新に失敗しました。')
@@ -3297,10 +3301,12 @@ async function flushTournamentAutosave() {
   if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value)
     return
   if (isSavingTournamentAutosave.value) return
+  const currentTournamentId = tournamentId.value
   pendingTournamentAutosave.value = false
   isSavingTournamentAutosave.value = true
   tournamentAutosaveStatus.value = 'saving'
   await saveTournament({ includeName: false, includeInfo: false })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentAutosave.value = false
   if (pendingTournamentAutosave.value) {
     void flushTournamentAutosave()
@@ -3342,6 +3348,7 @@ async function saveRoundDefaults() {
 
 async function saveTournamentBreakSettings() {
   if (!tournament.value || isSavingTournamentBreak.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentBreak.value = true
   tournamentBreakSaveError.value = ''
   tournamentBreakSaved.value = false
@@ -3349,12 +3356,13 @@ async function saveTournamentBreakSettings() {
   delete nextUserDefined.submission_policy
   const normalizedBreak = normalizeTournamentBreakConfig(tournamentBreakForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: currentTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       break: normalizedBreak,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentBreak.value = false
   if (!updated?._id) {
     tournamentBreakSaveError.value =
@@ -3376,6 +3384,7 @@ async function saveTournamentBreakSettings() {
 
 async function saveTournamentTeamRankingSettings() {
   if (!tournament.value || isSavingTournamentTeamRanking.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentTeamRanking.value = true
   tournamentTeamRankingSaveError.value = ''
   tournamentTeamRankingSaved.value = false
@@ -3383,12 +3392,13 @@ async function saveTournamentTeamRankingSettings() {
   delete nextUserDefined.submission_policy
   const normalizedTeamRanking = normalizeTournamentTeamRankingConfig(tournamentTeamRankingForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: currentTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       team_ranking_priority: normalizedTeamRanking,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentTeamRanking.value = false
   if (!updated?._id) {
     tournamentTeamRankingSaveError.value =
@@ -3410,6 +3420,7 @@ async function saveTournamentTeamRankingSettings() {
 
 async function saveTournamentAdjudicatorRankingSettings() {
   if (!tournament.value || isSavingTournamentAdjudicatorRanking.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentAdjudicatorRanking.value = true
   tournamentAdjudicatorRankingSaveError.value = ''
   tournamentAdjudicatorRankingSaved.value = false
@@ -3419,12 +3430,13 @@ async function saveTournamentAdjudicatorRankingSettings() {
     tournamentAdjudicatorRankingForm
   )
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: currentTournamentId,
     user_defined_data: {
       ...nextUserDefined,
       adjudicator_ranking_priority: normalizedAdjudicatorRanking,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentAdjudicatorRanking.value = false
   if (!updated?._id) {
     tournamentAdjudicatorRankingSaveError.value =
@@ -3462,6 +3474,7 @@ function applyBreakRoundConstraints(userDefinedData: Record<string, any>, breakE
 
 async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) {
   if (setupRoundBreakUpdating.value) return
+  const currentTournamentId = tournamentId.value
   setupRoundBreakError.value = ''
 
   const targetRound = Number(round?.round)
@@ -3488,15 +3501,16 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       applyBreakRoundConstraints(nextUserDefined, nextEnabled)
       return {
         id: String(item._id),
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         userDefinedData: nextUserDefined,
       }
     })
 
     const updated = await rounds.bulkUpdateRounds(payload)
+    if (tournamentId.value !== currentTournamentId) return
     if (updated.length === 0) {
       setupRoundBreakError.value = rounds.error ?? t('ブレイク設定の保存に失敗しました。')
-      await rounds.fetchRounds(tournamentId.value)
+      await rounds.fetchRounds(currentTournamentId)
       return
     }
 
@@ -3513,7 +3527,9 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       }
     }
   } finally {
-    setupRoundBreakUpdating.value = false
+    if (tournamentId.value === currentTournamentId) {
+      setupRoundBreakUpdating.value = false
+    }
   }
 }
 
