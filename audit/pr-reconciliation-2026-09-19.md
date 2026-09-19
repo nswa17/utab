@@ -7,6 +7,7 @@ Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: IN PROGRESS — #34 COMPLETE
 Phase 4: COMPLETE — #40→#41 stack synchronized
+Phase 5: COMPLETE — #41 cross-PR overlap reconciled
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -214,3 +215,75 @@ Phase 3 is still incomplete: only #34 has received the per-PR final audit. There
 ### Next required unit
 
 Resume Phase 3 with PR #35, then continue #36, #37, #38, #39, and #40 one at a time. Once #40's final audit is complete, re-check that #41 still has #40 as an ancestor before Phase 5.
+
+
+## Phase 5 #41 cross-PR compatibility — COMPLETE
+
+This phase was also executed out of sequence at the user's request while Phase 3 remains incomplete.
+
+Starting #41 head:
+- `45beb89d4f1c8b624ea6a0ef445572ee3bc90dc8`
+- #40 ancestry: current #40 head was already an ancestor, 0 commits behind.
+- synchronized-head CI from Phase 4: green.
+
+### Overlap audit
+
+Effective #41 delta relative to #40 overlapped:
+- #36 in `packages/server/src/controllers/draws.ts` and `packages/server/src/controllers/rounds.ts`;
+- #37 in **0 effective #41 files**;
+- #38 in `packages/web/src/views/admin/round/AdminRoundAllocation.vue` and its source-regression test;
+- #40 was already fully contained by ancestry.
+
+The audit found two real regression risks if #41 were later merged after the independent PRs:
+1. #41 lacked #36's Draw partial-update preservation for omitted publication/lock flags.
+2. #41 lacked #36's Submission `__v` increment during round-reference moves.
+3. The #41 allocation UI was based on pre-#38 code and lacked the Phase-7 multi-step request/route-context guards.
+
+### Reconciliation changes applied to #41
+
+Server overlap preservation from #36:
+- Draw upsert now preserves existing `drawOpened`, `allocationOpened`, and `locked` when the update omits those fields.
+- Round renumbering now increments Submission `__v` while moving the submission to the new round, preserving stale-edit detection.
+- Only the overlapping fixes were transplanted; #36's independent Submission controller work remains owned by #36.
+
+Web overlap preservation from #38:
+- `AdminRoundAllocation.vue` was rebuilt from the current #38 version and then the #41 unavailable-assigned team/adjudicator/venue behavior was reapplied.
+- The corresponding source-regression test was rebuilt the same way.
+- This preserves the allocation request gate, route-context pinning, stale response rejection, safe reference compilation/save/delete behavior, and the Phase-10 PDA behavior together.
+
+#37:
+- no effective #41 file overlap; no transplant required.
+
+Commits created on #41 during this phase:
+- `65acbc0acd4677c9ad7723512bd911e3a635d494` — preserve Draw partial-update flags.
+- `3a62c16dbf1e1ee6f4aefe873154c252d8c91f69` — preserve Submission CAS invalidation during round renumbering.
+- `3beee2af547eee40c920e2d0586ff6dd9eff2f55` — preserve Phase-7 request guards in the Phase-10 allocation UI.
+- `a7da9c77d5c2cf07f2aac6aee3dfe2e95dc75803` — preserve Phase-7 allocation regression coverage with Phase-10 PDA assertions.
+
+Final #41 head:
+- `a7da9c77d5c2cf07f2aac6aee3dfe2e95dc75803`
+- direct #40 -> #41 compare: ahead / **0 behind**.
+- effective delta remains seven files.
+- GitHub reports #41 mergeable.
+
+Final CI:
+- run `35472174215`
+- lint: success
+- full tests: success
+- production build: success
+
+PR #41 body was updated with the Phase-5 reconciliation and merge note.
+
+### Mandatory merge-time rule
+
+#41 is still based on `audit/boundary-type-phase9`, not `main`. Do **not** merge #41 to completion as the project final state while it still targets the #40 branch.
+
+After #40 is merged:
+1. retarget #41 to the then-current `main`;
+2. confirm #36/#38 (and all other independent PRs already merged to main) are preserved in the retargeted diff;
+3. rerun CI;
+4. only then treat #41 as merge-ready.
+
+### Pipeline state after Phase 5
+
+Phase 5 compatibility work is complete, but overall merge readiness is still blocked by unfinished Phase 3 per-PR audits (#35–#40).
