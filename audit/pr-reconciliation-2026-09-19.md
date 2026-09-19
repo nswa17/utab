@@ -8,6 +8,7 @@ Phase 2: COMPLETE
 Phase 3: IN PROGRESS — #34 COMPLETE
 Phase 4: COMPLETE — #40→#41 stack synchronized
 Phase 5: COMPLETE — #41 cross-PR overlap reconciled
+Phase 6: STOPPED — P6-001 registered
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -287,3 +288,55 @@ After #40 is merged:
 ### Pipeline state after Phase 5
 
 Phase 5 compatibility work is complete, but overall merge readiness is still blocked by unfinished Phase 3 per-PR audits (#35–#40).
+
+
+## Phase 6 cross-PR regression sweep — STOPPED ON P6-001
+
+This phase was executed early at the user's request while Phase 3 remains incomplete.
+
+Per the Phase-6 rule, the sweep stops on the first confirmed cross-cutting defect. No fan-out fixes are applied in this phase.
+
+### P6-001 — raw team-result win values are not bounded to [0, 1]
+
+**Status:** OPEN / confirmed
+
+Affected states checked:
+- `main`
+- PR #40 head `18065df8f06d04bec9e610dfdf2feb6066b20ff3`
+- cumulative branch `codex/utab-bug-audit-20260918` head `2bb9f1ece2886fd4409af781c6ddc5a7106a9020`
+
+Evidence:
+1. `packages/server/src/routes/raw-results.ts` accepts:
+   - `win: z.number()`
+   - no lower/upper bound.
+2. `packages/server/src/models/raw-team-result.ts` persists:
+   - `win: { type: Number, required: true }`
+   - no `min` / `max` validator.
+3. Raw-result CRUD has no separate win-range validation.
+4. `packages/core/src/results/results.ts::summarizeTeamResults` treats any value other than exactly 0 or 1 as a fractional win and computes:
+   - `voteRate = sum(winValues) / filtered.length`
+   - `win = sum(winValues) / filtered.length`.
+   Therefore a single raw result with `win = 2` yields `vote_rate = 2`, and `win = -1` yields `vote_rate = -1`.
+5. Tournament backup import validates round scope for `rawteamresults` but not `win`; it then uses native collection `insertMany`, so malformed backup data can bypass Mongoose validation even after a model validator is added.
+
+Impact:
+- violates the support-rate invariant repaired in PR #34 (`vote_rate` should remain in [0, 1] for two-team results);
+- permits impossible raw win points through the public API;
+- permits malformed backup imports to reintroduce the same invalid state;
+- can contaminate compiled ranking/output semantics.
+
+Required fix scope for the next bounded unit:
+1. route boundary: raw team-result `win` must be finite and in [0, 1];
+2. persistence boundary: RawTeamResult model must independently enforce the same range;
+3. backup-import boundary: validate `rawteamresults[].win` before native insertion;
+4. regression tests:
+   - API create/update rejects <0 and >1;
+   - valid 0 / 0.5 / 1 remain accepted;
+   - tampered backup with out-of-range raw-team win is rejected and cleanup remains correct;
+   - core support-rate regression confirms valid inputs stay in [0, 1].
+
+No code fix was made in Phase 6 because the phase contract requires registering the first failure and stopping.
+
+### Phase 6 execution status
+
+Cross-PR sweep is **not complete**. The remaining planned focus areas (concurrency/atomicity, stale autosave/request state, tournament scoping, allocation invariants, and the full integrated CI sweep) must resume only after P6-001 is fixed and checkpointed.
