@@ -523,3 +523,66 @@ The next executable blocker-removal unit is `P6-001`:
 - complete Phase-3 audits #35–#40;
 - rerun Phase 8 readiness;
 - only then retry Phase 9.
+
+
+## Phase 10 blocker remediation — P6-001 FIXED ON #40
+
+Phase 10 was defined as the bounded remediation unit for P6-001, the first defect that stopped Phase 6.
+
+Target PR:
+- #40 `[audit] Harden boundary and type validation`
+- previous head: `18065df8f06d04bec9e610dfdf2feb6066b20ff3`
+- final Phase-10 head: `83d17e1dd1c945c7e2c7be2d4133945f5bed3139`
+
+### Fix
+
+Raw team result `win` now has the same invariant at every ingestion boundary:
+
+1. Request boundary
+   - `win: z.number().finite().min(0).max(1)`
+   - create and update paths therefore reject values outside [0,1].
+
+2. Persistence boundary
+   - RawTeamResult model independently enforces `min: 0`, `max: 1`, and `Number.isFinite`.
+
+3. Backup-import boundary
+   - `rawteamresults` entries validate `win` before native collection `insertMany`;
+   - malformed backups therefore cannot bypass Mongoose validation.
+
+### Regression coverage
+
+Added coverage verifies:
+- API create accepts `0`, `0.5`, and `1`;
+- API create rejects values below 0 and above 1;
+- API update accepts a valid value and rejects `2`;
+- direct RawTeamResult model creation rejects `win=2` and accepts `win=0.5`;
+- a tampered backup containing `rawteamresults[].win=2` is rejected and leaves no tournament metadata behind;
+- valid fractional two-team support values remain inside [0,1] in core result summarization.
+
+### Phase-10 commits on #40
+
+- `959b5f279414e9fd2e902efdb84b34b435d06678` — request boundary
+- `9e6e2aac999c2443a4f16ef5622a484df58a7519` — persistence boundary
+- `4e5707c1e4b92222ca30774dfea96aa90d64a2b2` — backup import boundary
+- `ec6dd38de8eccac2fa5c0cb5fe43fc73af4faf93` — request/model integration tests
+- `6dac81bd35606702980c431001a5043513b0b547` — backup regression
+- `83d17e1dd1c945c7e2c7be2d4133945f5bed3139` — core bounded-support regression
+
+### Validation
+
+CI run `35477291288` on exact head `83d17e1dd1c945c7e2c7be2d4133945f5bed3139`:
+- lint: success
+- full test suite: success
+- production build: success
+
+GitHub reports #40 mergeable.
+
+### P6-001 status after Phase 10
+
+- **FIXED on #40**
+- **NOT YET CLOSED project-wide**
+
+Reason: #41 was stacked on the previous #40 head and the cumulative branch was reconstructed before this fix. The next bounded unit must propagate/reconcile the Phase-10 fix into:
+1. #41;
+2. `codex/utab-bug-audit-20260918`;
+then rerun exact-head CI before marking P6-001 globally closed.
