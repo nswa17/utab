@@ -7056,3 +7056,60 @@ Both corrections were also reconciled into `codex/utab-bug-audit-20260918` witho
 - the two new regression tests were added to the cumulative integration coverage.
 
 As before, the cumulative branch itself is not an open PR, so these exact cumulative-head changes have not yet received an automatically triggered full-suite CI run. The PR-specific implementations are CI-green.
+
+
+## Phase 47 — third-pass CAS and membership-lease review
+
+### #38 final follow-up: response-order safety in the client store
+
+After the Phase 46 server-side atomic `user_defined_data_patch` correction, one client-only stale-response path remained. The tournament store replaced the full local tournament object with each PATCH response. Two independent atomic server updates could therefore both commit correctly while an older response arriving last made the browser state stale.
+
+PR #38 now merges metadata patch responses by request intent rather than replacing the whole local tournament:
+- only top-level fields explicitly present in the request are refreshed from the response;
+- `user_defined_data_patch` keys are merged into the current local metadata;
+- unrelated local metadata is retained.
+
+Current PR #38 head: `352ba0c63613b0190a58034d270a14576a61554a`.
+CI run `35453983648` passed lint, the full test suite, and build.
+
+The same intent-aware store merge was reconciled into the cumulative branch.
+
+### #36: Round renumber bypassed Submission optimistic-lock invalidation
+
+PR #36 introduced `__v` CAS for admin Submission edits, but Round renumbering moved Submission documents without incrementing `__v`.
+
+A deterministic race existed on the PR branch:
+1. admin edit reads Submission at round 1 / version N;
+2. Round renumber moves that Submission to round 2 but leaves version N;
+3. stale admin edit reaches its CAS with version N and can write its old round-1 snapshot back.
+
+Fix on PR #36:
+- Round reference moves now increment Submission `__v`, matching Draw reference moves;
+- a deterministic integration test pauses the admin edit at `findOneAndUpdate`, completes the Round renumber, releases the edit, and verifies the edit receives 409 and the Submission remains in round 2.
+
+Current PR #36 head: `eef5d1264b613ac8cb07cf13fee6fd44c30551fa`.
+CI run `35454152393` passed lint, full tests, and build.
+
+The later cumulative branch already has stronger protection around the same structural race: Submission updates acquire a Round write lease and their CAS also includes the previously observed `round`. Therefore the PR-specific `__v` increment is not required for correctness of the later cumulative implementation.
+
+### #37: membership removal used pre-lease state for rollback decisions
+
+The membership mutation lease serialized add/remove after acquisition, but `removeTournamentUser` resolved the User before acquiring the lease and then reused that pre-lease document to decide whether rollback should re-add the tournament.
+
+A prior membership mutation could complete in the narrow interval between that read and lease acquisition. If the later removal then failed partway through, rollback could restore a tournament link that no longer existed when the lease was actually acquired.
+
+Fix on PR #37:
+- after acquiring the membership lease, removal re-reads the User by id;
+- all snapshot, mutation, and rollback decisions use the refreshed document;
+- regression coverage supplies a stale pre-lease User followed by a refreshed post-lease User and verifies a failed removal does not re-add the stale tournament link.
+
+Current PR #37 head: `0c685336d2ac7f9730a3e60817886b7d9950b1bb`.
+At the time of this log entry, CI run `35454262154` had passed lint and was still running the full test/build job.
+
+The same post-lease refresh and regression coverage were reconciled into the cumulative branch.
+
+### Additional third-pass status
+
+- #34 core allocation/vote-rate fixes were re-read. No new blocking regression was found in the changed allocation paths. The broader nullable/multi-round `vote_rate` semantics are already improved in the later cumulative result compiler.
+- #35 compiled metamorphic/revision/submission-completeness changes were re-read. No additional blocker was found; the documented raw-source completeness limitation is already handled by later cumulative reconciliation.
+- #39 recent-PR regression fixes were re-read for interactions among wizard progress, import/copy rollback, and detailed export ordering. No additional high-confidence regression was found in this pass.
