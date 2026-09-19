@@ -82,6 +82,26 @@ describe('submissions store', () => {
     expect(store.error).toBeNull()
   })
 
+  it('clears old tournament submissions immediately when switching tournaments', async () => {
+    const store = useSubmissionsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: [{ _id: 'submission-a', tournamentId: 'tournament-a', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    expect(store.submissions).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchSubmissions({ tournamentId: 'tournament-b' })
+
+    expect(store.submissions).toEqual([])
+
+    deferred.resolve({
+      data: { data: [{ _id: 'submission-b', tournamentId: 'tournament-b', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await nextFetch
+  })
+
   it('keeps only the latest admin submissions response when requests resolve out of order', async () => {
     const store = useSubmissionsStore()
     const staleRows = [{ _id: 'stale', type: 'ballot', round: 1, payload: {} }]
