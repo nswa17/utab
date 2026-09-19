@@ -33,6 +33,10 @@ import type { Side } from '../types/domain.js'
 
 type Ranked = { id: number; ranking?: number }
 
+function normalizeRounds(rs: number[]): number[] {
+  return Array.from(new Set(rs)).sort((left, right) => left - right)
+}
+
 function insertRanking<T extends Ranked>(
   list: T[],
   comparer: (list: T[], a: number, b: number) => number
@@ -283,7 +287,7 @@ export function compileSpeakerResults(
     averages[id] = []
     details[id] = []
   }
-  for (const r of rs) {
+  for (const r of normalizeRounds(rs)) {
     const summarized = summarizeSpeakerResults(speakerInstances, rawSpeakerResults, style, r)
     for (const result of summarized) {
       averages[result.id].push(result.average)
@@ -321,7 +325,7 @@ export function compileAdjudicatorResults(
     judgedTeams[id] = []
     activeNum[id] = 0
   }
-  for (const r of rs) {
+  for (const r of normalizeRounds(rs)) {
     const summarized = summarizeAdjudicatorResults(adjudicatorInstances, rawAdjResults, r)
     for (const result of summarized) {
       averages[result.id].push(result.score)
