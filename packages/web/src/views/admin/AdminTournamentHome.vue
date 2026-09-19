@@ -5041,6 +5041,7 @@ watch(
     isSavingTournamentBreak.value = false
     isSavingTournamentTeamRanking.value = false
     isSavingTournamentAdjudicatorRanking.value = false
+    setupRoundBreakUpdating.value = false
     tournamentAutosaveStatus.value = 'idle'
     tournamentAutosaveError.value = ''
     noticeSaveError.value = ''
