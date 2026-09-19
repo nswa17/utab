@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { strictMatching } from '../src/allocations/teams/strict_matchings.js'
 
 describe('allocations/teams/strict_matchings', () => {
-  it('returns empty object when no teams are provided', () => {
+  it('returns an empty matching when no teams are provided', () => {
     const result = strictMatching([], [], { style: { team_num: 2 } })
-    expect(result).toEqual({})
+    expect(result).toEqual([])
   })
 
   it('returns matchings for available teams', () => {
