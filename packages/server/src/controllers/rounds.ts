@@ -2375,6 +2375,8 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
   let mutationConnection: Connection | null = null
   let namespaceLease: RoundNamespaceLease | null = null
   let namespaceConnection: Connection | null = null
+  let entityLeases: EntityNamespaceLease[] = []
+  let entityConnection: Connection | null = null
   try {
     const { tournamentId, ids } = req.query as { tournamentId?: string; ids?: string }
     if (!ensureTournamentId(res, tournamentId)) return
@@ -2425,6 +2427,15 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     }
 
     const deletedRounds = targetRows.map((item) => item.round)
+    if (deletedRounds.length > 0) {
+      const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!acquiredEntityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      entityLeases = acquiredEntityLeases
+      entityConnection = connection
+    }
     const deletionSnapshot =
       targetRows.length > 0
         ? await captureRoundDeletionSnapshot(connection, tournamentId, targetRows)
@@ -2480,6 +2491,13 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
   } catch (err) {
     next(err)
   } finally {
+    if (entityLeases.length > 0 && entityConnection) {
+      try {
+        await releaseRoundEntityNamespaceLeases(entityConnection, entityLeases)
+      } catch {
+        // Entity namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
     if (mutationLeases.length > 0 && mutationConnection) {
       try {
         await releaseRoundMutationLeases(mutationConnection, mutationLeases)
