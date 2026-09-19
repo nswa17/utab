@@ -107,4 +107,42 @@ describe('detailed results export', () => {
     expect(csv).toContain("'=HYPERLINK")
     expect(csv).not.toContain(',=HYPERLINK')
   })
+  it('sorts double-digit speaker orders numerically', () => {
+    const speakerIds = Array.from({ length: 10 }, (_, index) => `speaker-${index + 1}`)
+    const manySpeakerSubmission: Submission = {
+      _id: 'ballot-many-speakers',
+      tournamentId: 'tournament-1',
+      round: 1,
+      type: 'ballot',
+      createdAt: '2026-07-17T09:00:00.000Z',
+      payload: {
+        teamAId: 'team-a',
+        teamBId: 'team-b',
+        winnerId: 'team-a',
+        speakerIdsA: speakerIds,
+        scoresA: Array.from({ length: 10 }, () => 75),
+        speakerIdsB: [],
+        scoresB: [],
+      },
+    }
+
+    const rows = buildDetailedResultsExportRows([manySpeakerSubmission], {
+      ...resolvers,
+      resolveSpeakerName: (id: string) => id,
+    })
+
+    expect(rows.map((row) => row.speaker_order)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '10',
+    ])
+  })
+
 })
