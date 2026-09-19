@@ -2279,4 +2279,103 @@ describe('Server integration', () => {
     expect(complete.status).toBe(200)
   })
 
+  it('uses team template speakers when round-specific speaker details are absent', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-template-speakers', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-template-speakers', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Compile Template Speakers Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: { no_speaker_score: false },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const speakerARes = await agent.post('/api/speakers').send({
+      tournamentId,
+      name: 'Template Speaker A',
+    })
+    const speakerBRes = await agent.post('/api/speakers').send({
+      tournamentId,
+      name: 'Template Speaker B',
+    })
+    expect(speakerARes.status).toBe(201)
+    expect(speakerBRes.status).toBe(201)
+    const speakerAId = String(speakerARes.body.data._id)
+    const speakerBId = String(speakerBRes.body.data._id)
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Template Team A',
+      template: { speakers: [speakerAId] },
+    })
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Template Team B',
+      template: { speakers: [speakerBId] },
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: 'template-speaker-judge',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const previewRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams', 'speakers'] },
+    })
+    expect(previewRes.status).toBe(200)
+    const speakerIds = previewRes.body.data.preview.compiled_speaker_results.map((row: any) =>
+      String(row.id)
+    )
+    expect(speakerIds).toEqual(expect.arrayContaining([speakerAId, speakerBId]))
+  })
+
 })
