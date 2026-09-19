@@ -1275,6 +1275,65 @@ describe('Server integration', () => {
     expect(forbiddenPatch.status).toBe(403)
   })
 
+  it('blocks concurrent tournament membership mutations with a lease', async () => {
+    const owner = request.agent(app)
+    const ownerRegisterRes = await owner
+      .post('/api/auth/register')
+      .send({ username: 'membership-lease-owner', password: 'password123', role: 'organizer' })
+    expect(ownerRegisterRes.status).toBe(201)
+    const ownerLoginRes = await owner
+      .post('/api/auth/login')
+      .send({ username: 'membership-lease-owner', password: 'password123' })
+    expect(ownerLoginRes.status).toBe(200)
+
+    const targetRegisterRes = await request(app).post('/api/auth/register').send({
+      username: 'membership-lease-target',
+      password: 'password123',
+      role: 'speaker',
+    })
+    expect(targetRegisterRes.status).toBe(201)
+
+    const tournamentRes = await owner
+      .post('/api/tournaments')
+      .send({ name: 'Membership Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const {
+      acquireTournamentMembershipLease,
+      releaseTournamentMembershipLease,
+    } = await import('../src/services/tournament-membership-guard.service.js')
+    const lease = await acquireTournamentMembershipLease(
+      tournamentId,
+      'membership-lease-target'
+    )
+    expect(lease).toBeTruthy()
+    if (!lease) throw new Error('Failed to acquire membership test lease')
+
+    try {
+      const blockedAdd = await owner.post(`/api/tournaments/${tournamentId}/users`).send({
+        username: 'membership-lease-target',
+        password: 'ignored-password',
+        role: 'speaker',
+      })
+      expect(blockedAdd.status).toBe(409)
+
+      const blockedRemove = await owner.delete(
+        `/api/tournaments/${tournamentId}/users?username=membership-lease-target`
+      )
+      expect(blockedRemove.status).toBe(409)
+    } finally {
+      expect(await releaseTournamentMembershipLease(lease)).toBe(true)
+    }
+
+    const retryAdd = await owner.post(`/api/tournaments/${tournamentId}/users`).send({
+      username: 'membership-lease-target',
+      password: 'ignored-password',
+      role: 'speaker',
+    })
+    expect(retryAdd.status).toBe(200)
+  })
+
   it('revokes organizer admin access immediately when membership is removed in another session', async () => {
     const owner = request.agent(app)
     const ownerRegisterRes = await owner
