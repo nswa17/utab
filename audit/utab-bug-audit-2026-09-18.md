@@ -7166,3 +7166,69 @@ The unavailable-assigned-entity exception was also re-read:
 - duplicate-assignment validation still runs before the availability exception.
 
 No additional Phase 10 blocking regression was found in this pass.
+
+
+## Phase 49 — cross-PR merge-hygiene review
+
+All currently open audit PRs #34 through #41 were rechecked at their exact current heads.
+
+Current status:
+- #34 `1b78cea2174bc94fe11ff372c96256f1233f2cbd`: mergeable, CI `35415799261` passed;
+- #35 `130d0fa346bd93218a684b88b493b1f356ac557d`: mergeable, CI `35445680122` passed;
+- #36 `eef5d1264b613ac8cb07cf13fee6fd44c30551fa`: mergeable, CI `35454152393` passed;
+- #37 `6d164672cbb87e34413c9cd6088eeffebb912a15`: mergeable, CI `35454565783` passed;
+- #38 `352ba0c63613b0190a58034d270a14576a61554a`: mergeable, CI `35453983648` passed;
+- #39 `8ded872fdc935eb2e3fbef8f47b9867c4ad73816`: mergeable, CI `35449749829` passed;
+- #40 `18065df8f06d04bec9e610dfdf2feb6066b20ff3`: mergeable, CI `35453505179` passed;
+- #41 `e485f374ff2ce02066a3ee71f5581bdf92830a7d`: mergeable/clean against current #40, CI `35460904815` passed.
+
+### Implementation overlap review
+
+The main overlapping implementation files were inspected at patch-hunk level.
+
+- #34 -> #35, `packages/core/src/results/results.ts`:
+  - #34 changes the compiled `vote_rate` calculation;
+  - #35 adds round-selector normalization and changes loop iteration to normalized rounds;
+  - the hunks are separate and should compose in a normal three-way merge.
+
+- #36 -> #40, `packages/server/src/controllers/rounds.ts`:
+  - #36 changes Submission version invalidation inside `moveRoundReferences`;
+  - #40 changes entity namespace serialization around Round create/update/delete/break flows;
+  - the implementation hunks are separate.
+
+- #38 -> #39, participant ballot view:
+  - #38 adds stale-completion context guards around async ballot submission;
+  - #39 adds wizard progress/history state and context-reset behavior;
+  - the implementation hunks are separate.
+
+- #38 -> #40, `routes/tournaments.ts`:
+  - #38 adds validated atomic `user_defined_data_patch`;
+  - #40 tightens positive-integer tournament round-count validation;
+  - the hunks are separate.
+
+- #39 -> #40, tournament import/copy:
+  - #39 surfaces rollback/cleanup failures;
+  - #40 validates imported entity/round state and skips runtime-only collections;
+  - the hunks are separate.
+
+No reviewed implementation overlap requires choosing one fix over another.
+
+### Expected test-only merge conflicts
+
+Several PRs append independent regression tests at the same file anchor. Git may report conflicts even though the desired semantic resolution is straightforward.
+
+1. `packages/server/test/integration.part4.test.ts`
+   - #38 inserts `preserves independent tournament metadata patches under concurrent saves`;
+   - #40 inserts `serializes round detail synchronization with entity CRUD namespace leases`;
+   - both insert immediately before the final auth-rate-limit test.
+   - #36/#37 also add blocks near the same file tail.
+
+   Resolution: retain the union of all independent test blocks; do not select one side wholesale.
+
+2. `packages/web/src/views/user/participant/round/ballot/__tests__/UserRoundBallotEntry.test.ts`
+   - #38 adds the stale async ballot-completion guard test;
+   - #39 adds wizard-progress reset/clamping tests near the same anchor.
+
+   Resolution: retain both sets of assertions/tests.
+
+These are merge-hygiene conflicts, not contradictory functional changes. If the PRs are merged sequentially, the post-conflict combined tree should be re-run through the full CI suite.
