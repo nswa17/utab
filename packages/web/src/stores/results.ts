@@ -28,7 +28,8 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   async function fetchResults(tournamentId: string) {
-    tournamentScope.activate(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) results.value = []
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
