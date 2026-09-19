@@ -2155,6 +2155,7 @@ const allocationSortCollator = new Intl.Collator(['ja', 'en'], {
 })
 const refreshGate = createLatestRequestGate()
 const compiledHistoryGate = createLatestRequestGate()
+const allocationRequestGate = createLatestRequestGate()
 let foregroundRefreshCount = 0
 
 function openNotice(message: string) {
@@ -2206,12 +2207,12 @@ function hydrateAutoBreakPolicyFromRound() {
   autoBreakSeeding.value = normalizeBreakSeeding(breakConfig.seeding, 'fixed_bracket')
 }
 
-async function syncAutoBreakPolicyToRound() {
+async function syncAutoBreakPolicyToRound(currentTournamentId = tournamentId.value) {
   if (autoOptions.value.teamAlgorithm !== 'break' || requestScope.value !== 'teams') {
     return true
   }
   const currentTournament = tournament.value
-  if (!currentTournament?._id) {
+  if (!currentTournamentId || !currentTournament?._id || currentTournament._id !== currentTournamentId) {
     requestError.value = t('読み込みに失敗しました。')
     return false
   }
@@ -2230,12 +2231,13 @@ async function syncAutoBreakPolicyToRound() {
     seeding: autoBreakSeeding.value,
   }
   const updated = await tournamentStore.updateTournament({
-    tournamentId: currentTournament._id,
+    tournamentId: currentTournamentId,
     user_defined_data: {
       ...currentUserDefined,
       break: breakConfig,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return false
   if (!updated?._id) {
     requestError.value = tournamentStore.error ?? t('ブレイク設定の保存に失敗しました。')
     return false
@@ -3907,6 +3909,11 @@ function estimatedRequiredAdjudicatorCountForRequest() {
 }
 
 async function requestAllocation() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentRequestScope = requestScope.value
+  if (!currentTournamentId) return
+  const requestToken = allocationRequestGate.begin()
   requestError.value = null
   if (!isSupportedTeamStyle.value) {
     requestError.value = t('この対戦表エディタは2チーム戦と4チーム戦に対応しています。')
@@ -4068,7 +4075,7 @@ async function requestAllocation() {
     const snapshotId = resolveSnapshotIdForScope(requestScope.value, useScopedOverrides)
     const roundList = snapshotId ? [] : priorRounds.value.map((item) => item.round)
     if (
-      (requestScope.value === 'adjudicators' || requestScope.value === 'venues') &&
+      (currentRequestScope === 'adjudicators' || currentRequestScope === 'venues') &&
       allocation.value.length === 0
     ) {
       requestError.value = t(
@@ -4077,7 +4084,14 @@ async function requestAllocation() {
       return
     }
     if (effectiveTeamAlgorithm === 'break' && scopeIncludesTeams.value) {
-      const synced = await syncAutoBreakPolicyToRound()
+      const synced = await syncAutoBreakPolicyToRound(currentTournamentId)
+      if (
+        !allocationRequestGate.isCurrent(requestToken) ||
+        tournamentId.value !== currentTournamentId ||
+        round.value !== currentRound
+      ) {
+        return
+      }
       if (!synced) return
     }
     const options = {
@@ -4090,7 +4104,7 @@ async function requestAllocation() {
     }
 
     const snapshotPayload =
-      requestScope.value === 'all'
+      currentRequestScope === 'all'
         ? useScopedOverrides
           ? {
               ...(teamSnapshotId ? { snapshotIdTeams: teamSnapshotId } : {}),
@@ -4104,8 +4118,8 @@ async function requestAllocation() {
           }
 
     const basePayload: Record<string, any> = {
-      tournamentId: tournamentId.value,
-      round: round.value,
+      tournamentId: currentTournamentId,
+      round: currentRound,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
       ...snapshotPayload,
@@ -4113,33 +4127,47 @@ async function requestAllocation() {
 
     let endpoint = '/allocations'
     let payload = basePayload
-    if (requestScope.value === 'teams') {
+    if (currentRequestScope === 'teams') {
       endpoint = effectiveTeamAlgorithm === 'break' ? '/allocations/break' : '/allocations/teams'
-    } else if (requestScope.value === 'adjudicators') {
+    } else if (currentRequestScope === 'adjudicators') {
       endpoint = '/allocations/adjudicators'
       payload = { ...basePayload, allocation: allocation.value }
-    } else if (requestScope.value === 'venues') {
+    } else if (currentRequestScope === 'venues') {
       endpoint = '/allocations/venues'
       payload = { ...basePayload, allocation: allocation.value }
     }
 
     const res = await api.post(endpoint, payload)
+    if (
+      !allocationRequestGate.isCurrent(requestToken) ||
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound
+    ) {
+      return
+    }
     const data = res.data?.data
     if (data?.allocation) {
       const generatedRows = cloneAllocation(data.allocation)
       allocation.value =
-        requestScope.value === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
+        currentRequestScope === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
       if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
         generatedUserDefinedData.value =
           data.userDefinedData && typeof data.userDefinedData === 'object'
             ? (data.userDefinedData as Record<string, any>)
             : null
-      } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
+      } else if (currentRequestScope === 'all' || currentRequestScope === 'teams') {
         generatedUserDefinedData.value = null
       }
       closeAutoGenerateModal()
     }
   } catch (err: any) {
+    if (
+      !allocationRequestGate.isCurrent(requestToken) ||
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound
+    ) {
+      return
+    }
     const responseError = err?.response?.data?.errors?.[0]
     requestError.value =
       formatAllocationRequestError({
@@ -4159,7 +4187,10 @@ async function requestAllocation() {
       responseError?.message ??
       t('自動生成に失敗しました')
   } finally {
-    requestLoading.value = false
+    const completion = allocationRequestGate.complete(requestToken)
+    if (completion.isCurrent) {
+      requestLoading.value = false
+    }
   }
 }
 
@@ -6210,6 +6241,8 @@ async function confirmDeleteCurrentDraw() {
 watch(
   [tournamentId, round],
   () => {
+    allocationRequestGate.invalidate()
+    requestLoading.value = false
     refresh()
   },
   { immediate: true }
