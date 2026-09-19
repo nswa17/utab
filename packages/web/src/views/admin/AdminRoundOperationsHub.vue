@@ -2977,6 +2977,7 @@ function selectTask(task: HubTask) {
   })
 }
 
+
 async function runCompileWithSource(
   source: CompileSource,
   scope: CompileScope = compileScope.value,
@@ -2985,6 +2986,9 @@ async function runCompileWithSource(
   }
 ) {
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
+  const targetRounds = [...effectiveCompileTargetRounds.value]
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
@@ -3003,11 +3007,12 @@ async function runCompileWithSource(
       t('選択ラウンドの提出データが揃っていないため、集計を実行できません。')
     return
   }
-  const result = await compiledStore.runCompile(tournamentId.value, {
+  const result = await compiledStore.runCompile(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
+    rounds: targetRounds,
     options: buildCompileOptions(optionOverrides, scope),
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!result) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
     return
@@ -3018,8 +3023,12 @@ async function runCompileWithSource(
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
   compileMessage.value = `${compileScopeLabelFor(scope)}集計が完了しました。`
-  await Promise.all([compiledStore.fetchLatest(tournamentId.value), refreshCompiledHistory()])
+  await Promise.all([
+    compiledStore.fetchLatest(currentTournamentId),
+    refreshCompiledHistory(currentTournamentId),
+  ])
 }
+
 
 async function runPreviewWithSource(
   source: CompileSource,
@@ -3030,6 +3039,9 @@ async function runPreviewWithSource(
 ) {
   if (!compileManualSaveEnabled) return
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
+  const targetRounds = [...effectiveCompileTargetRounds.value]
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
@@ -3053,11 +3065,12 @@ async function runPreviewWithSource(
   manualCompileSource.value = source
   manualCompileScope.value = scope
   manualCompileOptionOverrides.value = optionOverrides
-  const preview = await compiledStore.runPreview(tournamentId.value, {
+  const preview = await compiledStore.runPreview(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
+    rounds: targetRounds,
     options: buildCompileOptions(optionOverrides, scope),
   })
+  if (tournamentId.value !== currentTournamentId) return
   const previewState = compiledStore.previewState
   if (!preview || !previewState) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
@@ -3167,23 +3180,29 @@ function onSaveSnapshotModalCancel() {
   trackCompileMetric('save_cancelled', source)
 }
 
+
 async function saveCompiledSnapshot() {
   if (!compileManualSaveEnabled) return
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   if (!compileWorkflow.canSave) {
     openSaveSnapshotModal()
     return
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
   const snapshotMemo = compileWorkflow.snapshotMemoDraft
-  const saved = await compiledStore.saveCompiled(tournamentId.value, {
+  const targetRounds = [...effectiveCompileTargetRounds.value]
+  const savedScope = manualCompileScope.value
+  const saved = await compiledStore.saveCompiled(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
-    options: buildCompileOptions(manualCompileOptionOverrides.value, manualCompileScope.value),
+    rounds: targetRounds,
+    options: buildCompileOptions(manualCompileOptionOverrides.value, savedScope),
     snapshotMemo,
     previewSignature: compileWorkflow.previewSignature,
     revision: compileWorkflow.previewRevision,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!saved) {
     const isPreviewStale = (compiledStore.error ?? '').toLowerCase().includes('preview is stale')
     if (isPreviewStale) {
@@ -3195,9 +3214,9 @@ async function saveCompiledSnapshot() {
     return
   }
   compileWorkflow.markSaved()
-  compileMessage.value = `${compileScopeLabelFor(manualCompileScope.value)}参照を確定しました。`
+  compileMessage.value = `${compileScopeLabelFor(savedScope)}参照を確定しました。`
   trackCompileMetric('save_snapshot', source)
-  await refreshCompiledHistory()
+  await refreshCompiledHistory(currentTournamentId)
 }
 
 async function refreshCompiledHistory(currentTournamentId = tournamentId.value) {
@@ -3211,10 +3230,10 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
   }
   try {
     const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = []
   } finally {
     compiledHistoryGate.complete(token)
