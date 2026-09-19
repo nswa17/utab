@@ -3,7 +3,12 @@ import { Schema, type Connection, type InferSchemaType, type Model } from 'mongo
 const submissionSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
-    round: { type: Number, required: true },
+    round: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: Number.isInteger, message: 'round must be an integer' },
+    },
     type: { type: String, enum: ['ballot', 'feedback'], required: true },
     payload: { type: Schema.Types.Mixed, required: true },
     submittedBy: { type: String },
