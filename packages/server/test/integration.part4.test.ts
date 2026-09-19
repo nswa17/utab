@@ -5345,7 +5345,7 @@ describe('Server integration', () => {
     expect(deleteAfterRelease.status).toBe(200)
   })
 
-  it('serializes raw-result CRUD with round mutations without leaking partial multi-round leases', async () => {
+  it('serializes raw-result CRUD with round namespace mutations', async () => {
     const organizer = request.agent(app)
     expect(
       (
@@ -5368,17 +5368,10 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
 
-    const roundsRes = await organizer.post('/api/rounds').send([
-      { tournamentId, round: 1, name: 'Round 1' },
-      { tournamentId, round: 2, name: 'Round 2' },
-    ])
-    expect(roundsRes.status).toBe(201)
-    const roundIdByNumber = new Map(
-      (roundsRes.body.data as Array<{ _id: string; round: number }>).map((round) => [
-        Number(round.round),
-        String(round._id),
-      ])
-    )
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
 
     const rawRes = await organizer.post('/api/raw-results/teams').send({
       tournamentId,
@@ -5395,74 +5388,33 @@ describe('Server integration', () => {
 
     const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
     const {
-      acquireRoundMutationLease,
-      releaseRoundMutationLease,
-    } = await import('../src/services/round-write-guard.service.js')
+      acquireRoundNamespaceLease,
+      releaseRoundNamespaceLease,
+    } = await import('../src/services/round-namespace-guard.service.js')
     const connection = await getTournamentConnection(tournamentId)
-    const round2Lease = await acquireRoundMutationLease(
-      connection,
-      tournamentId,
-      roundIdByNumber.get(2)!,
-      2
-    )
-    expect(round2Lease).toBeTruthy()
-    if (!round2Lease) throw new Error('failed to acquire round 2 mutation lease in raw test')
+
+    // A successful raw-result write must release the structural namespace lease
+    // before the 201 response is observable by the client.
+    const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    expect(namespaceLease).toBeTruthy()
+    if (!namespaceLease) throw new Error('failed to acquire round namespace lease in raw test')
 
     try {
-      const blockedBulkCreate = await organizer.post('/api/raw-results/teams').send([
-        {
-          tournamentId,
-          id: 'raw-team-bulk-1',
-          from_id: 'raw-judge-bulk',
-          r: 1,
-          weight: 1,
-          win: 1,
-          side: 'gov',
-          opponents: ['raw-team-x'],
-        },
-        {
-          tournamentId,
-          id: 'raw-team-bulk-2',
-          from_id: 'raw-judge-bulk',
-          r: 2,
-          weight: 1,
-          win: 1,
-          side: 'gov',
-          opponents: ['raw-team-y'],
-        },
-      ])
-      expect(blockedBulkCreate.status).toBe(409)
-
-      const round1Lease = await acquireRoundMutationLease(
-        connection,
+      const blockedCreate = await organizer.post('/api/raw-results/teams').send({
         tournamentId,
-        roundIdByNumber.get(1)!,
-        1
-      )
-      expect(round1Lease).toBeTruthy()
-      if (round1Lease) await releaseRoundMutationLease(connection, round1Lease)
+        id: 'raw-team-b',
+        from_id: 'raw-judge-b',
+        r: 1,
+        weight: 1,
+        win: 0,
+        side: 'opp',
+        opponents: ['raw-team-a'],
+      })
+      expect(blockedCreate.status).toBe(409)
 
       const blockedPatch = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
         tournamentId,
         win: 0,
-      })
-      expect(blockedPatch.status).toBe(200)
-    } finally {
-      await releaseRoundMutationLease(connection, round2Lease)
-    }
-
-    const round1Lease = await acquireRoundMutationLease(
-      connection,
-      tournamentId,
-      roundIdByNumber.get(1)!,
-      1
-    )
-    expect(round1Lease).toBeTruthy()
-    if (!round1Lease) throw new Error('failed to acquire round 1 mutation lease in raw test')
-    try {
-      const blockedPatch = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
-        tournamentId,
-        win: 1,
       })
       expect(blockedPatch.status).toBe(409)
 
@@ -5476,7 +5428,7 @@ describe('Server integration', () => {
       )
       expect(blockedBulkDelete.status).toBe(409)
     } finally {
-      await releaseRoundMutationLease(connection, round1Lease)
+      expect(await releaseRoundNamespaceLease(connection, namespaceLease)).toBe(true)
     }
 
     const patchAfterRelease = await organizer.patch(`/api/raw-results/teams/${rawId}`).send({
@@ -5490,6 +5442,5 @@ describe('Server integration', () => {
     )
     expect(deleteAfterRelease.status).toBe(200)
   })
-
 
 })
