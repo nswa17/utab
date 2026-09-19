@@ -3176,16 +3176,17 @@ async function refresh() {
   }
 }
 
-async function refreshEntities() {
+async function refreshEntities(currentTournamentId = tournamentId.value) {
+  if (!currentTournamentId) return
   await Promise.all([
-    rounds.fetchRounds(tournamentId.value),
-    draws.fetchDraws(tournamentId.value),
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    venues.fetchVenues(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
-    institutions.fetchInstitutions(tournamentId.value),
-    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+    rounds.fetchRounds(currentTournamentId),
+    draws.fetchDraws(currentTournamentId),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    venues.fetchVenues(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
+    institutions.fetchInstitutions(currentTournamentId),
+    submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
   ])
 }
 
@@ -3697,7 +3698,7 @@ async function createRoundFromSetup() {
   userDefinedData.break_round = false
 
   const created = await rounds.createRound({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     round: roundNumber,
     name: setupRoundForm.name || t('ラウンド {round}', { round: roundNumber }),
     motionOpened: false,
@@ -4707,7 +4708,11 @@ function adjudicatorInstitutionsLabel(adjudicator: any) {
   return unique.length > 0 ? unique.join(', ') : t('未設定')
 }
 
-function buildEntityImportRequest(type: EntityTabKey, text: string) {
+function buildEntityImportRequest(
+  type: EntityTabKey,
+  text: string,
+  currentTournamentId = tournamentId.value
+) {
   const roundNumbers = sortedRounds.value
     .map((round) => Number(round.round))
     .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
@@ -4797,7 +4802,19 @@ function missingEntityNamesByKind(
   return Array.from(new Set(names))
 }
 
-async function createMissingEntitiesForImport(warnings: MissingEntityWarning[]) {
+function assertEntityImportContext(currentTournamentId: string) {
+  if (tournamentId.value === currentTournamentId) return
+  const err = new Error('Tournament context changed during import') as Error & {
+    code: 'IMPORT_CONTEXT_CHANGED'
+  }
+  err.code = 'IMPORT_CONTEXT_CHANGED'
+  throw err
+}
+
+async function createMissingEntitiesForImport(
+  warnings: MissingEntityWarning[],
+  currentTournamentId: string
+) {
   const missingInstitutions = missingEntityNamesByKind(warnings, 'institution')
   const missingSpeakers = missingEntityNamesByKind(warnings, 'speaker')
   const missingTeams = missingEntityNamesByKind(warnings, 'team')
@@ -4816,26 +4833,29 @@ async function createMissingEntitiesForImport(warnings: MissingEntityWarning[]) 
     await api.post(
       '/institutions',
       missingInstitutions.map((name) => ({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         name,
         category: 'institution',
         priority: 1,
       }))
     )
+    assertEntityImportContext(currentTournamentId)
   }
 
   if (missingSpeakers.length > 0) {
     await api.post(
       '/speakers',
       missingSpeakers.map((name) => ({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         name,
       }))
     )
+    assertEntityImportContext(currentTournamentId)
   }
 
   if (missingInstitutions.length > 0 || missingSpeakers.length > 0) {
-    await refreshEntities()
+    await refreshEntities(currentTournamentId)
+    assertEntityImportContext(currentTournamentId)
   }
 }
 
@@ -4844,6 +4864,8 @@ async function importEntitiesFromText(
   text: string,
   options: { autoCreateMissing?: boolean; skipDuplicateNames?: boolean } = {}
 ) {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) throw new Error('Tournament is not selected')
   const { autoCreateMissing = false, skipDuplicateNames = false } = options
   const {
     payload,
@@ -4853,7 +4875,7 @@ async function importEntitiesFromText(
     missingEntityWarnings,
     duplicateNameWarnings,
     endpoint,
-  } = buildEntityImportRequest(type, text)
+  } = buildEntityImportRequest(type, text, currentTournamentId)
 
   if (errors.length > 0) {
     throw new Error(errors.join('\n'))
@@ -4904,9 +4926,10 @@ async function importEntitiesFromText(
     }
 
     if (missingEntityWarnings.length > 0) {
-      await createMissingEntitiesForImport(missingEntityWarnings)
+      await createMissingEntitiesForImport(missingEntityWarnings, currentTournamentId)
+      assertEntityImportContext(currentTournamentId)
     }
-    const rebuilt = buildEntityImportRequest(type, text)
+    const rebuilt = buildEntityImportRequest(type, text, currentTournamentId)
     if (rebuilt.errors.length > 0) {
       throw new Error(rebuilt.errors.join('\n'))
     }
@@ -4933,7 +4956,9 @@ async function importEntitiesFromText(
       throw new Error(t('取り込み可能な行がありません。'))
     }
     await api.post(rebuilt.endpoint, filteredPayload)
-    await refreshEntities()
+    assertEntityImportContext(currentTournamentId)
+    await refreshEntities(currentTournamentId)
+    assertEntityImportContext(currentTournamentId)
     return
   }
 
@@ -4941,19 +4966,25 @@ async function importEntitiesFromText(
     throw new Error(t('取り込み可能な行がありません。'))
   }
   await api.post(endpoint, payload)
-  await refreshEntities()
+  assertEntityImportContext(currentTournamentId)
+  await refreshEntities(currentTournamentId)
+  assertEntityImportContext(currentTournamentId)
 }
 
 async function applyEntityImport() {
   if (!entityImportType.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   entityImportError.value = null
   csvError.value = null
   pendingMissingEntityImport.value = null
   pendingMissingEntityImportError.value = ''
   try {
     await importEntitiesFromText(entityImportType.value, entityImportText.value)
+    if (tournamentId.value !== currentTournamentId) return
     closeEntityImportModal()
   } catch (err: any) {
+    if (tournamentId.value !== currentTournamentId) return
     if (err?.code === 'IMPORT_REVIEW_REQUIRED') {
       pendingMissingEntityImport.value = {
         type: err.importType ?? entityImportType.value,
@@ -4988,6 +5019,8 @@ function closePendingMissingEntityImportModal() {
 async function confirmEntityImportWithMissingCreate() {
   const pending = pendingMissingEntityImport.value
   if (!pending) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   pendingMissingEntityImportError.value = ''
   entityImportError.value = null
   csvError.value = null
@@ -4996,8 +5029,10 @@ async function confirmEntityImportWithMissingCreate() {
       autoCreateMissing: pending.missingEntityWarnings.length > 0,
       skipDuplicateNames: pending.duplicateNameWarnings.length > 0,
     })
+    if (tournamentId.value !== currentTournamentId) return
     closeEntityImportModal()
   } catch (err: any) {
+    if (tournamentId.value !== currentTournamentId) return
     const message =
       err?.response?.data?.errors?.[0]?.message ?? err?.message ?? t('CSV取り込みに失敗しました')
     pendingMissingEntityImportError.value = message
