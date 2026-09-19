@@ -172,6 +172,45 @@ describe('tournament user membership consistency', () => {
     expect(next).toHaveBeenCalledWith(membershipError)
   })
 
+  it('refreshes membership state after acquiring the removal lease', async () => {
+    const membershipError = new Error('membership delete failed')
+    const staleUser = {
+      _id: userId,
+      username: 'existing-user',
+      role: 'speaker',
+      tournaments: [tournamentId, 'other-tournament'],
+      toJSON() {
+        return this
+      },
+    }
+    const refreshedUser = {
+      ...staleUser,
+      tournaments: ['other-tournament'],
+    }
+    mocks.findUser
+      .mockReturnValueOnce(writeResult(staleUser))
+      .mockReturnValueOnce(writeResult(refreshedUser))
+    mocks.findAndUpdateUser.mockReturnValue(writeResult(refreshedUser))
+    mocks.findMembership.mockReturnValue(membershipQuery(null))
+    mocks.deleteMembership.mockReturnValueOnce({
+      exec: async () => Promise.reject(membershipError),
+    })
+    const req = {
+      params: { id: tournamentId },
+      query: { userId },
+      session: { userId: 'organizer-user', tournaments: [tournamentId] },
+    }
+    const res = createResponse()
+    const next = vi.fn()
+
+    await removeTournamentUser(req as never, res as never, next)
+
+    expect(mocks.findUser).toHaveBeenNthCalledWith(1, { _id: userId })
+    expect(mocks.findUser).toHaveBeenNthCalledWith(2, { _id: userId })
+    expect(mocks.updateUser).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledWith(membershipError)
+  })
+
   it('restores the user and membership when membership removal fails', async () => {
     const membershipError = new Error('membership delete failed')
     const existingUser = {
