@@ -3125,6 +3125,56 @@ describe('Server integration', () => {
     ])
     expect(adjudicatorRes.status).toBe(201)
 
+    const lifecycleParticipantByEntityId = new Map<string, any>()
+    const addLifecycleParticipant = async (
+      username: string,
+      role: 'adjudicator' | 'speaker',
+      entityType: 'adjudicator' | 'speaker',
+      entityId: string
+    ) => {
+      const added = await organizer.post(`/api/tournaments/${tournamentId}/users`).send({
+        username,
+        password: 'password123',
+        role,
+        entityType,
+        entityId,
+      })
+      expect(added.status).toBe(201)
+      const agent = request.agent(app)
+      expect(
+        (
+          await agent
+            .post('/api/auth/login')
+            .send({ username, password: 'password123' })
+        ).status
+      ).toBe(200)
+      expect(
+        (
+          await agent
+            .post(`/api/tournaments/${tournamentId}/access`)
+            .send({ action: 'skip' })
+        ).status
+      ).toBe(200)
+      lifecycleParticipantByEntityId.set(entityId, agent)
+    }
+
+    for (const [index, adjudicator] of (adjudicatorRes.body.data as Array<any>).entries()) {
+      await addLifecycleParticipant(
+        `phase10-lifecycle-judge-${index + 1}`,
+        'adjudicator',
+        'adjudicator',
+        String(adjudicator._id)
+      )
+    }
+    for (const [index, speakerId] of Array.from(speakerIdByName.values()).entries()) {
+      await addLifecycleParticipant(
+        `phase10-lifecycle-speaker-${index + 1}`,
+        'speaker',
+        'speaker',
+        speakerId
+      )
+    }
+
     const venuesRes = await organizer.post('/api/venues').send([
       { tournamentId, name: 'Lifecycle Room A', template: { available: true, priority: 1 } },
       { tournamentId, name: 'Lifecycle Room B', template: { available: true, priority: 2 } },
@@ -3227,7 +3277,10 @@ describe('Server integration', () => {
     const stagedTeamIds = Array.isArray(stagedRow.teams)
       ? stagedRow.teams.map((value: unknown) => String(value))
       : Object.values(stagedRow.teams ?? {}).map((value) => String(value))
-    const stagedBallotBeforeFullPublication = await request(app)
+    const stagedChairId = String(stagedRow.chairs?.[0] ?? '')
+    const stagedChairAgent = lifecycleParticipantByEntityId.get(stagedChairId)
+    expect(stagedChairAgent).toBeTruthy()
+    const stagedBallotBeforeFullPublication = await stagedChairAgent
       .post('/api/submissions/ballots')
       .send({
         tournamentId,
@@ -3239,7 +3292,7 @@ describe('Server integration', () => {
         speakerIdsB: [speakerIdByTeamId.get(stagedTeamIds[1])],
         scoresA: [76],
         scoresB: [72],
-        submittedEntityId: String(stagedRow.chairs?.[0] ?? ''),
+        submittedEntityId: stagedChairId,
       })
     expect(stagedBallotBeforeFullPublication.status).toBe(400)
 
@@ -3293,7 +3346,9 @@ describe('Server integration', () => {
       expect(teamBId).toBeTruthy()
       expect(chairId).toBeTruthy()
 
-      const ballotRes = await request(app).post('/api/submissions/ballots').send({
+      const chairAgent = lifecycleParticipantByEntityId.get(chairId)
+      expect(chairAgent).toBeTruthy()
+      const ballotRes = await chairAgent.post('/api/submissions/ballots').send({
         tournamentId,
         round: 1,
         teamAId,
@@ -3307,7 +3362,10 @@ describe('Server integration', () => {
       })
       expect(ballotRes.status).toBe(201)
 
-      const feedbackRes = await request(app).post('/api/submissions/feedback').send({
+      const teamASpeakerId = speakerIdByTeamId.get(teamAId)!
+      const teamAAgent = lifecycleParticipantByEntityId.get(teamASpeakerId)
+      expect(teamAAgent).toBeTruthy()
+      const feedbackRes = await teamAAgent.post('/api/submissions/feedback').send({
         tournamentId,
         round: 1,
         adjudicatorId: chairId,
@@ -3391,7 +3449,9 @@ describe('Server integration', () => {
     const breakMatch = breakDrawRes.body.data.allocation[0]
     const [breakTeamAId, breakTeamBId] = rowTeamIds(breakMatch)
     const breakChairId = String(breakMatch.chairs[0])
-    const breakBallotRes = await request(app).post('/api/submissions/ballots').send({
+    const breakChairAgent = lifecycleParticipantByEntityId.get(breakChairId)
+    expect(breakChairAgent).toBeTruthy()
+    const breakBallotRes = await breakChairAgent.post('/api/submissions/ballots').send({
       tournamentId,
       round: 2,
       teamAId: breakTeamAId,
