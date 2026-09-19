@@ -5,6 +5,7 @@
 Phase 0: COMPLETE
 Phase 1: COMPLETE
 Phase 2: COMPLETE
+Phase 3: IN PROGRESS — #34 COMPLETE
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -124,6 +125,34 @@ The stack is logically `#40 -> #41`, but the branch ancestry is stale:
 
 Do not treat that drift as a second dependency. It is a synchronization task to perform when #41 is processed after #40.
 
-## Next phase
+## Phase 3 per-PR final audit
 
-Phase 3: audit the independent PRs one at a time. For each PR: refresh head/base, inspect the diff and changed-code neighborhoods, run/verify the relevant regression coverage and CI, fix only issues belonging to that PR, then checkpoint before moving to the next PR.
+### PR #34 — COMPLETE / PASS
+
+- PR: `[audit] Fix core allocation and vote-rate invariants`
+- base: `main` @ `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- audited head: `1b78cea2174bc94fe11ff372c96256f1233f2cbd`
+- GitHub mergeability at audit time: mergeable
+- application-code changes made during this final audit: none
+- unresolved review threads/comments: none
+
+Final code review:
+- weighted rank fix correctly replaces the sparse `Array(n).map(...)` construction with an initialized weight vector and feeds it through the existing integrated comparator;
+- strict allocation filters by round availability before strict matching, while the resulting matching remains compatible with the allocation conversion path;
+- `strictMatching([], ...)` now returns the declared `number[][]` shape (`[]`) rather than an object;
+- compiled two-team `vote_rate` correctly maps accumulated signed ballot margin from `[-acc, +acc]` onto support rate `[0,1]` for valid win/tie inputs, consistent with round-level vote-rate semantics;
+- no PR-introduced regression was found in surrounding allocation/result logic.
+
+Regression/CI verification from workflow run `35415799261`:
+- lint job: success (`pnpm lint`, `pnpm lint:web`);
+- core: 23 files / 108 tests passed, including `allocations-options.test.ts`, `allocations-teams-strict.test.ts`, and `results-summarize.test.ts`;
+- server: 12 files / 143 tests passed;
+- web: 66 files / 329 tests passed;
+- production build/typecheck: success.
+
+Out-of-scope boundary observation for a later phase:
+- the raw-team-result API currently accepts `win: z.number()` without a [0,1] bound. The #34 core formula assumes valid two-team win/tie points; malformed raw values could violate the intended vote-rate range as well as win-point semantics. This is not introduced by #34 and should not be patched into this core PR; re-check it when auditing boundary validation (#40) or during the cross-PR regression sweep.
+
+### Next Phase 3 unit
+
+Audit independent PR #35 only: refresh its head/base, inspect changed-code neighborhoods, verify its regression coverage/CI, fix only #35-scoped issues, then checkpoint.
