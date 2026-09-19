@@ -35,6 +35,15 @@ vi.mock('../src/services/hash.service.js', () => ({
   hashPassword: vi.fn(async () => 'password-hash'),
 }))
 
+vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
+  acquireTournamentMembershipLease: vi.fn(async () => ({
+    tournamentId,
+    username: 'test-user',
+    token: 'test-token',
+  })),
+  releaseTournamentMembershipLease: vi.fn(async () => true),
+}))
+
 import { addTournamentUser, removeTournamentUser } from '../src/controllers/tournament-users.js'
 
 const tournamentId = '507f1f77bcf86cd799439011'
