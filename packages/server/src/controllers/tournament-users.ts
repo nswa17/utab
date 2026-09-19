@@ -297,32 +297,36 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       tournamentId,
       String(user.username ?? ''),
       async () => {
-        const originalTournaments = (user.tournaments || []).map((id) => String(id))
+        const refreshedUser = await UserModel.findOne({ _id: user._id }).exec()
+        if (!refreshedUser) {
+          return { missing: true as const, saved: user, membership: null }
+        }
+        const originalTournaments = (refreshedUser.tournaments || []).map((id) => String(id))
         const membership = await TournamentMemberModel.findOne({
           tournamentId,
-          userId: String(user._id),
+          userId: String(refreshedUser._id),
         })
           .select({ role: 1, entityType: 1, entityId: 1, _id: 0 })
           .lean()
           .exec()
         const originallyHadTournament = originalTournaments.includes(tournamentId)
-        let saved = user
+        let saved = refreshedUser
         try {
           saved =
             (await UserModel.findOneAndUpdate(
-              { _id: user._id },
+              { _id: refreshedUser._id },
               { $pull: { tournaments: tournamentId } },
               { new: true }
-            ).exec()) ?? user
+            ).exec()) ?? refreshedUser
           await TournamentMemberModel.deleteOne({
             tournamentId,
-            userId: String(user._id),
+            userId: String(refreshedUser._id),
           }).exec()
         } catch (membershipError) {
           const rollbackTasks: Promise<unknown>[] = originallyHadTournament
             ? [
                 UserModel.updateOne(
-                  { _id: user._id },
+                  { _id: refreshedUser._id },
                   { $addToSet: { tournaments: tournamentId } }
                 ).exec(),
               ]
@@ -330,7 +334,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
           if (membership?.role) {
             rollbackTasks.push(
               TournamentMemberModel.updateOne(
-                { tournamentId, userId: String(user._id) },
+                { tournamentId, userId: String(refreshedUser._id) },
                 {
                   $set: {
                     role: membership.role,
@@ -349,14 +353,18 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
           await throwAfterRollback(
             membershipError,
             rollbackTasks,
-            `Failed to remove and roll back tournament user ${String(user._id)}`
+            `Failed to remove and roll back tournament user ${String(refreshedUser._id)}`
           )
         }
-        return { saved, membership }
+        return { missing: false as const, saved, membership }
       }
     )
     if (!membershipResult.acquired) {
       sendMembershipMutationConflict(res)
+      return
+    }
+    if (membershipResult.value.missing) {
+      notFound(res, 'User not found')
       return
     }
     const { saved, membership } = membershipResult.value
