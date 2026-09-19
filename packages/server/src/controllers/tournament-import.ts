@@ -17,6 +17,7 @@ import {
   venueTemplateSchema,
 } from '../schemas/entity-details.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
+import { isTournamentRuntimeCollection } from '../services/tournament-runtime-collections.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
 import { extractZip } from '../services/zip.js'
 import { badRequest } from './shared/http-errors.js'
@@ -481,6 +482,9 @@ async function importTournamentFromBundle(
           : deriveCollectionName(entry.path)
       if (!collectionName) {
         throw new TournamentImportError(400, 'Backup bundle collection metadata is inconsistent')
+      }
+      if (isTournamentRuntimeCollection(collectionName)) {
+        continue
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
       validateImportedRoundScope(collectionName, docs)
