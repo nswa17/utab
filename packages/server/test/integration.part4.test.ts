@@ -2623,4 +2623,429 @@ describe('Server integration', () => {
     expect(statuses).not.toContain(429)
     expect(statuses.every((status) => status === 401)).toBe(true)
   })
+  it('rejects concurrent admin edits to the same submission instead of silently losing one', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'submission-update-race', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'submission-update-race', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Update Race Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const created = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
+      comment: 'before race',
+      submittedEntityId: 'judge-a',
+    })
+    expect(created.status).toBe(201)
+    const submissionId = String(created.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const originalFindOneAndUpdate = SubmissionModel.findOneAndUpdate.bind(SubmissionModel)
+    let updateCalls = 0
+    let releaseFirstUpdate: (() => void) | null = null
+    const firstUpdateReleased = new Promise<void>((resolve) => {
+      releaseFirstUpdate = resolve
+    })
+
+    SubmissionModel.findOneAndUpdate = ((...args: any[]) => {
+      updateCalls += 1
+      const query = originalFindOneAndUpdate(...args)
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        if (updateCalls === 1) {
+          await firstUpdateReleased
+        } else {
+          releaseFirstUpdate?.()
+        }
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof SubmissionModel.findOneAndUpdate
+
+    try {
+      const makePayload = (winnerId: string, comment: string, scoreA: number, scoreB: number) => ({
+        tournamentId,
+        payload: {
+          teamAId: 'team-a',
+          teamBId: 'team-b',
+          winnerId,
+          scoresA: [scoreA],
+          scoresB: [scoreB],
+          speakerIdsA: ['spk-a'],
+          speakerIdsB: ['spk-b'],
+          comment,
+          submittedEntityId: 'judge-a',
+        },
+      })
+
+      const [left, right] = await Promise.all([
+        organizer
+          .patch(`/api/submissions/${submissionId}`)
+          .send(makePayload('team-a', 'left edit', 77, 72)),
+        organizer
+          .patch(`/api/submissions/${submissionId}`)
+          .send(makePayload('team-b', 'right edit', 70, 79)),
+      ])
+
+      expect([left.status, right.status].sort()).toEqual([200, 409])
+      const conflict = left.status === 409 ? left : right
+      expect(conflict.body.errors?.[0]?.message).toBe('Submission changed or deleted')
+
+      const finalList = await organizer.get(
+        `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+      )
+      expect(finalList.status).toBe(200)
+      expect(finalList.body.data).toHaveLength(1)
+      expect(['left edit', 'right edit']).toContain(finalList.body.data[0].payload.comment)
+    } finally {
+      SubmissionModel.findOneAndUpdate =
+        originalFindOneAndUpdate as typeof SubmissionModel.findOneAndUpdate
+    }
+  })
+
+  it('invalidates an in-flight submission edit when its round is renumbered', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'submission-round-race', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'submission-round-race', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Round Race Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const created = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['spk-a'],
+      speakerIdsB: ['spk-b'],
+      comment: 'before renumber',
+      submittedEntityId: 'judge-a',
+    })
+    expect(created.status).toBe(201)
+    const submissionId = String(created.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const originalFindOneAndUpdate = SubmissionModel.findOneAndUpdate.bind(SubmissionModel)
+
+    let signalUpdateReady: (() => void) | null = null
+    const updateReady = new Promise<void>((resolve) => {
+      signalUpdateReady = resolve
+    })
+    let releaseUpdate: (() => void) | null = null
+    const updateReleased = new Promise<void>((resolve) => {
+      releaseUpdate = resolve
+    })
+    let intercepted = false
+
+    SubmissionModel.findOneAndUpdate = ((...args: any[]) => {
+      const query = originalFindOneAndUpdate(...args)
+      if (intercepted) return query
+      intercepted = true
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        signalUpdateReady?.()
+        await updateReleased
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof SubmissionModel.findOneAndUpdate
+
+    try {
+      const editPromise = organizer
+        .patch(`/api/submissions/${submissionId}`)
+        .send({
+          tournamentId,
+          payload: {
+            teamAId: 'team-a',
+            teamBId: 'team-b',
+            winnerId: 'team-b',
+            scoresA: [70],
+            scoresB: [79],
+            speakerIdsA: ['spk-a'],
+            speakerIdsB: ['spk-b'],
+            comment: 'stale edit',
+            submittedEntityId: 'judge-a',
+          },
+        })
+        .then((response) => response)
+
+      await updateReady
+
+      const renumber = await organizer
+        .patch(`/api/rounds/${roundId}`)
+        .send({ tournamentId, round: 2 })
+      expect(renumber.status).toBe(200)
+
+      releaseUpdate?.()
+      const edit = await editPromise
+      expect(edit.status).toBe(409)
+      expect(edit.body.errors?.[0]?.message).toBe('Submission changed or deleted')
+
+      const oldRoundList = await organizer.get(
+        `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=1`
+      )
+      expect(oldRoundList.status).toBe(200)
+      expect(oldRoundList.body.data).toHaveLength(0)
+
+      const newRoundList = await organizer.get(
+        `/api/submissions?tournamentId=${tournamentId}&type=ballot&round=2`
+      )
+      expect(newRoundList.status).toBe(200)
+      expect(newRoundList.body.data).toHaveLength(1)
+      expect(newRoundList.body.data[0].payload.comment).toBe('before renumber')
+    } finally {
+      releaseUpdate?.()
+      SubmissionModel.findOneAndUpdate =
+        originalFindOneAndUpdate as typeof SubmissionModel.findOneAndUpdate
+    }
+  })
+
+  it('rejects one of two concurrent draw updates with the same starting version', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'draw-update-race', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'draw-update-race', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Draw Update Race Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const teamA = await organizer.post('/api/teams').send({ tournamentId, name: 'Race Team A' })
+    const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'Race Team B' })
+    expect(teamA.status).toBe(201)
+    expect(teamB.status).toBe(201)
+    const teamAId = String(teamA.body.data._id)
+    const teamBId = String(teamB.body.data._id)
+
+    const allocation = [
+      {
+        venue: null,
+        teams: { gov: teamAId, opp: teamBId },
+        chairs: [],
+        panels: [],
+        trainees: [],
+      },
+    ]
+    const createdDraw = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: false,
+      allocationOpened: false,
+      locked: false,
+    })
+    expect(createdDraw.status).toBe(201)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getDrawModel } = await import('../src/models/draw.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const DrawModel = getDrawModel(connection)
+    const originalFindOneAndUpdate = DrawModel.findOneAndUpdate.bind(DrawModel)
+    let updateCalls = 0
+    let releaseFirstUpdate: (() => void) | null = null
+    const firstUpdateReleased = new Promise<void>((resolve) => {
+      releaseFirstUpdate = resolve
+    })
+
+    DrawModel.findOneAndUpdate = ((...args: any[]) => {
+      updateCalls += 1
+      const query = originalFindOneAndUpdate(...args)
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        if (updateCalls === 1) {
+          await firstUpdateReleased
+        } else {
+          releaseFirstUpdate?.()
+        }
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof DrawModel.findOneAndUpdate
+
+    try {
+      const [publishTeams, publishAdjudicators] = await Promise.all([
+        organizer.post('/api/draws').send({
+          tournamentId,
+          round: 1,
+          allocation,
+          drawOpened: true,
+          allocationOpened: false,
+          locked: false,
+        }),
+        organizer.post('/api/draws').send({
+          tournamentId,
+          round: 1,
+          allocation,
+          drawOpened: false,
+          allocationOpened: true,
+          locked: false,
+        }),
+      ])
+
+      expect([publishTeams.status, publishAdjudicators.status].sort()).toEqual([201, 409])
+      const conflict = publishTeams.status === 409 ? publishTeams : publishAdjudicators
+      expect(conflict.body.errors?.[0]?.message).toBe('Draw is locked or changed')
+
+      const finalDraw = await organizer.get(
+        `/api/draws?tournamentId=${tournamentId}&round=1`
+      )
+      expect(finalDraw.status).toBe(200)
+      expect(finalDraw.body.data).toHaveLength(1)
+      expect([
+        [true, false],
+        [false, true],
+      ]).toContainEqual([
+        finalDraw.body.data[0].drawOpened,
+        finalDraw.body.data[0].allocationOpened,
+      ])
+    } finally {
+      DrawModel.findOneAndUpdate = originalFindOneAndUpdate as typeof DrawModel.findOneAndUpdate
+    }
+  })
+
+  it('preserves draw publication and lock flags when an update omits them', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'draw-state-preserve', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'draw-state-preserve', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Draw State Preserve Open',
+      style: 1,
+      options: { style: { team_num: 2 } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const teamA = await organizer.post('/api/teams').send({ tournamentId, name: 'State Team A' })
+    const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'State Team B' })
+    expect(teamA.status).toBe(201)
+    expect(teamB.status).toBe(201)
+
+    const allocation = [
+      {
+        venue: null,
+        teams: {
+          gov: String(teamA.body.data._id),
+          opp: String(teamB.body.data._id),
+        },
+        chairs: [],
+        panels: [],
+        trainees: [],
+      },
+    ]
+
+    const created = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      drawOpened: true,
+      allocationOpened: true,
+      locked: true,
+    })
+    expect(created.status).toBe(201)
+    expect(created.body.data.drawOpened).toBe(true)
+    expect(created.body.data.allocationOpened).toBe(true)
+    expect(created.body.data.locked).toBe(true)
+
+    const allocationOnlyUpdate = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+    })
+    expect(allocationOnlyUpdate.status).toBe(201)
+    expect(allocationOnlyUpdate.body.data.drawOpened).toBe(true)
+    expect(allocationOnlyUpdate.body.data.allocationOpened).toBe(true)
+    expect(allocationOnlyUpdate.body.data.locked).toBe(true)
+
+    const explicitUnlock = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation,
+      locked: false,
+    })
+    expect(explicitUnlock.status).toBe(201)
+    expect(explicitUnlock.body.data.drawOpened).toBe(true)
+    expect(explicitUnlock.body.data.allocationOpened).toBe(true)
+    expect(explicitUnlock.body.data.locked).toBe(false)
+  })
+
 })

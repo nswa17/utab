@@ -414,9 +414,9 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       round,
       allocation,
       userDefinedData,
-      drawOpened,
-      allocationOpened,
-      locked,
+      drawOpened: drawOpened ?? (existingDraw?.drawOpened === true),
+      allocationOpened: allocationOpened ?? (existingDraw?.allocationOpened === true),
+      locked: locked ?? (existingDraw?.locked === true),
       createdBy: req.session?.userId,
       expected: existingDraw
         ? { id: String(existingDraw._id), version: readDrawVersion(existingDraw) }
