@@ -359,10 +359,13 @@ async function saveEdit() {
 }
 
 async function remove(id?: string) {
-  if (!id) return
-  const deleted = await raw.deleteRawResult(activeLabel.value, id, tournamentId.value)
-  if (deleted === null) return
-  await refresh()
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentLabel = activeLabel.value
+  if (!id || !currentTournamentId) return
+  await raw.deleteRawResult(currentLabel, id, currentTournamentId)
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
+  await refresh(currentTournamentId, currentRound)
 }
 
 function openDeleteAllModal() {
