@@ -399,7 +399,14 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       )
       return
     }
+
+    const DrawModel = getDrawModel(connection)
+    const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
+    const existingAllocationRefKeys = new Set(
+      collectAllocationEntityRefs(existingDraw?.allocation).map((ref) => `${ref.kind}:${ref.id}`)
+    )
     const unavailableRefs = allocationRefs.filter((ref) => {
+      if (existingAllocationRefKeys.has(`${ref.kind}:${ref.id}`)) return false
       if (ref.kind === 'team') return teamAvailabilityById.get(ref.id) === false
       if (ref.kind === 'adjudicator') return adjudicatorAvailabilityById.get(ref.id) === false
       return venueAvailabilityById.get(ref.id) === false
@@ -408,9 +415,6 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
       return
     }
-
-    const DrawModel = getDrawModel(connection)
-    const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
     if (
       existingDraw?.locked === true &&
       (!isDeepStrictEqual(
