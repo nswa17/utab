@@ -6145,9 +6145,13 @@ function closeDeleteDrawModal() {
 }
 
 async function confirmDeleteCurrentDraw() {
-  if (!currentDraw.value?._id) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const drawId = String(currentDraw.value?._id ?? '')
+  if (!drawId || !currentTournamentId) return
   closeDeleteDrawModal()
-  const deleted = await draws.deleteDraw(currentDraw.value._id, tournamentId.value)
+  const deleted = await draws.deleteDraw(drawId, currentTournamentId)
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (deleted) {
     syncFromDraw(null)
   }
