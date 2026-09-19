@@ -1869,6 +1869,15 @@ watch(
   { immediate: true }
 )
 
+watch([tournamentId, round], () => {
+  activeStepIndex.value = 0
+  furthestStepIndex.value = 0
+  returnToConfirmAfterEdit.value = false
+  confirmOpen.value = false
+  successOpen.value = false
+  clearCountdown()
+})
+
 watch([teamAId, teamBId], ([nextTeamA, nextTeamB], [prevTeamA, prevTeamB]) => {
   if (nextTeamA !== prevTeamA || nextTeamB !== prevTeamB) {
     activeStepIndex.value = 0
