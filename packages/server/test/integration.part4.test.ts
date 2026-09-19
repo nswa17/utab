@@ -5666,4 +5666,79 @@ describe('Server integration', () => {
   })
 
 
+  it('blocks privacy erasure while a round write is active', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'privacy-write-barrier-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'privacy-write-barrier-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Privacy Write Barrier Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const speakerRes = await organizer
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Privacy Barrier Speaker' })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = String(speakerRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundWriteLease,
+      releaseRoundWriteLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const { executeSpeakerPersonalDataErase } = await import('../src/controllers/privacy.js')
+    const connection = await getTournamentConnection(tournamentId)
+
+    const writeLease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      1,
+      roundId
+    )
+    expect(writeLease).toBeTruthy()
+    if (!writeLease) throw new Error('failed to acquire active round write lease')
+
+    try {
+      await expect(
+        executeSpeakerPersonalDataErase({
+          tournamentId,
+          entityId: speakerId,
+          reason: 'privacy write barrier',
+          eraseMode: 'anonymize',
+        })
+      ).rejects.toMatchObject({ name: 'EraseConflict', status: 409 })
+    } finally {
+      await releaseRoundWriteLease(connection, writeLease)
+    }
+
+    const erased = await executeSpeakerPersonalDataErase({
+      tournamentId,
+      entityId: speakerId,
+      reason: 'privacy write barrier',
+      eraseMode: 'anonymize',
+    })
+    expect(erased?.redacted).toBe(true)
+  })
+
+
 })
