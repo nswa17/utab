@@ -1,13 +1,8 @@
+import type { DrawTeamRecord } from '@/utils/draw-teams'
+
 export interface DrawAllocationRow {
   venue?: string
-  teams: {
-    gov: string
-    opp: string
-    og?: string
-    oo?: string
-    cg?: string
-    co?: string
-  }
+  teams: DrawTeamRecord
   chairs: string[]
   panels: string[]
   trainees: string[]
