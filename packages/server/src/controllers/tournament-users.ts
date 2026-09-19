@@ -2,6 +2,10 @@ import type { RequestHandler } from 'express'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { UserModel } from '../models/user.js'
 import { hashPassword } from '../services/hash.service.js'
+import {
+  acquireTournamentMembershipLease,
+  releaseTournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
 function sanitizeTournamentUserResponse(
@@ -23,6 +27,13 @@ function sanitizeTournamentUserResponse(
     role: membershipRole ?? user.role,
     tournaments: isMember ? [tournamentId] : [],
   }
+}
+
+function sendMembershipMutationConflict(res: Parameters<RequestHandler>[1]) {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Tournament membership changed concurrently; retry' }],
+  })
 }
 
 async function throwAfterRollback(
@@ -54,88 +65,102 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const existing = await UserModel.findOne({ username }).exec()
-    if (!existing) {
-      const passwordHash = await hashPassword(password)
-      const created = await UserModel.create({
-        username,
-        passwordHash,
-        role,
-        tournaments: [tournamentId],
-      })
-      try {
-        await TournamentMemberModel.create({
-          tournamentId,
-          userId: String(created._id),
-          role,
-        })
-      } catch (membershipError) {
-        await throwAfterRollback(
-          membershipError,
-          [
-            UserModel.deleteOne({ _id: created._id }).exec(),
-            TournamentMemberModel.deleteOne({
-              tournamentId,
-              userId: String(created._id),
-            }).exec(),
-          ],
-          `Failed to add and roll back tournament user ${String(created._id)}`
-        )
-      }
-      res.status(201).json({ data: sanitizeTournamentUserResponse(created.toJSON(), tournamentId, role), errors: [] })
+    const membershipLease = await acquireTournamentMembershipLease(tournamentId, username)
+    if (!membershipLease) {
+      sendMembershipMutationConflict(res)
       return
     }
 
-    const originalTournaments = (existing.tournaments || []).map((t) => String(t))
-    const previousMembership = await TournamentMemberModel.findOne({
-      tournamentId,
-      userId: String(existing._id),
-    })
-      .select({ role: 1, _id: 0 })
-      .lean()
-      .exec()
-    const alreadyHadTournament = originalTournaments.includes(tournamentId)
-    let saved = existing
+    let responseStatus = 200
+    let responseData: ReturnType<typeof sanitizeTournamentUserResponse>
     try {
-      saved =
-        (await UserModel.findOneAndUpdate(
-          { _id: existing._id },
-          { $addToSet: { tournaments: tournamentId } },
-          { new: true }
-        ).exec()) ?? existing
-      await TournamentMemberModel.updateOne(
-        { tournamentId, userId: String(existing._id) },
-        { $set: { role } },
-        { upsert: true }
-      ).exec()
-    } catch (membershipError) {
-      const membershipRollback = previousMembership
-        ? TournamentMemberModel.updateOne(
+      const existing = await UserModel.findOne({ username }).exec()
+      if (!existing) {
+        const passwordHash = await hashPassword(password)
+        const created = await UserModel.create({
+          username,
+          passwordHash,
+          role,
+          tournaments: [tournamentId],
+        })
+        try {
+          await TournamentMemberModel.create({
+            tournamentId,
+            userId: String(created._id),
+            role,
+          })
+        } catch (membershipError) {
+          await throwAfterRollback(
+            membershipError,
+            [
+              UserModel.deleteOne({ _id: created._id }).exec(),
+              TournamentMemberModel.deleteOne({
+                tournamentId,
+                userId: String(created._id),
+              }).exec(),
+            ],
+            `Failed to add and roll back tournament user ${String(created._id)}`
+          )
+        }
+        responseStatus = 201
+        responseData = sanitizeTournamentUserResponse(created.toJSON(), tournamentId, role)
+      } else {
+        const originalTournaments = (existing.tournaments || []).map((t) => String(t))
+        const previousMembership = await TournamentMemberModel.findOne({
+          tournamentId,
+          userId: String(existing._id),
+        })
+          .select({ role: 1, _id: 0 })
+          .lean()
+          .exec()
+        const alreadyHadTournament = originalTournaments.includes(tournamentId)
+        let saved = existing
+        try {
+          saved =
+            (await UserModel.findOneAndUpdate(
+              { _id: existing._id },
+              { $addToSet: { tournaments: tournamentId } },
+              { new: true }
+            ).exec()) ?? existing
+          await TournamentMemberModel.updateOne(
             { tournamentId, userId: String(existing._id) },
-            { $set: { role: previousMembership.role } },
+            { $set: { role } },
             { upsert: true }
           ).exec()
-        : TournamentMemberModel.deleteOne({
-            tournamentId,
-            userId: String(existing._id),
-          }).exec()
-      await throwAfterRollback(
-        membershipError,
-        [
-          ...(alreadyHadTournament
-            ? []
-            : [
-                UserModel.updateOne(
-                  { _id: existing._id },
-                  { $pull: { tournaments: tournamentId } }
-                ).exec(),
-              ]),
-          membershipRollback,
-        ],
-        `Failed to add and roll back tournament user ${String(existing._id)}`
-      )
+        } catch (membershipError) {
+          const membershipRollback = previousMembership
+            ? TournamentMemberModel.updateOne(
+                { tournamentId, userId: String(existing._id) },
+                { $set: { role: previousMembership.role } },
+                { upsert: true }
+              ).exec()
+            : TournamentMemberModel.deleteOne({
+                tournamentId,
+                userId: String(existing._id),
+              }).exec()
+          await throwAfterRollback(
+            membershipError,
+            [
+              ...(alreadyHadTournament
+                ? []
+                : [
+                    UserModel.updateOne(
+                      { _id: existing._id },
+                      { $pull: { tournaments: tournamentId } }
+                    ).exec(),
+                  ]),
+              membershipRollback,
+            ],
+            `Failed to add and roll back tournament user ${String(existing._id)}`
+          )
+        }
+        responseData = sanitizeTournamentUserResponse(saved.toJSON(), tournamentId, role)
+      }
+    } finally {
+      await releaseTournamentMembershipLease(membershipLease)
     }
-    res.status(200).json({ data: sanitizeTournamentUserResponse(saved.toJSON(), tournamentId, role), errors: [] })
+
+    res.status(responseStatus).json({ data: responseData!, errors: [] })
   } catch (err) {
     next(err)
   }
@@ -167,50 +192,64 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const originalTournaments = (user.tournaments || []).map((id) => String(id))
-    const membership = await TournamentMemberModel.findOne({
+    const membershipLease = await acquireTournamentMembershipLease(
       tournamentId,
-      userId: String(user._id),
-    })
-      .select({ role: 1, _id: 0 })
-      .lean()
-      .exec()
-    const originallyHadTournament = originalTournaments.includes(tournamentId)
+      String(user.username ?? '')
+    )
+    if (!membershipLease) {
+      sendMembershipMutationConflict(res)
+      return
+    }
+
     let saved = user
+    let membership: { role?: string } | null = null
     try {
-      saved =
-        (await UserModel.findOneAndUpdate(
-          { _id: user._id },
-          { $pull: { tournaments: tournamentId } },
-          { new: true }
-        ).exec()) ?? user
-      await TournamentMemberModel.deleteOne({
+      const originalTournaments = (user.tournaments || []).map((id) => String(id))
+      membership = await TournamentMemberModel.findOne({
         tournamentId,
         userId: String(user._id),
-      }).exec()
-    } catch (membershipError) {
-      const rollbackTasks: Promise<unknown>[] = originallyHadTournament
-        ? [
-            UserModel.updateOne(
-              { _id: user._id },
-              { $addToSet: { tournaments: tournamentId } }
-            ).exec(),
-          ]
-        : []
-      if (membership?.role) {
-        rollbackTasks.push(
-          TournamentMemberModel.updateOne(
-            { tournamentId, userId: String(user._id) },
-            { $set: { role: membership.role } },
-            { upsert: true }
-          ).exec()
+      })
+        .select({ role: 1, _id: 0 })
+        .lean()
+        .exec()
+      const originallyHadTournament = originalTournaments.includes(tournamentId)
+      try {
+        saved =
+          (await UserModel.findOneAndUpdate(
+            { _id: user._id },
+            { $pull: { tournaments: tournamentId } },
+            { new: true }
+          ).exec()) ?? user
+        await TournamentMemberModel.deleteOne({
+          tournamentId,
+          userId: String(user._id),
+        }).exec()
+      } catch (membershipError) {
+        const rollbackTasks: Promise<unknown>[] = originallyHadTournament
+          ? [
+              UserModel.updateOne(
+                { _id: user._id },
+                { $addToSet: { tournaments: tournamentId } }
+              ).exec(),
+            ]
+          : []
+        if (membership?.role) {
+          rollbackTasks.push(
+            TournamentMemberModel.updateOne(
+              { tournamentId, userId: String(user._id) },
+              { $set: { role: membership.role } },
+              { upsert: true }
+            ).exec()
+          )
+        }
+        await throwAfterRollback(
+          membershipError,
+          rollbackTasks,
+          `Failed to remove and roll back tournament user ${String(user._id)}`
         )
       }
-      await throwAfterRollback(
-        membershipError,
-        rollbackTasks,
-        `Failed to remove and roll back tournament user ${String(user._id)}`
-      )
+    } finally {
+      await releaseTournamentMembershipLease(membershipLease)
     }
 
     if (req.session?.userId && String(req.session.userId) === String(user._id)) {
