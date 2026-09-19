@@ -238,6 +238,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         const connection = await getTournamentConnection(tournamentId)
         const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
         if (!mutationLease) return
+        let mutationLeaseReleased = false
         try {
           const Model = options.getModel(connection)
           const docs: PlainRecord[] = payload.map((item) => ({
@@ -274,9 +275,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           }
           throw createError
         }
+          await releaseMutationLease(connection, mutationLease)
+          mutationLeaseReleased = true
           res.status(201).json({ data: created, errors: [] })
         } finally {
-          await releaseMutationLease(connection, mutationLease)
+          if (!mutationLeaseReleased) {
+            await releaseMutationLease(connection, mutationLease)
+          }
         }
         return
       }
@@ -287,12 +292,17 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
       if (!mutationLease) return
+      let mutationLeaseReleased = false
       try {
         const Model = options.getModel(connection)
         const created = await Model.create(buildCreateDoc(payload, tournamentId, options.fields))
+        await releaseMutationLease(connection, mutationLease)
+        mutationLeaseReleased = true
         res.status(201).json({ data: created.toJSON(), errors: [] })
       } finally {
-        await releaseMutationLease(connection, mutationLease)
+        if (!mutationLeaseReleased) {
+          await releaseMutationLease(connection, mutationLease)
+        }
       }
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
@@ -329,6 +339,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
       if (!mutationLease) return
+      let mutationLeaseReleased = false
       try {
         const Model = options.getModel(connection)
         const existing = await Model.find({ tournamentId }).lean().exec()
@@ -487,9 +498,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         const updated = await Model.find({ _id: { $in: ids }, tournamentId })
           .lean()
           .exec()
+        await releaseMutationLease(connection, mutationLease)
+        mutationLeaseReleased = true
         res.json({ data: updated, errors: [] })
       } finally {
-        await releaseMutationLease(connection, mutationLease)
+        if (!mutationLeaseReleased) {
+          await releaseMutationLease(connection, mutationLease)
+        }
       }
     } catch (err: any) {
       if (err?.code === 'UTAB_BULK_MUTATION_CONFLICT') {
@@ -526,12 +541,17 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
       if (!mutationLease) return
+      let mutationLeaseReleased = false
       try {
         const Model = options.getModel(connection)
         const result = await Model.deleteMany({ tournamentId, _id: { $in: idList } }).exec()
+        await releaseMutationLease(connection, mutationLease)
+        mutationLeaseReleased = true
         res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
       } finally {
-        await releaseMutationLease(connection, mutationLease)
+        if (!mutationLeaseReleased) {
+          await releaseMutationLease(connection, mutationLease)
+        }
       }
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
@@ -556,6 +576,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
       if (!mutationLease) return
+      let mutationLeaseReleased = false
       try {
         const Model = options.getModel(connection)
         const updated = await Model.findOneAndUpdate(
@@ -570,9 +591,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           notFound(res, options.notFoundMessage)
           return
         }
+        await releaseMutationLease(connection, mutationLease)
+        mutationLeaseReleased = true
         res.json({ data: updated, errors: [] })
       } finally {
-        await releaseMutationLease(connection, mutationLease)
+        if (!mutationLeaseReleased) {
+          await releaseMutationLease(connection, mutationLease)
+        }
       }
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
@@ -596,6 +621,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
       if (!mutationLease) return
+      let mutationLeaseReleased = false
       try {
         const Model = options.getModel(connection)
         const deleted = await Model.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
@@ -603,9 +629,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           notFound(res, options.notFoundMessage)
           return
         }
+        await releaseMutationLease(connection, mutationLease)
+        mutationLeaseReleased = true
         res.json({ data: deleted, errors: [] })
       } finally {
-        await releaseMutationLease(connection, mutationLease)
+        if (!mutationLeaseReleased) {
+          await releaseMutationLease(connection, mutationLease)
+        }
       }
     } catch (err) {
       next(err)
