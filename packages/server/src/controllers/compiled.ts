@@ -164,9 +164,9 @@ function buildPreviewRevision(payload: CompiledPayload): string {
     compile_options: payload.compile_options,
     compile_warnings: payload.compile_warnings,
     compile_diff_meta: payload.compile_diff_meta,
-    team_result_count: payload.compiled_team_results.length,
-    speaker_result_count: payload.compiled_speaker_results.length,
-    adjudicator_result_count: payload.compiled_adjudicator_results.length,
+    team_results_hash: sha256Hex(stableSerialize(payload.compiled_team_results)),
+    speaker_results_hash: sha256Hex(stableSerialize(payload.compiled_speaker_results)),
+    adjudicator_results_hash: sha256Hex(stableSerialize(payload.compiled_adjudicator_results)),
   }
   return sha256Hex(stableSerialize(revisionSeed))
 }
