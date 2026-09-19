@@ -5443,4 +5443,219 @@ describe('Server integration', () => {
     expect(deleteAfterRelease.status).toBe(200)
   })
 
+  it('blocks source-round result and submission moves during structural mutation', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'cross-round-write-lease-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'cross-round-write-lease-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Cross Round Write Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundsRes = await organizer.post('/api/rounds').send([
+      { tournamentId, round: 1, name: 'Round 1' },
+      { tournamentId, round: 2, name: 'Round 2' },
+    ])
+    expect(roundsRes.status).toBe(201)
+    const roundIdByNumber = new Map(
+      (roundsRes.body.data as Array<{ _id: string; round: number }>).map((row) => [
+        Number(row.round),
+        String(row._id),
+      ])
+    )
+
+    const resultRes = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { marker: 'cross-round-result' },
+    })
+    expect(resultRes.status).toBe(201)
+    const resultId = String(resultRes.body.data._id)
+
+    const submissionRes = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'cross-team-a',
+      teamBId: 'cross-team-b',
+      winnerId: 'cross-team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['cross-speaker-a'],
+      speakerIdsB: ['cross-speaker-b'],
+      submittedEntityId: 'cross-judge',
+    })
+    expect(submissionRes.status).toBe(201)
+    const submissionId = String(submissionRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundMutationLease,
+      releaseRoundMutationLease,
+    } = await import('../src/services/round-write-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const sourceLease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      roundIdByNumber.get(1)!,
+      1
+    )
+    expect(sourceLease).toBeTruthy()
+    if (!sourceLease) throw new Error('failed to acquire source round mutation lease')
+
+    try {
+      const blockedResultMove = await organizer.patch(`/api/results/${resultId}`).send({
+        tournamentId,
+        round: 2,
+      })
+      expect(blockedResultMove.status).toBe(409)
+
+      const blockedSubmissionMove = await organizer.patch(`/api/submissions/${submissionId}`).send({
+        tournamentId,
+        round: 2,
+      })
+      expect(blockedSubmissionMove.status).toBe(409)
+    } finally {
+      await releaseRoundMutationLease(connection, sourceLease)
+    }
+
+    const movedResult = await organizer.patch(`/api/results/${resultId}`).send({
+      tournamentId,
+      round: 2,
+    })
+    expect(movedResult.status).toBe(200)
+    expect(Number(movedResult.body.data.round)).toBe(2)
+
+    const movedSubmission = await organizer.patch(`/api/submissions/${submissionId}`).send({
+      tournamentId,
+      round: 2,
+    })
+    expect(movedSubmission.status).toBe(200)
+    expect(Number(movedSubmission.body.data.round)).toBe(2)
+  })
+
+  it('blocks draw and submission deletion during round namespace mutation', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'namespace-delete-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'namespace-delete-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Namespace Delete Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Namespace Delete A',
+    })
+    const teamBRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Namespace Delete B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const drawRes = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+      locked: false,
+    })
+    expect(drawRes.status).toBe(201)
+    const drawId = String(drawRes.body.data._id)
+
+    const submissionRes = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: ['namespace-speaker-a'],
+      speakerIdsB: ['namespace-speaker-b'],
+      submittedEntityId: 'namespace-judge',
+    })
+    expect(submissionRes.status).toBe(201)
+    const submissionId = String(submissionRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireRoundNamespaceLease,
+      releaseRoundNamespaceLease,
+    } = await import('../src/services/round-namespace-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    expect(namespaceLease).toBeTruthy()
+    if (!namespaceLease) throw new Error('failed to acquire namespace lease for deletion test')
+
+    try {
+      const blockedDrawDelete = await organizer.delete(
+        `/api/draws/${drawId}?tournamentId=${tournamentId}`
+      )
+      expect(blockedDrawDelete.status).toBe(409)
+
+      const blockedSubmissionDelete = await organizer.delete(
+        `/api/submissions/${submissionId}?tournamentId=${tournamentId}`
+      )
+      expect(blockedSubmissionDelete.status).toBe(409)
+    } finally {
+      expect(await releaseRoundNamespaceLease(connection, namespaceLease)).toBe(true)
+    }
+
+    const submissionDelete = await organizer.delete(
+      `/api/submissions/${submissionId}?tournamentId=${tournamentId}`
+    )
+    expect(submissionDelete.status).toBe(200)
+
+    const drawDelete = await organizer.delete(
+      `/api/draws/${drawId}?tournamentId=${tournamentId}`
+    )
+    expect(drawDelete.status).toBe(200)
+  })
+
+
 })
