@@ -73,6 +73,29 @@ describe('draws store', () => {
     expect(store.draws.some((item) => item._id === 'draw-r1' && item.drawOpened)).toBe(true)
   })
 
+  it('clears old tournament draws immediately when switching tournaments', async () => {
+    const store = useDrawsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'draw-a', tournamentId: 'tournament-a', round: 1, allocation: [] }],
+      },
+    })
+    await store.fetchDraws('tournament-a')
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchDraws('tournament-b')
+
+    expect(store.draws).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'draw-b', tournamentId: 'tournament-b', round: 1, allocation: [] }],
+      },
+    })
+    await nextFetch
+  })
+
   it('replaces draw list on full fetch', async () => {
     const store = useDrawsStore()
     store.draws = [
