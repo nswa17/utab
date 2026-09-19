@@ -2870,5 +2870,190 @@ describe('Server integration', () => {
   })
 
 
+  it('keeps equivalent submissions and raw sources aligned on compiled metrics', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-differential', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-differential', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Compile Differential Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = tournamentRes.body.data._id
+
+    const roundRes = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const speakerARes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Differential Speaker A' })
+    const speakerBRes = await agent
+      .post('/api/speakers')
+      .send({ tournamentId, name: 'Differential Speaker B' })
+    expect(speakerARes.status).toBe(201)
+    expect(speakerBRes.status).toBe(201)
+    const speakerAId = speakerARes.body.data._id
+    const speakerBId = speakerBRes.body.data._id
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Differential Team A',
+      details: [{ r: 1, speakers: [speakerAId] }],
+    })
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Differential Team B',
+      details: [{ r: 1, speakers: [speakerBId] }],
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = teamARes.body.data._id
+    const teamBId = teamBRes.body.data._id
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const ballotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      speakerIdsA: [speakerAId],
+      speakerIdsB: [speakerBId],
+      scoresA: [76],
+      scoresB: [74],
+      submittedEntityId: 'differential-judge',
+    })
+    expect(ballotRes.status).toBe(201)
+
+    const rawTeamsRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamAId,
+        from_id: 'differential-judge',
+        r: 1,
+        weight: 1,
+        win: 1,
+        side: 'gov',
+        opponents: [teamBId],
+      },
+      {
+        tournamentId,
+        id: teamBId,
+        from_id: 'differential-judge',
+        r: 1,
+        weight: 1,
+        win: 0,
+        side: 'opp',
+        opponents: [teamAId],
+      },
+    ])
+    expect(rawTeamsRes.status).toBe(201)
+
+    const rawSpeakersRes = await agent.post('/api/raw-results/speakers').send([
+      {
+        tournamentId,
+        id: speakerAId,
+        from_id: 'differential-judge',
+        r: 1,
+        weight: 1,
+        scores: [76],
+      },
+      {
+        tournamentId,
+        id: speakerBId,
+        from_id: 'differential-judge',
+        r: 1,
+        weight: 1,
+        scores: [74],
+      },
+    ])
+    expect(rawSpeakersRes.status).toBe(201)
+
+    const options = {
+      missing_data_policy: 'error',
+      include_labels: ['teams', 'speakers'],
+    }
+    const submissionPreview = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options,
+    })
+    const rawPreview = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options,
+    })
+    expect(submissionPreview.status).toBe(200)
+    expect(rawPreview.status).toBe(200)
+
+    const projectTeams = (rows: any[]) =>
+      rows
+        .map((row) => ({
+          id: row.id,
+          win: row.win,
+          vote: row.vote,
+          vote_rate: row.vote_rate,
+          ranking: row.ranking,
+          sum: row.sum,
+          margin: row.margin,
+          average_margin: row.average_margin,
+          average: row.average,
+          sd: row.sd,
+          opponent_average: row.opponent_average,
+          past_opponents: row.past_opponents,
+          past_sides: row.past_sides,
+        }))
+        .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+
+    const projectSpeakers = (rows: any[]) =>
+      rows
+        .map((row) => ({
+          id: row.id,
+          average: row.average,
+          sum: row.sum,
+          sd: row.sd,
+          ranking: row.ranking,
+        }))
+        .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+
+    expect(
+      projectTeams(submissionPreview.body.data.preview.compiled_team_results)
+    ).toEqual(projectTeams(rawPreview.body.data.preview.compiled_team_results))
+    expect(
+      projectSpeakers(submissionPreview.body.data.preview.compiled_speaker_results)
+    ).toEqual(projectSpeakers(rawPreview.body.data.preview.compiled_speaker_results))
+  })
+
+
 
 })
