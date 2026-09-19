@@ -354,4 +354,139 @@ describe('submissions store', () => {
       },
     ])
   })
+  it('clears old tournament submissions immediately when switching tournaments', async () => {
+    const store = useSubmissionsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: [{ _id: 'submission-a', tournamentId: 'tournament-a', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    expect(store.submissions).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchSubmissions({ tournamentId: 'tournament-b' })
+
+    expect(store.submissions).toEqual([])
+
+    deferred.resolve({
+      data: { data: [{ _id: 'submission-b', tournamentId: 'tournament-b', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await nextFetch
+  })
+
+
+  it('does not let an old-tournament update invalidate the current tournament submissions', async () => {
+    const store = useSubmissionsStore()
+    const updateDeferred = createDeferred<any>()
+    const fetchDeferred = createDeferred<any>()
+
+    mockedApi.patch.mockImplementationOnce(() => updateDeferred.promise)
+    mockedApi.get.mockImplementationOnce(() => fetchDeferred.promise)
+
+    const updatePromise = store.updateSubmission({
+      tournamentId: 'tournament-a',
+      submissionId: 'submission-a',
+      payload: { comment: 'late A edit' },
+    })
+
+    const fetchPromise = store.fetchSubmissions({ tournamentId: 'tournament-b' })
+
+    updateDeferred.resolve({
+      data: {
+        data: {
+          _id: 'submission-a',
+          tournamentId: 'tournament-a',
+          type: 'ballot',
+          round: 1,
+          payload: { comment: 'late A edit' },
+        },
+      },
+    })
+    await updatePromise
+
+    fetchDeferred.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-b',
+            tournamentId: 'tournament-b',
+            type: 'feedback',
+            round: 1,
+            payload: { comment: 'current B row' },
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-b',
+        tournamentId: 'tournament-b',
+        type: 'feedback',
+        round: 1,
+        payload: { comment: 'current B row' },
+      },
+    ] as any)
+  })
+
+
+  it('rejects an old admin response after a participant fetch activates another tournament', async () => {
+    const store = useSubmissionsStore()
+    const oldAdmin = createDeferred<any>()
+    const currentParticipant = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => oldAdmin.promise)
+      .mockImplementationOnce(() => currentParticipant.promise)
+
+    const oldRequest = store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    const currentRequest = store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-b',
+      submittedEntityId: 'team-b',
+    })
+
+    currentParticipant.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-b',
+            tournamentId: 'tournament-b',
+            type: 'feedback',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    await currentRequest
+
+    oldAdmin.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-a-late',
+            tournamentId: 'tournament-a',
+            type: 'ballot',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    const staleResult = await oldRequest
+
+    expect(staleResult).toEqual([])
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-b',
+        tournamentId: 'tournament-b',
+        type: 'feedback',
+        round: 1,
+        payload: {},
+      },
+    ] as any)
+  })
+
+
 })
