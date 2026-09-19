@@ -16,6 +16,11 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
 import {
+  acquireEntityNamespaceLease,
+  releaseEntityNamespaceLease,
+  type EntityNamespaceLease,
+} from '../services/entity-namespace-guard.service.js'
+import {
   acquireRoundMutationLease,
   releaseRoundMutationLease,
   type RoundMutationLease,
@@ -79,6 +84,47 @@ type RoundDefaults = {
 }
 
 type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+
+const ROUND_ENTITY_NAMESPACES = ['adjudicators', 'teams', 'venues'] as const
+
+async function acquireRoundEntityNamespaceLeases(
+  connection: Connection,
+  tournamentId: string,
+  namespaces: readonly string[] = ROUND_ENTITY_NAMESPACES
+): Promise<EntityNamespaceLease[] | null> {
+  const acquired: EntityNamespaceLease[] = []
+  for (const namespace of [...namespaces].sort()) {
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, namespace)
+    if (lease) {
+      acquired.push(lease)
+      continue
+    }
+    await Promise.all(acquired.map((current) => releaseEntityNamespaceLease(connection, current)))
+    return null
+  }
+  return acquired
+}
+
+async function releaseRoundEntityNamespaceLeases(
+  connection: Connection,
+  leases: EntityNamespaceLease[]
+): Promise<void> {
+  const released = await Promise.all(
+    leases.map((lease) => releaseEntityNamespaceLease(connection, lease))
+  )
+  if (released.some((value) => !value)) {
+    throw new Error('Failed to release one or more entity namespace leases')
+  }
+}
+
+function sendEntityNamespaceBusy(res: Parameters<RequestHandler>[1]): void {
+  res.status(409).json({
+    data: null,
+    errors: [
+      { name: 'Conflict', message: 'Tournament entities are being modified; retry round change' },
+    ],
+  })
+}
 
 async function acquireRoundMutationLeases(
   connection: Connection,
