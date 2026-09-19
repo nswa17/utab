@@ -9,6 +9,7 @@ Phase 3: IN PROGRESS — #34 COMPLETE
 Phase 4: COMPLETE — #40→#41 stack synchronized
 Phase 5: COMPLETE — #41 cross-PR overlap reconciled
 Phase 6: STOPPED — P6-001 registered
+Phase 7: COMPLETE — cumulative branch reconciled and CI-green
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -340,3 +341,46 @@ No code fix was made in Phase 6 because the phase contract requires registering 
 ### Phase 6 execution status
 
 Cross-PR sweep is **not complete**. The remaining planned focus areas (concurrency/atomicity, stale autosave/request state, tournament scoping, allocation invariants, and the full integrated CI sweep) must resume only after P6-001 is fixed and checkpointed.
+
+
+## Phase 7 cumulative-branch reconstruction — COMPLETE
+
+This phase was executed while Phase 3 remains incomplete and P6-001 remains open. It reconciled the cumulative audit branch without silently fixing the registered Phase-6 defect.
+
+Cumulative branch:
+- branch: `codex/utab-bug-audit-20260918`
+- starting head: `2bb9f1ece2886fd4409af781c6ddc5a7106a9020`
+- reconstructed/checkpoint head: `7f05c4a63df09fbb5ef330f657f19e71a6cb8e17`
+
+### PR-to-cumulative reconciliation result
+
+#34–#41 were checked against the cumulative implementation.
+
+No application-code transplant was required:
+- #34 core allocation/vote-rate invariants are present.
+- #35 round normalization and compiled preview revision/signature behavior are present; cumulative uses `normalizeRounds()`.
+- #36 concurrency fixes are present or stronger; Draw partial updates omit unspecified fields from `$set`, and Submission stale writes are protected by version/round-aware concurrency handling.
+- #37 tournament-scoped membership responses, mutation leasing, and post-lease User refresh are present.
+- #38 atomic tournament metadata patching, intent-aware client merge, and allocation request/route-context gates are present.
+- #39 rollback error surfacing, numeric detailed-export speaker ordering, and ballot wizard progress behavior are present.
+- #40 positive-integer raw-result round queries, round/tournament invariants, tie-point bounds, structured entity detail validation, and entity namespace serialization are present.
+- #41 Draw-authoritative publication, unavailable-assigned-entity handling, lifecycle/PDA E2E behavior, and UI support are present.
+- The latest Phase-5 #41 compatibility requirements from #36/#38 are already represented in the cumulative branch.
+
+The cumulative audit log records this as Phase 50. The only cumulative-branch change in Phase 7 was that audit-log checkpoint; application source was unchanged.
+
+### Exact-head CI
+
+Push CI run: `35474311180`
+
+On exact cumulative head `7f05c4a63df09fbb5ef330f657f19e71a6cb8e17`:
+- lint: success
+- full test suite: success
+- production build/typecheck: success
+
+### Outstanding defect
+
+`P6-001` remains OPEN by design:
+- raw team-result `win` is still unbounded at API/model/import boundaries.
+
+Therefore Phase 7 reconstruction is complete and CI-green, but the overall reconciliation pipeline is not merge-ready until P6-001 and the unfinished Phase-3 audits are resolved.
