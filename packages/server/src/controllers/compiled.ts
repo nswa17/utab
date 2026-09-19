@@ -1514,8 +1514,15 @@ async function buildCompiledPayloadFromSubmissions(
     const team = teamById.get(teamId)
     if (!team) return []
     const detail = team.details?.find((d: any) => Number(d.r) === round)
-    const detailSpeakers = (detail?.speakers ?? []).map((id: string) => String(id)).filter(Boolean)
-    return detailSpeakers
+    const source =
+      Array.isArray(detail?.speakers) && detail.speakers.length > 0
+        ? detail.speakers
+        : Array.isArray(team?.template?.speakers)
+          ? team.template.speakers
+          : []
+    return Array.from(
+      new Set(source.map((id: unknown) => String(id ?? '').trim()).filter(Boolean))
+    )
   }
 
   const sideByRoundTeam = new Map<number, Map<string, string>>()
