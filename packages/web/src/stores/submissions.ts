@@ -145,6 +145,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
+    tournamentScope.claimIfEmpty(params.tournamentId)
     const scopeChanged = tournamentScope.activate(params.tournamentId)
     if (scopeChanged) submissions.value = []
     const sequence = ++adminFetchSequence.value
@@ -222,6 +223,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   async function submitBallot(payload: BallotSubmissionPayload) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     error.value = null
     try {
@@ -250,6 +252,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   async function submitFeedback(payload: FeedbackSubmissionPayload) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     error.value = null
     try {
@@ -278,6 +281,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   async function updateSubmission(payload: UpdateSubmissionPayload) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     error.value = null
     try {
@@ -303,6 +307,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   async function deleteSubmission(payload: DeleteSubmissionPayload) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
     error.value = null
     try {
