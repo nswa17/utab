@@ -303,7 +303,7 @@ async function attachOrganizerMembership(
   const userId = normalizeString(session?.userId)
   if (!userId) return
 
-  await Promise.all([
+  const membershipWrites = await Promise.allSettled([
     UserModel.updateOne({ _id: userId }, { $addToSet: { tournaments: tournamentId } }).exec(),
     TournamentMemberModel.updateOne(
       { tournamentId, userId },
@@ -311,6 +311,15 @@ async function attachOrganizerMembership(
       { upsert: true }
     ).exec(),
   ])
+  const membershipErrors = membershipWrites
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (membershipErrors.length > 0) {
+    throw new AggregateError(
+      membershipErrors,
+      `Failed to attach organizer membership for tournament ${tournamentId}`
+    )
+  }
 
   const current = Array.isArray(session?.tournaments)
     ? session.tournaments.map((value) => String(value))
@@ -450,7 +459,16 @@ async function importTournamentFromBundle(
     if (createdStyleId !== null) {
       cleanupTasks.push(StyleModel.deleteOne({ id: createdStyleId }).exec())
     }
-    await Promise.allSettled(cleanupTasks)
+    const cleanupResults = await Promise.allSettled(cleanupTasks)
+    const cleanupErrors = cleanupResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        `Failed to roll back tournament import ${tournamentId}`
+      )
+    }
     throw error
   }
 }

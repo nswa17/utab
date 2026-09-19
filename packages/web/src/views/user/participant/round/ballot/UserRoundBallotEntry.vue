@@ -638,6 +638,7 @@ const confirmOpen = ref(false)
 const successOpen = ref(false)
 const confirmCountdown = ref(0)
 const activeStepIndex = ref(0)
+const furthestStepIndex = ref(0)
 const returnToConfirmAfterEdit = ref(false)
 const prefillAppliedMatchKey = ref('')
 const LOCAL_BALLOT_PREFILL_STORAGE_PREFIX = 'utab:ballot-prefill'
@@ -1679,7 +1680,9 @@ function normalizeStepIndex(index: number) {
 
 function goToNextStep() {
   if (isLastStep.value || stepActionDisabled.value) return
-  activeStepIndex.value = normalizeStepIndex(activeStepIndex.value + 1)
+  const nextIndex = normalizeStepIndex(activeStepIndex.value + 1)
+  activeStepIndex.value = nextIndex
+  furthestStepIndex.value = Math.max(furthestStepIndex.value, nextIndex)
 }
 
 function goToPreviousStep() {
@@ -1694,7 +1697,7 @@ function goToStep(index: number) {
 
 function canGoToStep(index: number) {
   if (submissions.loading || !scoreInputReady.value) return false
-  return index <= activeStepIndex.value
+  return index <= furthestStepIndex.value
 }
 
 const previousActionLabel = computed(() => t('戻る'))
@@ -1712,7 +1715,7 @@ function goToNextAction() {
 function isStepCompleted(stepId: BallotStepId) {
   const index = ballotSteps.value.findIndex((step) => step.id === stepId)
   if (index === -1) return false
-  return index < activeStepIndex.value
+  return index < furthestStepIndex.value
 }
 
 function validateBeforeSubmit() {
@@ -1851,13 +1854,24 @@ watch(
   ballotSteps,
   () => {
     activeStepIndex.value = normalizeStepIndex(activeStepIndex.value)
+    furthestStepIndex.value = normalizeStepIndex(furthestStepIndex.value)
   },
   { immediate: true }
 )
 
+watch([tournamentId, round], () => {
+  activeStepIndex.value = 0
+  furthestStepIndex.value = 0
+  returnToConfirmAfterEdit.value = false
+  confirmOpen.value = false
+  successOpen.value = false
+  clearCountdown()
+})
+
 watch([teamAId, teamBId], ([nextTeamA, nextTeamB], [prevTeamA, prevTeamB]) => {
   if (nextTeamA !== prevTeamA || nextTeamB !== prevTeamB) {
     activeStepIndex.value = 0
+    furthestStepIndex.value = 0
     returnToConfirmAfterEdit.value = false
   }
   if (winnerDrawSelected.value) return

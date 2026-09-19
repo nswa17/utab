@@ -117,10 +117,19 @@ export async function copyTournamentWithData(
       copiedDocuments,
     }
   } catch (error) {
-    await Promise.allSettled([
+    const cleanupResults = await Promise.allSettled([
       TournamentModel.deleteOne({ _id: targetTournamentId }).exec(),
       dropTournamentDatabase(targetTournamentId),
     ])
+    const cleanupErrors = cleanupResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        `Failed to roll back copied tournament data ${targetTournamentId}`
+      )
+    }
     throw error
   }
 }
