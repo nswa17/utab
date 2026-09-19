@@ -165,6 +165,40 @@ function collectAllocationEntityRefs(allocation: unknown): AllocationEntityRef[]
   return Array.from(refs.values())
 }
 
+function collectAllocationEntityPlacements(allocation: unknown): Map<string, string> {
+  const placements = new Map<string, string>()
+  if (!Array.isArray(allocation)) return placements
+  const add = (kind: AllocationEntityKind, id: unknown, placement: string) => {
+    const normalizedId = String(id ?? '').trim()
+    if (!normalizedId) return
+    placements.set(`${kind}:${normalizedId}`, placement)
+  }
+  allocation.forEach((row, rowIndex) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return
+    const source = row as Record<string, unknown>
+    const teams = source.teams
+    if (Array.isArray(teams)) {
+      teams.forEach((id, index) => add('team', id, `row:${rowIndex}:team:${index}`))
+    } else if (teams && typeof teams === 'object') {
+      const teamRecord = teams as Record<string, unknown>
+      const positions =
+        teamRecord.cg !== undefined || teamRecord.co !== undefined
+          ? ['og', 'oo', 'cg', 'co']
+          : ['gov', 'opp']
+      positions.forEach((position) =>
+        add('team', teamRecord[position], `row:${rowIndex}:team:${position}`)
+      )
+    }
+    add('venue', source.venue, `row:${rowIndex}:venue`)
+    ;(['chairs', 'panels', 'trainees'] as const).forEach((role) => {
+      normalizeIdList(source[role]).forEach((id) =>
+        add('adjudicator', id, `row:${rowIndex}:adjudicator:${role}`)
+      )
+    })
+  })
+  return placements
+}
+
 function validateAllocationStructure(allocation: unknown, expectedTeamNum: number): string | null {
   if (!Array.isArray(allocation)) return 'allocation must be an array'
   const assignedTeams = new Set<string>()
@@ -377,18 +411,10 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       )
       return
     }
-    const unavailableRefs = allocationRefs.filter((ref) => {
-      if (ref.kind === 'team') return teamAvailabilityById.get(ref.id) === false
-      if (ref.kind === 'adjudicator') return adjudicatorAvailabilityById.get(ref.id) === false
-      return venueAvailabilityById.get(ref.id) === false
-    })
-    if (unavailableRefs.length > 0) {
-      badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
-      return
-    }
 
     const DrawModel = getDrawModel(connection)
     const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
+    const existingPlacements = collectAllocationEntityPlacements(existingDraw?.allocation)
     if (
       existingDraw?.locked === true &&
       (!isDeepStrictEqual(
@@ -405,6 +431,21 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
         data: null,
         errors: [{ name: 'Conflict', message: 'Draw is locked' }],
       })
+      return
+    }
+    const unavailableRefs = allocationRefs.filter((ref) => {
+      const refKey = `${ref.kind}:${ref.id}`
+      const isUnavailable =
+        ref.kind === 'team'
+          ? teamAvailabilityById.get(ref.id) === false
+          : ref.kind === 'adjudicator'
+            ? adjudicatorAvailabilityById.get(ref.id) === false
+            : venueAvailabilityById.get(ref.id) === false
+      if (!isUnavailable) return false
+      return !existingPlacements.has(refKey)
+    })
+    if (unavailableRefs.length > 0) {
+      badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
       return
     }
 

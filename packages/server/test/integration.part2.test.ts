@@ -1084,6 +1084,12 @@ describe('Server integration', () => {
     expect(lockedCreateRes.status).toBe(201)
     const drawId = String(lockedCreateRes.body.data._id)
 
+    const makeAssignedTeamUnavailableRes = await agent.patch(`/api/teams/${teamBId}`).send({
+      tournamentId,
+      template: { available: false },
+    })
+    expect(makeAssignedTeamUnavailableRes.status).toBe(200)
+
     const publicationUpdateRes = await agent.post('/api/draws').send({
       tournamentId,
       round: 1,
@@ -1119,6 +1125,22 @@ describe('Server integration', () => {
       locked: false,
     })
     expect(unlockRes.status).toBe(201)
+
+    const moveUnavailableAssignedRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          ...allocation[0],
+          teams: { gov: teamBId, opp: teamAId },
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+      locked: false,
+    })
+    expect(moveUnavailableAssignedRes.status).toBe(201)
+
     const deleteUnlockedRes = await agent.delete(
       `/api/draws/${drawId}?tournamentId=${tournamentId}`
     )
