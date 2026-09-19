@@ -1588,10 +1588,17 @@ async function buildCompiledPayloadFromSubmissions(
     missingDataIssues.push(issue)
   }
 
-  const ballotSubmissions = filteredSubmissions.filter((submission) => submission.type === 'ballot')
-  const feedbackSubmissions = filteredSubmissions.filter(
-    (submission) => submission.type === 'feedback'
+  const ballotDerivedLabels = new Set(['teams', 'speakers', 'poi', 'best'])
+  const needsBallotSubmissions = compileOptions.include_labels.some((label) =>
+    ballotDerivedLabels.has(label)
   )
+  const needsFeedbackSubmissions = compileOptions.include_labels.includes('adjudicators')
+  const ballotSubmissions = needsBallotSubmissions
+    ? filteredSubmissions.filter((submission) => submission.type === 'ballot')
+    : []
+  const feedbackSubmissions = needsFeedbackSubmissions
+    ? filteredSubmissions.filter((submission) => submission.type === 'feedback')
+    : []
 
   const ballotGroups = new Map<string, any[]>()
   ballotSubmissions.forEach((submission) => {
@@ -1627,44 +1634,48 @@ async function buildCompiledPayloadFromSubmissions(
     normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
   })
 
-  const submittedMatchKeys = new Set(
-    normalizedBallots.map((submission) =>
-      canonicalBallotMatchKey(Number(submission?.round), (submission?.payload ?? {}) as BallotPayload)
-    )
-  )
-  const submittedActorMatchKeys = new Set(
-    normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
-  )
   const roundByNumber = new Map<number, any>(
     roundDocs.map((round: any) => [Number(round?.round), round])
   )
-  filteredDraws.forEach((draw: any) => {
-    const round = Number(draw?.round)
-    if (!Number.isFinite(round)) return
-    const roundUserDefinedData = roundByNumber.get(round)?.userDefinedData
-    ;(draw?.allocation ?? []).forEach((row: any) => {
-      const matchKey = canonicalDrawMatchKey(round, row)
-      if (!matchKey) return
-      const expectedSubmitterIds = expectedBallotSubmitterIds(row, roundUserDefinedData)
-      if (expectedSubmitterIds.length === 0) {
-        if (submittedMatchKeys.has(matchKey)) return
-        registerMissingIssue({
-          code: 'missing_ballot',
-          message: 'ballot submission is missing for draw matchup',
-          round,
-        })
-        return
-      }
-      expectedSubmitterIds.forEach((submitterId) => {
-        if (submittedActorMatchKeys.has(`${matchKey}:${submitterId}`)) return
-        registerMissingIssue({
-          code: 'missing_ballot',
-          message: `ballot submission is missing for draw matchup (submitter ${submitterId})`,
-          round,
+
+  if (needsBallotSubmissions) {
+    const submittedMatchKeys = new Set(
+      normalizedBallots.map((submission) =>
+        canonicalBallotMatchKey(Number(submission?.round), (submission?.payload ?? {}) as BallotPayload)
+      )
+    )
+    const submittedActorMatchKeys = new Set(
+      normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
+    )
+
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      const roundUserDefinedData = roundByNumber.get(round)?.userDefinedData
+      ;(draw?.allocation ?? []).forEach((row: any) => {
+        const matchKey = canonicalDrawMatchKey(round, row)
+        if (!matchKey) return
+        const expectedSubmitterIds = expectedBallotSubmitterIds(row, roundUserDefinedData)
+        if (expectedSubmitterIds.length === 0) {
+          if (submittedMatchKeys.has(matchKey)) return
+          registerMissingIssue({
+            code: 'missing_ballot',
+            message: 'ballot submission is missing for draw matchup',
+            round,
+          })
+          return
+        }
+        expectedSubmitterIds.forEach((submitterId) => {
+          if (submittedActorMatchKeys.has(`${matchKey}:${submitterId}`)) return
+          registerMissingIssue({
+            code: 'missing_ballot',
+            message: `ballot submission is missing for draw matchup (submitter ${submitterId})`,
+            round,
+          })
         })
       })
     })
-  })
+  }
 
   normalizedBallots.forEach((submission: any) => {
     const round = Number(submission.round)
@@ -1836,6 +1847,92 @@ async function buildCompiledPayloadFromSubmissions(
       speakerIdsWithScores,
     })
   })
+
+  if (needsFeedbackSubmissions) {
+    const expectedFeedbackKeys = new Set<string>()
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      const userDefined =
+        roundByNumber.get(round)?.userDefinedData &&
+        typeof roundByNumber.get(round)?.userDefinedData === 'object'
+          ? (roundByNumber.get(round).userDefinedData as Record<string, unknown>)
+          : {}
+      const fromTeams = userDefined.evaluate_from_teams !== false
+      const fromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+      const evaluatorInTeam = userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team'
+      const chairsAlwaysEvaluated = userDefined.chairs_always_evaluated === true
+
+      ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+        const rowTeams = row?.teams
+        const teamIds = Array.from(
+          new Set(
+            [
+              Array.isArray(rowTeams) ? rowTeams[0] : rowTeams?.gov,
+              Array.isArray(rowTeams) ? rowTeams[1] : rowTeams?.opp,
+            ]
+              .map((value) => String(value ?? '').trim())
+              .filter(Boolean)
+          )
+        )
+        const chairIds = Array.from(
+          new Set((row?.chairs ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const panelIds = Array.from(
+          new Set((row?.panels ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const traineeIds = Array.from(
+          new Set((row?.trainees ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const adjudicatorIds = Array.from(new Set([...chairIds, ...panelIds, ...traineeIds]))
+
+        if (fromTeams) {
+          const targetIds = chairsAlwaysEvaluated
+            ? chairIds
+            : Array.from(new Set([...chairIds, ...panelIds]))
+          const actorIds =
+            evaluatorInTeam === 'speaker'
+              ? Array.from(new Set(teamIds.flatMap((teamId) => getSpeakersForTeamRound(teamId, round))))
+              : teamIds
+          actorIds.forEach((actorId) => {
+            targetIds.forEach((targetId) => {
+              if (actorId && targetId) expectedFeedbackKeys.add(`${round}:${actorId}:${targetId}`)
+            })
+          })
+        }
+
+        if (fromAdjudicators) {
+          adjudicatorIds.forEach((actorId) => {
+            adjudicatorIds.forEach((targetId) => {
+              if (actorId && targetId && actorId !== targetId) {
+                expectedFeedbackKeys.add(`${round}:${actorId}:${targetId}`)
+              }
+            })
+          })
+        }
+      })
+    })
+
+    const submittedFeedbackKeys = new Set(
+      feedbackSubmissions
+        .map((submission: any) => {
+          const round = Number(submission?.round)
+          const actorId = resolveBallotSubmissionActor(submission)
+          const targetId = String((submission?.payload as FeedbackPayload | undefined)?.adjudicatorId ?? '').trim()
+          return Number.isFinite(round) && actorId && targetId ? `${round}:${actorId}:${targetId}` : ''
+        })
+        .filter(Boolean)
+    )
+    expectedFeedbackKeys.forEach((key) => {
+      if (submittedFeedbackKeys.has(key)) return
+      const [roundToken, actorId, targetId] = key.split(':')
+      registerMissingIssue({
+        code: 'missing_feedback',
+        message: `feedback submission is missing from ${actorId} for adjudicator ${targetId}`,
+        round: Number(roundToken),
+      })
+    })
+  }
 
   feedbackSubmissions.forEach((submission: any) => {
     const round = Number(submission.round)
