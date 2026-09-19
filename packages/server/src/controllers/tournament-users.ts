@@ -204,10 +204,16 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     let saved = user
     let membership: { role?: string } | null = null
     try {
-      const originalTournaments = (user.tournaments || []).map((id) => String(id))
+      const refreshedUser = await UserModel.findOne({ _id: user._id }).exec()
+      if (!refreshedUser) {
+        notFound(res, 'User not found')
+        return
+      }
+      saved = refreshedUser
+      const originalTournaments = (refreshedUser.tournaments || []).map((id) => String(id))
       membership = await TournamentMemberModel.findOne({
         tournamentId,
-        userId: String(user._id),
+        userId: String(refreshedUser._id),
       })
         .select({ role: 1, _id: 0 })
         .lean()
@@ -216,19 +222,19 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       try {
         saved =
           (await UserModel.findOneAndUpdate(
-            { _id: user._id },
+            { _id: refreshedUser._id },
             { $pull: { tournaments: tournamentId } },
             { new: true }
-          ).exec()) ?? user
+          ).exec()) ?? refreshedUser
         await TournamentMemberModel.deleteOne({
           tournamentId,
-          userId: String(user._id),
+          userId: String(refreshedUser._id),
         }).exec()
       } catch (membershipError) {
         const rollbackTasks: Promise<unknown>[] = originallyHadTournament
           ? [
               UserModel.updateOne(
-                { _id: user._id },
+                { _id: refreshedUser._id },
                 { $addToSet: { tournaments: tournamentId } }
               ).exec(),
             ]
@@ -236,7 +242,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
         if (membership?.role) {
           rollbackTasks.push(
             TournamentMemberModel.updateOne(
-              { tournamentId, userId: String(user._id) },
+              { tournamentId, userId: String(refreshedUser._id) },
               { $set: { role: membership.role } },
               { upsert: true }
             ).exec()
@@ -245,7 +251,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
         await throwAfterRollback(
           membershipError,
           rollbackTasks,
-          `Failed to remove and roll back tournament user ${String(user._id)}`
+          `Failed to remove and roll back tournament user ${String(refreshedUser._id)}`
         )
       }
     } finally {
