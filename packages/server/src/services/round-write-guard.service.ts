@@ -269,3 +269,50 @@ export async function releaseRoundMutationLease(
   ).exec()
   return result.matchedCount === 1
 }
+
+
+export async function releaseRoundMutationLeases(
+  connection: Connection,
+  leases: readonly RoundMutationLease[]
+): Promise<void> {
+  const results = await Promise.allSettled(
+    leases.map((lease) => releaseRoundMutationLease(connection, lease))
+  )
+  const errors: unknown[] = []
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      errors.push(result.reason)
+      return
+    }
+    if (!result.value) {
+      errors.push(new Error(`Failed to release round mutation lease ${leases[index]?.roundId ?? ''}`))
+    }
+  })
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to release round mutation leases')
+  }
+}
+
+export async function acquireRoundMutationLeases(
+  connection: Connection,
+  tournamentId: string,
+  targets: ReadonlyArray<{ id: string; round: number }>
+): Promise<RoundMutationLease[] | null> {
+  const orderedTargets = [...targets].sort((left, right) => left.id.localeCompare(right.id))
+  const acquired: RoundMutationLease[] = []
+  for (const target of orderedTargets) {
+    const lease = await acquireRoundMutationLease(
+      connection,
+      tournamentId,
+      target.id,
+      target.round
+    )
+    if (lease) {
+      acquired.push(lease)
+      continue
+    }
+    await releaseRoundMutationLeases(connection, acquired)
+    return null
+  }
+  return acquired
+}
