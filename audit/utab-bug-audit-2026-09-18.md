@@ -7232,3 +7232,64 @@ Several PRs append independent regression tests at the same file anchor. Git may
    Resolution: retain both sets of assertions/tests.
 
 These are merge-hygiene conflicts, not contradictory functional changes. If the PRs are merged sequentially, the post-conflict combined tree should be re-run through the full CI suite.
+
+
+## Phase 50 — reconciliation checkpoint against open PRs (#34–#41)
+
+This checkpoint corresponds to PR-reconciliation Phase 7 on 2026-09-19.
+
+The cumulative branch was compared against the current confirmed fixes from open PRs #34 through #41, including the latest #41 compatibility head `a7da9c77d5c2cf07f2aac6aee3dfe2e95dc75803`.
+
+Result: **no application-code transplant is required at this checkpoint.** Every confirmed PR fix is already present in the cumulative branch either exactly or via an equivalent/stronger implementation.
+
+### Per-PR reconciliation
+
+- **#34 core invariants:** present.
+  - initialized allocation-filter weights;
+  - round-availability filtering before strict matching;
+  - empty strict matching returns `[]`;
+  - two-team fractional support/vote-rate handling.
+- **#35 compiled metamorphic/revision fixes:** present.
+  - round selectors are normalized by cumulative `normalizeRounds()`;
+  - preview signature/revision checks and missing-data coverage are present.
+- **#36 state-race fixes:** present or stronger.
+  - Draw partial updates omit unspecified publication/lock fields from `$set`, preserving existing values without re-materializing them;
+  - Submission optimistic concurrency includes version/observed-round protection;
+  - round reference moves invalidate stale Submission versions.
+- **#37 membership boundaries:** present.
+  - tournament-scoped response sanitation;
+  - membership mutation lease;
+  - post-lease User refresh used for snapshot/mutation/rollback decisions.
+- **#38 web/tournament state races:** present.
+  - allocation request gate and route-context pinning;
+  - atomic `user_defined_data_patch`;
+  - intent-aware tournament-store response merging;
+  - stale refresh/compiled-history protection.
+- **#39 recent-PR regressions:** present.
+  - rollback cleanup failures surface through `AggregateError`;
+  - detailed-result speaker ordering uses numeric order;
+  - ballot wizard retains/clamps furthest progress correctly.
+- **#40 boundary/type hardening:** present.
+  - raw-result round query is coerced to positive integer;
+  - tournament/round invariants and tie-point [0,1] constraint;
+  - structured entity detail/template validation and duplicate-round rejection;
+  - entity namespace serialization.
+- **#41 lifecycle/PDA:** present.
+  - Draw-authoritative public Round publication;
+  - assigned unavailable entities may be moved/removed while new unavailable placements remain rejected;
+  - lifecycle and PDA E2E coverage are present.
+- **Latest #41 cross-PR compatibility from reconciliation Phase 5:** already present in the cumulative branch.
+  - #36-compatible Draw partial-update preservation;
+  - stale Submission protection across round renumbering;
+  - #38 request/route-context guards retained together with Phase-10 PDA behavior.
+
+### Known unresolved item intentionally not changed here
+
+`P6-001` remains open:
+- raw team-result `win` is not bounded to [0,1] at route/model/import boundaries.
+
+Phase 7 intentionally does not silently fix that Phase-6 stop item. It must be handled as its own bounded unit with dedicated regression coverage.
+
+### Validation action
+
+This audit-log-only checkpoint is committed to the cumulative branch specifically to trigger the repository's push CI on the exact cumulative head. No application source file is changed by this checkpoint.
