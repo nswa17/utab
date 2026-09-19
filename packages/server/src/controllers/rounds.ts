@@ -1915,8 +1915,10 @@ export const createRound: RequestHandler = async (req, res, next) => {
       const finalized = await RoundModel.find({ _id: { $in: createdIds }, tournamentId }).exec()
       await releaseRoundEntityNamespaceLeases(connection, entityLeases)
       entityLeases = []
-      await releaseRoundNamespaceLease(connection, namespaceLease)
-      namespaceLease = null
+      if (namespaceLease) {
+        await releaseRoundNamespaceLease(connection, namespaceLease)
+        namespaceLease = null
+      }
       res.status(201).json({ data: finalized, errors: [] })
       return
     }
@@ -2035,8 +2037,10 @@ export const createRound: RequestHandler = async (req, res, next) => {
     const finalized = await RoundModel.findOne({ _id: roundId, tournamentId }).exec()
     await releaseRoundEntityNamespaceLeases(connection, entityLeases)
     entityLeases = []
-    await releaseRoundNamespaceLease(connection, namespaceLease)
-    namespaceLease = null
+    if (namespaceLease) {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
+    }
     res.status(201).json({ data: finalized?.toJSON() ?? created.toJSON(), errors: [] })
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
@@ -2509,8 +2513,10 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
       await releaseRoundEntityNamespaceLeases(connection, entityLeases)
       entityLeases = []
     }
-    await releaseRoundNamespaceLease(connection, namespaceLease)
-    namespaceLease = null
+    if (namespaceLease) {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
+    }
     res.json({ data: { deletedCount: deleteResult.deletedCount }, errors: [] })
   } catch (err) {
     next(err)
@@ -2725,6 +2731,14 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       await releaseRoundMutationLease(connection, mutationLease)
       mutationLease = null
       mutationStarted = false
+      if (entityLeases.length > 0) {
+        await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+        entityLeases = []
+      }
+      if (namespaceLease) {
+        await releaseRoundNamespaceLease(connection, namespaceLease)
+        namespaceLease = null
+      }
       res.json({ data: updated, errors: [] })
       return
     }
@@ -2749,6 +2763,10 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       return
     }
 
+    if (namespaceLease) {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
+    }
     res.json({ data: updated, errors: [] })
   } catch (err) {
     const rollbackErrors: unknown[] = []
@@ -3110,6 +3128,14 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       }
     }
 
+    if (entityLeases.length > 0) {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      entityLeases = []
+    }
+    if (mutationLease) {
+      await releaseRoundMutationLease(connection, mutationLease)
+      mutationLease = null
+    }
     res.json({
       data: {
         round: updatedRound,
@@ -3226,6 +3252,14 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
     }
 
     mutationLease = null
+    if (entityLeases.length > 0) {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      entityLeases = []
+    }
+    if (namespaceLease) {
+      await releaseRoundNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
+    }
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
