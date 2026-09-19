@@ -57,11 +57,98 @@ const createSchema = {
 }
 
 const idParamSchema = { params: z.object({ id: z.string() }) }
+const tournamentUserDefinedPatchSchema = z
+  .record(z.any())
+  .refine(
+    (patch) => Object.keys(patch).every((key) => key.length > 0 && !key.includes('.') && !key.startsWith('const accessSchema = {
+  params: z.object({ id: z.string() }),
+  body: z.object({
+    action: z.enum(['enter', 'skip']).optional(),
+    password: z.string().optional(),
+  }),
+}
+const tournamentUserSchema = {
+  params: z.object({ id: z.string() }),
+  body: z.object({
+    username: z.string().trim().min(1),
+    password: z.string().min(6),
+    role: z.enum(['organizer', 'adjudicator', 'speaker', 'audience']),
+  }),
+}
+
+const tournamentUserDeleteSchema = {
+  params: z.object({ id: z.string() }),
+  query: z
+    .object({
+      username: z.string().trim().min(1).optional(),
+      userId: z.string().min(1).optional(),
+    })
+    .refine((data) => data.username !== undefined || data.userId !== undefined, {
+      message: 'username or userId is required',
+    }),
+}
+
+router.get('/', listTournaments)
+router.get('/:id', requireTournamentView('id'), validateRequest(idParamSchema), getTournament)
+router.get(
+  '/:id/export',
+  requireTournamentAdmin('id'),
+  validateRequest(idParamSchema),
+  exportTournamentBundle
+)
+router.post(
+  '/import',
+  requireOrganizer,
+  express.raw({
+    type: ['application/zip', 'application/octet-stream', 'application/x-zip-compressed'],
+    limit: '128mb',
+  }),
+  importTournamentBundle
+)
+router.post('/', requireOrganizer, validateRequest(createSchema), createTournament)
+router.patch('/:id', requireTournamentAdmin('id'), validateRequest(updateSchema), updateTournament)
+router.delete(
+  '/:id',
+  requireTournamentAdmin('id'),
+  validateRequest(idParamSchema),
+  deleteTournament
+)
+router.post('/:id/access', validateRequest(accessSchema), accessTournament)
+router.post('/:id/exit', validateRequest(idParamSchema), exitTournamentAccess)
+router.post(
+  '/:id/users',
+  requireTournamentAdmin('id'),
+  validateRequest(tournamentUserSchema),
+  addTournamentUser
+)
+router.delete(
+  '/:id/users',
+  requireTournamentAdmin('id'),
+  validateRequest(tournamentUserDeleteSchema),
+  removeTournamentUser
+)
+
+export { router as tournamentRouter }
+)),
+    { message: 'user_defined_data_patch keys must be safe top-level field names' }
+  )
+
 const updateSchema = {
   params: z.object({ id: z.string() }),
-  body: tournamentBodySchema.partial().refine((data) => Object.keys(data).length > 0, {
-    message: 'update payload is required',
-  }),
+  body: tournamentBodySchema
+    .partial()
+    .extend({ user_defined_data_patch: tournamentUserDefinedPatchSchema.optional() })
+    .superRefine((data, ctx) => {
+      if (Object.keys(data).length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'update payload is required' })
+      }
+      if (data.user_defined_data !== undefined && data.user_defined_data_patch !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'user_defined_data and user_defined_data_patch cannot be updated together',
+        })
+      }
+    }),
 }
 const accessSchema = {
   params: z.object({ id: z.string() }),
