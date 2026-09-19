@@ -416,21 +416,6 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
     const existingPlacements = collectAllocationEntityPlacements(existingDraw?.allocation)
     const nextPlacements = collectAllocationEntityPlacements(allocation)
-    const unavailableRefs = allocationRefs.filter((ref) => {
-      const refKey = `${ref.kind}:${ref.id}`
-      const isUnavailable =
-        ref.kind === 'team'
-          ? teamAvailabilityById.get(ref.id) === false
-          : ref.kind === 'adjudicator'
-            ? adjudicatorAvailabilityById.get(ref.id) === false
-            : venueAvailabilityById.get(ref.id) === false
-      if (!isUnavailable) return false
-      return existingPlacements.get(refKey) !== nextPlacements.get(refKey)
-    })
-    if (unavailableRefs.length > 0) {
-      badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
-      return
-    }
     if (
       existingDraw?.locked === true &&
       (!isDeepStrictEqual(
@@ -447,6 +432,21 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
         data: null,
         errors: [{ name: 'Conflict', message: 'Draw is locked' }],
       })
+      return
+    }
+    const unavailableRefs = allocationRefs.filter((ref) => {
+      const refKey = `${ref.kind}:${ref.id}`
+      const isUnavailable =
+        ref.kind === 'team'
+          ? teamAvailabilityById.get(ref.id) === false
+          : ref.kind === 'adjudicator'
+            ? adjudicatorAvailabilityById.get(ref.id) === false
+            : venueAvailabilityById.get(ref.id) === false
+      if (!isUnavailable) return false
+      return existingPlacements.get(refKey) !== nextPlacements.get(refKey)
+    })
+    if (unavailableRefs.length > 0) {
+      badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
       return
     }
 
