@@ -96,6 +96,43 @@ describe('draw allocation import', () => {
     expect(result.allocation[1].chairs).toEqual(['adj-b'])
   })
 
+  it('imports OG/OO/CG/CO columns for four-team rows', () => {
+    const bpTeams: NamedEntity[] = [
+      ...teams,
+      { _id: 'team-e', name: 'Team E' },
+    ]
+    const parsed = parseDrawAllocationImportText(
+      'match,og,oo,cg,co,chairs\n1,Team B,Team C,Team D,Team E,Judge A'
+    )
+    expect(parsed.errors).toEqual([])
+    const result = applyDrawAllocationImportEntries({
+      allocation: [
+        {
+          venue: 'venue-1',
+          teams: { og: 'team-a', oo: 'team-b', cg: 'team-c', co: 'team-d' },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      entries: parsed.entries,
+      teams: bpTeams,
+      adjudicators,
+      venues,
+      teamNum: 4,
+    })
+    expect(result.errors).toEqual([])
+    expect(result.allocation[0].teams).toMatchObject({
+      og: 'team-b',
+      oo: 'team-c',
+      cg: 'team-d',
+      co: 'team-e',
+      gov: 'team-b',
+      opp: 'team-c',
+    })
+    expect(result.allocation[0].chairs).toEqual(['adj-a'])
+  })
+
   it('requires header row', () => {
     const parsed = parseDrawAllocationImportText('1,Room 1,Team A,Team B,Judge A')
     expect(parsed.entries).toEqual([])
