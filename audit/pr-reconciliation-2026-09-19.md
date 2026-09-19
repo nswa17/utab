@@ -6,6 +6,7 @@ Phase 0: COMPLETE
 Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: IN PROGRESS — #34 COMPLETE
+Phase 4: COMPLETE — #40→#41 stack synchronized
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -156,3 +157,60 @@ Out-of-scope boundary observation for a later phase:
 ### Next Phase 3 unit
 
 Audit independent PR #35 only: refresh its head/base, inspect changed-code neighborhoods, verify its regression coverage/CI, fix only #35-scoped issues, then checkpoint.
+
+
+## Phase 4 stacked-PR synchronization — COMPLETE
+
+This phase was executed out of sequence at the user's request while Phase 3 remains incomplete. Only the known stack `#40 -> #41` was modified.
+
+### #40 -> #41 synchronization
+
+Pre-sync state:
+- #40 head: `18065df8f06d04bec9e610dfdf2feb6066b20ff3`
+- #41 head: `e485f374ff2ce02066a3ee71f5581bdf92830a7d`
+- merge base: `f85b7cb45d1d65ef089d9842abb7bac052551ebf`
+- branch comparison: #41 57 commits ahead / 17 commits behind #40.
+
+GitHub had already materialized a clean two-parent test merge:
+- merge commit: `45beb89d4f1c8b624ea6a0ef445572ee3bc90dc8`
+- message: `Merge e485f374ff2ce02066a3ee71f5581bdf92830a7d into 18065df8f06d04bec9e610dfdf2feb6066b20ff3`
+- ancestry checks confirmed the commit is ahead of both current #40 and prior #41 heads.
+
+The #41 branch `audit/full-e2e-lifecycle-phase10` was fast-forwarded to that merge commit (no force update).
+
+Post-sync state:
+- #41 head: `45beb89d4f1c8b624ea6a0ef445572ee3bc90dc8`
+- current #40 is now an ancestor of #41;
+- direct compare #40 -> #41: `ahead`, 58 commits ahead / **0 behind**;
+- GitHub reports #41 mergeable.
+
+Relative to current #40, #41 now has only these seven effective changed files:
+1. `packages/server/src/controllers/draws.ts`
+2. `packages/server/src/controllers/rounds.ts`
+3. `packages/server/src/models/round.ts`
+4. `packages/server/test/integration.part2.test.ts`
+5. `packages/server/test/integration.part3.test.ts`
+6. `packages/web/src/views/admin/__tests__/AdminRoundAllocation.test.ts`
+7. `packages/web/src/views/admin/round/AdminRoundAllocation.vue`
+
+The four updates that prior #41 lacked from current #40 were verified byte-for-byte equal to #40 after synchronization:
+- `packages/server/src/controllers/tournament-export.ts`
+- `packages/server/src/controllers/tournament-import.ts`
+- `packages/server/src/devtools/copy-tournament.service.ts`
+- `packages/server/src/services/tournament-runtime-collections.service.ts`
+
+Synchronized-head CI:
+- run: `35471516744`
+- lint: success
+- full test job: success
+- production build: success
+
+The PR #41 body was updated to record the synchronized head and current CI.
+
+### Ordering note
+
+Phase 3 is still incomplete: only #34 has received the per-PR final audit. Therefore Phase 4 synchronization is complete, but the overall merge-readiness pipeline is **not** ready to advance to the final #41 audit/merge steps yet.
+
+### Next required unit
+
+Resume Phase 3 with PR #35, then continue #36, #37, #38, #39, and #40 one at a time. Once #40's final audit is complete, re-check that #41 still has #40 as an ancestor before Phase 5.
