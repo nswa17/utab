@@ -3397,10 +3397,10 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
   }
   try {
     const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = []
   } finally {
     compiledHistoryGate.complete(token)
@@ -3434,6 +3434,8 @@ function reopenReferenceSelection() {
 
 async function confirmReferenceRounds() {
   if (!tournamentId.value || referenceConfirming.value) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
   referenceConfirmError.value = null
   const teamRounds = selectedTeamReferenceRounds.value
   const adjudicatorRounds = shouldTrackAdjudicatorReference.value
@@ -3476,11 +3478,12 @@ async function confirmReferenceRounds() {
       requiresAdjudicatorReference && !areRoundSetsEqual(teamRounds, adjudicatorRounds)
     const teamCompileScope =
       requiresAdjudicatorReference && !shouldCompileAdjudicatorSeparately ? 'adjudicators' : 'teams'
-    const teamCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+    const teamCompiled = await compiledStore.saveCompiled(currentTournamentId, {
       source: 'submissions',
       rounds: teamRounds,
       options: buildReferenceCompileOptions(teamCompileScope),
     })
+    if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
     const teamCompiledId = String(teamCompiled?._id ?? '').trim()
     if (!teamCompiledId) {
       referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
@@ -3489,11 +3492,12 @@ async function confirmReferenceRounds() {
 
     let adjudicatorCompiledId = teamCompiledId
     if (shouldCompileAdjudicatorSeparately) {
-      const adjudicatorCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+      const adjudicatorCompiled = await compiledStore.saveCompiled(currentTournamentId, {
         source: 'submissions',
         rounds: adjudicatorRounds,
         options: buildReferenceCompileOptions('adjudicators'),
       })
+      if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
       adjudicatorCompiledId = String(adjudicatorCompiled?._id ?? '').trim()
       if (!adjudicatorCompiledId) {
         referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
@@ -3505,12 +3509,13 @@ async function confirmReferenceRounds() {
     selectedTeamSnapshotId.value = teamCompiledId
     selectedAdjudicatorSnapshotId.value = adjudicatorCompiledId
     referenceSelectionConfirmed.value = true
-    await refreshCompiledHistory()
+    await refreshCompiledHistory(currentTournamentId)
   } finally {
-    referenceConfirming.value = false
+    if (tournamentId.value === currentTournamentId && round.value === currentRound) {
+      referenceConfirming.value = false
+    }
   }
 }
-
 function addRow() {
   allocation.value.push(createEmptyAllocationRow())
 }
@@ -3523,6 +3528,9 @@ function removeRow(index: number) {
 }
 
 async function save() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  if (!currentTournamentId) return
   if (!referenceSelectionConfirmed.value) {
     openNotice(t('先に参照ラウンドを確定してください。'))
     return
@@ -3548,14 +3556,15 @@ async function save() {
     adjudicatorRounds: selectedAdjudicatorSnapshotRoundNumbers.value,
   })
   const saved = await draws.upsertDraw({
-    tournamentId: tournamentId.value,
-    round: round.value,
+    tournamentId: currentTournamentId,
+    round: currentRound,
     allocation: validRows,
     ...(nextUserDefinedData ? { userDefinedData: nextUserDefinedData } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
   })
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (!saved) {
     if (!draws.error) {
       openNotice(t('保存に失敗しました'))
