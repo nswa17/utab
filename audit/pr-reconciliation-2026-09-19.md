@@ -11,6 +11,7 @@ Phase 5: COMPLETE — #41 cross-PR overlap reconciled
 Phase 6: STOPPED — P6-001 registered
 Phase 7: COMPLETE — cumulative branch reconciled and CI-green
 Phase 8: COMPLETE AS ASSESSMENT — overall merge readiness BLOCKED
+Phase 9: STOPPED AT PREFLIGHT — no PR merged
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -458,3 +459,67 @@ For every PR in the order above:
 4. Re-run this readiness table if any PR head changes.
 
 Until those conditions are satisfied, Phase 9 merging is intentionally blocked.
+
+
+## Phase 9 sequential merge execution — STOPPED AT PREFLIGHT
+
+Phase 9 was started at the user's request, but the Phase-8 merge gate is still unsatisfied. Per the merge-time invariant, **no PR was merged**.
+
+### Preflight snapshot
+
+- current `main` head: `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- open PRs: #34–#41
+- all eight PR heads are unchanged from the Phase-8 readiness table
+- no merge commit was created in this phase
+
+### Blocking condition 1 — P6-001 still open
+
+Re-verified directly on current #40 head:
+- `packages/server/src/routes/raw-results.ts` still contains unbounded `win: z.number()`;
+- `packages/server/src/models/raw-team-result.ts` still contains unbounded `win: { type: Number, required: true }`.
+
+Therefore the registered support/vote-rate boundary defect remains unresolved.
+
+### Blocking condition 2 — required final per-PR audits incomplete
+
+Phase-3 status remains:
+- #34: complete / PASS
+- #35: not completed
+- #36: not completed
+- #37: not completed
+- #38: not completed
+- #39: not completed
+- #40: not completed
+
+The Phase-9 rule explicitly forbids merging a PR before its final individual audit is complete.
+
+### Blocking condition 3 — Phase 6 incomplete
+
+Phase 6 stopped on P6-001 and has not resumed the remaining cross-PR regression sweep. Therefore the global condition `unresolved findings = 0` is still false.
+
+### #41 dependency
+
+#41 still targets `audit/boundary-type-phase9`, not `main`. It cannot be the final merge step until:
+1. #40 merges;
+2. #41 is retargeted/reconciled to updated `main`;
+3. independent PR behavior already merged to `main` is rechecked;
+4. exact-head CI is green.
+
+### Merge execution result
+
+- PRs merged in Phase 9: **0**
+- `main` before: `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- `main` after: `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- merge order remains reserved as:
+  `#34 -> #35 -> #36 -> #37 -> #38 -> #39 -> #40 -> retarget #41 -> #41`
+
+### Next bounded work required before retrying Phase 9
+
+The next executable blocker-removal unit is `P6-001`:
+- bound raw-team `win` to [0,1] at route, model, and backup-import boundaries;
+- add the dedicated regression tests recorded in Phase 6;
+- checkpoint and CI;
+- then resume Phase 6 and finish the remaining sweep;
+- complete Phase-3 audits #35–#40;
+- rerun Phase 8 readiness;
+- only then retry Phase 9.
