@@ -160,6 +160,13 @@ describe('AdminRoundAllocation', () => {
     expect(source).not.toContain('Team A and Team B')
   })
 
+  it('patches break metadata without replacing unrelated tournament metadata', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('user_defined_data_patch')
+    expect(source).toContain('break: breakConfig')
+    expect(source).not.toContain('...currentUserDefined')
+  })
+
   it('lets any assigned unavailable entity be moved or removed from the saved draw', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
     expect(source).toContain('if (isEntityAssignedInAllocation(kind, normalizedId)) return true')
