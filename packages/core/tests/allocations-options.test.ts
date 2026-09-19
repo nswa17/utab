@@ -80,6 +80,68 @@ describe('allocations option handling', () => {
     }
   })
 
+  it('applies weighted filters instead of silently treating every candidate as tied', () => {
+    const conflictTeams = [
+      { id: 1, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 2, details: [{ r: 1, available: true, conflicts: [1], speakers: [] }] },
+      { id: 3, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+      { id: 4, details: [{ r: 1, available: true, conflicts: [2], speakers: [] }] },
+    ]
+    const equalResults = conflictTeams.map((team) => ({
+      id: team.id,
+      win: 0,
+      sum: 0,
+      past_sides: [],
+      past_opponents: [],
+    }))
+
+    const draw = teamStandard.get(
+      1,
+      conflictTeams,
+      equalResults,
+      { method: 'weighted', filters: ['by_conflict_group'] },
+      { name: 'weighted-conflict', style: { team_num: 2 } }
+    )
+
+    draw.allocation.forEach((square) => {
+      const leftSchool = conflictTeams.find((team) => team.id === square.teams[0])?.details[0].conflicts[0]
+      const rightSchool = conflictTeams.find((team) => team.id === square.teams[1])?.details[0].conflicts[0]
+      expect(leftSchool).not.toBe(rightSchool)
+    })
+  })
+
+  it('strict allocation excludes teams unavailable for the round', () => {
+    const strictTeams = Array.from({ length: 6 }, (_, index) => ({
+      id: index + 1,
+      details: [
+        {
+          r: 1,
+          available: index < 4,
+          conflicts: [],
+          speakers: [],
+        },
+      ],
+    }))
+    const equalResults = strictTeams.map((team) => ({
+      id: team.id,
+      win: 0,
+      sum: 0,
+      past_sides: [],
+      past_opponents: [],
+    }))
+
+    const draw = teamStrict.get(
+      1,
+      strictTeams,
+      equalResults,
+      { name: 'strict-availability', style: { team_num: 2 } },
+      { pairing_method: 'sort', position_method: 'adjusted', avoid_conflict: false }
+    )
+
+    expect(allocationTeamIds(draw)).toEqual([1, 2, 3, 4])
+    expect(draw.allocation).toHaveLength(2)
+  })
+
   it('applies strict team allocation options deterministically with seeded random positioning', () => {
     const strictOptions = {
       pairing_method: 'fold',

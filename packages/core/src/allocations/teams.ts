@@ -109,7 +109,7 @@ function getTeamRanksWeighted(
 ): Record<number, number[]> {
   sillyLogger(getTeamRanksWeighted, arguments, 'draws')
   const ranks: Record<number, number[]> = {}
-  const weights = Array(filterFunctions.length).map((_value, index) => 1 / (index + 1))
+  const weights = Array.from({ length: filterFunctions.length }, (_value, index) => 1 / (index + 1))
   for (const team of teams) {
     const others = teams.filter((other) => team.id !== other.id)
     others.sort(
@@ -389,7 +389,8 @@ function getTeamDrawStrict(
   config: AllocationConfig,
   options: TeamDrawAlgorithmOptions = {}
 ): Draw {
-  const matching = strictMatching(teams, compiledTeamResults, config, { ...options, round: r })
+  const availableTeams = filterAvailable(teams, r)
+  const matching = strictMatching(availableTeams, compiledTeamResults, config, { ...options, round: r })
   const teamAllocation = getTeamAllocationFromStrictMatching(matching as number[][])
   return { r, allocation: teamAllocation }
 }

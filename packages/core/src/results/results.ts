@@ -436,7 +436,10 @@ export function compileTeamResults(
       id,
       win: sum(wins[id]),
       vote: votes[id],
-      vote_rate: accs[id] === 0 ? 0 : votes[id] / accs[id],
+      vote_rate:
+        style.team_num === 2 && accs[id] > 0
+          ? (votes[id] + accs[id]) / (2 * accs[id])
+          : 0,
       details: details[id],
       past_opponents: opponents[id],
       past_sides: sides[id],

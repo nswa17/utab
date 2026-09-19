@@ -95,6 +95,8 @@ describe('results/results', () => {
     expect(team2?.win).toBe(1)
     expect(team1?.past_sides).toEqual(['gov', 'opp'])
     expect(team2?.past_sides).toEqual(['opp', 'gov'])
+    expect(team1?.vote_rate).toBe(0.5)
+    expect(team2?.vote_rate).toBe(0.5)
     expect(team1?.sum).toBeNull()
     expect(team2?.sum).toBeNull()
   })
