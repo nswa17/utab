@@ -58,6 +58,7 @@ export const useCompiledStore = defineStore('compiled', () => {
   }
 
   async function fetchLatest(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) {
       compiled.value = null
@@ -89,6 +90,7 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileRunRequest
   ) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) {
       compiled.value = null
@@ -146,6 +148,7 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileSaveRequest
   ) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     error.value = null
     try {
@@ -173,6 +176,7 @@ export const useCompiledStore = defineStore('compiled', () => {
   }
 
   async function deleteCompiled(tournamentId: string, compiledId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     error.value = null
     try {
