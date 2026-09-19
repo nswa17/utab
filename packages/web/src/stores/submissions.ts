@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Submission } from '@/types/submission'
 
 export interface BallotSubmissionPayload {
@@ -56,6 +57,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   const pendingRequests = ref(0)
   const adminFetchSequence = ref(0)
   const participantFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -143,18 +145,26 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
+    const scopeChanged = tournamentScope.activate(params.tournamentId)
+    if (scopeChanged) submissions.value = []
     const sequence = ++adminFetchSequence.value
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/submissions', { params })
-      if (sequence !== adminFetchSequence.value) {
+      if (
+        sequence !== adminFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
-      if (sequence !== adminFetchSequence.value) {
+      if (
+        sequence !== adminFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
@@ -170,18 +180,26 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
+    const scopeChanged = tournamentScope.activate(params.tournamentId)
+    if (scopeChanged) submissions.value = []
     const sequence = ++participantFetchSequence.value
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/submissions/mine', { params })
-      if (sequence !== participantFetchSequence.value) {
+      if (
+        sequence !== participantFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       submissions.value = res.data?.data ?? []
       return submissions.value
     } catch (err: any) {
-      if (sequence !== participantFetchSequence.value) {
+      if (
+        sequence !== participantFetchSequence.value ||
+        !tournamentScope.isActive(params.tournamentId)
+      ) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load submissions'
@@ -193,6 +211,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }
 
   function clearSubmissions() {
+    tournamentScope.clear()
     invalidateFetchSequences()
     submissions.value = []
     error.value = null
@@ -217,11 +236,13 @@ export const useSubmissionsStore = defineStore('submissions', () => {
           return existing
         }
       }
-      error.value =
-        err?.response?.data?.errors?.[0]?.message ??
-        (isAmbiguousNetworkFailure
-          ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
-          : 'Failed to submit ballot')
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value =
+          err?.response?.data?.errors?.[0]?.message ??
+          (isAmbiguousNetworkFailure
+            ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
+            : 'Failed to submit ballot')
+      }
       return null
     } finally {
       endRequest()
@@ -243,11 +264,13 @@ export const useSubmissionsStore = defineStore('submissions', () => {
           return existing
         }
       }
-      error.value =
-        err?.response?.data?.errors?.[0]?.message ??
-        (isAmbiguousNetworkFailure
-          ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
-          : 'Failed to submit feedback')
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value =
+          err?.response?.data?.errors?.[0]?.message ??
+          (isAmbiguousNetworkFailure
+            ? '送信結果を確認できませんでした。再送する場合、既に送信済みなら自動的に照合されます。'
+            : 'Failed to submit feedback')
+      }
       return null
     } finally {
       endRequest()
@@ -264,13 +287,15 @@ export const useSubmissionsStore = defineStore('submissions', () => {
         payload: payload.payload,
       })
       const updated = res.data?.data ?? null
-      if (updated?._id) {
+      if (updated?._id && tournamentScope.isActive(payload.tournamentId)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
+      }
       return null
     } finally {
       endRequest()
@@ -285,13 +310,15 @@ export const useSubmissionsStore = defineStore('submissions', () => {
         params: { tournamentId: payload.tournamentId },
       })
       const deleted = res.data?.data ?? null
-      if (deleted?._id) {
+      if (deleted?._id && tournamentScope.isActive(payload.tournamentId)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.filter((item) => item._id !== deleted._id)
       }
       return deleted
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
+      }
       return null
     } finally {
       endRequest()
