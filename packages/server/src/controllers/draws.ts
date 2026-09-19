@@ -27,6 +27,11 @@ import {
   releaseRoundWriteLease,
   type RoundWriteLease,
 } from '../services/round-write-guard.service.js'
+import {
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
 import { getRoundModel } from '../models/round.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import {
@@ -1041,6 +1046,8 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteDraw: RequestHandler = async (req, res, next) => {
+  let namespaceLease: RoundNamespaceLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -1054,6 +1061,16 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry draw deletion' }],
+      })
+      return
+    }
+    leaseConnection = connection
+
     const DrawModel = getDrawModel(connection)
     const existing = await DrawModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!existing) {
@@ -1084,8 +1101,20 @@ export const deleteDraw: RequestHandler = async (req, res, next) => {
       })
       return
     }
+
+    const released = await releaseRoundNamespaceLease(connection, namespaceLease)
+    if (!released) throw new Error('Failed to release round namespace lease after draw deletion')
+    namespaceLease = null
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (namespaceLease && leaseConnection) {
+      try {
+        await releaseRoundNamespaceLease(leaseConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
   }
 }
