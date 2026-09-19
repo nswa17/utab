@@ -101,7 +101,8 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
-    tournamentScope.activate(params.tournamentId)
+    const scopeChanged = tournamentScope.activate(params.tournamentId)
+    if (scopeChanged) submissions.value = []
     const sequence = ++adminFetchSequence.value
     beginRequest()
     error.value = null
@@ -135,7 +136,8 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     type?: 'ballot' | 'feedback'
     round?: number
   }) {
-    tournamentScope.activate(params.tournamentId)
+    const scopeChanged = tournamentScope.activate(params.tournamentId)
+    if (scopeChanged) submissions.value = []
     const sequence = ++participantFetchSequence.value
     beginRequest()
     error.value = null
