@@ -2,6 +2,7 @@ import { Schema, type Connection, type InferSchemaType, type Model } from 'mongo
 import { isDuplicateKeyError } from './mongo-error.service.js'
 
 export const ROUND_NAMESPACE_LOCK_COLLECTION = 'round_namespace_locks'
+export const ROUND_NAMESPACE_LEASE_STALE_MS = 5 * 60 * 1000
 
 const roundNamespaceLockSchema = new Schema(
   {
@@ -45,8 +46,16 @@ export async function acquireRoundNamespaceLease(
     if (!isDuplicateKeyError(error)) throw error
   }
 
+  const staleBefore = new Date(Date.now() - ROUND_NAMESPACE_LEASE_STALE_MS)
   const claimed = await LockModel.findOneAndUpdate(
-    { _id: tournamentId, locked: { $ne: true } },
+    {
+      _id: tournamentId,
+      $or: [
+        { locked: { $ne: true } },
+        { touchedAt: { $lt: staleBefore } },
+        { touchedAt: null },
+      ],
+    },
     {
       $set: { locked: true, touchedAt: new Date() },
       $inc: { epoch: 1 },
