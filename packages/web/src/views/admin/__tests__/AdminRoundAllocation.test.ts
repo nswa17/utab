@@ -201,6 +201,19 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain('round: currentRound')
   })
 
+  it('keeps multi-step allocation generation in its original route context', () => {
+    const source = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(source).toContain('const allocationRequestGate = createLatestRequestGate()')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
+    expect(source).toContain('const currentRound = round.value')
+    expect(source).toContain('const currentRequestScope = requestScope.value')
+    expect(source).toContain('syncAutoBreakPolicyToRound(currentTournamentId)')
+    expect(source).toContain('allocationRequestGate.isCurrent(requestToken)')
+    expect(source).toContain('tournamentId: currentTournamentId')
+    expect(source).toContain('round: currentRound')
+    expect(source).toContain('allocationRequestGate.invalidate()')
+  })
+
   it('invalidates stale refresh and compiled-history requests while route context changes', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
     expect(source).toContain('createLatestRequestGate')
