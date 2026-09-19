@@ -94,9 +94,29 @@ export const useTournamentStore = defineStore('tournament', () => {
       const updated = res.data?.data
       if (updated) {
         advanceListSequence()
-        tournaments.value = tournaments.value.map((item) =>
-          item._id === updated._id ? updated : item
-        )
+        const userDefinedDataPatch =
+          payload.user_defined_data_patch &&
+          typeof payload.user_defined_data_patch === 'object' &&
+          !Array.isArray(payload.user_defined_data_patch)
+            ? (payload.user_defined_data_patch as Record<string, any>)
+            : null
+        tournaments.value = tournaments.value.map((item) => {
+          if (item._id !== updated._id) return item
+          if (!userDefinedDataPatch) return updated
+
+          const merged: Record<string, any> = { ...item }
+          Object.keys(payload).forEach((key) => {
+            if (key === 'tournamentId' || key === 'user_defined_data_patch') return
+            if (Object.prototype.hasOwnProperty.call(updated, key)) {
+              merged[key] = updated[key]
+            }
+          })
+          merged.user_defined_data = {
+            ...(item.user_defined_data ?? {}),
+            ...userDefinedDataPatch,
+          }
+          return merged
+        })
       }
       return updated
     } catch (err: any) {
