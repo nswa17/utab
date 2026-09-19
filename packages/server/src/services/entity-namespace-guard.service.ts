@@ -88,3 +88,45 @@ export async function releaseEntityNamespaceLease(
   ).exec()
   return result.matchedCount === 1
 }
+
+
+export async function releaseEntityNamespaceLeases(
+  connection: Connection,
+  leases: readonly EntityNamespaceLease[]
+): Promise<void> {
+  const results = await Promise.allSettled(
+    leases.map((lease) => releaseEntityNamespaceLease(connection, lease))
+  )
+  const errors: unknown[] = []
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      errors.push(result.reason)
+      return
+    }
+    if (!result.value) {
+      errors.push(new Error(`Failed to release entity namespace lease ${leases[index]?.key ?? ''}`))
+    }
+  })
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to release entity namespace leases')
+  }
+}
+
+export async function acquireEntityNamespaceLeases(
+  connection: Connection,
+  tournamentId: string,
+  namespaces: readonly string[]
+): Promise<EntityNamespaceLease[] | null> {
+  const orderedNamespaces = Array.from(new Set(namespaces)).sort()
+  const acquired: EntityNamespaceLease[] = []
+  for (const namespace of orderedNamespaces) {
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, namespace)
+    if (lease) {
+      acquired.push(lease)
+      continue
+    }
+    await releaseEntityNamespaceLeases(connection, acquired)
+    return null
+  }
+  return acquired
+}
