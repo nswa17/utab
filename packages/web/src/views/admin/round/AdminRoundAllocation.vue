@@ -2212,6 +2212,10 @@ async function syncAutoBreakPolicyToRound() {
   }
   const normalizedSize = normalizeBreakSize(autoBreakSize.value)
   autoBreakSize.value = normalizedSize
+  const currentUserDefined =
+    currentTournament.user_defined_data && typeof currentTournament.user_defined_data === 'object'
+      ? ({ ...(currentTournament.user_defined_data as Record<string, any>) } as Record<string, any>)
+      : {}
   const currentBreak = readTournamentBreakConfig()
   const breakConfig = {
     ...currentBreak,
@@ -2222,7 +2226,8 @@ async function syncAutoBreakPolicyToRound() {
   }
   const updated = await tournamentStore.updateTournament({
     tournamentId: currentTournament._id,
-    user_defined_data_patch: {
+    user_defined_data: {
+      ...currentUserDefined,
       break: breakConfig,
     },
   })
