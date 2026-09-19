@@ -7113,3 +7113,56 @@ The same post-lease refresh and regression coverage were reconciled into the cum
 - #34 core allocation/vote-rate fixes were re-read. No new blocking regression was found in the changed allocation paths. The broader nullable/multi-round `vote_rate` semantics are already improved in the later cumulative result compiler.
 - #35 compiled metamorphic/revision/submission-completeness changes were re-read. No additional blocker was found; the documented raw-source completeness limitation is already handled by later cumulative reconciliation.
 - #39 recent-PR regression fixes were re-read for interactions among wizard progress, import/copy rollback, and detailed export ordering. No additional high-confidence regression was found in this pass.
+
+
+## Phase 48 — stacked PR reconciliation and exact-head validation
+
+### #37 final CI correction
+
+The post-lease membership refresh from Phase 47 exposed a controller-unit-test harness gap: the tests mocked User and membership models but not the membership guard service, so the unit suite attempted to use the real lease collection and hit Mongoose buffering timeouts.
+
+Correction:
+- `tournament-membership-guard.service` is mocked in the controller unit tests;
+- the stale pre-lease / refreshed post-lease rollback test remains in place;
+- no production behavior was weakened.
+
+Current PR #37 head: `6d164672cbb87e34413c9cd6088eeffebb912a15`.
+CI run `35454565783` passed lint, full tests, and build.
+
+### #41: Phase 10 had drifted from the latest Phase 9 base
+
+PR #41 is intentionally stacked on #40. During this pass, comparison against the current #40 head showed:
+- #41 was 17 commits behind the updated Phase 9 branch;
+- GitHub reported `mergeable=false`;
+- most nominally overlapping files were already content-identical, but `rounds.ts` and `integration.part2.test.ts` contained real overlapping edits.
+
+The first attempted reconciliation copied unrelated fixes from parallel PRs #36/#38 into #41. That was deliberately reverted after re-checking the dependency graph: those PRs target `main` independently and are not Phase 10 dependencies. Copying untouched hunks would have created unnecessary undeclared dependencies.
+
+Final reconciliation kept only the actual #40 -> #41 dependency:
+- `rounds.ts` was rebuilt from the current #40 implementation, preserving all latest Phase 9 entity-namespace serialization, then only the Phase 10 Draw-authoritative public-Round publication logic was reapplied;
+- `integration.part2.test.ts` was rebuilt from current #40 coverage and only the Phase 10 unavailable-assigned-team regression was reapplied;
+- the Phase 10 branch retains the targeted Round/entity namespace regression from the current #40 follow-up;
+- parallel #36/#38 code was not copied into Phase 10.
+
+Result:
+- GitHub now reports PR #41 as `mergeable=true`, `mergeable_state=clean`;
+- generated merge commit `45beb89d4f1c8b624ea6a0ef445572ee3bc90dc8` has parents:
+  - #40 current head `18065df8f06d04bec9e610dfdf2feb6066b20ff3`;
+  - #41 current head `e485f374ff2ce02066a3ee71f5581bdf92830a7d`;
+- pull-request CI run `35460904815` passed lint, the full test suite, and build.
+
+### Phase 10 third-pass behavior review
+
+The Draw-authoritative publication design was re-read end-to-end:
+- admin setup and round-management UI derive team/adjudicator publication state from Draw `drawOpened` / `allocationOpened`;
+- participant UI uses the same Draw flags;
+- public Round list/get derive their compatibility fields from the matching Draw;
+- deleting a Draw therefore makes public Round allocation flags false without a second persistence write;
+- no new bidirectional Round/Draw synchronization was reintroduced.
+
+The unavailable-assigned-entity exception was also re-read:
+- server validation permits an entity that was present in the persisted Draw to be moved/removed even after becoming unavailable;
+- a newly introduced unavailable entity remains rejected;
+- duplicate-assignment validation still runs before the availability exception.
+
+No additional Phase 10 blocking regression was found in this pass.
