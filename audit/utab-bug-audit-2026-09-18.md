@@ -6944,3 +6944,60 @@ The final cumulative audit branch itself remains fully green at run `35405758845
 - Web: **348/348**;
 - Server: **167/167**;
 - lint/build: success.
+
+## Phase 45 — second PR re-audit and integration reconciliation
+
+A second review of open PRs #34–#41 was performed after the Phase 44 conclusions.
+
+### New PR #38 finding
+
+The previous #38 correction covered the five entity stores, but several other tournament-scoped stores still exposed the previous tournament's state until the next fetch completed:
+
+- Rounds;
+- Draws;
+- Results;
+- Compiled state / preview;
+- Submissions.
+
+Late-response suppression alone was insufficient because the old state remained readable during the A -> B in-flight window.
+
+PR #38 was strengthened so these stores clear old tournament state on a real scope change and reject inactive-tournament mutations/errors. First-use mutation-only compatibility is preserved with `claimIfEmpty`.
+
+Regression coverage was added for immediate scope clearing and cross-tournament races.
+
+The first two CI attempts exposed test-harness issues rather than implementation failures:
+- run `35414260275`: failed after the new draw test referenced a missing helper;
+- run `35414469581`: same single failure (`createDeferred is not defined`); all other added scope/race tests passed.
+
+The helper was added in commit `2b006799fe9bc90e1d9f53b952d1f9c0893a328f`. Final CI status is recorded below once complete.
+
+### Cumulative-branch reconciliation
+
+The Phase 44 audit log said the cumulative branch was authoritative, but the code did not actually include every correction that had been applied directly to PR branches after the cumulative CI run.
+
+Two concrete gaps were found:
+
+1. #38 tournament-scope corrections were only partially present;
+2. #41's final single-source-of-truth publication correction was absent from cumulative code even though the log described it as corrected.
+
+The cumulative branch was updated without overwriting later-phase behavior:
+
+- Draws / Results / Compiled / Raw Results / Submissions now use tournament scope guards;
+- Rounds and the above stores preserve mutation-only first-use compatibility;
+- later submission reconciliation behavior was retained while adding scope isolation;
+- public Round list/get now derive `teamAllocationOpened` / `adjudicatorAllocationOpened` from authoritative Draw publication fields;
+- legacy Round publication defaults are false.
+
+Scope regression tests from #38 were also added to the cumulative branch.
+
+### Updated interpretation of CI history
+
+Run `35405758845` remains evidence that the *previous* cumulative head was fully green, but it must not be described as CI validation of the new Phase 45 cumulative head.
+
+The cumulative branch does not currently trigger CI automatically because it is not itself an open PR. Therefore, until that exact head is exercised, its new integration changes are code-reviewed and regression-covered but not independently full-suite CI-validated.
+
+### Second-review status of the open PRs
+
+No new high-confidence regressions were found in #34, #35, #36, #37, #39, #40, or #41 beyond the already documented scope limitations / later cumulative fixes.
+
+The only new open-PR defect found in this pass was the additional #38 in-flight stale-state exposure described above.
