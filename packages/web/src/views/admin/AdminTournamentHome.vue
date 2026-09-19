@@ -4739,7 +4739,7 @@ function buildEntityImportRequest(
   } = buildEntityImportPayload({
     type,
     text,
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     roundNumbers,
     teams: teams.teams.map((team) => ({
       _id: String(team._id),
