@@ -10,6 +10,7 @@ Phase 4: COMPLETE — #40→#41 stack synchronized
 Phase 5: COMPLETE — #41 cross-PR overlap reconciled
 Phase 6: STOPPED — P6-001 registered
 Phase 7: COMPLETE — cumulative branch reconciled and CI-green
+Phase 8: COMPLETE AS ASSESSMENT — overall merge readiness BLOCKED
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -384,3 +385,76 @@ On exact cumulative head `7f05c4a63df09fbb5ef330f657f19e71a6cb8e17`:
 - raw team-result `win` is still unbounded at API/model/import boundaries.
 
 Therefore Phase 7 reconstruction is complete and CI-green, but the overall reconciliation pipeline is not merge-ready until P6-001 and the unfinished Phase-3 audits are resolved.
+
+
+## Phase 8 merge-readiness assessment — COMPLETE / OVERALL BLOCKED
+
+Scope: readiness classification only. No new bug search and no application-code change.
+
+### Current exact PR state
+
+| PR | Current head | Base | GitHub mergeable | Latest CI | Unresolved review threads | Regression coverage present | Phase-3 final audit | Readiness |
+|---|---|---|---|---|---:|---|---|---|
+| #34 | `1b78cea2174bc94fe11ff372c96256f1233f2cbd` | `main` | yes | `35415799261` success | 0 | yes | complete / PASS | **READY individually** |
+| #35 | `130d0fa346bd93218a684b88b493b1f356ac557d` | `main` | yes | `35445680122` success | 0 | yes | **not completed** | **BLOCKED** |
+| #36 | `eef5d1264b613ac8cb07cf13fee6fd44c30551fa` | `main` | yes | `35454152393` success | 0 | yes | **not completed** | **BLOCKED** |
+| #37 | `6d164672cbb87e34413c9cd6088eeffebb912a15` | `main` | yes | `35454565783` success | 0 | yes | **not completed** | **BLOCKED** |
+| #38 | `352ba0c63613b0190a58034d270a14576a61554a` | `main` | yes | `35453983648` success | 0 | yes | **not completed** | **BLOCKED** |
+| #39 | `8ded872fdc935eb2e3fbef8f47b9867c4ad73816` | `main` | yes | `35449749829` success | 0 | yes | **not completed** | **BLOCKED** |
+| #40 | `18065df8f06d04bec9e610dfdf2feb6066b20ff3` | `main` | yes | `35453505179` success | 0 | yes | **not completed** | **BLOCKED** |
+| #41 | `a7da9c77d5c2cf07f2aac6aee3dfe2e95dc75803` | `audit/boundary-type-phase9` | yes | `35472174215` success | 0 | yes | stacked final compatibility checked in Phases 4–5 | **BLOCKED on #40 + retarget** |
+
+### Global blocker
+
+`P6-001` remains OPEN:
+- raw team-result `win` is unbounded at route/model/import boundaries;
+- it can produce support/vote-rate outside [0,1].
+
+Therefore the project-level Phase-8 requirement **unresolved findings = 0** is not satisfied. No claim of overall merge readiness is made.
+
+### Dependency resolution
+
+- #34–#40 remain independent from an ancestry/dependency perspective.
+- #41 depends on #40.
+- #41 is currently 0 commits behind the current #40 head and already contains the Phase-5 compatibility preservation for overlapping #36/#38 behavior.
+- #41 still targets the #40 branch, not `main`; after #40 merges it must be retargeted to the then-current `main`, rechecked for already-merged independent PR behavior, and rerun through CI.
+
+### Fixed merge order after blockers clear
+
+Use this deterministic order:
+
+1. #34
+2. #35
+3. #36
+4. #37
+5. #38
+6. #39
+7. #40
+8. retarget/reconcile #41 onto updated `main`
+9. #41
+
+Rationale:
+- #34 before #35 keeps the shared core-results overlap deterministic.
+- #38 before #39 keeps the participant-ballot overlap deterministic while retaining both stale-context and wizard-progress tests.
+- #39 before #40 keeps import/copy rollback behavior in place before the broader boundary/import validation layer.
+- #40 must precede #41 by explicit stack dependency.
+- #36 and #38 precede #41 so the Phase-5 compatibility assertions can be verified against already-merged behavior.
+
+### Merge-time invariant
+
+For every PR in the order above:
+1. do not merge unless its Phase-3 final audit is complete (or the equivalent final stacked audit for #41);
+2. merge one PR only;
+3. refresh `main`;
+4. verify the merge result / relevant smoke and CI;
+5. resolve any test-only union conflict by retaining all independent regression blocks;
+6. only then move to the next PR.
+
+### What must happen before Phase 9 can safely execute
+
+1. Fix and checkpoint `P6-001`.
+2. Resume Phase 6 and finish the remaining cross-PR regression sweep with no open P-items.
+3. Complete Phase-3 final audits for #35, #36, #37, #38, #39, and #40.
+4. Re-run this readiness table if any PR head changes.
+
+Until those conditions are satisfied, Phase 9 merging is intentionally blocked.
