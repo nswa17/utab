@@ -6111,7 +6111,10 @@ function dropTeam(row: DrawAllocationRow, side: DrawTeamPosition) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !isEntityAssignedInAllocation(payload.kind, payload.id)
+  ) {
     onDragEnd()
     return
   }
@@ -6152,7 +6155,10 @@ function dropVenue(row: DrawAllocationRow) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !isEntityAssignedInAllocation(payload.kind, payload.id)
+  ) {
     onDragEnd()
     return
   }
