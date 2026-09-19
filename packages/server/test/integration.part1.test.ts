@@ -5047,4 +5047,119 @@ describe('Server integration', () => {
       expect(square.trainees?.length ?? 0).toBe(0)
     }
   })
+
+  it('rejects invalid numeric and round-detail boundaries at the API edge', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'boundary-validation-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'boundary-validation-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const zeroTotalRounds = await agent.post('/api/tournaments').send({
+      name: 'Invalid zero-round tournament',
+      style: 1,
+      options: {},
+      total_round_num: 0,
+    })
+    expect(zeroTotalRounds.status).toBe(400)
+
+    const negativeCurrentRound = await agent.post('/api/tournaments').send({
+      name: 'Invalid current-round tournament',
+      style: 1,
+      options: {},
+      current_round_num: -1,
+    })
+    expect(negativeCurrentRound.status).toBe(400)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Boundary Validation Open',
+      style: 1,
+      options: {},
+      total_round_num: 2,
+      current_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const invalidTiePoints = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      options: { tie_points: 1.01 },
+    })
+    expect(invalidTiePoints.status).toBe(400)
+
+    const invalidRawRoundList = await agent.get(
+      `/api/raw-results/teams?tournamentId=${tournamentId}&round=abc`
+    )
+    expect(invalidRawRoundList.status).toBe(400)
+
+    const invalidRawRoundDelete = await agent.delete(
+      `/api/raw-results/teams?tournamentId=${tournamentId}&round=1.5`
+    )
+    expect(invalidRawRoundDelete.status).toBe(400)
+
+    const duplicateTeamDetails = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Duplicate detail team',
+      details: [
+        { r: 1, available: true },
+        { r: 1, available: false },
+      ],
+    })
+    expect(duplicateTeamDetails.status).toBe(400)
+
+    const invalidTeamTemplate = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Invalid template team',
+      template: 'not-an-object',
+    })
+    expect(invalidTeamTemplate.status).toBe(400)
+
+    const nonArrayAdjudicatorDetails = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Invalid details judge',
+      details: { r: 1, available: true },
+    })
+    expect(nonArrayAdjudicatorDetails.status).toBe(400)
+
+    const zeroRoundVenueDetail = await agent.post('/api/venues').send({
+      tournamentId,
+      name: 'Invalid detail venue',
+      details: [{ r: 0, available: true }],
+    })
+    expect(zeroRoundVenueDetail.status).toBe(400)
+
+    const teamRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Boundary valid team',
+      details: [{ r: 1, available: true, speakers: [] }],
+    })
+    expect(teamRes.status).toBe(201)
+    const teamId = String(teamRes.body.data._id)
+
+    const invalidSingleUpdate = await agent.patch(`/api/teams/${teamId}`).send({
+      tournamentId,
+      details: [
+        { r: 2, available: true },
+        { r: 2, available: false },
+      ],
+    })
+    expect(invalidSingleUpdate.status).toBe(400)
+
+    const invalidBulkUpdate = await agent.patch('/api/teams').send([
+      {
+        id: teamId,
+        tournamentId,
+        details: [{ r: -1, available: true }],
+      },
+    ])
+    expect(invalidBulkUpdate.status).toBe(400)
+  })
+
+
 })
