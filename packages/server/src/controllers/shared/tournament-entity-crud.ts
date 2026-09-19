@@ -88,6 +88,40 @@ function buildRestoreUpdate(record: PlainRecord, fields: readonly string[]): Pla
   return Object.keys(unset).length > 0 ? { $set: set, $unset: unset } : { $set: set }
 }
 
+function updatedAtFilter(record: PlainRecord): PlainRecord {
+  const value = record.updatedAt
+  if (value === undefined || value === null) {
+    return { updatedAt: { $exists: false } }
+  }
+  return { updatedAt: value }
+}
+
+function buildRestoreUpdateWithTimestamp(
+  record: PlainRecord,
+  fields: readonly string[]
+): PlainRecord {
+  const update = buildRestoreUpdate(record, fields) as {
+    $set: PlainRecord
+    $unset?: PlainRecord
+  }
+  if (record.updatedAt === undefined || record.updatedAt === null) {
+    update.$unset = { ...(update.$unset ?? {}), updatedAt: 1 }
+  } else {
+    update.$set = { ...update.$set, updatedAt: record.updatedAt }
+  }
+  return update
+}
+
+function bulkMatchedCount(result: unknown): number | null {
+  const value = Number((result as { matchedCount?: unknown } | null)?.matchedCount)
+  return Number.isFinite(value) ? value : null
+}
+
+function createBulkMutationConflictError(): Error & { code: string } {
+  const error = new Error('Bulk update changed concurrently; retry')
+  return Object.assign(error, { code: 'UTAB_BULK_MUTATION_CONFLICT' })
+}
+
 export function createTournamentEntityCrudHandlers(options: CrudOptions): {
   list: RequestHandler
   get: RequestHandler
@@ -269,12 +303,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         }
         finalUniqueValues.set(value, id)
       }
-      const ops = payload.map((item) => ({
-        updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: { $set: buildUpdateDoc(item, options.fields) },
-        },
-      }))
+      const operationTimestamp = new Date()
       const changedUniqueIds = payload
         .filter((item) => {
           const update = updateById.get(String(item.id)) ?? {}
@@ -285,6 +314,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           )
         })
         .map((item) => String(item.id))
+      const changedUniqueIdSet = new Set(changedUniqueIds)
       const occupiedUniqueValues = new Set<string>([
         ...existing.map((record) => String(record?.[uniqueField] ?? '')),
         ...Array.from(finalUniqueValues.keys()),
@@ -302,14 +332,65 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       })
       const stageOps = changedUniqueIds.map((id) => ({
         updateOne: {
-          filter: { _id: id, tournamentId },
-          update: { $set: { [uniqueField]: temporaryUniqueValueById.get(id) } },
+          filter: {
+            _id: id,
+            tournamentId,
+            ...updatedAtFilter(existingById.get(id) ?? {}),
+          },
+          update: {
+            $set: {
+              [uniqueField]: temporaryUniqueValueById.get(id),
+              updatedAt: operationTimestamp,
+            },
+          },
+          timestamps: false,
+        },
+      }))
+      const ops = payload.map((item) => {
+        const id = String(item.id)
+        return {
+          updateOne: {
+            filter: {
+              _id: item.id,
+              tournamentId,
+              ...(changedUniqueIdSet.has(id)
+                ? { updatedAt: operationTimestamp }
+                : updatedAtFilter(existingById.get(id) ?? {})),
+            },
+            update: {
+              $set: {
+                ...buildUpdateDoc(item, options.fields),
+                updatedAt: operationTimestamp,
+              },
+            },
+            timestamps: false,
+          },
+        }
+      })
+      const rollbackStageOps = changedUniqueIds.map((id) => ({
+        updateOne: {
+          filter: { _id: id, tournamentId, updatedAt: operationTimestamp },
+          update: {
+            $set: {
+              [uniqueField]: temporaryUniqueValueById.get(id),
+              updatedAt: operationTimestamp,
+            },
+          },
+          timestamps: false,
         },
       }))
       const restoreOps = payload.map((item) => ({
         updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: buildRestoreUpdate(existingById.get(String(item.id)) ?? {}, options.fields),
+          filter: {
+            _id: item.id,
+            tournamentId,
+            updatedAt: operationTimestamp,
+          },
+          update: buildRestoreUpdateWithTimestamp(
+            existingById.get(String(item.id)) ?? {},
+            options.fields
+          ),
+          timestamps: false,
         },
       }))
 
@@ -317,16 +398,24 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       try {
         if (stageOps.length > 0) {
           mutationStarted = true
-          await Model.bulkWrite(stageOps, { ordered: true })
+          const stageResult = await Model.bulkWrite(stageOps, { ordered: true })
+          const matched = bulkMatchedCount(stageResult)
+          if (matched !== null && matched !== stageOps.length) {
+            throw createBulkMutationConflictError()
+          }
         }
         mutationStarted = true
-        await Model.bulkWrite(ops, { ordered: true })
+        const updateResult = await Model.bulkWrite(ops, { ordered: true })
+        const matched = bulkMatchedCount(updateResult)
+        if (matched !== null && matched !== ops.length) {
+          throw createBulkMutationConflictError()
+        }
       } catch (updateError) {
         if (mutationStarted) {
           const rollbackErrors: unknown[] = []
-          if (stageOps.length > 0) {
+          if (rollbackStageOps.length > 0) {
             try {
-              await Model.bulkWrite(stageOps, { ordered: true })
+              await Model.bulkWrite(rollbackStageOps, { ordered: true })
             } catch (rollbackStageError) {
               rollbackErrors.push(rollbackStageError)
             }
@@ -351,6 +440,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         .exec()
       res.json({ data: updated, errors: [] })
     } catch (err: any) {
+      if (err?.code === 'UTAB_BULK_MUTATION_CONFLICT') {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Bulk update changed concurrently; retry' }],
+        })
+        return
+      }
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
           data: null,
