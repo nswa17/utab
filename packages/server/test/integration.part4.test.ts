@@ -4854,5 +4854,126 @@ describe('Server integration', () => {
     expect(storedTeam).toBeTruthy()
     expect(storedTeam.details.some((detail: any) => Number(detail?.r) === 1)).toBe(true)
   })
+  it('keeps hidden tournaments out of public listings without changing direct access policy', async () => {
+    const organizer = request.agent(app)
+    const registerRes = await organizer
+      .post('/api/auth/register')
+      .send({ username: 'hidden-tournament-owner', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await organizer
+      .post('/api/auth/login')
+      .send({ username: 'hidden-tournament-owner', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Hidden Tournament Listing Open',
+      style: 1,
+      options: {},
+      auth: { access: { required: false } },
+      user_defined_data: { hidden: true },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Hidden Listing Team',
+      userDefinedData: { internalMemo: 'not public' },
+    })
+    expect(teamRes.status).toBe(201)
+    const teamId = String(teamRes.body.data._id)
+
+    const publicList = await request(app).get('/api/tournaments')
+    expect(publicList.status).toBe(200)
+    expect(publicList.body.data.some((item: any) => String(item._id) === tournamentId)).toBe(false)
+
+    const directTournament = await request(app).get(`/api/tournaments/${tournamentId}`)
+    expect(directTournament.status).toBe(200)
+    expect(directTournament.body.data.user_defined_data).toBeUndefined()
+
+    const directTeam = await request(app).get(
+      `/api/teams/${teamId}?tournamentId=${tournamentId}`
+    )
+    expect(directTeam.status).toBe(200)
+    expect(directTeam.body.data.userDefinedData).toBeUndefined()
+
+    const accessAttempt = await request(app)
+      .post(`/api/tournaments/${tournamentId}/access`)
+      .send({ action: 'skip' })
+    expect(accessAttempt.status).toBe(200)
+  })
+
+  it('does not reveal a managed users memberships in other tournaments', async () => {
+    const owner = request.agent(app)
+    const existingUser = request.agent(app)
+
+    expect(
+      (
+        await owner
+          .post('/api/auth/register')
+          .send({ username: 'membership-boundary-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await existingUser
+          .post('/api/auth/register')
+          .send({ username: 'membership-boundary-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await owner
+          .post('/api/auth/login')
+          .send({ username: 'membership-boundary-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await existingUser
+          .post('/api/auth/login')
+          .send({ username: 'membership-boundary-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const ownerTournamentRes = await owner.post('/api/tournaments').send({
+      name: 'Membership Boundary A',
+      style: 1,
+      options: {},
+    })
+    const otherTournamentRes = await existingUser.post('/api/tournaments').send({
+      name: 'Membership Boundary B',
+      style: 1,
+      options: {},
+    })
+    expect(ownerTournamentRes.status).toBe(201)
+    expect(otherTournamentRes.status).toBe(201)
+    const ownerTournamentId = String(ownerTournamentRes.body.data._id)
+    const otherTournamentId = String(otherTournamentRes.body.data._id)
+
+    const addExistingUser = await owner
+      .post(`/api/tournaments/${ownerTournamentId}/users`)
+      .send({
+        username: 'membership-boundary-user',
+        password: 'ignored-password',
+        role: 'speaker',
+      })
+    expect(addExistingUser.status).toBe(200)
+    expect(addExistingUser.body.data.tournaments).toEqual([ownerTournamentId])
+    expect(addExistingUser.body.data.tournaments).not.toContain(otherTournamentId)
+
+    const existingUserMe = await existingUser.get('/api/auth/me')
+    expect(existingUserMe.status).toBe(200)
+    expect(existingUserMe.body.data.tournaments).toContain(ownerTournamentId)
+    expect(existingUserMe.body.data.tournaments).toContain(otherTournamentId)
+
+    const removeExistingUser = await owner.delete(
+      `/api/tournaments/${ownerTournamentId}/users?username=membership-boundary-user`
+    )
+    expect(removeExistingUser.status).toBe(200)
+    expect(removeExistingUser.body.data.tournaments).toEqual([])
+  })
+
+
 
 })
