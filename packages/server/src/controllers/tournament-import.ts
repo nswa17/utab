@@ -9,6 +9,14 @@ import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
+import {
+  adjudicatorDetailsSchema,
+  adjudicatorTemplateSchema,
+  teamDetailsSchema,
+  teamTemplateSchema,
+  venueDetailsSchema,
+  venueTemplateSchema,
+} from '../schemas/entity-details.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
 import { ROUND_NAMESPACE_LOCK_COLLECTION } from '../services/round-namespace-guard.service.js'
@@ -95,6 +103,12 @@ function normalizeNumber(value: unknown, fallback: number): number {
   return fallback
 }
 
+function normalizePositiveInteger(value: unknown, fallback: number, field: string): number {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return value
+  throw new TournamentImportError(400, `Backup tournament ${field} must be a positive integer`)
+}
+
 function normalizeNumberArray(value: unknown, fallback: number[]): number[] {
   if (!Array.isArray(value)) return fallback
   const normalized = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
@@ -179,6 +193,58 @@ async function ensureImportedStyle(
   while (await StyleModel.exists({ id: candidateId }).exec()) candidateId += 1
   await StyleModel.create({ ...snapshot, id: candidateId })
   return { styleId: candidateId, createdStyleId: candidateId }
+}
+
+function validateImportedRoundScope(collectionName: string, docs: unknown[]): void {
+  const field =
+    collectionName === 'rounds' ||
+    collectionName === 'draws' ||
+    collectionName === 'submissions' ||
+    collectionName === 'results'
+      ? 'round'
+      : collectionName === 'rawteamresults' ||
+          collectionName === 'rawspeakerresults' ||
+          collectionName === 'rawadjudicatorresults'
+        ? 'r'
+        : null
+  if (!field) return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    const value = record[field]
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return
+    throw new TournamentImportError(
+      400,
+      `Invalid ${collectionName} ${field} in backup at index ${index}: expected a positive integer`
+    )
+  })
+}
+
+function validateImportedEntityState(collectionName: string, docs: unknown[]): void {
+  const schemas =
+    collectionName === 'teams'
+      ? { details: teamDetailsSchema, template: teamTemplateSchema }
+      : collectionName === 'adjudicators'
+        ? { details: adjudicatorDetailsSchema, template: adjudicatorTemplateSchema }
+        : collectionName === 'venues'
+          ? { details: venueDetailsSchema, template: venueTemplateSchema }
+          : null
+  if (!schemas) return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    for (const field of ['template', 'details'] as const) {
+      if (record[field] === undefined) continue
+      const parsed = schemas[field].safeParse(record[field])
+      if (parsed.success) continue
+      const issue = parsed.error.issues[0]
+      const suffix = issue?.path?.length ? ` at ${field}.${issue.path.join('.')}` : ''
+      throw new TournamentImportError(
+        400,
+        `Invalid ${collectionName} ${field} in backup at index ${index}${suffix}: ${issue?.message ?? `invalid ${field}`}`
+      )
+    }
+  })
 }
 
 function deriveCollectionName(path: string): string {
@@ -534,8 +600,16 @@ async function importTournamentFromBundle(
     name: normalizeString(tournamentSnapshot.name, normalizeString(metadata.tournamentName, 'Tournament')),
     style: sourceStyleId,
     options: asRecord(tournamentSnapshot.options),
-    total_round_num: normalizeNumber(tournamentSnapshot.total_round_num, 4),
-    current_round_num: normalizeNumber(tournamentSnapshot.current_round_num, 1),
+    total_round_num: normalizePositiveInteger(
+      tournamentSnapshot.total_round_num,
+      4,
+      'total_round_num'
+    ),
+    current_round_num: normalizePositiveInteger(
+      tournamentSnapshot.current_round_num,
+      1,
+      'current_round_num'
+    ),
     preev_weights: normalizeNumberArray(tournamentSnapshot.preev_weights, [0, 0, 0, 0, 0, 0]),
     auth: mergedAuth.auth,
     user_defined_data: asRecord(tournamentSnapshot.user_defined_data),
@@ -574,6 +648,8 @@ async function importTournamentFromBundle(
         continue
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
+      validateImportedRoundScope(collectionName, docs)
+      validateImportedEntityState(collectionName, docs)
       const revivedDocs = docs.map((doc) =>
         sanitizeImportedTournamentCollectionDocument(
           collectionName,
