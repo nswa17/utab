@@ -415,7 +415,6 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     const DrawModel = getDrawModel(connection)
     const existingDraw = await DrawModel.findOne({ tournamentId, round }).lean().exec()
     const existingPlacements = collectAllocationEntityPlacements(existingDraw?.allocation)
-    const nextPlacements = collectAllocationEntityPlacements(allocation)
     if (
       existingDraw?.locked === true &&
       (!isDeepStrictEqual(
@@ -443,7 +442,7 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
             ? adjudicatorAvailabilityById.get(ref.id) === false
             : venueAvailabilityById.get(ref.id) === false
       if (!isUnavailable) return false
-      return existingPlacements.get(refKey) !== nextPlacements.get(refKey)
+      return !existingPlacements.has(refKey)
     })
     if (unavailableRefs.length > 0) {
       badRequest(res, formatUnavailableEntityMessage(round, unavailableRefs))
