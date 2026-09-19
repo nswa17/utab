@@ -125,6 +125,71 @@ export async function releaseRoundWriteLease(
   ).exec()
 }
 
+
+export async function releaseRoundWriteLeases(
+  connection: Connection,
+  leases: readonly RoundWriteLease[]
+): Promise<void> {
+  const results = await Promise.allSettled(
+    leases.map((lease) => releaseRoundWriteLease(connection, lease))
+  )
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to release round write leases')
+  }
+}
+
+export async function acquireRoundWriteLeases(
+  connection: Connection,
+  tournamentId: string,
+  targets: ReadonlyArray<{ round: number; expectedRoundId?: string }>
+): Promise<RoundWriteLease[] | null> {
+  const uniqueTargets = new Map<
+    number,
+    { round: number; expectedRoundId?: string }
+  >()
+  for (const target of targets) {
+    const round = Number(target.round)
+    if (!Number.isInteger(round) || round < 1) continue
+    const previous = uniqueTargets.get(round)
+    if (
+      previous?.expectedRoundId &&
+      target.expectedRoundId &&
+      previous.expectedRoundId !== target.expectedRoundId
+    ) {
+      return null
+    }
+    uniqueTargets.set(round, {
+      round,
+      expectedRoundId: previous?.expectedRoundId ?? target.expectedRoundId,
+    })
+  }
+
+  const acquired: RoundWriteLease[] = []
+  const orderedTargets = Array.from(uniqueTargets.values()).sort(
+    (left, right) =>
+      left.round - right.round ||
+      String(left.expectedRoundId ?? '').localeCompare(String(right.expectedRoundId ?? ''))
+  )
+  for (const target of orderedTargets) {
+    const lease = await acquireRoundWriteLease(
+      connection,
+      tournamentId,
+      target.round,
+      target.expectedRoundId
+    )
+    if (lease) {
+      acquired.push(lease)
+      continue
+    }
+    await releaseRoundWriteLeases(connection, acquired)
+    return null
+  }
+  return acquired
+}
+
 async function tryAcquireMutationLease(
   connection: Connection,
   tournamentId: string,
