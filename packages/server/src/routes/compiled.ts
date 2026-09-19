@@ -48,7 +48,7 @@ const compileOptionsSchema = z
       })
       .optional(),
     winner_policy: z.enum(compileWinnerPolicies).optional(),
-    tie_points: z.number().min(0).optional(),
+    tie_points: z.number().min(0).max(1).optional(),
     duplicate_normalization: z
       .object({
         merge_policy: z.enum(compileDuplicateMergePolicies).optional(),
