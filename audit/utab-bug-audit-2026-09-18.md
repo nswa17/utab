@@ -7001,3 +7001,58 @@ The cumulative branch does not currently trigger CI automatically because it is 
 No new high-confidence regressions were found in #34, #35, #36, #37, #39, #40, or #41 beyond the already documented scope limitations / later cumulative fixes.
 
 The only new open-PR defect found in this pass was the additional #38 in-flight stale-state exposure described above.
+
+
+## Phase 46 — third-pass PR review: cross-domain serialization and tournament metadata lost updates
+
+This pass continued the review of the still-open audit PRs rather than relying on the previous green runs.
+
+### #40: Round lifecycle writes bypassed entity CRUD namespace serialization
+
+The entity CRUD bulk-update implementation already serialized same-namespace CRUD operations and used timestamp CAS during staging/rollback. A separate write path was still outside that lock domain: Round lifecycle operations directly mutate Team/Adjudicator/Venue `details` through round creation, deletion, renumbering, and break-availability synchronization.
+
+That created a real cross-controller race. An entity bulk update could assume exclusive ownership of a Team/Adjudicator/Venue namespace while a Round operation concurrently rewrote the same documents, including during rollback.
+
+Fix on PR #40 (`audit/boundary-type-phase9`):
+- Round create/delete/renumber now acquire the same entity namespace leases used by entity CRUD;
+- break availability synchronization acquires the Team namespace lease;
+- multi-namespace acquisition is sorted and partial acquisition is released on failure;
+- bulk renumber keeps the entity leases through the full operation and releases them in `finally`, including failures;
+- regression coverage holds a Team namespace lease, verifies Round creation is rejected with 409, releases it, and then verifies Round creation and Team `details.r` synchronization succeed.
+
+Corrected PR #40 head: `18065df8f06d04bec9e610dfdf2feb6066b20ff3`.
+
+CI run `35453505179` passed: lint, full test suite, and build all succeeded.
+
+### #38: independent tournament setting saves could overwrite each other
+
+The state-sync work prevented stale tournament scopes from becoming current, but independent settings saves inside one tournament still sent the entire `user_defined_data` object from client-side snapshots. Autosave, notice, round-default, break, team-ranking, adjudicator-ranking, and allocation flows could therefore race:
+
+1. two handlers read the same old `user_defined_data`;
+2. each changes a different top-level field;
+3. both PATCH the entire object;
+4. the later write removes the earlier write.
+
+Fix on PR #38 (`audit/web-state-sync-phase7`):
+- tournament PATCH accepts a validated `user_defined_data_patch` for safe top-level fields;
+- the controller maps those entries to atomic MongoDB dotted-field updates;
+- full `user_defined_data` replacement and `user_defined_data_patch` are rejected when supplied together;
+- unsafe patch keys containing `.` or beginning with `$` are rejected;
+- admin tournament autosave/notice, round-default, break, ranking, and round-allocation policy saves now send only the fields they intend to mutate;
+- regression coverage sends concurrent independent metadata patches and verifies both updates and unrelated metadata survive.
+
+During implementation, two transient CI failures exposed a malformed route file caused by the review-time text replacement itself. The duplicate/corrupt tail was removed before final validation; these failures were not accepted as a final state.
+
+Corrected PR #38 head: `93bd52ac767006257b7b5fc94362570fdba4476c`.
+
+Final CI run `35453750331` passed.
+
+### Cumulative branch reconciliation
+
+Both corrections were also reconciled into `codex/utab-bug-audit-20260918` without removing later Phase 45 behavior:
+- the atomic tournament metadata patch API and UI callers were applied on top of the later tournament-switch guards;
+- Round/entity namespace serialization was integrated with the later Round namespace lease, per-round mutation lease, snapshot, and rollback machinery;
+- lock order for Round operations is `round namespace -> round mutation -> entity namespace`, and entity leases remain held through rollback;
+- the two new regression tests were added to the cumulative integration coverage.
+
+As before, the cumulative branch itself is not an open PR, so these exact cumulative-head changes have not yet received an automatically triggered full-suite CI run. The PR-specific implementations are CI-green.
