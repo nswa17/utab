@@ -382,6 +382,70 @@ describe('Server integration', () => {
     ])
   })
 
+  it('blocks entity writes while a namespace mutation lease is held', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'entity-namespace-lease-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'entity-namespace-lease-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Entity Namespace Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamRes = await agent
+      .post('/api/teams')
+      .send({ tournamentId, name: 'Lease Guard Team' })
+    expect(teamRes.status).toBe(201)
+    const teamId = String(teamRes.body.data._id)
+
+    const [{ getTournamentConnection }, {
+      acquireEntityNamespaceLease,
+      releaseEntityNamespaceLease,
+    }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/services/entity-namespace-guard.service.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, 'teams')
+    expect(lease).toBeTruthy()
+    if (!lease) throw new Error('Failed to acquire test entity namespace lease')
+
+    try {
+      const blockedUpdate = await agent.patch(`/api/teams/${teamId}`).send({
+        tournamentId,
+        userDefinedData: { blocked: true },
+      })
+      expect(blockedUpdate.status).toBe(409)
+
+      const blockedBulkUpdate = await agent.patch('/api/teams').send([
+        {
+          id: teamId,
+          tournamentId,
+          userDefinedData: { blocked: true },
+        },
+      ])
+      expect(blockedBulkUpdate.status).toBe(409)
+    } finally {
+      expect(await releaseEntityNamespaceLease(connection, lease)).toBe(true)
+    }
+
+    const retryUpdate = await agent.patch(`/api/teams/${teamId}`).send({
+      tournamentId,
+      userDefinedData: { blocked: false },
+    })
+    expect(retryUpdate.status).toBe(200)
+    expect(retryUpdate.body.data.userDefinedData.blocked).toBe(false)
+  })
+
   it('maps duplicate round renumber conflicts to 409 for update and bulk update', async () => {
     const agent = request.agent(app)
 
