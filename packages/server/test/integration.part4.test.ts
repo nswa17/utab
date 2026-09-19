@@ -5277,7 +5277,7 @@ describe('Server integration', () => {
 
 
 
-  it('releases result write leases before reporting success and blocks mutation-time deletion', async () => {
+  it('releases result write leases before success and blocks namespace-time deletion', async () => {
     const organizer = request.agent(app)
     expect(
       (
@@ -5328,15 +5328,23 @@ describe('Server integration', () => {
     )
     expect(mutationLease).toBeTruthy()
     if (!mutationLease) throw new Error('failed to acquire round mutation lease in result test')
+    await releaseRoundMutationLease(connection, mutationLease)
 
+    const {
+      acquireRoundNamespaceLease,
+      releaseRoundNamespaceLease,
+    } = await import('../src/services/round-namespace-guard.service.js')
+    const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    expect(namespaceLease).toBeTruthy()
+    if (!namespaceLease) throw new Error('failed to acquire round namespace lease in result test')
     try {
       const blockedDelete = await organizer.delete(
         `/api/results/${resultId}?tournamentId=${tournamentId}`
       )
       expect(blockedDelete.status).toBe(409)
-      expect(blockedDelete.body.errors?.[0]?.message).toContain('Round changed concurrently')
+      expect(blockedDelete.body.errors?.[0]?.message).toContain('namespace')
     } finally {
-      await releaseRoundMutationLease(connection, mutationLease)
+      expect(await releaseRoundNamespaceLease(connection, namespaceLease)).toBe(true)
     }
 
     const deleteAfterRelease = await organizer.delete(
