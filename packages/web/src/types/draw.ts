@@ -3,6 +3,10 @@ export interface DrawAllocationRow {
   teams: {
     gov: string
     opp: string
+    og?: string
+    oo?: string
+    cg?: string
+    co?: string
   }
   chairs: string[]
   panels: string[]
