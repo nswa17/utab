@@ -110,9 +110,7 @@ async function releaseRoundEntityNamespaceLeases(
 function sendEntityNamespaceBusy(res: Parameters<RequestHandler>[1]): void {
   res.status(409).json({
     data: null,
-    errors: [
-      { name: 'Conflict', message: 'Tournament entities are being modified; retry round change' },
-    ],
+    errors: [{ name: 'Conflict', message: 'Tournament entities are being modified; retry round change' }],
   })
 }
 
