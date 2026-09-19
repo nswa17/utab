@@ -468,9 +468,9 @@ export function strictMatching(
     round = 1,
     max_swap_iterations = 24,
   }: StrictMatchingOptions = {}
-): Record<string, never> | number[][] {
+): number[][] {
   sillyLogger(strictMatching, arguments, 'draws')
-  if (teams.length === 0) return {}
+  if (teams.length === 0) return []
 
   const div: Division[] = []
   const wins = Array.from(new Set(compiledTeamResults.map((ctr) => ctr.win)))
