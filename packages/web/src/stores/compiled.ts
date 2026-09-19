@@ -58,7 +58,11 @@ export const useCompiledStore = defineStore('compiled', () => {
   }
 
   async function fetchLatest(tournamentId: string) {
-    tournamentScope.activate(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) {
+      compiled.value = null
+      previewState.value = null
+    }
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -85,7 +89,11 @@ export const useCompiledStore = defineStore('compiled', () => {
     tournamentId: string,
     options?: CompileRunRequest
   ) {
-    tournamentScope.activate(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) {
+      compiled.value = null
+      previewState.value = null
+    }
     const sequence = advancePreviewSequence()
     beginRequest()
     error.value = null
