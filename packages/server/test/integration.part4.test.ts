@@ -5494,27 +5494,26 @@ describe('Server integration', () => {
     expect(resultRes.status).toBe(201)
     const resultId = String(resultRes.body.data._id)
 
-    const submissionRes = await organizer.post('/api/submissions/ballots').send({
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getSubmissionModel } = await import('../src/models/submission.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const submission = await SubmissionModel.create({
       tournamentId,
       round: 1,
-      teamAId: 'cross-team-a',
-      teamBId: 'cross-team-b',
-      winnerId: 'cross-team-a',
-      scoresA: [75],
-      scoresB: [72],
-      speakerIdsA: ['cross-speaker-a'],
-      speakerIdsB: ['cross-speaker-b'],
-      submittedEntityId: 'cross-judge',
+      type: 'feedback',
+      payload: {
+        adjudicatorId: 'cross-adjudicator',
+        score: 7,
+        submittedEntityId: 'cross-team-a',
+      },
     })
-    expect(submissionRes.status).toBe(201)
-    const submissionId = String(submissionRes.body.data._id)
+    const submissionId = String(submission._id)
 
-    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
     const {
       acquireRoundMutationLease,
       releaseRoundMutationLease,
     } = await import('../src/services/round-write-guard.service.js')
-    const connection = await getTournamentConnection(tournamentId)
     const sourceLease = await acquireRoundMutationLease(
       connection,
       tournamentId,
@@ -5615,27 +5614,29 @@ describe('Server integration', () => {
     expect(drawRes.status).toBe(201)
     const drawId = String(drawRes.body.data._id)
 
-    const submissionRes = await organizer.post('/api/submissions/ballots').send({
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { getSubmissionModel } = await import('../src/models/submission.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const submission = await SubmissionModel.create({
       tournamentId,
       round: 1,
-      teamAId,
-      teamBId,
-      winnerId: teamAId,
-      scoresA: [75],
-      scoresB: [72],
-      speakerIdsA: ['namespace-speaker-a'],
-      speakerIdsB: ['namespace-speaker-b'],
-      submittedEntityId: 'namespace-judge',
+      type: 'ballot',
+      payload: {
+        teamAId,
+        teamBId,
+        winnerId: teamAId,
+        scoresA: [],
+        scoresB: [],
+        submittedEntityId: 'namespace-judge',
+      },
     })
-    expect(submissionRes.status).toBe(201)
-    const submissionId = String(submissionRes.body.data._id)
+    const submissionId = String(submission._id)
 
-    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
     const {
       acquireRoundNamespaceLease,
       releaseRoundNamespaceLease,
     } = await import('../src/services/round-namespace-guard.service.js')
-    const connection = await getTournamentConnection(tournamentId)
     const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
     expect(namespaceLease).toBeTruthy()
     if (!namespaceLease) throw new Error('failed to acquire namespace lease for deletion test')
