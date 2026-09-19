@@ -3611,6 +3611,38 @@ describe('Server integration', () => {
     const chairId = String(chairRes.body.data._id)
     const panelId = String(panelRes.body.data._id)
 
+    const addPdaParticipant = async (
+      username: string,
+      entityId: string
+    ) => {
+      const added = await organizer.post(`/api/tournaments/${tournamentId}/users`).send({
+        username,
+        password: 'password123',
+        role: 'adjudicator',
+        entityType: 'adjudicator',
+        entityId,
+      })
+      expect(added.status).toBe(201)
+      const agent = request.agent(app)
+      expect(
+        (
+          await agent
+            .post('/api/auth/login')
+            .send({ username, password: 'password123' })
+        ).status
+      ).toBe(200)
+      expect(
+        (
+          await agent
+            .post(`/api/tournaments/${tournamentId}/access`)
+            .send({ action: 'skip' })
+        ).status
+      ).toBe(200)
+      return agent
+    }
+    const chairUser = await addPdaParticipant('phase10-pda-chair', chairId)
+    const panelUser = await addPdaParticipant('phase10-pda-panel', panelId)
+
     const drawRes = await organizer.post('/api/draws').send({
       tournamentId,
       round: 1,
@@ -3628,7 +3660,7 @@ describe('Server integration', () => {
     })
     expect(drawRes.status).toBe(201)
 
-    const deniedPanelBallot = await request(app).post('/api/submissions/ballots').send({
+    const deniedPanelBallot = await panelUser.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3643,7 +3675,7 @@ describe('Server integration', () => {
       'submittedEntityId'
     )
 
-    const forbiddenDraw = await request(app).post('/api/submissions/ballots').send({
+    const forbiddenDraw = await chairUser.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
@@ -3665,7 +3697,7 @@ describe('Server integration', () => {
     })
     expect(allowPanelRes.status).toBe(200)
 
-    const panelBallot = await request(app).post('/api/submissions/ballots').send({
+    const panelBallot = await panelUser.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
       teamAId,
