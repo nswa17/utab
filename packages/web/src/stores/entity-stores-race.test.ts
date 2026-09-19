@@ -13,6 +13,7 @@ vi.mock('@/utils/api', () => ({
 import { api } from '@/utils/api'
 import { useTeamsStore } from './teams'
 import { useResultsStore } from './results'
+import { useRoundsStore } from './rounds'
 
 type MockedApi = {
   get: ReturnType<typeof vi.fn>
@@ -62,6 +63,54 @@ describe('entity stores race handling', () => {
 
     expect(store.teams).toEqual([{ _id: 'team-b', name: 'Team B' } as any])
     expect(store.loading).toBe(false)
+  })
+
+  it('clears old results immediately when switching tournaments', async () => {
+    const store = useResultsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'result-a', tournamentId: 'tournament-a', round: 1, payload: {} }],
+      },
+    })
+    await store.fetchResults('tournament-a')
+    expect(store.results).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchResults('tournament-b')
+
+    expect(store.results).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'result-b', tournamentId: 'tournament-b', round: 1, payload: {} }],
+      },
+    })
+    await nextFetch
+  })
+
+  it('clears old rounds immediately when switching tournaments', async () => {
+    const store = useRoundsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'round-a', tournamentId: 'tournament-a', round: 1, name: 'Round A' }],
+      },
+    })
+    await store.fetchRounds('tournament-a')
+    expect(store.rounds).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchRounds('tournament-b')
+
+    expect(store.rounds).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'round-b', tournamentId: 'tournament-b', round: 1, name: 'Round B' }],
+      },
+    })
+    await nextFetch
   })
 
   it('keeps results loading true until concurrent fetches finish', async () => {
