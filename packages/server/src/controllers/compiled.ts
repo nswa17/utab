@@ -1738,6 +1738,16 @@ async function buildCompiledPayloadFromSubmissions(
     const submittedActorMatchKeys = new Set(
       normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
     )
+    const submittedMatchKeys = new Set(
+      normalizedBallots
+        .map((submission) =>
+          canonicalBallotMatchKey(
+            Number(submission?.round),
+            (submission?.payload ?? {}) as BallotPayload
+          )
+        )
+        .filter(Boolean)
+    )
 
     filteredDraws.forEach((draw: any) => {
       const round = Number(draw?.round)
@@ -1756,7 +1766,16 @@ async function buildCompiledPayloadFromSubmissions(
         teamIdsWithResults.add(teamBId)
         const matchKey = canonicalBallotMatchKey(round, { teamAId, teamBId } as BallotPayload)
         const expectedSubmitterIds = expectedBallotSubmitterIds(row, roundUserDefinedData)
-        if (expectedSubmitterIds.length === 0) return
+        if (expectedSubmitterIds.length === 0) {
+          if (!submittedMatchKeys.has(matchKey)) {
+            registerMissingIssue({
+              code: 'missing_ballot',
+              message: 'ballot submission is missing for draw matchup',
+              round,
+            })
+          }
+          return
+        }
         expectedSubmitterIds.forEach((submitterId) => {
           if (submittedActorMatchKeys.has(`${matchKey}:${submitterId}`)) return
           registerMissingIssue({
@@ -2566,9 +2585,16 @@ const makeCreateCompiled =
       if (!ensureTournamentId(res, tournamentId)) return
       if (!requirePreviewTokensForVersionedApi(req, res)) return
 
-      const compileOptions = normalizeCompileOptions(
-        req.body?.options as CompileOptionsInput | undefined
-      )
+      const requestedOptions = req.body?.options as CompileOptionsInput | undefined
+      const compileOptions = normalizeCompileOptions(requestedOptions)
+      if (!requestedOptions?.include_labels) {
+        compileOptions.include_labels =
+          key === 'compiled_team_results'
+            ? ['teams']
+            : key === 'compiled_speaker_results'
+              ? ['speakers']
+              : ['adjudicators']
+      }
       const buildResult = await buildCompiledPreviewPayload({
         tournamentId,
         source,
