@@ -1868,6 +1868,7 @@ watch(
   ballotSteps,
   () => {
     activeStepIndex.value = normalizeStepIndex(activeStepIndex.value)
+    furthestStepIndex.value = normalizeStepIndex(furthestStepIndex.value)
   },
   { immediate: true }
 )
