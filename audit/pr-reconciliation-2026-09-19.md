@@ -3,6 +3,7 @@
 ## Status
 
 Phase 0: COMPLETE
+Phase 1: COMPLETE
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -14,9 +15,9 @@ Purpose: freeze the current GitHub state before any further reconciliation or co
 - Existing cumulative audit branch: `codex/utab-bug-audit-20260918`
 - Cumulative audit branch head: `2bb9f1ece2886fd4409af781c6ddc5a7106a9020`
 - Open PR count: 8 (#34–#41)
-- Phase-0 bookkeeping branch: `audit/pr-reconciliation-2026-09-19`
+- Bookkeeping branch: `audit/pr-reconciliation-2026-09-19`
 
-No application code is changed by Phase 0.
+No application code was changed by Phase 0 or Phase 1.
 
 ## Open PR snapshot
 
@@ -33,6 +34,23 @@ No application code is changed by Phase 0.
 
 All eight latest PR-head workflow runs are completed successfully. GitHub currently reports all eight PRs mergeable.
 
+## Phase 1 reconciliation results
+
+Scope rule: verify only previously reported fixes and their regression coverage on the current PR heads. No unrelated bug search.
+
+| PR | Implementation survival | Regression-test survival | Result |
+|---|---|---|---|
+| #34 | weighted allocation weights, strict availability filtering, vote-rate correction remain in diff | weighted-filter, strict-unavailable-team, and vote-rate assertions remain | PASS |
+| #35 | round-selector normalization, content-based preview revision, missing draw-ballot validation remain | metamorphic round tests, stale-revision mutation test, missing-ballot/differential compile coverage remain | PASS |
+| #36 | submission CAS/versioning, draw flag preservation, Submission `__v` increment during round moves remain | concurrent submission edit, concurrent draw update, omitted flag preservation, stale-edit-vs-renumber tests remain | PASS |
+| #37 | tournament-scoped membership response, membership mutation lease, post-lease user refresh remain | hidden-listing/direct-access, cross-tournament membership privacy, membership-lease, post-lease refresh rollback tests remain | PASS |
+| #38 | tournament-scoped store generations/state clearing and atomic `user_defined_data_patch` path remain | cross-tournament race/state-clearing tests, concurrent metadata patch integration test, admin-store source assertions remain | PASS |
+| #39 | import cleanup AggregateError propagation, numeric speaker-order sort, furthest ballot-wizard progress remain | import rollback tests, double-digit speaker-order test, wizard reachability/reset tests remain | PASS |
+| #40 | raw-result round validation, positive round invariants, tie-point bound, structured entity detail/template validation, namespace leases remain | invalid/fractional raw round, zero/negative tournament rounds, tie_points >1, malformed/duplicate entity details, tampered backup, namespace-lease tests remain | PASS |
+| #41 | Draw-authoritative public publication and unavailable-assigned-entity edit behavior remain | lifecycle E2E publication/ballot/compile/break/renumber/export-import/delete coverage and unavailable-assigned-team/UI regressions remain | PASS |
+
+Phase 1 found no previously reported fix whose implementation had disappeared, and no corresponding regression-test category that had disappeared from the current PR diffs.
+
 ## Stack note for #41
 
 #41 is explicitly based on #40's branch, but its head is not ancestry-synchronized with the current #40 head.
@@ -43,7 +61,7 @@ Current refs:
 - merge base of the two current branches: `f85b7cb45d1d65ef089d9842abb7bac052551ebf`
 - compare current #40 -> #41: `diverged`, #41 is 57 commits ahead and 17 commits behind #40.
 
-This is not repaired in Phase 0. It is recorded as a stack-reconciliation item for the later dependency/stack phase. GitHub still reports #41 mergeable.
+This remains intentionally unresolved after Phase 1.
 
 ## Restart protocol
 
@@ -56,4 +74,4 @@ Every later phase must:
 
 ## Next phase
 
-Phase 1: reconcile previously reported fixes against the current PR heads, one PR at a time. Verify both implementation and regression-test survival. Do not search for unrelated new bugs during Phase 1.
+Phase 2: determine the actual PR dependency graph from the current diffs/ancestry and classify every PR as independent, depends-on, or superseded-by. Resolve classification only; do not modify application code.
