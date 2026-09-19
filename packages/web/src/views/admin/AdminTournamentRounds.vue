@@ -1043,9 +1043,11 @@ function closeRoundDeleteModal() {
 
 async function confirmRemoveRound() {
   const id = roundDeleteModalId.value
-  if (!id) return
+  const currentTournamentId = tournamentId.value
+  if (!id || !currentTournamentId) return
   roundDeleteError.value = ''
-  const deleted = await roundsStore.deleteRound(tournamentId.value, id)
+  const deleted = await roundsStore.deleteRound(currentTournamentId, id)
+  if (tournamentId.value !== currentTournamentId) return
   if (!deleted) {
     roundDeleteError.value = roundsStore.error ?? t('ラウンドの削除に失敗しました。')
     return
