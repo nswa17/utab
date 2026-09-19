@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
+import { isTournamentRuntimeCollection } from '../services/tournament-runtime-collections.service.js'
 import { ROUND_NAMESPACE_LOCK_COLLECTION } from '../services/round-namespace-guard.service.js'
 import {
   DevToolsServiceError,
