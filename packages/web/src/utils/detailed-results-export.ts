@@ -119,8 +119,14 @@ function resolveOrFallback(resolve: (id: string) => string, id: string): string 
   return text(resolve(id)) || id
 }
 
-function rowSortKey(row: DetailedResultsExportRow): [number, string, string, string] {
-  return [row.round, row.submitted_at, row.submission_id, row.speaker_order]
+function rowSortKey(row: DetailedResultsExportRow): [number, string, string, number] {
+  const speakerOrder = Number(row.speaker_order)
+  return [
+    row.round,
+    row.submitted_at,
+    row.submission_id,
+    Number.isFinite(speakerOrder) ? speakerOrder : 0,
+  ]
 }
 
 function compareRows(left: DetailedResultsExportRow, right: DetailedResultsExportRow): number {
