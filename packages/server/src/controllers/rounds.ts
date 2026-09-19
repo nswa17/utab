@@ -2895,7 +2895,8 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
       tournamentId,
       source,
       effectiveSourceRounds,
-      compileOptions
+      compileOptions,
+      ['teams']
     )
     const TeamModel = getTeamModel(connection)
     const teams = await TeamModel.find({ tournamentId }).lean().exec()
