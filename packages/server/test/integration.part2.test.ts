@@ -1461,7 +1461,10 @@ describe('Server integration', () => {
     const compiledRes = await agent.post('/api/compiled').send({
       tournamentId,
       source: 'submissions',
-      options: { diff_baseline: { mode: 'compiled', compiled_id: 'seed-compiled-1' } },
+      options: {
+        missing_data_policy: 'warn',
+        diff_baseline: { mode: 'compiled', compiled_id: 'seed-compiled-1' },
+      },
     })
     expect(compiledRes.status).toBe(201)
     expect(compiledRes.body.data.payload.rounds[0]?.name).toBe('Main Round 1')
@@ -1740,6 +1743,7 @@ describe('Server integration', () => {
       tournamentId,
       source: 'submissions',
       options: {
+        missing_data_policy: 'warn',
         include_labels: ['teams', 'speakers', 'adjudicators'],
       },
     })
@@ -2082,6 +2086,7 @@ describe('Server integration', () => {
       source: 'submissions',
       rounds: [1],
       options: {
+        missing_data_policy: 'warn',
         include_labels: ['adjudicators'],
       },
     })
