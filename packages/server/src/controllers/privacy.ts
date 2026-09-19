@@ -184,10 +184,9 @@ async function withPrivacyMutationGuard<T>(
   action: () => Promise<T>
 ): Promise<T> {
   const guard = await acquirePrivacyMutationGuard(connection, tournamentId, entityNamespaces)
+  let value: T
   try {
-    const value = await action()
-    await releasePrivacyMutationGuard(connection, guard)
-    return value
+    value = await action()
   } catch (error) {
     try {
       await releasePrivacyMutationGuard(connection, guard)
@@ -199,6 +198,9 @@ async function withPrivacyMutationGuard<T>(
     }
     throw error
   }
+
+  await releasePrivacyMutationGuard(connection, guard)
+  return value
 }
 
 async function removeSpeakerRefsFromTeams(
