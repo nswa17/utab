@@ -412,7 +412,7 @@ export function compileTeamResults(
     accs[id] = 0
   }
 
-  for (const r of rs) {
+  for (const r of normalizeRounds(rs)) {
     const summarizedTeamResultsBefore = summarizeTeamResults(teamInstances, rawTeamResults, r, style)
     const summarizedTeamResults = simple
       ? summarizedTeamResultsBefore
