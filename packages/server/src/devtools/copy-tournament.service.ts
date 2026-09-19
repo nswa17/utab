@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
+import { isTournamentRuntimeCollection } from '../services/tournament-runtime-collections.service.js'
 import {
   DevToolsServiceError,
   type CopiedCollectionSummary,
@@ -22,7 +23,7 @@ function normalizeCollectionName(value: unknown): string {
 }
 
 function shouldSkipCollection(name: string): boolean {
-  return !name || name.startsWith('system.')
+  return !name || name.startsWith('system.') || isTournamentRuntimeCollection(name)
 }
 
 function remapTournamentId(value: unknown, targetTournamentId: string): unknown {
