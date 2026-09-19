@@ -60,7 +60,31 @@ const idParamSchema = { params: z.object({ id: z.string() }) }
 const tournamentUserDefinedPatchSchema = z
   .record(z.any())
   .refine(
-    (patch) => Object.keys(patch).every((key) => key.length > 0 && !key.includes('.') && !key.startsWith('const accessSchema = {
+    (patch) =>
+      Object.keys(patch).every(
+        (key) => key.length > 0 && !key.includes('.') && !key.startsWith('$')
+      ),
+    { message: 'user_defined_data_patch keys must be safe top-level field names' }
+  )
+
+const updateSchema = {
+  params: z.object({ id: z.string() }),
+  body: tournamentBodySchema
+    .partial()
+    .extend({ user_defined_data_patch: tournamentUserDefinedPatchSchema.optional() })
+    .superRefine((data, ctx) => {
+      if (Object.keys(data).length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'update payload is required' })
+      }
+      if (data.user_defined_data !== undefined && data.user_defined_data_patch !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'user_defined_data and user_defined_data_patch cannot be updated together',
+        })
+      }
+    }),
+}
+const accessSchema = {
   params: z.object({ id: z.string() }),
   body: z.object({
     action: z.enum(['enter', 'skip']).optional(),
