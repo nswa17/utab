@@ -101,6 +101,16 @@ describe('Admin tournament setup integration', () => {
     expect(source).toContain('number-stepper')
   })
 
+  it('uses partial tournament metadata patches for independent settings saves', () => {
+    const homeSource = load('src/views/admin/AdminTournamentHome.vue')
+    const allocationSource = load('src/views/admin/round/AdminRoundAllocation.vue')
+    expect(homeSource).toContain('user_defined_data_patch')
+    expect(homeSource).toContain('...(includeInfo ? { info } : {})')
+    expect(homeSource).not.toContain('...nextUserDefined')
+    expect(allocationSource).toContain('user_defined_data_patch')
+    expect(allocationSource).not.toContain('...currentUserDefined')
+  })
+
   it('keeps selected CSV file visible while reading import text', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('@file-change="handleEntityImportFile"')
