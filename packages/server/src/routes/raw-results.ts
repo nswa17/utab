@@ -25,7 +25,7 @@ const router: Router = Router()
 const listSchema = {
   query: z.object({
     tournamentId: z.string().min(1),
-    round: z.string().optional(),
+    round: z.coerce.number().int().min(1).optional(),
     id: z.string().optional(),
     fromId: z.string().optional(),
   }),
@@ -98,7 +98,7 @@ const deleteSchema = {
 const deleteManySchema = {
   query: z.object({
     tournamentId: z.string().min(1),
-    round: z.string().optional(),
+    round: z.coerce.number().int().min(1).optional(),
     id: z.string().optional(),
     fromId: z.string().optional(),
   }),
