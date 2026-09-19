@@ -268,6 +268,27 @@ describe('compiled store', () => {
     })
   })
 
+  it('clears compiled state immediately when switching tournaments', async () => {
+    const store = useCompiledStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: { _id: 'compiled-a', payload: { compiled_team_results: [{ id: 'a' }] } } },
+    })
+    await store.fetchLatest('tournament-a')
+    expect(store.compiled).not.toBeNull()
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchLatest('tournament-b')
+
+    expect(store.compiled).toBeNull()
+    expect(store.previewState).toBeNull()
+
+    deferred.resolve({
+      data: { data: { _id: 'compiled-b', payload: { compiled_team_results: [{ id: 'b' }] } } },
+    })
+    await nextFetch
+  })
+
   it('keeps loading true until concurrent compiled requests finish', async () => {
     const store = useCompiledStore()
     const first = createDeferred<any>()
