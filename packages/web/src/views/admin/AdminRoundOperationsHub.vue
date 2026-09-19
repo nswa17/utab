@@ -144,6 +144,7 @@
                   </div>
                   <DrawPreviewTable
                     :rows="publishPreviewRows"
+                    :team-columns="hubTeamColumns"
                     :gov-label="govLabel"
                     :opp-label="oppLabel"
                     :team-visible="drawOpenedValue"
@@ -200,6 +201,7 @@
                   </div>
                   <DrawPreviewTable
                     :rows="filteredSubmissionPreviewRows"
+                    :team-columns="hubTeamColumns"
                     :gov-label="govLabel"
                     :opp-label="oppLabel"
                     :win-column-label="$t('ラウンド勝敗')"
@@ -474,6 +476,11 @@ import { useCompileWorkflow } from '@/composables/useCompileWorkflow'
 import { trackAdminCompileWorkflowMetric } from '@/utils/compile-workflow-telemetry'
 import { getSideShortLabel } from '@/utils/side-labels'
 import { resolveTournamentStyle } from '@/utils/tournament-style'
+import {
+  drawTeamId,
+  drawTeamPositionColumns,
+  editableDrawTeamNum,
+} from '@/utils/draw-teams'
 import { createLatestRequestGate } from '@/utils/latest-request'
 import { escapeCsvCell } from '@/utils/csv'
 
@@ -611,6 +618,8 @@ const style = computed(() =>
     tournament.value
   )
 )
+const hubTeamNum = computed<2 | 4>(() => editableDrawTeamNum(style.value?.team_num) ?? 2)
+const hubTeamColumns = computed(() => drawTeamPositionColumns(style.value, hubTeamNum.value))
 const govLabel = computed(() => getSideShortLabel(style.value, 'gov', 'Gov'))
 const oppLabel = computed(() => getSideShortLabel(style.value, 'opp', 'Opp'))
 function asRecord(value: unknown): Record<string, unknown> {
@@ -2242,6 +2251,7 @@ function adjudicatorLabel(ids: string[]) {
 type HubDrawPreviewRow = DrawPreviewRow & {
   govId: string
   oppId: string
+  teamIds: string[]
   pairKey: string
   chairIds: string[]
   panelIds: string[]
@@ -2565,10 +2575,34 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
     )
   )
   return allocation.map((row: any, index: number) => {
-    const govId = String(row?.teams?.gov ?? '')
-    const oppId = String(row?.teams?.opp ?? '')
-    const govWin = compiledTeamWinMap.value.get(govId) ?? 0
-    const oppWin = compiledTeamWinMap.value.get(oppId) ?? 0
+    const teamNum = hubTeamNum.value
+    const teamColumns = hubTeamColumns.value
+    const teamIdByPosition = Object.fromEntries(
+      teamColumns.map((column) => [column.key, drawTeamId(row?.teams, column.key, teamNum)])
+    )
+    const teamIds = normalizeIdList(teamColumns.map((column) => teamIdByPosition[column.key]))
+    const govPosition = teamNum === 4 ? 'og' : 'gov'
+    const oppPosition = teamNum === 4 ? 'oo' : 'opp'
+    const govId = String(teamIdByPosition[govPosition] ?? '')
+    const oppId = String(teamIdByPosition[oppPosition] ?? '')
+    const teamNames = Object.fromEntries(
+      teamColumns.map((column) => {
+        const teamId = String(teamIdByPosition[column.key] ?? '')
+        return [column.key, teamId ? teamName(teamId) : t('未選択')]
+      })
+    )
+    const teamWins = teamColumns.map((column) => {
+      const teamId = String(teamIdByPosition[column.key] ?? '')
+      return {
+        key: column.key,
+        label: column.label,
+        win: compiledTeamWinMap.value.get(teamId) ?? 0,
+      }
+    })
+    const winValues = teamWins.map((entry) => entry.win)
+    const winTotal = winValues.reduce((sum, value) => sum + value, 0)
+    const winGap =
+      winValues.length > 0 ? Math.max(...winValues) - Math.min(...winValues) : 0
     const venueId = String(row?.venue ?? '')
     const chairs = normalizeIdList(row?.chairs ?? [])
     const panels = normalizeIdList(row?.panels ?? [])
@@ -2580,23 +2614,28 @@ const drawPreviewRows = computed<HubDrawPreviewRow[]>(() => {
     ])
     const adjudicatorIds = normalizeIdList([...chairs, ...panels, ...trainees])
     return {
-      key: `${index}-${govId}-${oppId}-${venueId}`,
+      key: `${index}-${teamIds.join('-')}-${venueId}`,
       matchIndex: index,
       venuePriority: venuePriority(venueId),
       venueLabel: venueId ? venueName(venueId) : t('会場未定'),
       govId,
       oppId,
+      teamIds,
       pairKey: normalizeTeamPairKey(govId, oppId),
       chairIds: chairs,
       panelIds: panels,
       traineeIds: trainees,
       ballotSubmitterIds,
       adjudicatorIds,
-      govName: govId ? teamName(govId) : t('未選択'),
-      oppName: oppId ? teamName(oppId) : t('未選択'),
-      winLabel: `${govWin}-${oppWin}`,
-      winTotal: govWin + oppWin,
-      winGap: Math.abs(govWin - oppWin),
+      govName: teamNames[govPosition] ?? t('未選択'),
+      oppName: teamNames[oppPosition] ?? t('未選択'),
+      teamNames,
+      winLabel:
+        teamNum === 4
+          ? teamWins.map((entry) => `${entry.label} ${entry.win}`).join(' / ')
+          : `${teamWins[0]?.win ?? 0}-${teamWins[1]?.win ?? 0}`,
+      winTotal,
+      winGap,
       chairsLabel: adjudicatorLabel(chairs),
       panelsLabel: adjudicatorLabel(panels),
       traineesLabel: adjudicatorLabel(trainees),
@@ -2615,8 +2654,7 @@ const publishPreviewColumnHeaderBadges = computed(() => {
     { text: allocationOpenedValue.value ? t('公開') : t('非公開'), tone: adjudicatorTone },
   ]
   return {
-    gov: teamBadge,
-    opp: teamBadge,
+    ...Object.fromEntries(hubTeamColumns.value.map((column) => [column.key, teamBadge])),
     score: teamBadge,
     chair: adjudicatorBadge,
     panel: adjudicatorBadge,
@@ -2631,7 +2669,7 @@ function feedbackExpectedCountForPreviewRow(row: HubDrawPreviewRow) {
   const expectationRow: SubmissionExpectationRow = {
     govTeamId: row.govId,
     oppTeamId: row.oppId,
-    teamIds: normalizeIdList([row.govId, row.oppId]),
+    teamIds: row.teamIds,
     chairIds: row.chairIds,
     panelIds: row.panelIds,
     traineeIds: row.traineeIds,
@@ -2765,6 +2803,7 @@ function submissionPreviewSearchText(row: DrawPreviewRow): string {
     .join(' ')
   return [
     row.venueLabel,
+    ...Object.values(row.teamNames ?? {}),
     row.govName,
     row.oppName,
     row.chairsLabel,
