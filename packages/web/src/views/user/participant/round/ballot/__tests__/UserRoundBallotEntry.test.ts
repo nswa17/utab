@@ -130,6 +130,16 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(messages.en['付与なし']).toBe('No award')
   })
 
+  it('clamps both active and furthest wizard progress when dynamic steps change', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain(
+      'activeStepIndex.value = normalizeStepIndex(activeStepIndex.value)'
+    )
+    expect(source).toContain(
+      'furthestStepIndex.value = normalizeStepIndex(furthestStepIndex.value)'
+    )
+  })
+
   it('shows the submitted winner in the completion dialog', () => {
     const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
     expect(source).toContain("{{ $t('あなたの投票') }}")
