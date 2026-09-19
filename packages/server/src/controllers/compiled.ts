@@ -2501,7 +2501,8 @@ export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const compileSource: CompileSourceKind = source === 'raw' ? 'raw' : 'submissions'
   const connection = await getTournamentConnection(tournamentId)
@@ -2511,7 +2512,12 @@ export async function buildCompiledPayload(
     const built =
       compileSource === 'raw'
         ? await buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
-        : await buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
+        : await buildCompiledPayloadFromSubmissions(
+            tournamentId,
+            requestedRounds,
+            compileOptions,
+            validationLabels
+          )
     const revisionAfter = await readCompileSourceRevision(connection, tournamentId, compileSource)
 
     if (revisionBefore === revisionAfter) {
