@@ -4251,7 +4251,7 @@ function canDragEntity(kind: 'team' | 'adjudicator' | 'venue', id: string | null
   if (locked.value) return false
   const normalizedId = String(id ?? '').trim()
   if (!normalizedId) return false
-  if (kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)) return true
+  if (isEntityAssignedInAllocation(kind, normalizedId)) return true
   return isEntityAvailableInRound(kind, normalizedId)
 }
 
@@ -6176,7 +6176,7 @@ function dropToWaiting(kind: DragKind) {
   if (!payload || payload.kind !== kind) return
   if (
     !isEntityAvailableInRound(payload.kind, payload.id) &&
-    !(kind === 'adjudicator' && isEntityAssignedInAllocation(kind, payload.id))
+    !isEntityAssignedInAllocation(kind, payload.id)
   ) {
     onDragEnd()
     return
