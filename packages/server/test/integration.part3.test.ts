@@ -2162,4 +2162,121 @@ describe('Server integration', () => {
     await dropTournamentDatabase(orphanTournamentId).catch(() => undefined)
   })
 
+  it('requires every configured ballot submitter before error-policy compilation succeeds', async () => {
+    const agent = request.agent(app)
+
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'compile-ballot-coverage', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'compile-ballot-coverage', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Ballot Coverage Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+      userDefinedData: {
+        no_speaker_score: true,
+        ballot_submitter_roles: ['chair', 'panel'],
+      },
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamARes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Coverage Team A',
+    })
+    const teamBRes = await agent.post('/api/teams').send({
+      tournamentId,
+      name: 'Coverage Team B',
+    })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const chairRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Coverage Chair',
+    })
+    const panelRes = await agent.post('/api/adjudicators').send({
+      tournamentId,
+      name: 'Coverage Panel',
+    })
+    expect(chairRes.status).toBe(201)
+    expect(panelRes.status).toBe(201)
+    const chairId = String(chairRes.body.data._id)
+    const panelId = String(panelRes.body.data._id)
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamAId, opp: teamBId },
+          chairs: [chairId],
+          panels: [panelId],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const chairBallotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: chairId,
+    })
+    expect(chairBallotRes.status).toBe(201)
+
+    const missingPanel = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(missingPanel.status).toBe(400)
+    expect(String(missingPanel.body.errors?.[0]?.message ?? '')).toContain(panelId)
+
+    const panelBallotRes = await agent.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId,
+      teamBId,
+      winnerId: teamAId,
+      scoresA: [],
+      scoresB: [],
+      submittedEntityId: panelId,
+    })
+    expect(panelBallotRes.status).toBe(201)
+
+    const complete = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'submissions',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(complete.status).toBe(200)
+  })
+
 })
