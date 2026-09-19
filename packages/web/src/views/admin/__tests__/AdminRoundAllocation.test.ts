@@ -182,6 +182,7 @@ describe('AdminRoundAllocation', () => {
     expect(source).toContain("if (kind === 'team') removeTeamFromAllocation(payload.id)")
     expect(source).toContain("if (kind === 'adjudicator') removeAdjudicatorFromAllocation(payload.id)")
     expect(source).toContain("if (kind === 'venue') removeVenueFromAllocation(payload.id)")
+    expect(source.match(/!isEntityAssignedInAllocation\(payload\.kind, payload\.id\)/g)?.length).toBeGreaterThanOrEqual(3)
   })
 
   it('does not continue reference compilation after the route context changes', () => {
