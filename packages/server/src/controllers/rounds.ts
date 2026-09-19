@@ -1629,6 +1629,16 @@ function requireSingleTournamentPayload(
   return tournamentId
 }
 
+function sanitizeRoundWithDrawPublication(round: unknown, draw: unknown) {
+  const sanitized = sanitizeRoundForPublic(round)
+  const drawRecord = asRecord(draw)
+  return {
+    ...sanitized,
+    teamAllocationOpened: drawRecord.drawOpened === true,
+    adjudicatorAllocationOpened: drawRecord.allocationOpened === true,
+  }
+}
+
 export const listRounds: RequestHandler = async (req, res, next) => {
   try {
     const { tournamentId, public: publicParam } = req.query as {
@@ -1645,12 +1655,29 @@ export const listRounds: RequestHandler = async (req, res, next) => {
       publicParam === 'true' ||
       publicParam === 'yes' ||
       publicParam === 'public'
-    const data =
-      isAdmin && !forcePublic
-        ? rounds
-        : rounds
-            .filter((round) => !isRoundHidden(round))
-            .map((round) => sanitizeRoundForPublic(round))
+    if (isAdmin && !forcePublic) {
+      res.json({ data: rounds, errors: [] })
+      return
+    }
+
+    const publicRounds = rounds.filter((round) => !isRoundHidden(round))
+    const roundNumbers = publicRounds
+      .map((round: any) => Number(round?.round))
+      .filter((round) => Number.isInteger(round) && round >= 1)
+    const draws =
+      roundNumbers.length > 0
+        ? await getDrawModel(connection)
+            .find({ tournamentId, round: { $in: roundNumbers } })
+            .select({ round: 1, drawOpened: 1, allocationOpened: 1 })
+            .lean()
+            .exec()
+        : []
+    const drawByRound = new Map<number, any>(
+      draws.map((draw: any) => [Number(draw?.round), draw])
+    )
+    const data = publicRounds.map((round: any) =>
+      sanitizeRoundWithDrawPublication(round, drawByRound.get(Number(round?.round)))
+    )
     res.json({ data, errors: [] })
   } catch (err) {
     next(err)
@@ -1683,7 +1710,16 @@ export const getRound: RequestHandler = async (req, res, next) => {
       notFound(res, 'Round not found')
       return
     }
-    res.json({ data: isAdmin && !forcePublic ? round : sanitizeRoundForPublic(round), errors: [] })
+    if (isAdmin && !forcePublic) {
+      res.json({ data: round, errors: [] })
+      return
+    }
+    const draw = await getDrawModel(connection)
+      .findOne({ tournamentId, round: Number((round as any).round) })
+      .select({ round: 1, drawOpened: 1, allocationOpened: 1 })
+      .lean()
+      .exec()
+    res.json({ data: sanitizeRoundWithDrawPublication(round, draw), errors: [] })
   } catch (err) {
     next(err)
   }
