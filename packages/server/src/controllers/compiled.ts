@@ -1735,11 +1735,6 @@ async function buildCompiledPayloadFromSubmissions(
   )
 
   if (needsBallotSubmissions) {
-    const submittedMatchKeys = new Set(
-      normalizedBallots.map((submission) =>
-        canonicalBallotMatchKey(Number(submission?.round), (submission?.payload ?? {}) as BallotPayload)
-      )
-    )
     const submittedActorMatchKeys = new Set(
       normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
     )
@@ -1761,15 +1756,7 @@ async function buildCompiledPayloadFromSubmissions(
         teamIdsWithResults.add(teamBId)
         const matchKey = canonicalBallotMatchKey(round, { teamAId, teamBId } as BallotPayload)
         const expectedSubmitterIds = expectedBallotSubmitterIds(row, roundUserDefinedData)
-        if (expectedSubmitterIds.length === 0) {
-          if (submittedMatchKeys.has(matchKey)) return
-          registerMissingIssue({
-            code: 'missing_ballot',
-            message: `no ballot submission exists for matchup ${teamAId} vs ${teamBId}`,
-            round,
-          })
-          return
-        }
+        if (expectedSubmitterIds.length === 0) return
         expectedSubmitterIds.forEach((submitterId) => {
           if (submittedActorMatchKeys.has(`${matchKey}:${submitterId}`)) return
           registerMissingIssue({
