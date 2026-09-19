@@ -1,6 +1,6 @@
 import type { Request, RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
-import { Types } from 'mongoose'
+import { Types, type Connection } from 'mongoose'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
@@ -10,9 +10,15 @@ import { StyleModel } from '../models/style.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { getRoundModel } from '../models/round.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
+import {
+  acquireRoundWriteLeases,
+  releaseRoundWriteLeases,
+  type RoundWriteLease,
+} from '../services/round-write-guard.service.js'
 import {
   buildDetailsForRounds,
   buildIdMaps,
@@ -127,22 +133,65 @@ function remapCompiledAdjudicatorResults(
 type PlainRecord = Record<string, unknown>
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
-type RawResultCrudDocument = {
-  set: (update: PlainRecord) => void
-  save: () => Promise<unknown>
-}
-
 type RawResultCrudModel = {
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<unknown[]>
-  findOne: (filter: PlainRecord) => { exec: () => Promise<RawResultCrudDocument | null> }
-  findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<unknown | null> } }
-  deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
+  find: (filter: PlainRecord) => any
+  findOne: (filter: PlainRecord) => any
+  findOneAndUpdate: (filter: PlainRecord, update: PlainRecord, options: PlainRecord) => any
+  findOneAndDelete: (filter: PlainRecord) => any
+  deleteMany: (filter: PlainRecord) => any
 }
 
 type RawResultCrudOptions = {
   getModel: (connection: TournamentConnection) => RawResultCrudModel
   duplicateConflictMessage: string
   notFoundMessage: string
+}
+
+async function acquireRawResultRoundLeases(
+  connection: Connection,
+  tournamentId: string,
+  rounds?: readonly number[]
+): Promise<RoundWriteLease[] | null> {
+  const normalizedRounds = rounds
+    ? Array.from(
+        new Set(
+          rounds
+            .map((round) => Number(round))
+            .filter((round) => Number.isInteger(round) && round >= 1)
+        )
+      ).sort((left, right) => left - right)
+    : null
+  const filter: Record<string, unknown> = { tournamentId }
+  if (normalizedRounds) filter.round = { $in: normalizedRounds }
+
+  const roundDocs = await getRoundModel(connection)
+    .find(filter)
+    .select({ _id: 1, round: 1 })
+    .lean()
+    .exec()
+
+  return acquireRoundWriteLeases(
+    connection,
+    tournamentId,
+    (roundDocs as any[]).map((roundDoc) => ({
+      round: Number(roundDoc.round),
+      expectedRoundId: String(roundDoc._id),
+    }))
+  )
+}
+
+function respondRawResultRoundConflict(res: Parameters<RequestHandler>[1]): void {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry raw result change' }],
+  })
+}
+
+function versionFilter(value: unknown): Record<string, unknown> {
+  return Number.isInteger(value)
+    ? { __v: Number(value) }
+    : { __v: { $exists: false } }
 }
 
 function createRawResultCrudHandlers(options: RawResultCrudOptions): {
@@ -152,6 +201,8 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
   deleteMany: RequestHandler
 } {
   const create: RequestHandler = async (req, res, next) => {
+    let roundWriteLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const isBulk = Array.isArray(req.body)
       const payload = isBulk ? req.body : [req.body]
@@ -159,6 +210,19 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!tournamentId) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
+
+      const acquired = await acquireRawResultRoundLeases(
+        connection,
+        tournamentId,
+        payload.map((item: any) => Number(item?.r))
+      )
+      if (!acquired) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      roundWriteLeases = acquired
+      leaseConnection = connection
+
       const docs: Array<PlainRecord & { _id: Types.ObjectId }> = payload.map((item: any) => ({
         _id: new Types.ObjectId(),
         ...item,
@@ -181,6 +245,9 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         }
         throw createError
       }
+
+      await releaseRoundWriteLeases(connection, roundWriteLeases)
+      roundWriteLeases = []
       res.status(201).json({ data: isBulk ? created : created[0], errors: [] })
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
@@ -191,10 +258,20 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
       next(err)
+    } finally {
+      if (roundWriteLeases.length > 0 && leaseConnection) {
+        try {
+          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+        } catch {
+          // Stale write counters self-heal before structural round mutation.
+        }
+      }
     }
   }
 
   const update: RequestHandler = async (req, res, next) => {
+    let roundWriteLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const { id: docId } = req.params
       const { tournamentId, ...rest } = req.body as { tournamentId?: string } & PlainRecord
@@ -202,13 +279,48 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const existing = await Model.findOne({ _id: docId, tournamentId }).exec()
+      const existing = await Model.findOne({ _id: docId, tournamentId }).lean().exec()
       if (!existing) {
         notFound(res, options.notFoundMessage)
         return
       }
-      existing.set(rest)
-      const updated = await existing.save()
+
+      const currentRound = Number((existing as any).r)
+      const nextRound = rest.r === undefined ? currentRound : Number(rest.r)
+      const acquired = await acquireRawResultRoundLeases(
+        connection,
+        tournamentId,
+        [currentRound, nextRound]
+      )
+      if (!acquired) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      roundWriteLeases = acquired
+      leaseConnection = connection
+
+      const updated = await Model.findOneAndUpdate(
+        {
+          _id: docId,
+          tournamentId,
+          r: currentRound,
+          ...versionFilter((existing as any).__v),
+        },
+        { $set: rest, $inc: { __v: 1 } },
+        { new: true, runValidators: true }
+      )
+        .lean()
+        .exec()
+      if (!updated) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Raw result changed concurrently; retry update' }],
+        })
+        return
+      }
+
+      await releaseRoundWriteLeases(connection, roundWriteLeases)
+      roundWriteLeases = []
       res.json({ data: updated, errors: [] })
     } catch (err) {
       if (isDuplicateKeyError(err)) {
@@ -219,10 +331,20 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
       next(err)
+    } finally {
+      if (roundWriteLeases.length > 0 && leaseConnection) {
+        try {
+          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+        } catch {
+          // Stale write counters self-heal before structural round mutation.
+        }
+      }
     }
   }
 
   const deleteOne: RequestHandler = async (req, res, next) => {
+    let roundWriteLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const { id: docId } = req.params
       const { tournamentId } = req.query as { tournamentId?: string }
@@ -230,18 +352,59 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
-      const deleted = await Model.findOneAndDelete({ _id: docId, tournamentId }).lean().exec()
-      if (!deleted) {
+      const existing = await Model.findOne({ _id: docId, tournamentId }).lean().exec()
+      if (!existing) {
         notFound(res, options.notFoundMessage)
         return
       }
+
+      const acquired = await acquireRawResultRoundLeases(
+        connection,
+        tournamentId,
+        [Number((existing as any).r)]
+      )
+      if (!acquired) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      roundWriteLeases = acquired
+      leaseConnection = connection
+
+      const deleted = await Model.findOneAndDelete({
+        _id: docId,
+        tournamentId,
+        r: Number((existing as any).r),
+        ...versionFilter((existing as any).__v),
+      })
+        .lean()
+        .exec()
+      if (!deleted) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Raw result changed concurrently; retry deletion' }],
+        })
+        return
+      }
+
+      await releaseRoundWriteLeases(connection, roundWriteLeases)
+      roundWriteLeases = []
       res.json({ data: deleted, errors: [] })
     } catch (err) {
       next(err)
+    } finally {
+      if (roundWriteLeases.length > 0 && leaseConnection) {
+        try {
+          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+        } catch {
+          // Stale write counters self-heal before structural round mutation.
+        }
+      }
     }
   }
 
   const deleteMany: RequestHandler = async (req, res, next) => {
+    let roundWriteLeases: RoundWriteLease[] = []
+    let leaseConnection: Connection | null = null
     try {
       const { tournamentId, round, id, fromId } = req.query as {
         tournamentId?: string
@@ -252,11 +415,35 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureTournamentId(res, tournamentId)) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
+
+      const acquired = await acquireRawResultRoundLeases(
+        connection,
+        tournamentId,
+        round === undefined ? undefined : [Number(round)]
+      )
+      if (!acquired) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      roundWriteLeases = acquired
+      leaseConnection = connection
+
       const filter = buildRawFilter(tournamentId, { round, id, fromId })
       const result = await Model.deleteMany(filter).exec()
+
+      await releaseRoundWriteLeases(connection, roundWriteLeases)
+      roundWriteLeases = []
       res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
     } catch (err) {
       next(err)
+    } finally {
+      if (roundWriteLeases.length > 0 && leaseConnection) {
+        try {
+          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+        } catch {
+          // Stale write counters self-heal before structural round mutation.
+        }
+      }
     }
   }
 
