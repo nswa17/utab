@@ -393,4 +393,72 @@ describe('compiled store', () => {
     })
     expect(store.previewState).toBeNull()
   })
+  it('clears compiled state immediately when switching tournaments', async () => {
+    const store = useCompiledStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: { _id: 'compiled-a', payload: { compiled_team_results: [{ id: 'a' }] } } },
+    })
+    await store.fetchLatest('tournament-a')
+    expect(store.compiled).not.toBeNull()
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchLatest('tournament-b')
+
+    expect(store.compiled).toBeNull()
+    expect(store.previewState).toBeNull()
+
+    deferred.resolve({
+      data: { data: { _id: 'compiled-b', payload: { compiled_team_results: [{ id: 'b' }] } } },
+    })
+    await nextFetch
+  })
+
+
+  it('does not let a preview from the previous tournament appear after switching tournaments', async () => {
+    const store = useCompiledStore()
+    const previewDeferred = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => previewDeferred.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'compiled-b',
+          payload: {
+            compiled_team_results: [{ id: 'team-b' }],
+          },
+        },
+      },
+    })
+
+    const previewPromise = store.runPreview('tournament-a', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    await store.fetchLatest('tournament-b')
+
+    previewDeferred.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'team-a' }],
+          },
+          preview_signature: 'sig-a',
+          revision: 'rev-a',
+        },
+      },
+    })
+    const stalePreview = await previewPromise
+
+    expect(stalePreview).toBeNull()
+    expect(store.previewState).toBeNull()
+    expect(store.compiled).toEqual({
+      _id: 'compiled-b',
+      compiled_team_results: [{ id: 'team-b' }],
+    })
+  })
+
+
 })
