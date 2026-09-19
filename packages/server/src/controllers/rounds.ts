@@ -1060,12 +1060,21 @@ export const createRound: RequestHandler = async (req, res, next) => {
           ),
         }
       })
-      const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
-      await syncEntityRoundDetailsForCreate(
-        tournamentId,
-        preparedPayload.map((item) => Number(item.round))
-      )
-      res.status(201).json({ data: created, errors: [] })
+      const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!entityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      try {
+        const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
+        await syncEntityRoundDetailsForCreate(
+          tournamentId,
+          preparedPayload.map((item) => Number(item.round))
+        )
+        res.status(201).json({ data: created, errors: [] })
+      } finally {
+        await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      }
       return
     }
 
@@ -1112,21 +1121,30 @@ export const createRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const created = await RoundModel.create({
-      tournamentId,
-      round,
-      name,
-      motions,
-      motionOpened,
-      teamAllocationOpened,
-      adjudicatorAllocationOpened,
-      weightsOfAdjudicators,
-      userDefinedData: applyBreakConstraintsToUserDefined(
-        buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
-      ),
-    })
-    await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
-    res.status(201).json({ data: created.toJSON(), errors: [] })
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const created = await RoundModel.create({
+        tournamentId,
+        round,
+        name,
+        motions,
+        motionOpened,
+        teamAllocationOpened,
+        adjudicatorAllocationOpened,
+        weightsOfAdjudicators,
+        userDefinedData: applyBreakConstraintsToUserDefined(
+          buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
+        ),
+      })
+      await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
+      res.status(201).json({ data: created.toJSON(), errors: [] })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
       res
