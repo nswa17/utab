@@ -2061,6 +2061,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
   let mutationConnection: Connection | null = null
   let namespaceLease: RoundNamespaceLease | null = null
   let namespaceConnection: Connection | null = null
+  let entityLeases: EntityNamespaceLease[] = []
+  let entityConnection: Connection | null = null
   let mutationStarted = false
   let movePlans: RoundMovePlan[] = []
   let roundSnapshots: any[] = []
@@ -2172,6 +2174,14 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       mutationLeases = acquired
       mutationConnection = connection
       acquired.forEach((lease) => mutationLeaseById.set(lease.roundId, lease))
+
+      const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!acquiredEntityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      entityLeases = acquiredEntityLeases
+      entityConnection = connection
 
       roundSnapshots = await RoundModel.find({
         _id: { $in: changes.map((change) => change.id) },
@@ -2343,6 +2353,13 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
     }
     next(err)
   } finally {
+    if (entityLeases.length > 0 && entityConnection) {
+      try {
+        await releaseRoundEntityNamespaceLeases(entityConnection, entityLeases)
+      } catch {
+        // Entity namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
     if (namespaceLease && namespaceConnection) {
       try {
         await releaseRoundNamespaceLease(namespaceConnection, namespaceLease)
