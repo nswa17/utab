@@ -3920,36 +3920,40 @@ function closeForceCompileModal() {
   forceCompileModalOpen.value = false
 }
 
+
 async function executeCompile(
   source: CompileSource,
   optionOverrides?: {
     missing_data_policy?: CompileOptions['missing_data_policy']
   }
 ): Promise<boolean> {
-  if (!tournamentId.value) return false
-  if (!canRunCompile.value) return false
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId || !canRunCompile.value) return false
   const roundsPayload = [...compileTargetRoundNumbers.value]
-  const compiledResult = await compiledStore.runCompile(tournamentId.value, {
+  const compiledResult = await compiledStore.runCompile(currentTournamentId, {
     source,
     rounds: roundsPayload,
     options: buildCompileOptions(optionOverrides),
   })
+  if (tournamentId.value !== currentTournamentId) return false
+  if (!compiledResult) return false
   manualCompileSource.value = source
   manualCompileOptionOverrides.value = optionOverrides
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
-  if (!compiledResult) return false
   compileExecuted.value = true
   await Promise.all([
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    rounds.fetchRounds(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
-    institutions.fetchInstitutions(tournamentId.value),
-    draws.fetchDraws(tournamentId.value),
-    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    rounds.fetchRounds(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
+    institutions.fetchInstitutions(currentTournamentId),
+    draws.fetchDraws(currentTournamentId),
+    submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
   ])
-  await refreshCompiledHistory()
+  if (tournamentId.value !== currentTournamentId) return false
+  await refreshCompiledHistory(currentTournamentId)
+  if (tournamentId.value !== currentTournamentId) return false
   const latestCompiledId = String(compiledStore.compiled?._id ?? '').trim()
   if (latestCompiledId) {
     selectedCompiledId.value = latestCompiledId
@@ -3958,6 +3962,7 @@ async function executeCompile(
   return true
 }
 
+
 async function runPreviewWithSource(
   source: CompileSource,
   optionOverrides?: {
@@ -3965,17 +3970,19 @@ async function runPreviewWithSource(
   }
 ): Promise<boolean> {
   if (!compileManualSaveEnabled) return false
-  if (!tournamentId.value || !canRunCompile.value) return false
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId || !canRunCompile.value) return false
   const roundsPayload = [...compileTargetRoundNumbers.value]
   manualCompileSource.value = source
   manualCompileOptionOverrides.value = optionOverrides
   const inputKey = buildCompileInputKey(source, optionOverrides)
   compileWorkflow.setCurrentInputKey(inputKey)
-  const preview = await compiledStore.runPreview(tournamentId.value, {
+  const preview = await compiledStore.runPreview(currentTournamentId, {
     source,
     rounds: roundsPayload,
     options: buildCompileOptions(optionOverrides),
   })
+  if (tournamentId.value !== currentTournamentId) return false
   const previewState = compiledStore.previewState
   if (!preview || !previewState) return false
   compileWorkflow.applyPreview(
@@ -3992,22 +3999,29 @@ async function runPreviewWithSource(
   return true
 }
 
+
 async function runDefaultPreview() {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   compileActionError.value = ''
   showForceCompileAfterError.value = false
   const success = await runPreviewWithSource('submissions')
+  if (tournamentId.value !== currentTournamentId) return
   if (!success) {
     compileActionError.value = compiledStore.error ?? t('集計に失敗しました。')
     showForceCompileAfterError.value = true
   }
 }
 
+
 async function runCompile() {
-  if (!tournamentId.value || !canRunCompile.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId || !canRunCompile.value) return
   emitReportMetric('cta_click', { cta: 'run_compile' })
   compileActionError.value = ''
   showForceCompileAfterError.value = false
   const success = await executeCompile('submissions')
+  if (tournamentId.value !== currentTournamentId) return
   if (!success) {
     compileActionError.value = compiledStore.error ?? t('レポート生成に失敗しました。')
   }
@@ -4046,9 +4060,11 @@ function onSaveSnapshotModalCancel() {
   trackCompileMetric('save_cancelled', source)
 }
 
+
 async function saveCompiledSnapshot() {
   if (!compileManualSaveEnabled) return
-  if (!tournamentId.value || !canRunCompile.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId || !canRunCompile.value) return
   saveSnapshotError.value = ''
   if (!compileWorkflow.canSave) {
     openSaveSnapshotModal()
@@ -4056,7 +4072,7 @@ async function saveCompiledSnapshot() {
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
   const roundsPayload = [...compileTargetRoundNumbers.value]
-  const saved = await compiledStore.saveCompiled(tournamentId.value, {
+  const saved = await compiledStore.saveCompiled(currentTournamentId, {
     source,
     rounds: roundsPayload,
     options: buildCompileOptions(manualCompileOptionOverrides.value),
@@ -4064,6 +4080,7 @@ async function saveCompiledSnapshot() {
     previewSignature: compileWorkflow.previewSignature,
     revision: compileWorkflow.previewRevision,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!saved) {
     saveSnapshotError.value = compiledStore.error ?? t('集計結果の保存に失敗しました。')
     const isPreviewStale = (compiledStore.error ?? '').toLowerCase().includes('preview is stale')
@@ -4076,15 +4093,17 @@ async function saveCompiledSnapshot() {
   compileWorkflow.markSaved()
   compileExecuted.value = true
   await Promise.all([
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    rounds.fetchRounds(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
-    institutions.fetchInstitutions(tournamentId.value),
-    draws.fetchDraws(tournamentId.value),
-    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    rounds.fetchRounds(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
+    institutions.fetchInstitutions(currentTournamentId),
+    draws.fetchDraws(currentTournamentId),
+    submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
   ])
-  await refreshCompiledHistory()
+  if (tournamentId.value !== currentTournamentId) return
+  await refreshCompiledHistory(currentTournamentId)
+  if (tournamentId.value !== currentTournamentId) return
   const latestCompiledId = String(compiledStore.compiled?._id ?? '').trim()
   if (latestCompiledId) {
     selectedCompiledId.value = latestCompiledId
@@ -4092,7 +4111,10 @@ async function saveCompiledSnapshot() {
   applyDefaultDiffBaselineSelection(latestCompiledId)
 }
 
+
 async function confirmForcedCompile() {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   emitReportMetric('cta_click', { cta: 'confirm_raw_compile' })
   forceCompileError.value = ''
   const action = forceCompileAction.value
@@ -4105,6 +4127,7 @@ async function confirmForcedCompile() {
     const previewed = await runPreviewWithSource('raw', {
       missing_data_policy: forceCompileMissingDataPolicy.value,
     })
+    if (tournamentId.value !== currentTournamentId) return
     if (!previewed) {
       forceCompileError.value = compiledStore.error ?? t('強制集計に失敗しました。')
       return
@@ -4115,6 +4138,7 @@ async function confirmForcedCompile() {
   const compiled = await executeCompile('raw', {
     missing_data_policy: forceCompileMissingDataPolicy.value,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!compiled) {
     forceCompileError.value = compiledStore.error ?? t('強制集計に失敗しました。')
     return
@@ -4133,10 +4157,10 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
   }
   try {
     const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = []
   } finally {
     compiledHistoryGate.complete(token)
