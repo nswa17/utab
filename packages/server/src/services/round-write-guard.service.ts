@@ -10,6 +10,8 @@ export type RoundWriteLease = {
 
 export type RoundMutationLease = RoundWriteLease
 
+export const ROUND_WRITE_LEASE_STALE_MS = 5 * 60 * 1000
+
 function normalizeEpoch(value: unknown): number {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0
@@ -27,12 +29,60 @@ function toLease(
   }
 }
 
+async function recoverStaleRoundWriteState(
+  connection: Connection,
+  tournamentId: string,
+  round: number,
+  roundId?: string
+): Promise<void> {
+  const RoundModel = getRoundModel(connection)
+  const staleBefore = new Date(Date.now() - ROUND_WRITE_LEASE_STALE_MS)
+  const filter: Record<string, unknown> = {
+    tournamentId,
+    round,
+    $and: [
+      {
+        $or: [
+          { roundMutationLocked: true },
+          { roundActiveWriteCount: { $gt: 0 } },
+        ],
+      },
+      {
+        $or: [
+          { roundActiveWriteTouchedAt: { $lt: staleBefore } },
+          { roundActiveWriteTouchedAt: null },
+          { roundActiveWriteTouchedAt: { $exists: false } },
+        ],
+      },
+    ],
+  }
+  if (roundId) filter._id = roundId
+
+  await RoundModel.updateOne(
+    filter,
+    {
+      $set: {
+        roundMutationLocked: false,
+        roundActiveWriteCount: 0,
+        roundActiveWriteTouchedAt: new Date(),
+      },
+      $inc: { roundMutationEpoch: 1 },
+    }
+  ).exec()
+}
+
 export async function acquireRoundWriteLease(
   connection: Connection,
   tournamentId: string,
   round: number,
   expectedRoundId?: string
 ): Promise<RoundWriteLease | null> {
+  await recoverStaleRoundWriteState(
+    connection,
+    tournamentId,
+    round,
+    expectedRoundId
+  )
   const RoundModel = getRoundModel(connection)
   const filter: Record<string, unknown> = {
     tournamentId,
@@ -83,6 +133,12 @@ async function tryAcquireMutationLease(
   activeWriteFilter: Record<string, unknown>,
   resetActiveWrites: boolean
 ): Promise<RoundMutationLease | null> {
+  await recoverStaleRoundWriteState(
+    connection,
+    tournamentId,
+    expectedRound,
+    roundId
+  )
   const RoundModel = getRoundModel(connection)
   const claimed = await RoundModel.findOneAndUpdate(
     {
