@@ -2,6 +2,7 @@ import { Schema, type Connection, type InferSchemaType, type Model } from 'mongo
 import { isDuplicateKeyError } from './mongo-error.service.js'
 
 export const ENTITY_NAMESPACE_LOCK_COLLECTION = 'entity_namespace_locks'
+export const ENTITY_NAMESPACE_LEASE_STALE_MS = 5 * 60 * 1000
 
 const entityNamespaceLockSchema = new Schema(
   {
@@ -49,8 +50,16 @@ export async function acquireEntityNamespaceLease(
     if (!isDuplicateKeyError(error)) throw error
   }
 
+  const staleBefore = new Date(Date.now() - ENTITY_NAMESPACE_LEASE_STALE_MS)
   const claimed = await LockModel.findOneAndUpdate(
-    { _id: key, locked: { $ne: true } },
+    {
+      _id: key,
+      $or: [
+        { locked: { $ne: true } },
+        { touchedAt: { $lt: staleBefore } },
+        { touchedAt: null },
+      ],
+    },
     {
       $set: { locked: true, touchedAt: new Date() },
       $inc: { epoch: 1 },
