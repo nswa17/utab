@@ -1,3 +1,5 @@
+import type { DrawTeamRecord } from './draw-teams'
+
 export type AdjudicatorImportMode = 'replace' | 'append'
 
 export type ParsedAdjudicatorImportEntry = {
@@ -17,10 +19,7 @@ export type ParsedAdjudicatorImport = {
 
 export type DrawAllocationRowLike = {
   venue?: string
-  teams: {
-    gov: string
-    opp: string
-  }
+  teams: DrawTeamRecord
   chairs?: string[]
   panels?: string[]
   trainees?: string[]
@@ -220,7 +219,7 @@ function resolveEntityId(
 function cloneAllocation(allocation: DrawAllocationRowLike[]): DrawAllocationRowLike[] {
   return allocation.map((row) => ({
     venue: row.venue,
-    teams: { gov: row.teams.gov, opp: row.teams.opp },
+    teams: { ...row.teams },
     chairs: [...(row.chairs ?? [])],
     panels: [...(row.panels ?? [])],
     trainees: [...(row.trainees ?? [])],
