@@ -37,7 +37,7 @@ const rawTeamBodySchema = z.object({
   from_id: z.string().trim().min(1),
   r: z.number().int().min(1),
   weight: z.number().optional(),
-  win: z.number(),
+  win: z.number().finite().min(0).max(1),
   opponents: z.array(z.string().trim().min(1)),
   side: z.string().trim().min(1),
   user_defined_data: z.any().optional(),
