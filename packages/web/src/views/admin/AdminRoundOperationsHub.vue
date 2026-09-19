@@ -2977,6 +2977,7 @@ function selectTask(task: HubTask) {
   })
 }
 
+
 async function runCompileWithSource(
   source: CompileSource,
   scope: CompileScope = compileScope.value,
@@ -2985,6 +2986,9 @@ async function runCompileWithSource(
   }
 ) {
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
+  const targetRounds = [...effectiveCompileTargetRounds.value]
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
@@ -3003,11 +3007,12 @@ async function runCompileWithSource(
       t('選択ラウンドの提出データが揃っていないため、集計を実行できません。')
     return
   }
-  const result = await compiledStore.runCompile(tournamentId.value, {
+  const result = await compiledStore.runCompile(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
+    rounds: targetRounds,
     options: buildCompileOptions(optionOverrides, scope),
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!result) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
     return
@@ -3018,8 +3023,12 @@ async function runCompileWithSource(
   compileWorkflow.clearPreview()
   compiledStore.clearPreview()
   compileMessage.value = `${compileScopeLabelFor(scope)}集計が完了しました。`
-  await Promise.all([compiledStore.fetchLatest(tournamentId.value), refreshCompiledHistory()])
+  await Promise.all([
+    compiledStore.fetchLatest(currentTournamentId),
+    refreshCompiledHistory(currentTournamentId),
+  ])
 }
+
 
 async function runPreviewWithSource(
   source: CompileSource,
@@ -3030,6 +3039,9 @@ async function runPreviewWithSource(
 ) {
   if (!compileManualSaveEnabled) return
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
+  const targetRounds = [...effectiveCompileTargetRounds.value]
   compileMessage.value = ''
   actionError.value = ''
   closeForceCompileModal()
@@ -3053,11 +3065,12 @@ async function runPreviewWithSource(
   manualCompileSource.value = source
   manualCompileScope.value = scope
   manualCompileOptionOverrides.value = optionOverrides
-  const preview = await compiledStore.runPreview(tournamentId.value, {
+  const preview = await compiledStore.runPreview(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
+    rounds: targetRounds,
     options: buildCompileOptions(optionOverrides, scope),
   })
+  if (tournamentId.value !== currentTournamentId) return
   const previewState = compiledStore.previewState
   if (!preview || !previewState) {
     actionError.value = compiledStore.error ?? t('集計に失敗しました。')
@@ -3167,23 +3180,29 @@ function onSaveSnapshotModalCancel() {
   trackCompileMetric('save_cancelled', source)
 }
 
+
 async function saveCompiledSnapshot() {
   if (!compileManualSaveEnabled) return
   if (selectedRound.value === null || effectiveCompileTargetRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   if (!compileWorkflow.canSave) {
     openSaveSnapshotModal()
     return
   }
   const source = compileWorkflow.previewSource === 'raw' ? 'raw' : 'submissions'
   const snapshotMemo = compileWorkflow.snapshotMemoDraft
-  const saved = await compiledStore.saveCompiled(tournamentId.value, {
+  const targetRounds = [...effectiveCompileTargetRounds.value]
+  const savedScope = manualCompileScope.value
+  const saved = await compiledStore.saveCompiled(currentTournamentId, {
     source,
-    rounds: effectiveCompileTargetRounds.value,
-    options: buildCompileOptions(manualCompileOptionOverrides.value, manualCompileScope.value),
+    rounds: targetRounds,
+    options: buildCompileOptions(manualCompileOptionOverrides.value, savedScope),
     snapshotMemo,
     previewSignature: compileWorkflow.previewSignature,
     revision: compileWorkflow.previewRevision,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!saved) {
     const isPreviewStale = (compiledStore.error ?? '').toLowerCase().includes('preview is stale')
     if (isPreviewStale) {
@@ -3195,9 +3214,9 @@ async function saveCompiledSnapshot() {
     return
   }
   compileWorkflow.markSaved()
-  compileMessage.value = `${compileScopeLabelFor(manualCompileScope.value)}参照を確定しました。`
+  compileMessage.value = `${compileScopeLabelFor(savedScope)}参照を確定しました。`
   trackCompileMetric('save_snapshot', source)
-  await refreshCompiledHistory()
+  await refreshCompiledHistory(currentTournamentId)
 }
 
 async function refreshCompiledHistory(currentTournamentId = tournamentId.value) {
@@ -3211,10 +3230,10 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
   }
   try {
     const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = []
   } finally {
     compiledHistoryGate.complete(token)
@@ -3225,28 +3244,33 @@ async function saveDrawPublication(
   nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean; locked: boolean }>
 ): Promise<boolean> {
   if (!selectedDraw.value || selectedRound.value === null) return false
+  const currentTournamentId = tournamentId.value
+  const currentRound = selectedRound.value
+  const currentDraw = selectedDraw.value
   const nextDrawOpened = nextState.drawOpened ?? drawOpenedValue.value
   const nextAllocationOpened = nextState.allocationOpened ?? allocationOpenedValue.value
+  const nextLocked = nextState.locked ?? lockedValue.value
   publishMessage.value = ''
   actionError.value = ''
   publicationSaving.value = true
   try {
     const saved = await drawsStore.upsertDraw({
-      tournamentId: tournamentId.value,
-      round: selectedRound.value,
-      allocation: selectedDraw.value.allocation,
-      userDefinedData: selectedDraw.value.userDefinedData,
+      tournamentId: currentTournamentId,
+      round: currentRound,
+      allocation: currentDraw.allocation,
+      userDefinedData: currentDraw.userDefinedData,
       drawOpened: nextDrawOpened,
       allocationOpened: nextAllocationOpened,
-      locked: nextState.locked ?? lockedValue.value,
+      locked: nextLocked,
     })
+    if (tournamentId.value !== currentTournamentId) return false
     if (!saved) {
       actionError.value = drawsStore.error ?? t('公開設定の保存に失敗しました。')
       return false
     }
     publishMessage.value = t('公開状態を更新しました。')
-    await drawsStore.fetchDraws(tournamentId.value)
-    return true
+    await drawsStore.fetchDraws(currentTournamentId)
+    return tournamentId.value === currentTournamentId
   } finally {
     publicationSaving.value = false
   }
@@ -3254,22 +3278,25 @@ async function saveDrawPublication(
 
 async function saveRoundPublication(nextState: { motionOpened: boolean }): Promise<boolean> {
   if (!selectedRoundData.value?._id) return false
+  const currentTournamentId = tournamentId.value
+  const currentRoundId = String(selectedRoundData.value._id)
   publishMessage.value = ''
   actionError.value = ''
   publicationSaving.value = true
   try {
     const saved = await roundsStore.updateRound({
-      tournamentId: tournamentId.value,
-      roundId: String(selectedRoundData.value._id),
+      tournamentId: currentTournamentId,
+      roundId: currentRoundId,
       motionOpened: nextState.motionOpened,
     })
+    if (tournamentId.value !== currentTournamentId) return false
     if (!saved) {
       actionError.value = roundsStore.error ?? t('公開設定の保存に失敗しました。')
       return false
     }
     publishMessage.value = t('公開状態を更新しました。')
-    await roundsStore.fetchRounds(tournamentId.value)
-    return true
+    await roundsStore.fetchRounds(currentTournamentId)
+    return tournamentId.value === currentTournamentId
   } finally {
     publicationSaving.value = false
   }
@@ -3290,21 +3317,25 @@ async function onMotionPublishToggle(checked: boolean) {
 async function onPriorRoundsHideToggle(checked: boolean) {
   if (!checked) return
   if (priorRoundsFullyHidden.value) return
-  if (!tournamentId.value || priorRounds.value.length === 0) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId || priorRounds.value.length === 0) return
   const targetRounds = priorRounds.value.map((round) => ({
     roundNumber: round.round,
     roundId: String(round._id),
+    draw: priorRoundDrawMap.value.get(round.round) ?? null,
   }))
   publishMessage.value = ''
   actionError.value = ''
   publicationSaving.value = true
   try {
     for (const target of targetRounds) {
+      if (tournamentId.value !== currentTournamentId) return
       const updatedRound = await roundsStore.updateRound({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         roundId: target.roundId,
         motionOpened: false,
       })
+      if (tournamentId.value !== currentTournamentId) return
       if (!updatedRound) {
         actionError.value = roundsStore.error ?? t('公開設定の保存に失敗しました。')
         return
@@ -3312,10 +3343,11 @@ async function onPriorRoundsHideToggle(checked: boolean) {
     }
 
     for (const target of targetRounds) {
-      const previousDraw = priorRoundDrawMap.value.get(target.roundNumber)
+      if (tournamentId.value !== currentTournamentId) return
+      const previousDraw = target.draw
       if (!previousDraw) continue
       const updatedDraw = await drawsStore.upsertDraw({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         round: target.roundNumber,
         allocation: previousDraw.allocation,
         userDefinedData: previousDraw.userDefinedData,
@@ -3323,16 +3355,18 @@ async function onPriorRoundsHideToggle(checked: boolean) {
         allocationOpened: false,
         locked: previousDraw.locked ?? false,
       })
+      if (tournamentId.value !== currentTournamentId) return
       if (!updatedDraw) {
         actionError.value = drawsStore.error ?? t('公開設定の保存に失敗しました。')
         return
       }
     }
 
+    if (tournamentId.value !== currentTournamentId) return
     publishMessage.value = t('前ラウンドを一括非公開にしました。')
     await Promise.all([
-      roundsStore.fetchRounds(tournamentId.value),
-      drawsStore.fetchDraws(tournamentId.value),
+      roundsStore.fetchRounds(currentTournamentId),
+      drawsStore.fetchDraws(currentTournamentId),
     ])
   } finally {
     publicationSaving.value = false

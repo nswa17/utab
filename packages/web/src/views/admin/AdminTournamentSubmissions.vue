@@ -2673,6 +2673,9 @@ function cancelEdit() {
 
 async function saveEdit(item: Submission) {
   if (!isEditing(item._id)) return
+  const currentTournamentId = tournamentId.value
+  const targetSubmissionId = String(item._id ?? '')
+  if (!currentTournamentId || !targetSubmissionId) return
   if (!Number.isFinite(editingRound.value) || editingRound.value < 1) {
     editError.value = t('ラウンドは1以上で入力してください。')
     return
@@ -2707,11 +2710,17 @@ async function saveEdit(item: Submission) {
   editingSaving.value = true
   try {
     const updated = await submissions.updateSubmission({
-      tournamentId: tournamentId.value,
-      submissionId: String(item._id ?? ''),
+      tournamentId: currentTournamentId,
+      submissionId: targetSubmissionId,
       round: Math.floor(editingRound.value),
       payload: parsed,
     })
+    if (
+      tournamentId.value !== currentTournamentId ||
+      editingSubmissionId.value !== targetSubmissionId
+    ) {
+      return
+    }
     if (!updated) {
       editError.value = submissions.error ?? t('提出データの更新に失敗しました。')
       return
@@ -2724,21 +2733,28 @@ async function saveEdit(item: Submission) {
     }
     emit('saved', updatedSubmission)
   } finally {
-    editingSaving.value = false
+    if (
+      tournamentId.value === currentTournamentId &&
+      (editingSubmissionId.value === targetSubmissionId || editingSubmissionId.value === null)
+    ) {
+      editingSaving.value = false
+    }
   }
 }
 
 async function deleteCurrentSubmission(item: Submission) {
   const submissionId = String(item._id ?? '')
-  if (!submissionId) return
+  const currentTournamentId = tournamentId.value
+  if (!submissionId || !currentTournamentId) return
 
   editError.value = ''
   editingSaving.value = true
   try {
     const deleted = await submissions.deleteSubmission({
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       submissionId,
     })
+    if (tournamentId.value !== currentTournamentId) return
     if (!deleted) {
       editError.value = submissions.error ?? t('提出データの削除に失敗しました。')
       return
@@ -2752,7 +2768,9 @@ async function deleteCurrentSubmission(item: Submission) {
     }
     emit('deleted', deleted as Submission)
   } finally {
-    editingSaving.value = false
+    if (tournamentId.value === currentTournamentId) {
+      editingSaving.value = false
+    }
   }
 }
 

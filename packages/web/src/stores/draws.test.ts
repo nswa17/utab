@@ -20,6 +20,16 @@ type MockedApi = {
 
 const mockedApi = api as unknown as MockedApi
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('draws store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -67,9 +77,33 @@ describe('draws store', () => {
     await store.fetchDraws('t1', 3)
 
     expect(store.draws.map((item) => item._id)).toEqual(
-      expect.arrayContaining(['draw-r1', 'draw-r2', 'draw-r3', 'draw-other'])
+      expect.arrayContaining(['draw-r1', 'draw-r2', 'draw-r3'])
     )
+    expect(store.draws.some((item) => item._id === 'draw-other')).toBe(false)
     expect(store.draws.some((item) => item._id === 'draw-r1' && item.drawOpened)).toBe(true)
+  })
+
+  it('clears old tournament draws immediately when switching tournaments', async () => {
+    const store = useDrawsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'draw-a', tournamentId: 'tournament-a', round: 1, allocation: [] }],
+      },
+    })
+    await store.fetchDraws('tournament-a')
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchDraws('tournament-b')
+
+    expect(store.draws).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'draw-b', tournamentId: 'tournament-b', round: 1, allocation: [] }],
+      },
+    })
+    await nextFetch
   })
 
   it('replaces draw list on full fetch', async () => {
@@ -101,7 +135,7 @@ describe('draws store', () => {
     expect(store.draws[0]._id).toBe('new-draw')
   })
 
-  it('does not overwrite another tournaments draw when upserting the same round', async () => {
+  it('drops another tournaments stale draw when upserting the active tournament', async () => {
     const store = useDrawsStore()
     store.draws = [
       {
@@ -134,15 +168,12 @@ describe('draws store', () => {
       allocation: [{ teams: { gov: 'x', opp: 'y' }, chairs: [], panels: [], trainees: [] }],
     })
 
-    expect(store.draws).toHaveLength(2)
+    expect(store.draws).toHaveLength(1)
     expect(store.draws.find((item) => item._id === 'draw-t1-r1')?.allocation[0]?.teams).toEqual({
       gov: 'x',
       opp: 'y',
     })
-    expect(store.draws.find((item) => item._id === 'draw-t2-r1')?.allocation[0]?.teams).toEqual({
-      gov: 'c',
-      opp: 'd',
-    })
+    expect(store.draws.some((item) => item._id === 'draw-t2-r1')).toBe(false)
   })
 
   it('keeps only the latest fetchDraws response when requests resolve out of order', async () => {
@@ -271,4 +302,65 @@ describe('draws store', () => {
       },
     ] as any)
   })
+  it('does not let an old-tournament upsert invalidate or contaminate a new-tournament fetch', async () => {
+    const store = useDrawsStore()
+    let resolveUpsert: (value: any) => void = () => {}
+    let resolveFetch: (value: any) => void = () => {}
+
+    mockedApi.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpsert = resolve
+        })
+    )
+    mockedApi.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+    )
+
+    const upsertPromise = store.upsertDraw({
+      tournamentId: 'tournament-a',
+      round: 1,
+      allocation: [],
+    })
+    const fetchPromise = store.fetchDraws('tournament-b')
+
+    resolveUpsert({
+      data: {
+        data: {
+          _id: 'draw-a-late',
+          tournamentId: 'tournament-a',
+          round: 1,
+          allocation: [],
+        },
+      },
+    })
+    await upsertPromise
+
+    resolveFetch({
+      data: {
+        data: [
+          {
+            _id: 'draw-b-current',
+            tournamentId: 'tournament-b',
+            round: 1,
+            allocation: [],
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.draws).toEqual([
+      {
+        _id: 'draw-b-current',
+        tournamentId: 'tournament-b',
+        round: 1,
+        allocation: [],
+      },
+    ] as any)
+  })
+
 })

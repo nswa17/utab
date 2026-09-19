@@ -255,6 +255,8 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
     const { id } = req.params
     if (!ensureTournamentId(res, id)) return
     const update = { ...(req.body as Record<string, unknown>) }
+    const userDefinedDataPatch = update.user_defined_data_patch
+    delete update.user_defined_data_patch
     const existing = await TournamentModel.findById(id).lean().exec()
     if (!existing) {
       notFound(res, 'Tournament not found')
@@ -277,9 +279,16 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
       }
     }
 
+    const setUpdate: Record<string, unknown> = { ...update }
+    if (userDefinedDataPatch && typeof userDefinedDataPatch === 'object' && !Array.isArray(userDefinedDataPatch)) {
+      Object.entries(userDefinedDataPatch as Record<string, unknown>).forEach(([key, value]) => {
+        setUpdate[`user_defined_data.${key}`] = value
+      })
+    }
+
     const updated = await TournamentModel.findOneAndUpdate(
       { _id: id },
-      { $set: update },
+      { $set: setUpdate },
       { new: true, runValidators: true }
     )
       .lean()

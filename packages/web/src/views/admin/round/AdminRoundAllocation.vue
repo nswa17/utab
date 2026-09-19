@@ -2150,6 +2150,7 @@ const allocationSortCollator = new Intl.Collator(['ja', 'en'], {
 })
 const refreshGate = createLatestRequestGate()
 const compiledHistoryGate = createLatestRequestGate()
+const allocationRequestGate = createLatestRequestGate()
 let foregroundRefreshCount = 0
 
 function openNotice(message: string) {
@@ -2201,21 +2202,17 @@ function hydrateAutoBreakPolicyFromRound() {
   autoBreakSeeding.value = normalizeBreakSeeding(breakConfig.seeding, 'fixed_bracket')
 }
 
-async function syncAutoBreakPolicyToRound() {
+async function syncAutoBreakPolicyToRound(currentTournamentId = tournamentId.value) {
   if (autoOptions.value.teamAlgorithm !== 'break' || requestScope.value !== 'teams') {
     return true
   }
   const currentTournament = tournament.value
-  if (!currentTournament?._id) {
+  if (!currentTournamentId || !currentTournament?._id || currentTournament._id !== currentTournamentId) {
     requestError.value = t('読み込みに失敗しました。')
     return false
   }
   const normalizedSize = normalizeBreakSize(autoBreakSize.value)
   autoBreakSize.value = normalizedSize
-  const currentUserDefined =
-    currentTournament.user_defined_data && typeof currentTournament.user_defined_data === 'object'
-      ? ({ ...(currentTournament.user_defined_data as Record<string, any>) } as Record<string, any>)
-      : {}
   const currentBreak = readTournamentBreakConfig()
   const breakConfig = {
     ...currentBreak,
@@ -2225,12 +2222,12 @@ async function syncAutoBreakPolicyToRound() {
     seeding: autoBreakSeeding.value,
   }
   const updated = await tournamentStore.updateTournament({
-    tournamentId: currentTournament._id,
-    user_defined_data: {
-      ...currentUserDefined,
+    tournamentId: currentTournamentId,
+    user_defined_data_patch: {
       break: breakConfig,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return false
   if (!updated?._id) {
     requestError.value = tournamentStore.error ?? t('ブレイク設定の保存に失敗しました。')
     return false
@@ -3397,10 +3394,10 @@ async function refreshCompiledHistory(currentTournamentId = tournamentId.value) 
   }
   try {
     const res = await api.get('/compiled', { params: { tournamentId: currentTournamentId } })
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch {
-    if (!compiledHistoryGate.isCurrent(token)) return
+    if (!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId) return
     compiledHistory.value = []
   } finally {
     compiledHistoryGate.complete(token)
@@ -3434,6 +3431,8 @@ function reopenReferenceSelection() {
 
 async function confirmReferenceRounds() {
   if (!tournamentId.value || referenceConfirming.value) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
   referenceConfirmError.value = null
   const teamRounds = selectedTeamReferenceRounds.value
   const adjudicatorRounds = shouldTrackAdjudicatorReference.value
@@ -3476,11 +3475,12 @@ async function confirmReferenceRounds() {
       requiresAdjudicatorReference && !areRoundSetsEqual(teamRounds, adjudicatorRounds)
     const teamCompileScope =
       requiresAdjudicatorReference && !shouldCompileAdjudicatorSeparately ? 'adjudicators' : 'teams'
-    const teamCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+    const teamCompiled = await compiledStore.saveCompiled(currentTournamentId, {
       source: 'submissions',
       rounds: teamRounds,
       options: buildReferenceCompileOptions(teamCompileScope),
     })
+    if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
     const teamCompiledId = String(teamCompiled?._id ?? '').trim()
     if (!teamCompiledId) {
       referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
@@ -3489,11 +3489,12 @@ async function confirmReferenceRounds() {
 
     let adjudicatorCompiledId = teamCompiledId
     if (shouldCompileAdjudicatorSeparately) {
-      const adjudicatorCompiled = await compiledStore.saveCompiled(tournamentId.value, {
+      const adjudicatorCompiled = await compiledStore.saveCompiled(currentTournamentId, {
         source: 'submissions',
         rounds: adjudicatorRounds,
         options: buildReferenceCompileOptions('adjudicators'),
       })
+      if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
       adjudicatorCompiledId = String(adjudicatorCompiled?._id ?? '').trim()
       if (!adjudicatorCompiledId) {
         referenceConfirmError.value = compiledStore.error ?? t('参照集計の確定に失敗しました。')
@@ -3505,12 +3506,13 @@ async function confirmReferenceRounds() {
     selectedTeamSnapshotId.value = teamCompiledId
     selectedAdjudicatorSnapshotId.value = adjudicatorCompiledId
     referenceSelectionConfirmed.value = true
-    await refreshCompiledHistory()
+    await refreshCompiledHistory(currentTournamentId)
   } finally {
-    referenceConfirming.value = false
+    if (tournamentId.value === currentTournamentId && round.value === currentRound) {
+      referenceConfirming.value = false
+    }
   }
 }
-
 function addRow() {
   allocation.value.push(createEmptyAllocationRow())
 }
@@ -3523,6 +3525,9 @@ function removeRow(index: number) {
 }
 
 async function save() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  if (!currentTournamentId) return
   if (!referenceSelectionConfirmed.value) {
     openNotice(t('先に参照ラウンドを確定してください。'))
     return
@@ -3548,14 +3553,15 @@ async function save() {
     adjudicatorRounds: selectedAdjudicatorSnapshotRoundNumbers.value,
   })
   const saved = await draws.upsertDraw({
-    tournamentId: tournamentId.value,
-    round: round.value,
+    tournamentId: currentTournamentId,
+    round: currentRound,
     allocation: validRows,
     ...(nextUserDefinedData ? { userDefinedData: nextUserDefinedData } : {}),
     drawOpened: drawOpened.value,
     allocationOpened: allocationOpened.value,
     locked: locked.value,
   })
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (!saved) {
     if (!draws.error) {
       openNotice(t('保存に失敗しました'))
@@ -3846,6 +3852,11 @@ function estimatedRequiredAdjudicatorCountForRequest() {
 }
 
 async function requestAllocation() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentRequestScope = requestScope.value
+  if (!currentTournamentId) return
+  const requestToken = allocationRequestGate.begin()
   requestError.value = null
   if (locked.value) {
     requestError.value = t('ドローがロックされているため自動生成できません。')
@@ -4003,7 +4014,7 @@ async function requestAllocation() {
     const snapshotId = resolveSnapshotIdForScope(requestScope.value, useScopedOverrides)
     const roundList = snapshotId ? [] : priorRounds.value.map((item) => item.round)
     if (
-      (requestScope.value === 'adjudicators' || requestScope.value === 'venues') &&
+      (currentRequestScope === 'adjudicators' || currentRequestScope === 'venues') &&
       allocation.value.length === 0
     ) {
       requestError.value = t(
@@ -4012,7 +4023,14 @@ async function requestAllocation() {
       return
     }
     if (effectiveTeamAlgorithm === 'break' && scopeIncludesTeams.value) {
-      const synced = await syncAutoBreakPolicyToRound()
+      const synced = await syncAutoBreakPolicyToRound(currentTournamentId)
+      if (
+        !allocationRequestGate.isCurrent(requestToken) ||
+        tournamentId.value !== currentTournamentId ||
+        round.value !== currentRound
+      ) {
+        return
+      }
       if (!synced) return
     }
     const options = {
@@ -4025,7 +4043,7 @@ async function requestAllocation() {
     }
 
     const snapshotPayload =
-      requestScope.value === 'all'
+      currentRequestScope === 'all'
         ? useScopedOverrides
           ? {
               ...(teamSnapshotId ? { snapshotIdTeams: teamSnapshotId } : {}),
@@ -4039,8 +4057,8 @@ async function requestAllocation() {
           }
 
     const basePayload: Record<string, any> = {
-      tournamentId: tournamentId.value,
-      round: round.value,
+      tournamentId: currentTournamentId,
+      round: currentRound,
       options,
       rounds: roundList.length > 0 ? roundList : undefined,
       ...snapshotPayload,
@@ -4048,33 +4066,47 @@ async function requestAllocation() {
 
     let endpoint = '/allocations'
     let payload = basePayload
-    if (requestScope.value === 'teams') {
+    if (currentRequestScope === 'teams') {
       endpoint = effectiveTeamAlgorithm === 'break' ? '/allocations/break' : '/allocations/teams'
-    } else if (requestScope.value === 'adjudicators') {
+    } else if (currentRequestScope === 'adjudicators') {
       endpoint = '/allocations/adjudicators'
       payload = { ...basePayload, allocation: allocation.value }
-    } else if (requestScope.value === 'venues') {
+    } else if (currentRequestScope === 'venues') {
       endpoint = '/allocations/venues'
       payload = { ...basePayload, allocation: allocation.value }
     }
 
     const res = await api.post(endpoint, payload)
+    if (
+      !allocationRequestGate.isCurrent(requestToken) ||
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound
+    ) {
+      return
+    }
     const data = res.data?.data
     if (data?.allocation) {
       const generatedRows = cloneAllocation(data.allocation)
       allocation.value =
-        requestScope.value === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
+        currentRequestScope === 'teams' ? mergeTeamScopeAllocation(generatedRows) : generatedRows
       if (Object.prototype.hasOwnProperty.call(data, 'userDefinedData')) {
         generatedUserDefinedData.value =
           data.userDefinedData && typeof data.userDefinedData === 'object'
             ? (data.userDefinedData as Record<string, any>)
             : null
-      } else if (requestScope.value === 'all' || requestScope.value === 'teams') {
+      } else if (currentRequestScope === 'all' || currentRequestScope === 'teams') {
         generatedUserDefinedData.value = null
       }
       closeAutoGenerateModal()
     }
   } catch (err: any) {
+    if (
+      !allocationRequestGate.isCurrent(requestToken) ||
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound
+    ) {
+      return
+    }
     const responseError = err?.response?.data?.errors?.[0]
     requestError.value =
       formatAllocationRequestError({
@@ -4094,7 +4126,10 @@ async function requestAllocation() {
       responseError?.message ??
       t('自動生成に失敗しました')
   } finally {
-    requestLoading.value = false
+    const completion = allocationRequestGate.complete(requestToken)
+    if (completion.isCurrent) {
+      requestLoading.value = false
+    }
   }
 }
 
@@ -6105,9 +6140,13 @@ function closeDeleteDrawModal() {
 }
 
 async function confirmDeleteCurrentDraw() {
-  if (!currentDraw.value?._id) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const drawId = String(currentDraw.value?._id ?? '')
+  if (!drawId || !currentTournamentId) return
   closeDeleteDrawModal()
-  const deleted = await draws.deleteDraw(currentDraw.value._id, tournamentId.value)
+  const deleted = await draws.deleteDraw(drawId, currentTournamentId)
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (deleted) {
     syncFromDraw(null)
   }
@@ -6116,6 +6155,8 @@ async function confirmDeleteCurrentDraw() {
 watch(
   [tournamentId, round],
   () => {
+    allocationRequestGate.invalidate()
+    requestLoading.value = false
     refresh()
   },
   { immediate: true }

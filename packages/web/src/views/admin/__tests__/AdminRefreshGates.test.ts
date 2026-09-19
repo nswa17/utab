@@ -15,6 +15,27 @@ describe('Admin refresh gates', () => {
     expect(source).toContain('sectionLoading.value = foregroundRefreshCount > 0')
   })
 
+  it('guards setup saves against late completion from a previous tournament', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('const currentTournamentId = String(tournament.value._id)')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return false')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
+    expect(source).toContain('tournamentId: currentTournamentId')
+    expect(source).toContain('if (tournamentId.value === currentTournamentId) {')
+    expect(source).toContain('setupRoundBreakUpdating.value = false')
+  })
+
+  it('keeps multi-step CSV import pinned to the tournament where it started', () => {
+    const source = load('src/views/admin/AdminTournamentHome.vue')
+    expect(source).toContain('function assertEntityImportContext(currentTournamentId: string)')
+    expect(source).toContain('buildEntityImportRequest(type, text, currentTournamentId)')
+    expect(source).toContain('createMissingEntitiesForImport(missingEntityWarnings, currentTournamentId)')
+    expect(source).toContain('tournamentId: currentTournamentId')
+    expect(source).toContain('refreshEntities(currentTournamentId)')
+    expect(source).toContain('assertEntityImportContext(currentTournamentId)')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
+  })
+
   it('guards setup page refresh before applying tournament form state', () => {
     const source = load('src/views/admin/AdminTournamentHome.vue')
     expect(source).toContain('createLatestRequestGate')
