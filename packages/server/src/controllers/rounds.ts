@@ -1591,9 +1591,15 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const teams = await TeamModel.find({ tournamentId }).lean().exec()
-    const teamIds = new Set(teams.map((team) => String(team._id)))
-    const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId, ['teams'])
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const teams = await TeamModel.find({ tournamentId }).lean().exec()
+      const teamIds = new Set(teams.map((team) => String(team._id)))
+      const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
     const currentRoundBreakEnabled = isRoundBreakEnabled(roundNumber, currentUserDefined)
     const breakInputRecord = asRecord(breakInput)
     const explicitBreakEnabled =
@@ -1689,14 +1695,17 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       }
     }
 
-    res.json({
-      data: {
-        round: updatedRound,
-        break: normalizedBreak,
-        updatedTeamCount,
-      },
-      errors: [],
-    })
+      res.json({
+        data: {
+          round: updatedRound,
+          break: normalizedBreak,
+          updatedTeamCount,
+        },
+        errors: [],
+      })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err) {
     next(err)
   }
@@ -1716,17 +1725,26 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedRound = Number((existing as any)?.round)
-    await deleteRoundDependencies(connection, tournamentId, [deletedRound])
-    const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-    if (!deleted) {
-      notFound(res, 'Round not found')
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
       return
     }
-    if (Number.isInteger(deletedRound) && deletedRound >= 1) {
-      await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
-      await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
+    try {
+      await deleteRoundDependencies(connection, tournamentId, [deletedRound])
+      const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+      if (!deleted) {
+        notFound(res, 'Round not found')
+        return
+      }
+      if (Number.isInteger(deletedRound) && deletedRound >= 1) {
+        await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
+        await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
+      }
+      res.json({ data: deleted, errors: [] })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
     }
-    res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
   }
