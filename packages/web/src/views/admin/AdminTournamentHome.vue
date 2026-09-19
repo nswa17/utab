@@ -3477,6 +3477,7 @@ function applyBreakRoundConstraints(userDefinedData: Record<string, any>, breakE
 
 async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) {
   if (setupRoundBreakUpdating.value) return
+  const currentTournamentId = tournamentId.value
   setupRoundBreakError.value = ''
 
   const targetRound = Number(round?.round)
@@ -3503,15 +3504,16 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       applyBreakRoundConstraints(nextUserDefined, nextEnabled)
       return {
         id: String(item._id),
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         userDefinedData: nextUserDefined,
       }
     })
 
     const updated = await rounds.bulkUpdateRounds(payload)
+    if (tournamentId.value !== currentTournamentId) return
     if (updated.length === 0) {
       setupRoundBreakError.value = rounds.error ?? t('ブレイク設定の保存に失敗しました。')
-      await rounds.fetchRounds(tournamentId.value)
+      await rounds.fetchRounds(currentTournamentId)
       return
     }
 
@@ -3528,7 +3530,9 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       }
     }
   } finally {
-    setupRoundBreakUpdating.value = false
+    if (tournamentId.value === currentTournamentId) {
+      setupRoundBreakUpdating.value = false
+    }
   }
 }
 
