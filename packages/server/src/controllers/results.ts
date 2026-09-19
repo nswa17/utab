@@ -12,6 +12,11 @@ import {
   releaseRoundWriteLeases,
   type RoundWriteLease,
 } from '../services/round-write-guard.service.js'
+import {
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId } from './shared/request-validators.js'
 
@@ -202,7 +207,7 @@ export const updateResult: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteResult: RequestHandler = async (req, res, next) => {
-  let roundWriteLease: RoundWriteLease | null = null
+  let namespaceLease: RoundNamespaceLease | null = null
   let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
@@ -211,6 +216,16 @@ export const deleteResult: RequestHandler = async (req, res, next) => {
     if (!ensureObjectId(res, id, 'Invalid result id')) return
 
     const connection = await getTournamentConnection(tournamentId)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry result deletion' }],
+      })
+      return
+    }
+    leaseConnection = connection
+
     const ResultModel = getResultModel(connection)
     const existing = await ResultModel.findOne({ _id: id, tournamentId }).lean().exec()
     if (!existing) {
@@ -218,34 +233,11 @@ export const deleteResult: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const existingRound = Number((existing as any).round)
-    const roundDoc = await getRoundModel(connection)
-      .findOne({ tournamentId, round: existingRound })
-      .select({ _id: 1 })
-      .lean()
-      .exec()
-    if (roundDoc) {
-      roundWriteLease = await acquireRoundWriteLease(
-        connection,
-        tournamentId,
-        existingRound,
-        String((roundDoc as any)._id)
-      )
-      if (!roundWriteLease) {
-        res.status(409).json({
-          data: null,
-          errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry result deletion' }],
-        })
-        return
-      }
-      leaseConnection = connection
-    }
-
     const rawVersion = (existing as any).__v
     const deleted = await ResultModel.findOneAndDelete({
       _id: id,
       tournamentId,
-      round: existingRound,
+      round: Number((existing as any).round),
       ...(Number.isInteger(rawVersion)
         ? { __v: Number(rawVersion) }
         : { __v: { $exists: false } }),
@@ -260,19 +252,18 @@ export const deleteResult: RequestHandler = async (req, res, next) => {
       return
     }
 
-    if (roundWriteLease && leaseConnection) {
-      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
-      roundWriteLease = null
-    }
+    const released = await releaseRoundNamespaceLease(connection, namespaceLease)
+    if (!released) throw new Error('Failed to release round namespace lease after result deletion')
+    namespaceLease = null
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
   } finally {
-    if (roundWriteLease && leaseConnection) {
+    if (namespaceLease && leaseConnection) {
       try {
-        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+        await releaseRoundNamespaceLease(leaseConnection, namespaceLease)
       } catch {
-        // Stale write counters self-heal before structural round mutation.
+        // Namespace locks fail closed if release itself cannot be persisted.
       }
     }
   }
