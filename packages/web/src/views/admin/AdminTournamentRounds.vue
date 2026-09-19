@@ -428,6 +428,7 @@ import {
 } from '@/types/compiled'
 import { createLatestRequestGate } from '@/utils/latest-request'
 import { resolveBallotSubmitterRoles } from '@/utils/submission-expectations'
+import { drawTeamIds } from '@/utils/draw-teams'
 
 const route = useRoute()
 const router = useRouter()
@@ -715,8 +716,7 @@ function expectedTeamIds(roundNumber: number) {
   const draw = roundDraw(roundNumber)
   const allocation = Array.isArray(draw?.allocation) ? draw.allocation : []
   allocation.forEach((row: any) => {
-    if (row?.teams?.gov) set.add(String(row.teams.gov))
-    if (row?.teams?.opp) set.add(String(row.teams.opp))
+    drawTeamIds(row?.teams).forEach((teamId) => set.add(teamId))
   })
   return set
 }
