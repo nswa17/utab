@@ -49,6 +49,7 @@ export const useRoundsStore = defineStore('rounds', () => {
   }
 
   async function fetchRounds(tournamentId: string, options?: { forcePublic?: boolean }) {
+    tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) rounds.value = []
     const sequence = advanceFetchSequence()
