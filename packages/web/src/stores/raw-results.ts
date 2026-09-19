@@ -41,6 +41,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     label: RawLabel
     round?: number
   }) {
+    tournamentScope.claimIfEmpty(params.tournamentId)
     const scopeChanged = tournamentScope.activate(params.tournamentId)
     if (scopeChanged) {
       teamResults.value = []
@@ -82,6 +83,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     const tournamentId = String(
       (Array.isArray(payload) ? payload[0]?.tournamentId : payload?.tournamentId) ?? ''
     )
+    if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (!tournamentId || tournamentScope.isActive(tournamentId)) {
       error.value = null
@@ -102,6 +104,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
 
   async function updateRawResult(label: RawLabel, rawId: string, payload: Record<string, any>) {
     const tournamentId = String(payload.tournamentId ?? '')
+    if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (!tournamentId || tournamentScope.isActive(tournamentId)) {
       error.value = null
@@ -120,6 +123,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   async function deleteRawResult(label: RawLabel, rawId: string, tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
@@ -139,6 +143,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
 
   async function deleteRawResults(label: RawLabel, params: Record<string, any>) {
     const tournamentId = String(params.tournamentId ?? '')
+    if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
     if (!tournamentId || tournamentScope.isActive(tournamentId)) {
       error.value = null
