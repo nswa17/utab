@@ -1787,7 +1787,7 @@ async function buildCompiledPayloadFromSubmissions(
           if (!submittedMatchKeys.has(matchKey)) {
             registerMissingIssue({
               code: 'missing_ballot',
-              message: 'ballot submission is missing for draw matchup',
+              message: `ballot submission is missing for draw matchup ${teamAId} vs ${teamBId}`,
               round,
             })
           }
