@@ -3658,7 +3658,8 @@ function normalizeCompileSourceRoundsForRound(
 }
 
 async function createRoundFromSetup() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   setupRoundError.value = ''
   setupRoundBreakError.value = ''
   const roundNumber = Number(setupRoundForm.round)
@@ -3699,7 +3700,7 @@ async function createRoundFromSetup() {
   userDefinedData.break_round = false
 
   const created = await rounds.createRound({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     round: roundNumber,
     name: setupRoundForm.name || t('ラウンド {round}', { round: roundNumber }),
     motionOpened: false,
@@ -3707,6 +3708,7 @@ async function createRoundFromSetup() {
     adjudicatorAllocationOpened: false,
     userDefinedData,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!created?._id) {
     setupRoundError.value = rounds.error ?? t('ラウンド追加に失敗しました。')
     return
@@ -3728,9 +3730,11 @@ function closeSetupRoundDeleteModal() {
 
 async function confirmRemoveRoundFromSetup() {
   const roundId = String(setupRoundDeleteId.value ?? '').trim()
-  if (!roundId) return
+  const currentTournamentId = tournamentId.value
+  if (!roundId || !currentTournamentId) return
   setupRoundDeleteError.value = ''
-  const deleted = await rounds.deleteRound(tournamentId.value, roundId)
+  const deleted = await rounds.deleteRound(currentTournamentId, roundId)
+  if (tournamentId.value !== currentTournamentId) return
   if (!deleted) {
     setupRoundDeleteError.value = rounds.error ?? t('ラウンドの削除に失敗しました。')
     rounds.error = null
