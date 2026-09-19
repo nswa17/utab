@@ -297,24 +297,28 @@ function entityName(id: string) {
   )
 }
 
-async function refresh() {
+async function refresh(
+  currentTournamentId = tournamentId.value,
+  currentRound = round.value
+) {
+  if (!currentTournamentId) return
   await Promise.all([
-    raw.fetchRawResults({ tournamentId: tournamentId.value, label: 'teams', round: round.value }),
+    raw.fetchRawResults({ tournamentId: currentTournamentId, label: 'teams', round: currentRound }),
     raw.fetchRawResults({
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       label: 'speakers',
-      round: round.value,
+      round: currentRound,
     }),
     raw.fetchRawResults({
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       label: 'adjudicators',
-      round: round.value,
+      round: currentRound,
     }),
-    draws.fetchDraws(tournamentId.value, round.value),
-    venues.fetchVenues(tournamentId.value),
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
+    draws.fetchDraws(currentTournamentId, currentRound),
+    venues.fetchVenues(currentTournamentId),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
   ])
 }
 
@@ -373,18 +377,23 @@ function closeDeleteAllModal() {
 }
 
 async function confirmDeleteAll() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentLabel = activeLabel.value
+  if (!currentTournamentId) return
   deleteAllError.value = ''
-  const deleted = await raw.deleteRawResults(activeLabel.value, {
-    tournamentId: tournamentId.value,
-    round: round.value,
+  const deleted = await raw.deleteRawResults(currentLabel, {
+    tournamentId: currentTournamentId,
+    round: currentRound,
   })
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (!deleted) {
     deleteAllError.value = raw.error ?? t('全削除に失敗しました。')
     raw.error = null
     return
   }
   closeDeleteAllModal()
-  await refresh()
+  await refresh(currentTournamentId, currentRound)
 }
 
 function csvEscape(value: any) {
