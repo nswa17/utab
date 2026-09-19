@@ -2177,6 +2177,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
 
       const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
       if (!acquiredEntityLeases) {
+        await releaseRoundMutationLeases(connection, mutationLeases)
+        mutationLeases = []
         sendEntityNamespaceBusy(res)
         return
       }
@@ -2619,6 +2621,8 @@ export const updateRound: RequestHandler = async (req, res, next) => {
 
       const acquiredEntityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
       if (!acquiredEntityLeases) {
+        await releaseRoundMutationLease(connection, mutationLease)
+        mutationLease = null
         sendEntityNamespaceBusy(res)
         return
       }
