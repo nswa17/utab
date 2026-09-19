@@ -7,8 +7,8 @@ const roundSchema = new Schema(
     name: { type: String, default: 'Round' },
     motions: { type: [String], default: [] },
     motionOpened: { type: Boolean, default: false },
-    teamAllocationOpened: { type: Boolean, default: true },
-    adjudicatorAllocationOpened: { type: Boolean, default: true },
+    teamAllocationOpened: { type: Boolean, default: false },
+    adjudicatorAllocationOpened: { type: Boolean, default: false },
     weightsOfAdjudicators: {
       chair: { type: Number, default: 1 },
       panel: { type: Number, default: 1 },
