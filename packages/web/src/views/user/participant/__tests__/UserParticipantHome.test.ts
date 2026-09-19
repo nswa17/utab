@@ -23,7 +23,7 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).toContain("setAudienceTableSort(round.round, 'panel')")
     expect(source).toContain("setAudienceTableSort(round.round, 'trainee')")
     expect(source).toContain(
-      "type AudienceSortKey = 'venue' | 'gov' | 'opp' | 'chair' | 'panel' | 'trainee'"
+      "type AudienceSortKey = 'venue' | DrawTeamPosition | 'chair' | 'panel' | 'trainee'"
     )
     expect(source).toContain("if (key === 'panel') return adjudicatorNames(row.panels ?? [])")
     expect(source).toContain("if (key === 'trainee') return adjudicatorNames(row.trainees ?? [])")
@@ -55,13 +55,26 @@ describe('UserParticipantHome draw allocation rendering', () => {
     expect(source).not.toContain('draw-action-arrow')
   })
 
+  it('renders all four BP positions in public draw cards and tables', () => {
+    const source = load('src/views/user/participant/UserParticipantHome.vue')
+    expect(source).toContain('const isFourTeamStyle = computed(() => participantTeamNum.value === 4)')
+    expect(source).toContain('drawTeamPositionColumns(style.value, participantTeamNum.value)')
+    expect(source).toContain('v-for="entry in audienceTeamEntries(row)"')
+    expect(source).toContain('v-for="column in audienceTeamColumns"')
+    expect(source).toContain("drawTeamId(row.teams, column.key, participantTeamNum.value)")
+    expect(source).toContain(
+      'audienceTeamEntries(row).some((entry) => audienceTeamMatchesQuery(entry.teamId))'
+    )
+    expect(source).toContain('match-sides--four')
+  })
+
   it('shows submission actions only for a fully published two-team draw', () => {
     const source = load('src/views/user/participant/UserParticipantHome.vue')
     expect(source).toContain('v-if="roundSubmissionsEnabled(round.round)" class="row draw-actions"')
     expect(source).toContain('supportsParticipantSubmissions.value &&')
     expect(source).toContain('teamAllocationVisible(roundNumber) &&')
     expect(source).toContain('adjudicatorAllocationVisible(roundNumber)')
-    expect(source).toContain('normalizeTournamentTeamNum(style.value?.team_num) === 2')
+    expect(source).toContain('const supportsParticipantSubmissions = computed(() => participantTeamNum.value === 2)')
     expect(source).toContain(
       'if (!roundSubmissionsEnabled(pendingTaskContext.value.round)) return false'
     )
