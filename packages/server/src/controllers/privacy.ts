@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
+import { getRoundModel } from '../models/round.js'
 import { getDrawModel } from '../models/draw.js'
 import { getRawAdjudicatorResultModel } from '../models/raw-adjudicator-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
@@ -7,6 +8,21 @@ import { getSpeakerModel } from '../models/speaker.js'
 import { getSubmissionModel } from '../models/submission.js'
 import { getTeamModel } from '../models/team.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
+import {
+  acquireRoundMutationLeases,
+  releaseRoundMutationLeases,
+  type RoundMutationLease,
+} from '../services/round-write-guard.service.js'
+import {
+  acquireEntityNamespaceLeases,
+  releaseEntityNamespaceLeases,
+  type EntityNamespaceLease,
+} from '../services/entity-namespace-guard.service.js'
 import { ensureSensitiveActionReauthentication } from './shared/sensitive-action.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId } from './shared/request-validators.js'
@@ -49,6 +65,116 @@ function normalizeRefs(targetRefs: string[] | undefined): string[] {
 }
 
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
+
+
+type PrivacyMutationGuard = {
+  namespaceLease: RoundNamespaceLease
+  roundMutationLeases: RoundMutationLease[]
+  entityLeases: EntityNamespaceLease[]
+}
+
+function createEraseConflict(message: string): Error & { status: number } {
+  const error = new Error(message) as Error & { status: number }
+  error.name = 'EraseConflict'
+  error.status = 409
+  return error
+}
+
+async function releasePrivacyMutationGuard(
+  connection: TournamentConnection,
+  guard: PrivacyMutationGuard
+): Promise<void> {
+  const errors: unknown[] = []
+  try {
+    await releaseEntityNamespaceLeases(connection, guard.entityLeases)
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    await releaseRoundMutationLeases(connection, guard.roundMutationLeases)
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    const released = await releaseRoundNamespaceLease(connection, guard.namespaceLease)
+    if (!released) errors.push(new Error('Failed to release privacy round namespace lease'))
+  } catch (error) {
+    errors.push(error)
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Failed to release privacy mutation guard')
+  }
+}
+
+async function acquirePrivacyMutationGuard(
+  connection: TournamentConnection,
+  tournamentId: string,
+  entityNamespaces: readonly string[]
+): Promise<PrivacyMutationGuard> {
+  const namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+  if (!namespaceLease) {
+    throw createEraseConflict('Round namespace is being modified; retry privacy erasure')
+  }
+
+  let roundMutationLeases: RoundMutationLease[] = []
+  let entityLeases: EntityNamespaceLease[] = []
+  try {
+    const roundDocs = await getRoundModel(connection)
+      .find({ tournamentId })
+      .select({ _id: 1, round: 1 })
+      .lean()
+      .exec()
+    const acquiredRounds = await acquireRoundMutationLeases(
+      connection,
+      tournamentId,
+      (roundDocs as any[]).map((roundDoc) => ({
+        id: String(roundDoc._id),
+        round: Number(roundDoc.round),
+      }))
+    )
+    if (!acquiredRounds) {
+      throw createEraseConflict('Round has active writes; retry privacy erasure')
+    }
+    roundMutationLeases = acquiredRounds
+
+    const acquiredEntities = await acquireEntityNamespaceLeases(
+      connection,
+      tournamentId,
+      entityNamespaces
+    )
+    if (!acquiredEntities) {
+      throw createEraseConflict('Entity namespace is being modified; retry privacy erasure')
+    }
+    entityLeases = acquiredEntities
+
+    return { namespaceLease, roundMutationLeases, entityLeases }
+  } catch (error) {
+    const cleanupErrors: unknown[] = []
+    try {
+      await releaseEntityNamespaceLeases(connection, entityLeases)
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError)
+    }
+    try {
+      await releaseRoundMutationLeases(connection, roundMutationLeases)
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError)
+    }
+    try {
+      const released = await releaseRoundNamespaceLease(connection, namespaceLease)
+      if (!released) cleanupErrors.push(new Error('Failed to release privacy round namespace lease'))
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError)
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        'Failed to acquire privacy mutation guard cleanly'
+      )
+    }
+    throw error
+  }
+}
 
 async function removeSpeakerRefsFromTeams(
   connection: TournamentConnection,
@@ -154,7 +280,7 @@ async function restoreSubmissionComments(
         tournamentId,
         'payload.comment': { $exists: false },
       },
-      update: { $set: { 'payload.comment': snapshot.comment } },
+      update: { $set: { 'payload.comment': snapshot.comment }, $inc: { __v: 1 } },
     },
   }))
   await SubmissionModel.bulkWrite(ops, { ordered: false })
@@ -435,7 +561,7 @@ export async function executeSpeakerPersonalDataErase(
         tournamentId,
         $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
       },
-      { $unset: { 'payload.comment': '' } }
+      { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
     ).exec()
 
     if (mode === 'hard_delete') {
@@ -523,7 +649,7 @@ export async function executeAdjudicatorPersonalDataErase(
           { submittedBy: entityId },
         ],
       },
-      { $unset: { 'payload.comment': '' } }
+      { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
     ).exec()
 
     if (mode === 'hard_delete') {
