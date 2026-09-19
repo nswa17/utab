@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   deleteAuditLogs: vi.fn(),
   deleteMemberships: vi.fn(),
   cleanupUser: vi.fn(),
+  userUpdate: vi.fn(),
+  membershipUpdate: vi.fn(),
   getTournamentConnection: vi.fn(),
   dropTournamentDatabase: vi.fn(),
 }))
@@ -49,14 +51,14 @@ vi.mock('../src/models/audit-log.js', () => ({
 
 vi.mock('../src/models/tournament-member.js', () => ({
   TournamentMemberModel: {
-    updateOne: vi.fn(),
+    updateOne: mocks.membershipUpdate,
     deleteMany: mocks.deleteMemberships,
   },
 }))
 
 vi.mock('../src/models/user.js', () => ({
   UserModel: {
-    updateOne: vi.fn(),
+    updateOne: mocks.userUpdate,
     updateMany: mocks.cleanupUser,
   },
 }))
@@ -72,6 +74,16 @@ const tournamentId = '507f1f77bcf86cd799439011'
 
 function execResult(value: unknown = {}) {
   return { exec: async () => value }
+}
+
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 function createResponse() {
@@ -134,6 +146,8 @@ beforeEach(() => {
   mocks.deleteAuditLogs.mockReturnValue(execResult({ deletedCount: 0 }))
   mocks.deleteMemberships.mockReturnValue(execResult({ deletedCount: 0 }))
   mocks.cleanupUser.mockReturnValue(execResult({ modifiedCount: 0 }))
+  mocks.userUpdate.mockReturnValue(execResult({ modifiedCount: 1 }))
+  mocks.membershipUpdate.mockReturnValue(execResult({ upsertedCount: 1 }))
   mocks.getTournamentConnection.mockResolvedValue({ db: null })
   mocks.dropTournamentDatabase.mockResolvedValue(undefined)
 })
@@ -168,6 +182,46 @@ describe('importTournamentBundle rollback', () => {
     expect(forwarded).toBeInstanceOf(AggregateError)
     expect(forwarded.message).toContain('Failed to roll back tournament import')
     expect(forwarded.errors).toEqual(expect.arrayContaining([cleanupError]))
+  })
+
+  it('waits for all membership writes to settle before starting rollback', async () => {
+    const userWrite = createDeferred<unknown>()
+    const membershipStarted = createDeferred<void>()
+    const membershipError = new Error('membership write failed')
+
+    mocks.getTournamentConnection.mockResolvedValue({ db: {} })
+    mocks.userUpdate.mockReturnValue({ exec: () => userWrite.promise })
+    mocks.membershipUpdate.mockReturnValue({
+      exec: async () => {
+        membershipStarted.resolve()
+        throw membershipError
+      },
+    })
+
+    const req = {
+      body: Buffer.from('backup'),
+      session: { userId: 'user-1', tournaments: [] as string[] },
+    }
+    const res = createResponse()
+    const next = vi.fn()
+
+    const importPromise = importTournamentBundle(req as never, res as never, next)
+    await membershipStarted.promise
+    await Promise.resolve()
+
+    expect(mocks.cleanupUser).not.toHaveBeenCalled()
+    expect(mocks.deleteMemberships).not.toHaveBeenCalled()
+
+    userWrite.resolve({ modifiedCount: 1 })
+    await importPromise
+
+    expect(mocks.cleanupUser).toHaveBeenCalledWith(
+      { _id: 'user-1' },
+      { $pull: { tournaments: tournamentId } }
+    )
+    expect(mocks.deleteMemberships).toHaveBeenCalledWith({ tournamentId })
+    expect(next).toHaveBeenCalledOnce()
+    expect(next.mock.calls[0]?.[0]).toBeInstanceOf(AggregateError)
   })
 
   it('preserves the original structured import error when cleanup succeeds', async () => {
