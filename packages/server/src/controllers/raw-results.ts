@@ -1,6 +1,6 @@
 import type { Request, RequestHandler } from 'express'
 import { results as coreResults } from '@utab/core'
-import { Types, type Connection } from 'mongoose'
+import { Types } from 'mongoose'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { getRawTeamResultModel } from '../models/raw-team-result.js'
 import { getRawSpeakerResultModel } from '../models/raw-speaker-result.js'
@@ -10,15 +10,14 @@ import { StyleModel } from '../models/style.js'
 import { getTeamModel } from '../models/team.js'
 import { getSpeakerModel } from '../models/speaker.js'
 import { getAdjudicatorModel } from '../models/adjudicator.js'
-import { getRoundModel } from '../models/round.js'
 import { hasTournamentAdminAccess } from '../middleware/auth.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeAggregateForPublic } from '../services/response-sanitizer.js'
 import {
-  acquireRoundWriteLeases,
-  releaseRoundWriteLeases,
-  type RoundWriteLease,
-} from '../services/round-write-guard.service.js'
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
 import {
   buildDetailsForRounds,
   buildIdMaps,
@@ -148,43 +147,10 @@ type RawResultCrudOptions = {
   notFoundMessage: string
 }
 
-async function acquireRawResultRoundLeases(
-  connection: Connection,
-  tournamentId: string,
-  rounds?: readonly number[]
-): Promise<RoundWriteLease[] | null> {
-  const normalizedRounds = rounds
-    ? Array.from(
-        new Set(
-          rounds
-            .map((round) => Number(round))
-            .filter((round) => Number.isInteger(round) && round >= 1)
-        )
-      ).sort((left, right) => left - right)
-    : null
-  const filter: Record<string, unknown> = { tournamentId }
-  if (normalizedRounds) filter.round = { $in: normalizedRounds }
-
-  const roundDocs = await getRoundModel(connection)
-    .find(filter)
-    .select({ _id: 1, round: 1 })
-    .lean()
-    .exec()
-
-  return acquireRoundWriteLeases(
-    connection,
-    tournamentId,
-    (roundDocs as any[]).map((roundDoc) => ({
-      round: Number(roundDoc.round),
-      expectedRoundId: String(roundDoc._id),
-    }))
-  )
-}
-
 function respondRawResultRoundConflict(res: Parameters<RequestHandler>[1]): void {
   res.status(409).json({
     data: null,
-    errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry raw result change' }],
+    errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry raw result change' }],
   })
 }
 
@@ -194,6 +160,16 @@ function versionFilter(value: unknown): Record<string, unknown> {
     : { __v: { $exists: false } }
 }
 
+async function releaseRawResultNamespaceLease(
+  connection: TournamentConnection,
+  lease: RoundNamespaceLease
+): Promise<void> {
+  const released = await releaseRoundNamespaceLease(connection, lease)
+  if (!released) {
+    throw new Error('Failed to release raw result round namespace lease')
+  }
+}
+
 function createRawResultCrudHandlers(options: RawResultCrudOptions): {
   create: RequestHandler
   update: RequestHandler
@@ -201,8 +177,8 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
   deleteMany: RequestHandler
 } {
   const create: RequestHandler = async (req, res, next) => {
-    let roundWriteLeases: RoundWriteLease[] = []
-    let leaseConnection: Connection | null = null
+    let namespaceLease: RoundNamespaceLease | null = null
+    let leaseConnection: TournamentConnection | null = null
     try {
       const isBulk = Array.isArray(req.body)
       const payload = isBulk ? req.body : [req.body]
@@ -211,16 +187,11 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
 
-      const acquired = await acquireRawResultRoundLeases(
-        connection,
-        tournamentId,
-        payload.map((item: any) => Number(item?.r))
-      )
-      if (!acquired) {
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
         respondRawResultRoundConflict(res)
         return
       }
-      roundWriteLeases = acquired
       leaseConnection = connection
 
       const docs: Array<PlainRecord & { _id: Types.ObjectId }> = payload.map((item: any) => ({
@@ -246,8 +217,8 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         throw createError
       }
 
-      await releaseRoundWriteLeases(connection, roundWriteLeases)
-      roundWriteLeases = []
+      await releaseRawResultNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
       res.status(201).json({ data: isBulk ? created : created[0], errors: [] })
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
@@ -259,19 +230,19 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       }
       next(err)
     } finally {
-      if (roundWriteLeases.length > 0 && leaseConnection) {
+      if (namespaceLease && leaseConnection) {
         try {
-          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+          await releaseRawResultNamespaceLease(leaseConnection, namespaceLease)
         } catch {
-          // Stale write counters self-heal before structural round mutation.
+          // Namespace locks fail closed if release itself cannot be persisted.
         }
       }
     }
   }
 
   const update: RequestHandler = async (req, res, next) => {
-    let roundWriteLeases: RoundWriteLease[] = []
-    let leaseConnection: Connection | null = null
+    let namespaceLease: RoundNamespaceLease | null = null
+    let leaseConnection: TournamentConnection | null = null
     try {
       const { id: docId } = req.params
       const { tournamentId, ...rest } = req.body as { tournamentId?: string } & PlainRecord
@@ -279,26 +250,20 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
+
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      leaseConnection = connection
+
       const existing = await Model.findOne({ _id: docId, tournamentId }).lean().exec()
       if (!existing) {
         notFound(res, options.notFoundMessage)
         return
       }
-
       const currentRound = Number((existing as any).r)
-      const nextRound = rest.r === undefined ? currentRound : Number(rest.r)
-      const acquired = await acquireRawResultRoundLeases(
-        connection,
-        tournamentId,
-        [currentRound, nextRound]
-      )
-      if (!acquired) {
-        respondRawResultRoundConflict(res)
-        return
-      }
-      roundWriteLeases = acquired
-      leaseConnection = connection
-
       const updated = await Model.findOneAndUpdate(
         {
           _id: docId,
@@ -319,8 +284,8 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
 
-      await releaseRoundWriteLeases(connection, roundWriteLeases)
-      roundWriteLeases = []
+      await releaseRawResultNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
       res.json({ data: updated, errors: [] })
     } catch (err) {
       if (isDuplicateKeyError(err)) {
@@ -332,19 +297,19 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       }
       next(err)
     } finally {
-      if (roundWriteLeases.length > 0 && leaseConnection) {
+      if (namespaceLease && leaseConnection) {
         try {
-          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+          await releaseRawResultNamespaceLease(leaseConnection, namespaceLease)
         } catch {
-          // Stale write counters self-heal before structural round mutation.
+          // Namespace locks fail closed if release itself cannot be persisted.
         }
       }
     }
   }
 
   const deleteOne: RequestHandler = async (req, res, next) => {
-    let roundWriteLeases: RoundWriteLease[] = []
-    let leaseConnection: Connection | null = null
+    let namespaceLease: RoundNamespaceLease | null = null
+    let leaseConnection: TournamentConnection | null = null
     try {
       const { id: docId } = req.params
       const { tournamentId } = req.query as { tournamentId?: string }
@@ -352,24 +317,19 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       if (!ensureObjectId(res, docId, 'Invalid raw result id')) return
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
+
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
+        respondRawResultRoundConflict(res)
+        return
+      }
+      leaseConnection = connection
+
       const existing = await Model.findOne({ _id: docId, tournamentId }).lean().exec()
       if (!existing) {
         notFound(res, options.notFoundMessage)
         return
       }
-
-      const acquired = await acquireRawResultRoundLeases(
-        connection,
-        tournamentId,
-        [Number((existing as any).r)]
-      )
-      if (!acquired) {
-        respondRawResultRoundConflict(res)
-        return
-      }
-      roundWriteLeases = acquired
-      leaseConnection = connection
-
       const deleted = await Model.findOneAndDelete({
         _id: docId,
         tournamentId,
@@ -386,25 +346,25 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         return
       }
 
-      await releaseRoundWriteLeases(connection, roundWriteLeases)
-      roundWriteLeases = []
+      await releaseRawResultNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
       res.json({ data: deleted, errors: [] })
     } catch (err) {
       next(err)
     } finally {
-      if (roundWriteLeases.length > 0 && leaseConnection) {
+      if (namespaceLease && leaseConnection) {
         try {
-          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+          await releaseRawResultNamespaceLease(leaseConnection, namespaceLease)
         } catch {
-          // Stale write counters self-heal before structural round mutation.
+          // Namespace locks fail closed if release itself cannot be persisted.
         }
       }
     }
   }
 
   const deleteMany: RequestHandler = async (req, res, next) => {
-    let roundWriteLeases: RoundWriteLease[] = []
-    let leaseConnection: Connection | null = null
+    let namespaceLease: RoundNamespaceLease | null = null
+    let leaseConnection: TournamentConnection | null = null
     try {
       const { tournamentId, round, id, fromId } = req.query as {
         tournamentId?: string
@@ -416,32 +376,27 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
       const connection = await getTournamentConnection(tournamentId)
       const Model = options.getModel(connection)
 
-      const acquired = await acquireRawResultRoundLeases(
-        connection,
-        tournamentId,
-        round === undefined ? undefined : [Number(round)]
-      )
-      if (!acquired) {
+      namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+      if (!namespaceLease) {
         respondRawResultRoundConflict(res)
         return
       }
-      roundWriteLeases = acquired
       leaseConnection = connection
 
       const filter = buildRawFilter(tournamentId, { round, id, fromId })
       const result = await Model.deleteMany(filter).exec()
 
-      await releaseRoundWriteLeases(connection, roundWriteLeases)
-      roundWriteLeases = []
+      await releaseRawResultNamespaceLease(connection, namespaceLease)
+      namespaceLease = null
       res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
     } catch (err) {
       next(err)
     } finally {
-      if (roundWriteLeases.length > 0 && leaseConnection) {
+      if (namespaceLease && leaseConnection) {
         try {
-          await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
+          await releaseRawResultNamespaceLease(leaseConnection, namespaceLease)
         } catch {
-          // Stale write counters self-heal before structural round mutation.
+          // Namespace locks fail closed if release itself cannot be persisted.
         }
       }
     }
