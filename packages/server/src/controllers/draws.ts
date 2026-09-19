@@ -505,6 +505,10 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
       return
     }
 
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
     res.status(201).json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
@@ -988,6 +992,10 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
           errors: [{ name: 'Conflict', message: 'Draw is locked or changed' }],
         })
         return
+      }
+      if (roundWriteLease && leaseConnection) {
+        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+        roundWriteLease = null
       }
       res.status(201).json({ data: updated, errors: [] })
       return
