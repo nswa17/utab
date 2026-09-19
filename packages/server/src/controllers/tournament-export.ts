@@ -4,6 +4,7 @@ import { AuditLogModel } from '../models/audit-log.js'
 import { StyleModel } from '../models/style.js'
 import { TournamentModel } from '../models/tournament.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import { isTournamentRuntimeCollection } from '../services/tournament-runtime-collections.service.js'
 import { buildZip } from '../services/zip.js'
 import { escapeCsvCell } from '../services/csv.service.js'
 import { badRequest, notFound } from './shared/http-errors.js'
@@ -153,7 +154,12 @@ export const exportTournamentBundle: RequestHandler = async (req, res, next) => 
     const list = await db.listCollections({}, { nameOnly: true }).toArray()
     const collectionNames = list
       .map((item) => String(item.name ?? ''))
-      .filter((name) => name.length > 0 && !name.startsWith('system.'))
+      .filter(
+        (name) =>
+          name.length > 0 &&
+          !name.startsWith('system.') &&
+          !isTournamentRuntimeCollection(name)
+      )
       .sort((a, b) => a.localeCompare(b))
 
     const collectionEntries = await Promise.all(
