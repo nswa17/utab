@@ -7,7 +7,9 @@ import { sanitizeResultForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
 import {
   acquireRoundWriteLease,
+  acquireRoundWriteLeases,
   releaseRoundWriteLease,
+  releaseRoundWriteLeases,
   type RoundWriteLease,
 } from '../services/round-write-guard.service.js'
 import { notFound } from './shared/http-errors.js'
@@ -111,7 +113,7 @@ export const createResult: RequestHandler = async (req, res, next) => {
 }
 
 export const updateResult: RequestHandler = async (req, res, next) => {
-  let roundWriteLease: RoundWriteLease | null = null
+  let roundWriteLeases: RoundWriteLease[] = []
   let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
@@ -132,30 +134,30 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const nextRound = round === undefined ? Number(existing.round) : Number(round)
-    const roundDoc = await getRoundModel(connection)
+    const currentRound = Number((existing as any).round)
+    const nextRound = round === undefined ? currentRound : Number(round)
+    const targetRoundDoc = await getRoundModel(connection)
       .findOne({ tournamentId, round: nextRound })
       .select({ _id: 1 })
       .lean()
       .exec()
-    if (!roundDoc) {
+    if (!targetRoundDoc) {
       notFound(res, 'Round not found')
       return
     }
 
-    roundWriteLease = await acquireRoundWriteLease(
-      connection,
-      tournamentId,
-      nextRound,
-      String((roundDoc as any)._id)
-    )
-    if (!roundWriteLease) {
+    const acquired = await acquireRoundWriteLeases(connection, tournamentId, [
+      { round: currentRound },
+      { round: nextRound, expectedRoundId: String((targetRoundDoc as any)._id) },
+    ])
+    if (!acquired) {
       res.status(409).json({
         data: null,
         errors: [{ name: 'Conflict', message: 'Round changed concurrently; retry result update' }],
       })
       return
     }
+    roundWriteLeases = acquired
     leaseConnection = connection
 
     const update: Record<string, unknown> = {}
@@ -166,7 +168,7 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       {
         _id: id,
         tournamentId,
-        round: Number(existing.round),
+        round: currentRound,
         __v: expectedVersion,
       },
       { $set: update, $inc: { __v: 1 } },
@@ -183,17 +185,15 @@ export const updateResult: RequestHandler = async (req, res, next) => {
       return
     }
 
-    if (roundWriteLease && leaseConnection) {
-      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
-      roundWriteLease = null
-    }
+    await releaseRoundWriteLeases(connection, roundWriteLeases)
+    roundWriteLeases = []
     res.json({ data: updated, errors: [] })
   } catch (err) {
     next(err)
   } finally {
-    if (roundWriteLease && leaseConnection) {
+    if (roundWriteLeases.length > 0 && leaseConnection) {
       try {
-        await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+        await releaseRoundWriteLeases(leaseConnection, roundWriteLeases)
       } catch {
         // Stale write counters self-heal before structural round mutation.
       }
