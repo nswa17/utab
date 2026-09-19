@@ -104,11 +104,14 @@ describe('Admin tournament setup integration', () => {
   it('uses partial tournament metadata patches for independent settings saves', () => {
     const homeSource = load('src/views/admin/AdminTournamentHome.vue')
     const allocationSource = load('src/views/admin/round/AdminRoundAllocation.vue')
+    const tournamentStoreSource = load('src/stores/tournament.ts')
     expect(homeSource).toContain('user_defined_data_patch')
     expect(homeSource).toContain('...(includeInfo ? { info } : {})')
     expect(homeSource).not.toContain('...nextUserDefined')
     expect(allocationSource).toContain('user_defined_data_patch')
     expect(allocationSource).not.toContain('...currentUserDefined')
+    expect(tournamentStoreSource).toContain('userDefinedDataPatch')
+    expect(tournamentStoreSource).toContain('...(item.user_defined_data ?? {})')
   })
 
   it('keeps selected CSV file visible while reading import text', () => {
