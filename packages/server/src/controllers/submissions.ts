@@ -16,6 +16,11 @@ import {
   releaseRoundWriteLease,
   type RoundWriteLease,
 } from '../services/round-write-guard.service.js'
+import {
+  acquireRoundNamespaceLease,
+  releaseRoundNamespaceLease,
+  type RoundNamespaceLease,
+} from '../services/round-namespace-guard.service.js'
 import { DEFAULT_COMPILE_OPTIONS, normalizeCompileOptions } from '../types/compiled-options.js'
 import { normalizeTeamNum } from './shared/allocation-support.js'
 import {
@@ -1906,6 +1911,8 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteSubmission: RequestHandler = async (req, res, next) => {
+  let namespaceLease: RoundNamespaceLease | null = null
+  let leaseConnection: Connection | null = null
   try {
     const { id } = req.params
     const { tournamentId } = req.query as { tournamentId?: string }
@@ -1914,15 +1921,55 @@ export const deleteSubmission: RequestHandler = async (req, res, next) => {
     if (!ensureSubmissionId(res, id)) return
 
     const connection = await getTournamentConnection(tournamentId)
+    namespaceLease = await acquireRoundNamespaceLease(connection, tournamentId)
+    if (!namespaceLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round namespace is being modified; retry submission deletion' }],
+      })
+      return
+    }
+    leaseConnection = connection
+
     const SubmissionModel = getSubmissionModel(connection)
-    const deleted = await SubmissionModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-    if (!deleted) {
+    const existing = await SubmissionModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
       notFound(res, 'Submission not found')
       return
     }
 
+    const rawVersion = (existing as any).__v
+    const deleted = await SubmissionModel.findOneAndDelete({
+      _id: id,
+      tournamentId,
+      round: Number((existing as any).round),
+      ...(Number.isInteger(rawVersion)
+        ? { __v: Number(rawVersion) }
+        : { __v: { $exists: false } }),
+    })
+      .lean()
+      .exec()
+    if (!deleted) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Submission changed concurrently; retry deletion' }],
+      })
+      return
+    }
+
+    const released = await releaseRoundNamespaceLease(connection, namespaceLease)
+    if (!released) throw new Error('Failed to release round namespace lease after submission deletion')
+    namespaceLease = null
     res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (namespaceLease && leaseConnection) {
+      try {
+        await releaseRoundNamespaceLease(leaseConnection, namespaceLease)
+      } catch {
+        // Namespace locks fail closed if release itself cannot be persisted.
+      }
+    }
   }
 }
