@@ -1589,6 +1589,14 @@ export const createBallotSubmission: RequestHandler = async (req, res, next) => 
       submittedBy: req.session?.userId,
       ...(dedupeKey ? { dedupeKey } : {}),
     })
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
     if (isDuplicateSubmissionKeyError(err)) {
@@ -1872,6 +1880,10 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       return
     }
 
+    if (roundWriteLease && leaseConnection) {
+      await releaseRoundWriteLease(leaseConnection, roundWriteLease)
+      roundWriteLease = null
+    }
     res.json({ data: updated, errors: [] })
   } catch (err) {
     if (submissionType && isDuplicateSubmissionKeyError(err)) {
