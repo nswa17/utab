@@ -456,7 +456,7 @@ async function attachOrganizerMembership(
   const userId = normalizeString(session?.userId)
   if (!userId) return
 
-  await Promise.all([
+  const membershipWrites = await Promise.allSettled([
     UserModel.updateOne({ _id: userId }, { $addToSet: { tournaments: tournamentId } }).exec(),
     TournamentMemberModel.updateOne(
       { tournamentId, userId },
@@ -464,6 +464,15 @@ async function attachOrganizerMembership(
       { upsert: true }
     ).exec(),
   ])
+  const membershipErrors = membershipWrites
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (membershipErrors.length > 0) {
+    throw new AggregateError(
+      membershipErrors,
+      `Failed to attach organizer membership for tournament ${tournamentId}`
+    )
+  }
 
   const current = Array.isArray(session?.tournaments)
     ? session.tournaments.map((value) => String(value))
