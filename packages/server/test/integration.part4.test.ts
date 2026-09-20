@@ -2731,6 +2731,112 @@ describe('Server integration', () => {
     expect(accessAttempt.status).toBe(200)
   })
 
+  it('does not let stale auth backfill resurrect a membership removed concurrently', async () => {
+    const owner = request.agent(app)
+    expect(
+      (
+        await owner
+          .post('/api/auth/register')
+          .send({ username: 'membership-auth-race-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await owner
+          .post('/api/auth/login')
+          .send({ username: 'membership-auth-race-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    expect(
+      (
+        await request(app)
+          .post('/api/auth/register')
+          .send({ username: 'membership-auth-race-target', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+
+    const tournamentRes = await owner.post('/api/tournaments').send({
+      name: 'Membership Auth Race Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const addTarget = await owner.post(`/api/tournaments/${tournamentId}/users`).send({
+      username: 'membership-auth-race-target',
+      password: 'ignored-password',
+      role: 'organizer',
+    })
+    expect(addTarget.status).toBe(200)
+
+    const target = await UserModel.findOne({ username: 'membership-auth-race-target' }).lean().exec()
+    expect(target).toBeTruthy()
+    const targetUserId = String(target?._id)
+
+    const originalFindOne = UserModel.findOne.bind(UserModel)
+    let interceptedLoginRead = false
+    let signalSnapshotReady: (() => void) | null = null
+    const snapshotReady = new Promise<void>((resolve) => {
+      signalSnapshotReady = resolve
+    })
+    let releaseLogin: (() => void) | null = null
+    const loginReleased = new Promise<void>((resolve) => {
+      releaseLogin = resolve
+    })
+
+    UserModel.findOne = ((...args: any[]) => {
+      const query = originalFindOne(...args)
+      const filter = args[0] as Record<string, unknown> | undefined
+      if (interceptedLoginRead || filter?.username !== 'membership-auth-race-target') {
+        return query
+      }
+      interceptedLoginRead = true
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        const snapshot = await originalExec(...execArgs)
+        signalSnapshotReady?.()
+        await loginReleased
+        return snapshot
+      }
+      return query
+    }) as typeof UserModel.findOne
+
+    try {
+      const loginPromise = request(app)
+        .post('/api/auth/login')
+        .send({ username: 'membership-auth-race-target', password: 'password123' })
+        .then((response) => response)
+
+      await snapshotReady
+
+      const removeTarget = await owner.delete(
+        `/api/tournaments/${tournamentId}/users?username=membership-auth-race-target`
+      )
+      expect(removeTarget.status).toBe(200)
+
+      const afterRemovalUser = await originalFindOne({ _id: targetUserId }).lean().exec()
+      expect((afterRemovalUser?.tournaments ?? []).map(String)).not.toContain(tournamentId)
+      expect(
+        await TournamentMemberModel.exists({ tournamentId, userId: targetUserId }).exec()
+      ).toBeNull()
+
+      releaseLogin?.()
+      const loginRes = await loginPromise
+      expect(loginRes.status).toBe(200)
+      expect(loginRes.body.data.tournaments).not.toContain(tournamentId)
+      expect(loginRes.body.data.organizerTournaments).not.toContain(tournamentId)
+
+      expect(
+        await TournamentMemberModel.exists({ tournamentId, userId: targetUserId }).exec()
+      ).toBeNull()
+    } finally {
+      releaseLogin?.()
+      UserModel.findOne = originalFindOne as typeof UserModel.findOne
+    }
+  })
+
   it('does not reveal a managed users memberships in other tournaments', async () => {
     const owner = request.agent(app)
     const existingUser = request.agent(app)
