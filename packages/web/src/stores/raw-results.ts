@@ -36,6 +36,11 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     if (label === 'adjudicators') adjudicatorResults.value = results
   }
 
+  function invalidateFetch(label: RawLabel, tournamentId: string) {
+    if (!tournamentScope.isActive(tournamentId)) return
+    latestFetchSequence.value[label] += 1
+  }
+
   async function fetchRawResults(params: {
     tournamentId: string
     label: RawLabel
@@ -91,6 +96,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     try {
       const res = await api.post(`/raw-results/${label}`, payload)
       const created = res.data?.data ?? []
+      if (tournamentId) invalidateFetch(label, tournamentId)
       return created
     } catch (err: any) {
       if (!tournamentId || tournamentScope.isActive(tournamentId)) {
@@ -111,7 +117,9 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     }
     try {
       const res = await api.patch(`/raw-results/${label}/${rawId}`, payload)
-      return res.data?.data ?? null
+      const updated = res.data?.data ?? null
+      if (tournamentId) invalidateFetch(label, tournamentId)
+      return updated
     } catch (err: any) {
       if (!tournamentId || tournamentScope.isActive(tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update raw result'
@@ -130,7 +138,9 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       const res = await api.delete(`/raw-results/${label}/${rawId}`, {
         params: { tournamentId },
       })
-      return res.data?.data ?? null
+      const deleted = res.data?.data ?? null
+      invalidateFetch(label, tournamentId)
+      return deleted
     } catch (err: any) {
       if (tournamentScope.isActive(tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw result'
@@ -150,7 +160,9 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     }
     try {
       const res = await api.delete(`/raw-results/${label}`, { params })
-      return res.data?.data ?? null
+      const deleted = res.data?.data ?? null
+      if (tournamentId) invalidateFetch(label, tournamentId)
+      return deleted
     } catch (err: any) {
       if (!tournamentId || tournamentScope.isActive(tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw results'
