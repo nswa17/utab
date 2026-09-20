@@ -2748,6 +2748,82 @@ describe('Server integration', () => {
     }
   })
 
+  it('advances Draw version when adjudicator privacy cleanup rewrites allocation', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'draw-privacy-version', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'draw-privacy-version', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Draw Privacy Version Open',
+      style: 1,
+      options: { style: { team_num: 2 } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    expect(
+      (
+        await organizer
+          .post('/api/rounds')
+          .send({ tournamentId, round: 1, name: 'Round 1' })
+      ).status
+    ).toBe(201)
+
+    const teamA = await organizer.post('/api/teams').send({ tournamentId, name: 'Privacy Team A' })
+    const teamB = await organizer.post('/api/teams').send({ tournamentId, name: 'Privacy Team B' })
+    const adjudicator = await organizer
+      .post('/api/adjudicators')
+      .send({ tournamentId, name: 'Privacy Adjudicator', preev: 5 })
+    expect(teamA.status).toBe(201)
+    expect(teamB.status).toBe(201)
+    expect(adjudicator.status).toBe(201)
+
+    const adjudicatorId = String(adjudicator.body.data._id)
+    const createdDraw = await organizer.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: null,
+          teams: { gov: String(teamA.body.data._id), opp: String(teamB.body.data._id) },
+          chairs: [adjudicatorId],
+          panels: [],
+          trainees: [],
+        },
+      ],
+    })
+    expect(createdDraw.status).toBe(201)
+    const versionBefore = Number(createdDraw.body.data.__v ?? 0)
+
+    const { executeAdjudicatorPersonalDataErase } = await import('../src/controllers/privacy.js')
+    const eraseResult = await executeAdjudicatorPersonalDataErase({
+      tournamentId,
+      entityId: adjudicatorId,
+      reason: 'draw version test',
+      approvedBy: 'test',
+      eraseMode: 'hard_delete',
+    })
+    expect(eraseResult?.eraseMode).toBe('hard_delete')
+
+    const drawsAfter = await organizer.get(`/api/draws?tournamentId=${tournamentId}&round=1`)
+    expect(drawsAfter.status).toBe(200)
+    expect(drawsAfter.body.data).toHaveLength(1)
+    expect(Number(drawsAfter.body.data[0].__v ?? 0)).toBeGreaterThan(versionBefore)
+    expect(drawsAfter.body.data[0].allocation[0].chairs).not.toContain(adjudicatorId)
+  })
+
   it('rejects concurrent admin edits to the same submission instead of silently losing one', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
