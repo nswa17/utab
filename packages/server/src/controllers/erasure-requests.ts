@@ -4,6 +4,7 @@ import { ErasureRequestModel } from '../models/erasure-request.js'
 import {
   executeAdjudicatorPersonalDataErase,
   executeSpeakerPersonalDataErase,
+  isPersonalDataEraseBusyError,
   type PersonalDataEraseInput,
 } from './privacy.js'
 import { badRequest, notFound } from './shared/http-errors.js'
@@ -465,6 +466,34 @@ export const executeErasureRequest: RequestHandler = async (req, res, next) => {
 
       res.json({ data: completed, errors: [] })
     } catch (executionError) {
+      if (isPersonalDataEraseBusyError(executionError)) {
+        try {
+          const reverted = await ErasureRequestModel.updateOne(
+            { _id: id, tournamentId, status: 'running' },
+            {
+              $set: { status: 'approved' },
+              $unset: { executedBy: '', executedAt: '', errorMessage: '' },
+            }
+          ).exec()
+          if (reverted.modifiedCount !== 1) {
+            conflict(res, 'Erasure request changed while restoring retryable execution')
+            return
+          }
+        } catch (statusError) {
+          next(
+            new AggregateError(
+              [executionError, statusError],
+              'Personal data erasure was blocked and the request status could not be restored'
+            )
+          )
+          return
+        }
+        conflict(res, executionError instanceof Error
+          ? executionError.message
+          : 'Tournament entities are being modified; retry personal data erasure')
+        return
+      }
+
       try {
         await ErasureRequestModel.updateOne(
           { _id: id, tournamentId, status: 'running' },
