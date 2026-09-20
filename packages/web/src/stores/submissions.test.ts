@@ -59,6 +59,31 @@ describe('submissions store', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('does not let an old tournament timeout replace the active tournament error', async () => {
+    const store = useSubmissionsStore()
+    const oldBallot = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldBallot.promise)
+
+    const ballotPromise = store.submitBallot({
+      tournamentId: 'tournament-a',
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [72],
+    })
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament error' }] } },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-b' })
+    expect(store.error).toBe('current tournament error')
+
+    oldBallot.reject({ code: 'ERR_CANCELED' })
+    expect(await ballotPromise).toBeNull()
+    expect(store.error).toBe('current tournament error')
+  })
+
   it('loads admin submissions list with filters', async () => {
     const store = useSubmissionsStore()
     const rows = [{ _id: 's-1', type: 'ballot', round: 1, payload: {} }]
