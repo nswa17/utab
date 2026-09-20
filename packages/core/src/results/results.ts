@@ -391,6 +391,8 @@ export function compileTeamResults(
   const opponents: Record<number, number[]> = {}
   const sides: Record<number, Array<Side | string>> = {}
   const votes: Record<number, number> = {}
+  const voteRateTotals: Record<number, number> = {}
+  const voteRateAccs: Record<number, number> = {}
   const accs: Record<number, number> = {}
 
   for (const id of teams) {
@@ -402,6 +404,8 @@ export function compileTeamResults(
     opponents[id] = []
     sides[id] = []
     votes[id] = 0
+    voteRateTotals[id] = 0
+    voteRateAccs[id] = 0
     accs[id] = 0
   }
 
@@ -418,6 +422,10 @@ export function compileTeamResults(
     for (const result of summarizedTeamResults) {
       const id = result.id
       votes[id] += result.vote ?? 0
+      if (result.vote_rate !== null && Number.isFinite(result.vote_rate)) {
+        voteRateTotals[id] += result.vote_rate * result.acc
+        voteRateAccs[id] += result.acc
+      }
       opponents[id] = opponents[id].concat(result.opponents)
       accs[id] += result.acc
       wins[id].push(result.win)
@@ -436,10 +444,7 @@ export function compileTeamResults(
       id,
       win: sum(wins[id]),
       vote: votes[id],
-      vote_rate:
-        style.team_num === 2 && accs[id] > 0
-          ? (votes[id] + accs[id]) / (2 * accs[id])
-          : 0,
+      vote_rate: voteRateAccs[id] === 0 ? null : voteRateTotals[id] / voteRateAccs[id],
       details: details[id],
       past_opponents: opponents[id],
       past_sides: sides[id],
