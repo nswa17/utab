@@ -10,6 +10,7 @@ export const useTournamentStore = defineStore('tournament', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const listSequence = ref(0)
+  const operationSequence = ref(0)
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -26,7 +27,17 @@ export const useTournamentStore = defineStore('tournament', () => {
     return listSequence.value
   }
 
+  function beginOperation() {
+    operationSequence.value += 1
+    return operationSequence.value
+  }
+
+  function isOperationCurrent(sequence: number) {
+    return sequence === operationSequence.value
+  }
+
   async function fetchTournaments() {
+    const operation = beginOperation()
     const sequence = advanceListSequence()
     beginRequest()
     error.value = null
@@ -38,7 +49,7 @@ export const useTournamentStore = defineStore('tournament', () => {
       tournaments.value = res.data?.data ?? []
       return tournaments.value
     } catch (err: any) {
-      if (sequence !== listSequence.value) {
+      if (sequence !== listSequence.value || !isOperationCurrent(operation)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load tournaments'
@@ -58,6 +69,7 @@ export const useTournamentStore = defineStore('tournament', () => {
     auth?: Record<string, any>
     user_defined_data?: Record<string, any>
   }) {
+    const operation = beginOperation()
     beginRequest()
     error.value = null
     try {
@@ -79,7 +91,9 @@ export const useTournamentStore = defineStore('tournament', () => {
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create tournament'
+      if (isOperationCurrent(operation)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create tournament'
+      }
       return null
     } finally {
       endRequest()
@@ -87,6 +101,7 @@ export const useTournamentStore = defineStore('tournament', () => {
   }
 
   async function updateTournament(payload: { tournamentId: string } & Record<string, any>) {
+    const operation = beginOperation()
     beginRequest()
     error.value = null
     try {
@@ -120,7 +135,9 @@ export const useTournamentStore = defineStore('tournament', () => {
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update tournament'
+      if (isOperationCurrent(operation)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update tournament'
+      }
       return null
     } finally {
       endRequest()
@@ -128,6 +145,7 @@ export const useTournamentStore = defineStore('tournament', () => {
   }
 
   async function deleteTournament(tournamentId: string) {
+    const operation = beginOperation()
     beginRequest()
     error.value = null
     try {
@@ -139,7 +157,9 @@ export const useTournamentStore = defineStore('tournament', () => {
       auth.organizerTournaments = auth.organizerTournaments.filter((item) => item !== tournamentId)
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete tournament'
+      if (isOperationCurrent(operation)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete tournament'
+      }
       return false
     } finally {
       endRequest()
