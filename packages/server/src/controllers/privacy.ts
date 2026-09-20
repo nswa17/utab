@@ -71,7 +71,7 @@ function createPersonalDataEraseBusyError(): Error & { code: string } {
   )
 }
 
-function isPersonalDataEraseBusyError(error: unknown): boolean {
+export function isPersonalDataEraseBusyError(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === PERSONAL_DATA_ERASE_BUSY_CODE
 }
 
