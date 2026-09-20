@@ -143,7 +143,7 @@ async function removeAdjudicatorRefsFromDraws(
       return {
         updateOne: {
           filter: { _id: draw._id, tournamentId },
-          update: { $set: { allocation: nextAllocation } },
+          update: { $set: { allocation: nextAllocation }, $inc: { __v: 1 } },
         },
       }
     })
