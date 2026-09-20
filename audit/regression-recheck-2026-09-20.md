@@ -439,3 +439,115 @@ Deferred rather than assumed safe:
 - Phase 3 will assess whether source-text UI tests adequately prove runtime behavior;
 - Phase 4 must re-compose these #38 fixes with #40/#41, especially the allocation UI overlap;
 - Phase 7 remains responsible for broader adversarial loading/error semantics across every route transition.
+
+
+## Phase 2-2 — #36/#37 semantic re-audit: CAS writers and membership authority
+
+Audit targets:
+- #36 `audit/server-state-races-phase5`, frozen head `eef5d1264b613ac8cb07cf13fee6fd44c30551fa`;
+- #37 `audit/auth-public-boundaries-phase6`, frozen head `6d164672cbb87e34413c9cd6088eeffebb912a15`.
+
+The audit followed all runtime writers of Submission/Draw versioned state and all request-time writers of tournament membership state rather than limiting review to the files originally changed by the PRs.
+
+### P2-2-001 — privacy erasure could be undone by a stale Submission admin edit
+
+Severity: privacy / lost-update correctness violation.
+
+Finding:
+- #36 protects admin Submission edits with optimistic `__v` CAS;
+- round renumbering correctly increments Submission `__v`;
+- privacy erasure cleared `payload.comment` through `SubmissionModel.updateMany` without incrementing `__v`;
+- an admin edit that had read the old version could therefore pass its later CAS and restore a comment after personal-data erasure.
+
+Repair on #36:
+- speaker/adjudicator privacy comment erasure increments Submission `__v`;
+- only submissions where `payload.comment` actually exists are updated, preserving the original meaning of `submissionCommentsCleared`;
+- deterministic integration coverage pauses a stale admin edit, performs privacy erasure, then verifies the edit returns 409 and the erased comment stays absent;
+- the same test includes a matching no-comment Submission and verifies the cleared-comment count remains exactly 1.
+
+### P2-2-002 — adjudicator privacy cleanup bypassed Draw CAS on #36
+
+Severity: stale-write correctness violation.
+
+Finding:
+- adjudicator hard-delete rewrites persisted Draw allocations to remove adjudicator references;
+- on #36 that bulk rewrite did not advance Draw `__v`;
+- a Draw writer that observed the pre-erasure version could therefore still pass optimistic CAS and restore the removed adjudicator reference.
+
+Repair on #36:
+- privacy-driven Draw allocation rewrites increment Draw `__v`;
+- regression coverage verifies hard-delete advances the stored Draw version and removes the adjudicator.
+
+Note:
+- this same Draw-version issue had independently been found and repaired on #40 during P2-003. Phase 2-2 restores the invariant to the source #36 PR as well, so the PR is safe standalone and later conflict resolution has an explicit test to preserve.
+
+Current #36 head:
+- `8b6afcf7f68bcd41cd0a4d9f8482b04d83c11d09`.
+
+Exact-head validation:
+- PR CI `35542694969`: passed lint, full tests, and production build;
+- GitHub reports #36 mergeable.
+
+### P2-2-003 — auth legacy-membership backfill could resurrect a removed membership
+
+Severity: authorization / membership-race violation.
+
+Finding:
+- #37 serializes explicit tournament-user add/remove with a per-(tournament, username) membership lease;
+- login and `/auth/me` also mutate `TournamentMemberModel` through legacy membership backfill, but originally bypassed that lease;
+- both endpoints started from a previously read `User.tournaments` snapshot;
+- a remove could therefore complete while login still held the old User snapshot, after which auth backfill could recreate the removed membership;
+- auth responses also unioned the legacy User list back into the returned membership list, allowing response/session state to disagree transiently with the central membership table used by authorization middleware.
+
+Repair on #37:
+- legacy backfill acquires the same membership lease as explicit add/remove;
+- after lease acquisition it re-reads the current User role/tournament list and only backfills membership that is still present;
+- creator-membership backfill now also participates in the membership lease;
+- legacy and creator backfills run sequentially, avoiding overlapping upserts for the same membership;
+- after backfill, login and `/auth/me` return the central `TournamentMemberModel` summary only; the legacy array is migration input, not a second authorization source.
+
+Regression coverage:
+- pauses login after its initial User read, removes the membership, then resumes login and verifies the membership is not resurrected or returned;
+- holds the membership lease around a legacy-only membership and verifies auth does not expose it while the central mutation is unresolved;
+- after lease release, a retry login successfully backfills and returns the membership, proving the safety rule does not permanently discard legacy migration.
+
+Current #37 head:
+- `26e2d7d7dc2de03217f0cf03fd37c0167509057a`.
+
+Exact-head validation:
+- push CI `35542786664`: passed lint, full tests, and production build;
+- GitHub reports #37 mergeable.
+
+### P2-2-004 — carry Submission privacy CAS through #40/#41
+
+Because #40 and #41 also modify `privacy.ts`, leaving the #36 repair only on its source branch would make it easy to lose during later conflict resolution.
+
+Propagation:
+- #40 now carries the Submission `__v` increment and comment-exists filter;
+- #40 current head: `768dd7b0a05f8626e01c31cf6876da74cce441e7`;
+- exact-head push CI `35542651336` and PR CI `35542654941` passed;
+- #41 carries the same invariant and was reconciled with current #40 using a two-parent merge;
+- #41 current head: `fe5d9776c381e5d7d6dd45b2be14c33d1fc21696`;
+- direct compare confirms #41 is 0 commits behind #40 and its effective delta remains the original seven lifecycle/allocation files;
+- exact-head PR CI `35542677688` passed lint, full tests, and production build.
+
+### Additional writer audit
+
+No additional #36 runtime Draw mutation was found in the dev-tools round-submission filler: it reads Draw allocation and bulk-writes Submission inserts only.
+
+A separate cross-lifecycle race remains deliberately deferred:
+- `deleteTournament` can race with tournament-user add/remove across the whole tournament;
+- solving this correctly requires a tournament-level lifecycle/membership serialization design rather than extending a per-user lease ad hoc;
+- this is explicitly assigned to Phase 5 deterministic interleaving audit.
+
+Creator membership remains a migration/ownership invariant: creator backfill is now lease-serialized, but whether a tournament creator should ever be permanently removable is a product-semantic question and is not changed in Phase 2-2.
+
+### Phase 2-2 result
+
+The source PRs now preserve their own stated concurrency contracts rather than relying on later #40 fixes:
+- Submission privacy erasure invalidates stale edits;
+- Draw privacy cleanup invalidates stale Draw writers;
+- request-time membership backfills use the same serialization authority as membership administration;
+- auth membership responses use the same central membership source as authorization middleware.
+
+No additional high-confidence C36/C37 semantic defect was found after the writer reverse-search. The tournament-deletion cross-race is not accepted as safe; it is carried forward to Phase 5.
