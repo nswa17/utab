@@ -2731,6 +2731,72 @@ describe('Server integration', () => {
     expect(accessAttempt.status).toBe(200)
   })
 
+  it('does not expose a legacy-only membership while its mutation lease is busy', async () => {
+    const owner = request.agent(app)
+    expect(
+      (
+        await owner
+          .post('/api/auth/register')
+          .send({ username: 'membership-auth-lock-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await owner
+          .post('/api/auth/login')
+          .send({ username: 'membership-auth-lock-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const targetRegister = await request(app).post('/api/auth/register').send({
+      username: 'membership-auth-lock-target',
+      password: 'password123',
+      role: 'speaker',
+    })
+    expect(targetRegister.status).toBe(201)
+    const targetUserId = String(targetRegister.body.data.userId)
+
+    const tournamentRes = await owner.post('/api/tournaments').send({
+      name: 'Membership Auth Lock Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    await UserModel.updateOne(
+      { _id: targetUserId },
+      { $addToSet: { tournaments: tournamentId } }
+    ).exec()
+    await TournamentMemberModel.deleteOne({ tournamentId, userId: targetUserId }).exec()
+
+    const {
+      acquireTournamentMembershipLease,
+      releaseTournamentMembershipLease,
+    } = await import('../src/services/tournament-membership-guard.service.js')
+    const lease = await acquireTournamentMembershipLease(
+      tournamentId,
+      'membership-auth-lock-target'
+    )
+    expect(lease).toBeTruthy()
+    if (!lease) throw new Error('Failed to acquire auth backfill test lease')
+
+    try {
+      const loginRes = await request(app).post('/api/auth/login').send({
+        username: 'membership-auth-lock-target',
+        password: 'password123',
+      })
+      expect(loginRes.status).toBe(200)
+      expect(loginRes.body.data.tournaments).not.toContain(tournamentId)
+      expect(loginRes.body.data.organizerTournaments).not.toContain(tournamentId)
+      expect(
+        await TournamentMemberModel.exists({ tournamentId, userId: targetUserId }).exec()
+      ).toBeNull()
+    } finally {
+      expect(await releaseTournamentMembershipLease(lease)).toBe(true)
+    }
+  })
+
   it('does not let stale auth backfill resurrect a membership removed concurrently', async () => {
     const owner = request.agent(app)
     expect(
