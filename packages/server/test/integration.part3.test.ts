@@ -2713,6 +2713,62 @@ describe('Server integration', () => {
     expect(
       await TournamentModel.countDocuments({ name: 'Invalid scoped round backup' }).exec()
     ).toBe(0)
+
+
+    const invalidRawTeamWinBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid raw team win backup',
+          collectionNames: ['rawteamresults'],
+          collectionFiles: [
+            {
+              path: 'json/collections/rawteamresults.json',
+              collectionName: 'rawteamresults',
+            },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid raw team win backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/rawteamresults.json',
+        value: [
+          {
+            id: 'team-a',
+            from_id: 'judge-a',
+            r: 1,
+            weight: 1,
+            win: 2,
+            opponents: ['team-b'],
+            side: 'gov',
+          },
+        ],
+      },
+    ])
+
+    const invalidRawTeamWinRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidRawTeamWinBundle)
+    expect(invalidRawTeamWinRes.status).toBe(400)
+    expect(invalidRawTeamWinRes.body.errors[0].message).toContain(
+      'Invalid rawteamresults win in backup'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: 'Invalid raw team win backup' }).exec()
+    ).toBe(0)
   })
 
   it('detects missing draw ballots and changes revision when result content changes', async () => {
