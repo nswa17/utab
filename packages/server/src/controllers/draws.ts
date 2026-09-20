@@ -550,7 +550,15 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
-    const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
+    const entityLeases = save
+      ? await acquireDrawEntityNamespaceLeases(connection, tournamentId)
+      : []
+    if (entityLeases === null) {
+      sendDrawEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const roundDoc = await getRoundModel(connection).findOne({ tournamentId, round }).lean().exec()
     if (!roundDoc) {
       notFound(res, 'Round not found')
       return
@@ -967,6 +975,11 @@ export const generateDraw: RequestHandler = async (req, res, next) => {
     }
 
     res.json({ data: payload, errors: [] })
+    } finally {
+      if (entityLeases.length > 0) {
+        await releaseDrawEntityNamespaceLeases(connection, entityLeases)
+      }
+    }
   } catch (err: any) {
     if (err?.status === 400) {
       badRequest(res, String(err?.message ?? 'Bad Request'))
