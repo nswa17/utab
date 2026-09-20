@@ -77,7 +77,12 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     participantFetchSequence.value += 1
   }
 
-  async function postWithTimeout(\n    path: string,\n    payload: unknown,\n    tournamentId: string,\n    timeoutMs = SUBMISSION_TIMEOUT_MS\n  ) {
+  async function postWithTimeout(
+    path: string,
+    payload: unknown,
+    tournamentId: string,
+    timeoutMs = SUBMISSION_TIMEOUT_MS
+  ) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
