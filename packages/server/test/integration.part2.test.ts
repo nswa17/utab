@@ -1013,6 +1013,40 @@ describe('Server integration', () => {
     const unavailableTeamId = String(unavailableTeamRes.body.data._id)
     const adjudicatorId = String(adjudicatorRes.body.data._id)
 
+    const [{ getTournamentConnection }, {
+      acquireEntityNamespaceLease,
+      releaseEntityNamespaceLease,
+    }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/services/entity-namespace-guard.service.js'),
+    ])
+    const tournamentConnection = await getTournamentConnection(tournamentId)
+    const teamLease = await acquireEntityNamespaceLease(
+      tournamentConnection,
+      tournamentId,
+      'teams'
+    )
+    expect(teamLease).toBeTruthy()
+    if (!teamLease) throw new Error('Failed to acquire draw validation namespace lease')
+    try {
+      const blockedDrawRes = await agent.post('/api/draws').send({
+        tournamentId,
+        round: 1,
+        allocation: [
+          {
+            venue: null,
+            teams: { gov: teamAId, opp: teamBId },
+            chairs: [adjudicatorId],
+            panels: [],
+            trainees: [],
+          },
+        ],
+      })
+      expect(blockedDrawRes.status).toBe(409)
+    } finally {
+      expect(await releaseEntityNamespaceLease(tournamentConnection, teamLease)).toBe(true)
+    }
+
     const unknownReferenceRes = await agent.post('/api/draws').send({
       tournamentId,
       round: 1,
