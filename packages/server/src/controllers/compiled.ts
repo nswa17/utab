@@ -1165,7 +1165,8 @@ function resolveWinnerForBallot(
 async function buildCompiledPayloadFromRaw(
   tournamentId: string,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -1226,43 +1227,49 @@ async function buildCompiledPayloadFromRaw(
   const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
 
+  const validationLabelSet = new Set<CompileIncludeLabel>(
+    validationLabels ?? compileOptions.include_labels
+  )
+  const validatesRawTeamData = validationLabelSet.has('teams')
   const missingDataIssues: MissingDataIssue[] = []
   const expectedDrawTeamIds = new Set<string>()
-  filteredDraws.forEach((draw: any) => {
-    const round = Number(draw?.round)
-    if (!Number.isFinite(round)) return
-    ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
-      const teamIds = drawRowTeamIds(row)
-      if (teamIds.length < 2) return
-      teamIds.forEach((teamId) => expectedDrawTeamIds.add(teamId))
+  if (validatesRawTeamData) {
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+        const teamIds = drawRowTeamIds(row)
+        if (teamIds.length < 2) return
+        teamIds.forEach((teamId) => expectedDrawTeamIds.add(teamId))
 
-      const expectedKey = canonicalTeamGroupKey(round, teamIds)
-      const matchingResults = filteredRawTeamResults.filter(
-        (result: any) => rawTeamResultGroupKey(result) === expectedKey
-      )
-      const presentTeamIds = new Set(
-        matchingResults.map((result: any) => String(result?.id ?? '').trim()).filter(Boolean)
-      )
+        const expectedKey = canonicalTeamGroupKey(round, teamIds)
+        const matchingResults = filteredRawTeamResults.filter(
+          (result: any) => rawTeamResultGroupKey(result) === expectedKey
+        )
+        const presentTeamIds = new Set(
+          matchingResults.map((result: any) => String(result?.id ?? '').trim()).filter(Boolean)
+        )
 
-      if (presentTeamIds.size === 0) {
-        missingDataIssues.push({
-          code: 'missing_ballot',
-          message: `no raw team results exist for matchup ${teamIds.join(' vs ')}`,
-          round,
-        })
-        return
-      }
+        if (presentTeamIds.size === 0) {
+          missingDataIssues.push({
+            code: 'missing_ballot',
+            message: `no raw team results exist for matchup ${teamIds.join(' vs ')}`,
+            round,
+          })
+          return
+        }
 
-      teamIds.forEach((teamId) => {
-        if (presentTeamIds.has(teamId)) return
-        missingDataIssues.push({
-          code: 'missing_team_result',
-          message: `raw team result is missing for team ${teamId} in matchup ${teamIds.join(' vs ')}`,
-          round,
+        teamIds.forEach((teamId) => {
+          if (presentTeamIds.has(teamId)) return
+          missingDataIssues.push({
+            code: 'missing_team_result',
+            message: `raw team result is missing for team ${teamId} in matchup ${teamIds.join(' vs ')}`,
+            round,
+          })
         })
       })
     })
-  })
+  }
   const compileWarnings = finalizeMissingDataIssues(missingDataIssues, compileOptions)
 
   const teamMaps = buildIdMaps(teams)
@@ -2330,7 +2337,7 @@ export async function buildCompiledPayload(
   validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   return source === 'raw'
-    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
+    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions, validationLabels)
     : buildCompiledPayloadFromSubmissions(
         tournamentId,
         requestedRounds,
