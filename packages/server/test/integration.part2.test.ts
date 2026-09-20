@@ -1043,6 +1043,13 @@ describe('Server integration', () => {
         ],
       })
       expect(blockedDrawRes.status).toBe(409)
+
+      const blockedGeneratedDrawRes = await agent.post('/api/draws/generate').send({
+        tournamentId,
+        round: 1,
+        save: true,
+      })
+      expect(blockedGeneratedDrawRes.status).toBe(409)
     } finally {
       expect(await releaseEntityNamespaceLease(tournamentConnection, teamLease)).toBe(true)
     }
