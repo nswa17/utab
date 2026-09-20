@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import type { Connection } from 'mongoose'
 import { isDeepStrictEqual } from 'node:util'
 import {
   teams as teamAllocations,
@@ -24,6 +25,11 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { getRoundModel } from '../models/round.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import {
+  acquireEntityNamespaceLease,
+  releaseEntityNamespaceLease,
+  type EntityNamespaceLease,
+} from '../services/entity-namespace-guard.service.js'
+import {
   buildDetailsForRounds,
   buildIdMaps,
   ensureRounds,
@@ -43,6 +49,44 @@ const allocations = {
   teams: teamAllocations,
   adjudicators: adjudicatorAllocations,
   venues: venueAllocations,
+}
+
+const DRAW_ENTITY_NAMESPACES = ['adjudicators', 'teams', 'venues'] as const
+
+async function acquireDrawEntityNamespaceLeases(
+  connection: Connection,
+  tournamentId: string
+): Promise<EntityNamespaceLease[] | null> {
+  const leases: EntityNamespaceLease[] = []
+  for (const namespace of DRAW_ENTITY_NAMESPACES) {
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, namespace)
+    if (lease) {
+      leases.push(lease)
+      continue
+    }
+    await Promise.all(leases.map((current) => releaseEntityNamespaceLease(connection, current)))
+    return null
+  }
+  return leases
+}
+
+async function releaseDrawEntityNamespaceLeases(
+  connection: Connection,
+  leases: EntityNamespaceLease[]
+): Promise<void> {
+  const released = await Promise.all(
+    leases.map((lease) => releaseEntityNamespaceLease(connection, lease))
+  )
+  if (released.some((value) => !value)) {
+    throw new Error('Failed to release one or more draw entity namespace leases')
+  }
+}
+
+function sendDrawEntityNamespaceBusy(res: Parameters<RequestHandler>[1]): void {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Tournament entities are being modified; retry draw change' }],
+  })
 }
 
 async function saveDrawWithOptimisticLock(params: {
@@ -348,7 +392,13 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     }
 
     const connection = await getTournamentConnection(tournamentId)
-    const [tournament, roundDoc, teamDocs, adjudicatorDocs, venueDocs] = await Promise.all([
+    const entityLeases = await acquireDrawEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendDrawEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const [tournament, roundDoc, teamDocs, adjudicatorDocs, venueDocs] = await Promise.all([
       TournamentModel.findById(tournamentId).lean().exec(),
       getRoundModel(connection).findOne({ tournamentId, round }).lean().exec(),
       getTeamModel(connection).find({ tournamentId }).lean().exec(),
@@ -472,6 +522,9 @@ export const upsertDraw: RequestHandler = async (req, res, next) => {
     }
 
     res.status(201).json({ data: updated, errors: [] })
+    } finally {
+      await releaseDrawEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err) {
     next(err)
   }
