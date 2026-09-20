@@ -7,6 +7,10 @@ import { ServiceTokenRevocationModel } from '../models/service-token-revocation.
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
+import {
+  acquireTournamentMembershipLease,
+  releaseTournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
 
 type RegisterRole = 'organizer' | 'adjudicator' | 'speaker' | 'audience'
 type MemberRole = RegisterRole
@@ -36,24 +40,50 @@ function uniqueIds(ids: Iterable<string>): string[] {
 
 async function ensureLegacyMemberships(user: {
   _id: unknown
+  username?: unknown
   role: string
   tournaments?: unknown[]
 }): Promise<void> {
-  const role = toMemberRole(user.role)
-  if (!role) return
+  const userId = String(user._id).trim()
+  const username = String(user.username ?? '').trim()
+  if (!userId || !username) return
 
   const tournamentIds = normalizeTournamentIds(user.tournaments)
   if (tournamentIds.length === 0) return
 
   await Promise.all(
-    tournamentIds.map((tournamentId) =>
-      TournamentMemberModel.updateOne(
-        { tournamentId, userId: String(user._id) },
-        { $setOnInsert: { role } },
-        { upsert: true }
-      ).exec()
-    )
+    tournamentIds.map(async (tournamentId) => {
+      const lease = await acquireTournamentMembershipLease(tournamentId, username)
+      if (!lease) return
+      try {
+        const currentUser = await UserModel.findById(userId)
+          .select({ role: 1, tournaments: 1 })
+          .lean()
+          .exec()
+        if (!currentUser) return
+        if (!normalizeTournamentIds(currentUser.tournaments).includes(tournamentId)) return
+
+        const role = toMemberRole(String(currentUser.role ?? ''))
+        if (!role) return
+
+        await TournamentMemberModel.updateOne(
+          { tournamentId, userId },
+          { $setOnInsert: { role } },
+          { upsert: true }
+        ).exec()
+      } finally {
+        await releaseTournamentMembershipLease(lease)
+      }
+    })
   )
+}
+
+async function loadCurrentLegacyTournamentIds(userId: string): Promise<string[]> {
+  const currentUser = await UserModel.findById(userId)
+    .select({ tournaments: 1 })
+    .lean()
+    .exec()
+  return normalizeTournamentIds(currentUser?.tournaments)
 }
 
 async function ensureCreatorMemberships(user: { _id: unknown; role: string }): Promise<void> {
@@ -132,7 +162,7 @@ export const login: RequestHandler = async (req, res, next) => {
     await Promise.all([ensureLegacyMemberships(user), ensureCreatorMemberships(user)])
     req.session.userId = user._id.toString()
     req.session.usertype = user.role
-    const legacyTournamentIds = normalizeTournamentIds(user.tournaments)
+    const legacyTournamentIds = await loadCurrentLegacyTournamentIds(req.session.userId)
     const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
     req.session.tournaments = memberships.tournamentIds
     await persistSession(req)
@@ -198,7 +228,7 @@ export const me: RequestHandler = async (req, res, next) => {
       return
     }
     await Promise.all([ensureLegacyMemberships(user), ensureCreatorMemberships(user)])
-    const legacyTournamentIds = normalizeTournamentIds(user.tournaments)
+    const legacyTournamentIds = await loadCurrentLegacyTournamentIds(req.session.userId)
     const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
     req.session.tournaments = memberships.tournamentIds
     res.json({
