@@ -228,6 +228,7 @@ export async function executeSpeakerPersonalDataErase(
   const clearResult = await SubmissionModel.updateMany(
     {
       tournamentId,
+      'payload.comment': { $exists: true },
       $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
     },
     { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
@@ -296,6 +297,7 @@ export async function executeAdjudicatorPersonalDataErase(
   const clearResult = await SubmissionModel.updateMany(
     {
       tournamentId,
+      'payload.comment': { $exists: true },
       $or: [
         { 'payload.adjudicatorId': entityId },
         { 'payload.submittedEntityId': entityId },
