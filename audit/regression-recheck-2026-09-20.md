@@ -516,6 +516,7 @@ Current #37 head:
 
 Exact-head validation:
 - push CI `35542786664`: passed lint, full tests, and production build;
+- PR CI `35542790104`: passed on the same exact head;
 - GitHub reports #37 mergeable.
 
 ### P2-2-004 — carry Submission privacy CAS through #40/#41
