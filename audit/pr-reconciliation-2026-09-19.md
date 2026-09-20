@@ -5,13 +5,14 @@
 Phase 0: COMPLETE
 Phase 1: COMPLETE
 Phase 2: COMPLETE
-Phase 3: IN PROGRESS — #34 COMPLETE
+Phase 3: COMPLETE — #34–#40 final audits PASS
 Phase 4: COMPLETE — #40→#41 stack synchronized
 Phase 5: COMPLETE — #41 cross-PR overlap reconciled
-Phase 6: STOPPED — P6-001 registered
+Phase 6: COMPLETE — P6-001 fixed and cross-PR sweep PASS
 Phase 7: COMPLETE — cumulative branch reconciled and CI-green
-Phase 8: COMPLETE AS ASSESSMENT — overall merge readiness BLOCKED
+Phase 8: COMPLETE — merge readiness READY
 Phase 9: STOPPED AT PREFLIGHT — no PR merged
+Final audit 2026-09-20: COMPLETE — READY FOR SEQUENTIAL MERGE
 
 Purpose: freeze the current GitHub state before any further reconciliation or code changes. This file is the restart point for subsequent audit phases.
 
@@ -586,3 +587,103 @@ Reason: #41 was stacked on the previous #40 head and the cumulative branch was r
 1. #41;
 2. `codex/utab-bug-audit-20260918`;
 then rerun exact-head CI before marking P6-001 globally closed.
+
+
+## Final audit — 2026-09-20 — COMPLETE / READY FOR SEQUENTIAL MERGE
+
+This section supersedes earlier readiness/blocker statements in this file.
+
+### Final authoritative state
+
+- `main`: `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- cumulative integrated audit branch: `codex/utab-bug-audit-20260918` @ `39f30ba4326179357f5e165b9540b1a3c50bd352`
+- cumulative exact-head CI: run `35516550637` — lint, full tests, production build all successful
+- open audit PRs: #34–#41
+- unresolved review threads on #34–#41: 0
+- newly discovered blocking defects in final audit: 0
+
+### Individual PR final audit
+
+| PR | Final audited head | CI | Review threads | Final result |
+|---|---|---|---:|---|
+| #34 | `1b78cea2174bc94fe11ff372c96256f1233f2cbd` | `35415799261` success | 0 | PASS |
+| #35 | `130d0fa346bd93218a684b88b493b1f356ac557d` | `35445680122` success | 0 | PASS |
+| #36 | `eef5d1264b613ac8cb07cf13fee6fd44c30551fa` | `35454152393` success | 0 | PASS |
+| #37 | `6d164672cbb87e34413c9cd6088eeffebb912a15` | `35454565783` success | 0 | PASS |
+| #38 | `352ba0c63613b0190a58034d270a14576a61554a` | `35453983648` success | 0 | PASS |
+| #39 | `8ded872fdc935eb2e3fbef8f47b9867c4ad73816` | `35449749829` success | 0 | PASS |
+| #40 | `83d17e1dd1c945c7e2c7be2d4133945f5bed3139` | `35477291288` success | 0 | PASS |
+| #41 | `d3316605af94b6b9bed3c4309eb5b05f8596525a` | `35516483265` success | 0 | PASS, stacked on #40 |
+
+The previously incomplete Phase-3 audits for #35–#40 are now closed as PASS based on final changed-code review, surviving regression coverage, zero unresolved review threads, green per-PR CI, and successful execution of the combined implementation on the cumulative branch.
+
+### P6-001 closure
+
+P6-001 is now **CLOSED project-wide**.
+
+The raw-team `win` invariant is present at:
+- request boundary: finite [0,1];
+- Mongoose persistence boundary: finite, min 0, max 1;
+- backup-import boundary: explicit validation before native insert.
+
+Regression coverage is present for create/update, direct model writes, tampered backup cleanup, and valid fractional support-rate behavior.
+
+Propagation status:
+- #40: fixed and CI-green at `83d17e1...`;
+- #41: propagated and ancestry-synchronized with current #40;
+- cumulative branch: propagated and exact-head CI-green at `39f30ba...`.
+
+### #41 stack verification
+
+Current #41:
+- head: `d3316605af94b6b9bed3c4309eb5b05f8596525a`
+- current #40 head is an actual parent ancestor through the merge checkpoint;
+- direct compare #40 -> #41: ahead, **0 behind**;
+- GitHub reports mergeable;
+- exact-head CI `35516483265`: success.
+
+The effective #41-vs-#40 diff remains the intended lifecycle/PDA surface plus its integration/UI regression coverage. Phase-10 boundary changes no longer appear as an unsynchronized stack delta.
+
+### Final cross-PR sweep
+
+The combined cumulative implementation was rechecked for the previously emphasized risk areas:
+- core allocation/vote-rate invariants;
+- compiled round normalization and preview revision checks;
+- submission/draw optimistic concurrency and round-renumber invalidation;
+- tournament membership serialization and response scoping;
+- web stale-request / tournament-switch guards;
+- import rollback/error propagation;
+- numeric export ordering and participant ballot progress;
+- boundary/type/entity namespace validation;
+- raw-team win [0,1] ingestion invariants;
+- Draw-authoritative publication and PDA lifecycle behavior.
+
+Required implementation/test signatures are present on the cumulative branch and the exact-head full CI is green. No additional P-item was registered.
+
+### Final merge order
+
+Proceed one PR at a time:
+
+1. #34
+2. #35
+3. #36
+4. #37
+5. #38
+6. #39
+7. #40
+8. retarget/reconcile #41 from the #40 branch to the then-current `main`
+9. rerun #41 exact-head CI against updated `main`
+10. #41
+
+After every merge:
+- refresh `main`;
+- resolve overlap conflicts by preserving the union of regression tests/behavior already validated on the cumulative branch;
+- run the relevant CI/smoke before moving to the next PR.
+
+### Non-blocking residual note
+
+#40 still documents that `total_round_num` has no repository-defined upper bound. This is a product-limit/design question rather than a regression introduced by these PRs, so no arbitrary maximum was added and it is not treated as a merge blocker.
+
+### Final verdict
+
+No unresolved correctness blocker remains in the audited PR set. The PR series is ready for controlled sequential merge using the order above. #41 must still be retargeted and revalidated after #40/main integration; that is a merge-procedure requirement, not an unresolved code defect.
