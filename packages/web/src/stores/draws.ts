@@ -86,7 +86,7 @@ export const useDrawsStore = defineStore('draws', () => {
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/draws', payload)
       const updated = res.data?.data
@@ -120,7 +120,7 @@ export const useDrawsStore = defineStore('draws', () => {
   async function deleteDraw(drawId: string, tournamentId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete(`/draws/${drawId}`, { params: { tournamentId } })
       const deleted = res.data?.data
