@@ -3318,4 +3318,113 @@ describe('Server integration', () => {
       'outside the configured score range or unit'
     )
   })
+
+  it('bounds raw team win points at request and persistence boundaries', async () => {
+    const agent = request.agent(app)
+    expect(
+      (
+        await agent
+          .post('/api/auth/register')
+          .send({ username: 'raw-win-boundary-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent
+          .post('/api/auth/login')
+          .send({ username: 'raw-win-boundary-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Raw Win Boundary Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Raw Win Team A' },
+      { tournamentId, name: 'Raw Win Team B' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const teamAId = String(teamsRes.body.data[0]._id)
+    const teamBId = String(teamsRes.body.data[1]._id)
+
+    const payload = (fromId: string, win: number) => ({
+      tournamentId,
+      id: teamAId,
+      from_id: fromId,
+      r: 1,
+      weight: 1,
+      win,
+      side: 'gov',
+      opponents: [teamBId],
+    })
+
+    for (const [fromId, win] of [
+      ['valid-zero', 0],
+      ['valid-half', 0.5],
+      ['valid-one', 1],
+    ] as const) {
+      const res = await agent.post('/api/raw-results/teams').send(payload(fromId, win))
+      expect(res.status).toBe(201)
+    }
+
+    for (const [fromId, win] of [
+      ['invalid-low', -0.01],
+      ['invalid-high', 1.01],
+    ] as const) {
+      const res = await agent.post('/api/raw-results/teams').send(payload(fromId, win))
+      expect(res.status).toBe(400)
+    }
+
+    const listRes = await agent.get(`/api/raw-results/teams?tournamentId=${tournamentId}`)
+    expect(listRes.status).toBe(200)
+    const halfResult = listRes.body.data.find((row: any) => row.from_id === 'valid-half')
+    expect(halfResult).toBeTruthy()
+
+    const validPatch = await agent
+      .patch(`/api/raw-results/teams/${halfResult._id}`)
+      .send({ tournamentId, win: 1 })
+    expect(validPatch.status).toBe(200)
+
+    const invalidPatch = await agent
+      .patch(`/api/raw-results/teams/${halfResult._id}`)
+      .send({ tournamentId, win: 2 })
+    expect(invalidPatch.status).toBe(400)
+
+    const [{ getTournamentConnection }, { getRawTeamResultModel }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/raw-team-result.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const RawTeamResultModel = getRawTeamResultModel(connection)
+
+    await expect(
+      RawTeamResultModel.create({
+        tournamentId,
+        id: teamBId,
+        from_id: 'model-invalid-high',
+        r: 1,
+        weight: 1,
+        win: 2,
+        side: 'opp',
+        opponents: [teamAId],
+      })
+    ).rejects.toThrow()
+
+    await expect(
+      RawTeamResultModel.create({
+        tournamentId,
+        id: teamBId,
+        from_id: 'model-valid-half',
+        r: 1,
+        weight: 1,
+        win: 0.5,
+        side: 'opp',
+        opponents: [teamAId],
+      })
+    ).resolves.toBeTruthy()
+  })
+
 })
