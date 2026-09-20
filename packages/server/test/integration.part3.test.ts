@@ -1790,6 +1790,133 @@ describe('Server integration', () => {
     )
   })
 
+  it('rejects raw compilation when a selected drawn matchup has no raw team results', async () => {
+    const agent = request.agent(app)
+
+    expect(
+      (
+        await agent.post('/api/auth/register').send({
+          username: 'raw-missing-matchup-user',
+          password: 'password123',
+          role: 'organizer',
+        })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent.post('/api/auth/login').send({
+          username: 'raw-missing-matchup-user',
+          password: 'password123',
+        })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Raw Missing Matchup Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+      total_round_num: 1,
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    expect(
+      (
+        await agent.post('/api/rounds').send({
+          tournamentId,
+          round: 1,
+          name: 'Round 1',
+        })
+      ).status
+    ).toBe(201)
+
+    const teamsRes = await agent.post('/api/teams').send([
+      { tournamentId, name: 'Raw Missing A' },
+      { tournamentId, name: 'Raw Missing B' },
+      { tournamentId, name: 'Raw Missing C' },
+      { tournamentId, name: 'Raw Missing D' },
+    ])
+    expect(teamsRes.status).toBe(201)
+    const [teamA, teamB, teamC, teamD] = teamsRes.body.data.map((row: any) => String(row._id))
+
+    const drawRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          venue: '',
+          teams: { gov: teamA, opp: teamB },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+        {
+          venue: '',
+          teams: { gov: teamC, opp: teamD },
+          chairs: [],
+          panels: [],
+          trainees: [],
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+    })
+    expect(drawRes.status).toBe(201)
+
+    const rawRes = await agent.post('/api/raw-results/teams').send([
+      {
+        tournamentId,
+        id: teamA,
+        from_id: 'judge-a',
+        r: 1,
+        win: 1,
+        opponents: [teamB],
+        side: 'gov',
+      },
+      {
+        tournamentId,
+        id: teamB,
+        from_id: 'judge-a',
+        r: 1,
+        win: 0,
+        opponents: [teamA],
+        side: 'opp',
+      },
+    ])
+    expect(rawRes.status).toBe(201)
+
+    const errorRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options: { missing_data_policy: 'error', include_labels: ['teams'] },
+    })
+    expect(errorRes.status).toBe(400)
+    expect(String(errorRes.body.errors?.[0]?.message ?? '')).toContain(
+      'no raw team results exist for matchup'
+    )
+    expect(String(errorRes.body.errors?.[0]?.message ?? '')).toContain(teamC)
+    expect(String(errorRes.body.errors?.[0]?.message ?? '')).toContain(teamD)
+
+    const warnRes = await agent.post('/api/compiled/preview').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options: { missing_data_policy: 'warn', include_labels: ['teams'] },
+    })
+    expect(warnRes.status).toBe(200)
+    expect(
+      warnRes.body.data.preview.compile_warnings.some((message: string) =>
+        message.includes('no raw team results exist for matchup')
+      )
+    ).toBe(true)
+    expect(
+      warnRes.body.data.preview.compiled_team_results
+        .map((row: any) => String(row.id))
+        .sort()
+    ).toEqual([teamA, teamB, teamC, teamD].sort())
+  })
+
   it('keeps equivalent submissions and raw sources aligned on compiled metrics', async () => {
     const agent = request.agent(app)
 
