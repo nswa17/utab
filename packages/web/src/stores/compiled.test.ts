@@ -459,4 +459,18 @@ describe('compiled store', () => {
     })
   })
 
+  it('does not let an inactive compiled mutation replace the active tournament error', async () => {
+    const store = useCompiledStore()
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament compiled error' }] } },
+    })
+    await store.fetchLatest('tournament-b')
+    expect(store.error).toBe('current tournament compiled error')
+
+    const deleted = await store.deleteCompiled('tournament-a', '')
+    expect(deleted).toBeNull()
+    expect(store.error).toBe('current tournament compiled error')
+  })
+
 })
