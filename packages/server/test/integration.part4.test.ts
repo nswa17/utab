@@ -2680,6 +2680,17 @@ describe('Server integration', () => {
     const { executeSpeakerPersonalDataErase } = await import('../src/controllers/privacy.js')
     const connection = await getTournamentConnection(tournamentId)
     const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'feedback',
+      payload: {
+        adjudicatorId: 'privacy-adjudicator',
+        submittedEntityId: speakerId,
+        score: 8,
+      },
+      submittedBy: 'privacy-count-test',
+    })
     const originalFindOneAndUpdate = SubmissionModel.findOneAndUpdate.bind(SubmissionModel)
 
     let signalUpdateReady: (() => void) | null = null
