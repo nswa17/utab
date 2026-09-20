@@ -214,3 +214,126 @@ No application-code change is warranted in Phase 1.
 The behavior contract is now frozen for subsequent semantic-diff, test-quality, composition, race, boundary, web-state, lifecycle, failure-injection, and merge-rehearsal phases.
 
 Any later change that makes CI green but violates one of the contracts above is a regression, not an acceptable conflict resolution.
+
+
+## Phase 2 — semantic-diff audit and targeted repairs
+
+Scope:
+- re-read the implementation deltas of #34-#41 against contracts C34-C41;
+- followed changed behavior across route/controller/model/import/export and web store/UI consumers where applicable;
+- reverse-searched production writers for state protected by the new concurrency contracts rather than assuming changed-file lists were complete.
+
+### P2-001 — #38 inactive tournament mutations could erase the active tournament error
+
+Severity: regression / state-isolation violation.
+
+Finding:
+- Draw, Compiled, and Submission mutation methods correctly suppressed inactive-tournament result/error writes after request completion;
+- however, several mutation methods still executed `error.value = null` unconditionally when an inactive-tournament request started;
+- `deleteCompiled` could additionally replace the active tournament error with `Invalid compiled result id` for an inactive tournament;
+- therefore tournament A activity could mutate tournament B's visible error state even though A could no longer mutate B's data.
+
+Repair on #38:
+- mutation-start error clearing is now gated by `tournamentScope.isActive(tournamentId)`;
+- the invalid compiled-id early-return error is also active-scope-only;
+- focused regression tests cover Draw, Compiled, and Submission stores.
+
+#38 head after repair:
+- `cc3f1db1e918319d118395d0ea3ce31a78219ba3`
+
+Changed from frozen #38 head only in:
+- `packages/web/src/stores/draws.ts` + test;
+- `packages/web/src/stores/compiled.ts` + test;
+- `packages/web/src/stores/submissions.ts` + test.
+
+Exact-head CI:
+- push run `35539634310`: passed;
+- pull-request run `35539687295`: passed.
+
+### P2-002 — #41 Draw availability validation had a TOCTOU race with entity mutation
+
+Severity: concurrency correctness violation.
+
+Finding:
+- #41 permits an entity already assigned in the persisted Draw to be moved/removed after becoming unavailable while rejecting newly introduced unavailable entities;
+- `upsertDraw` read Team/Adjudicator/Venue availability and only later wrote the Draw;
+- entity CRUD in #40 is namespace-serialized, but Draw validation did not participate in those namespaces;
+- an entity could therefore be read as available, become unavailable concurrently, and then be newly persisted into the Draw from the stale validation snapshot.
+
+Repair on #41:
+- Draw upsert acquires the adjudicator/team/venue namespace leases before entity reads;
+- the leases are held through structure/reference/availability validation, existing-Draw inspection, and the optimistic Draw save;
+- acquisition follows a fixed namespace order and partial acquisition is released on failure;
+- a held entity namespace now makes Draw mutation return 409 rather than validating against unstable state;
+- integration coverage holds the Team namespace and verifies Draw mutation is rejected until release.
+
+#41 intermediate repair commits:
+- implementation: `e66d332bf690c1e97ac2d5370cacbd4f1741bc70`;
+- regression test: `738311259956b670533fad2726de300133335f49`.
+
+### P2-003 — #40 privacy erasure bypassed entity namespaces and Draw optimistic-lock invalidation
+
+Severity: lost-update / stale-write correctness violation.
+
+Finding:
+- reverse-searching writers outside the ordinary entity CRUD controllers found `privacy.ts`;
+- speaker hard deletion performs a Team read-modify-write to remove speaker references from Team template/details;
+- adjudicator erasure directly mutates Adjudicators and hard deletion rewrites Draw allocations;
+- these writes did not join the #40 entity namespace scheme;
+- the Draw rewrite also did not increment Draw `__v`, so a writer that had observed the old Draw version could still pass an optimistic CAS after privacy cleanup and potentially restore the removed adjudicator reference.
+
+Repair on #40:
+- privacy erasure now acquires the relevant entity namespaces:
+  - speaker anonymization: speakers;
+  - speaker hard-delete: speakers + teams;
+  - adjudicator erase: adjudicators;
+- hard-delete Draw allocation cleanup increments Draw `__v`;
+- direct privacy endpoints map namespace contention to retryable HTTP 409;
+- erasure-request execution recognizes the same retryable conflict and restores `running -> approved` instead of permanently marking the request `failed`;
+- regression coverage verifies:
+  - a held Team namespace blocks speaker hard-delete;
+  - adjudicator hard-delete advances Draw `__v`;
+  - namespace-blocked erasure-request execution returns to approved state and returns 409.
+
+#40 head after repair:
+- `3ec3fbc04814c87855222dac4890ef33d6690016`
+
+Files added to the frozen #40 delta:
+- `packages/server/src/controllers/privacy.ts`;
+- `packages/server/src/controllers/erasure-requests.ts`;
+- `packages/server/test/erasure-requests.controller.test.ts`;
+- `packages/server/test/integration.part1.test.ts`.
+
+### #40 -> #41 stack reconciliation
+
+After P2-003, #41 was reconciled with the new #40 head using a true two-parent merge commit:
+- parent 1: #41 repaired head `738311259956b670533fad2726de300133335f49`;
+- parent 2: #40 head `3ec3fbc04814c87855222dac4890ef33d6690016`;
+- merge: `a143a022123e6e61f88b96b545f9d0d470979d73`.
+
+Direct comparison confirms:
+- #41 is 0 commits behind current #40;
+- effective #41-vs-#40 behavior remains confined to the same seven Phase-10 files:
+  Draw publication/PDA validation, Round publication derivation/defaults, lifecycle tests, and allocation UI/tests.
+
+### PRs re-read without a new high-confidence semantic defect in Phase 2
+
+- #34: weighted/strict allocation and two-team support-rate implementation remains consistent with C34.
+- #35: set semantics for rounds, content-sensitive revision, and submission-source completeness logic remain consistent with C35.
+- #36: Draw omission preservation, Draw CAS, Submission CAS, and renumber version invalidation remain consistent with C36.
+- #37: hidden-as-listing-only semantics, membership response scoping, lease serialization, and post-lease refresh remain consistent with C37.
+- #39: wizard furthest-progress state, rollback error surfacing/waiting, and numeric speaker export order remain consistent with C39.
+- #40 boundary/model/import changes outside P2-003 remain semantically consistent with C40 on this pass.
+- #41 Draw-authoritative public publication and unavailable-assigned exception remain semantically consistent with C41 after P2-002.
+
+### Deferred checks, not accepted as safe by assumption
+
+The following are deliberately left to their planned dedicated phases:
+- Phase 3: prove regression tests fail against the corresponding pre-fix behavior where practical;
+- Phase 4: compose all independent PRs, especially #38/#40/#41 and shared test-file unions;
+- Phase 5: deterministic interleavings for namespace/CAS/lease behavior;
+- Phase 6: request/model/import boundary matrix and Mongoose query-update validation;
+- Phase 7: exhaustive web async-state adversarial cases, including loading-state semantics;
+- Phase 9: lease-release/rollback/multi-write failure injection.
+
+Phase 2 does not treat ordinary CI success as proof of these deferred properties.
