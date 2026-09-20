@@ -344,3 +344,98 @@ The following are deliberately left to their planned dedicated phases:
 - Phase 9: lease-release/rollback/multi-write failure injection.
 
 Phase 2 does not treat ordinary CI success as proof of these deferred properties.
+
+
+## Phase 2-1 — #38 semantic re-audit: web tournament-scope isolation
+
+Audit target:
+- PR #38 `audit/web-state-sync-phase7`;
+- frozen Phase-0 head was `352ba0c63613b0190a58034d270a14576a61554a`;
+- before this subphase started, #38 had independently advanced by six commits to `cc3f1db1e918319d118395d0ea3ce31a78219ba3`;
+- that intermediate delta was reviewed first rather than silently replacing the frozen baseline. It only changed Draw/Compiled/Submission store error-scope behavior and their tests, and both exact-head CI runs were green.
+
+Semantic coverage in this subphase:
+- server tournament metadata PATCH schema/controller;
+- client `tournamentStore.updateTournament` intent-merge behavior;
+- `createTournamentStoreScope` and all entity stores;
+- Draw/Round/Result/Compiled/Submission/RawResult stores;
+- admin setup/rounds/compiled/submissions/allocation/result consumers;
+- participant ballot/feedback late-completion guards.
+
+### P2-1-001 — submission timeout bypassed tournament error scoping
+
+Finding:
+- ordinary ballot/feedback failures were scoped with `tournamentScope.isActive(tournamentId)`;
+- timeout cancellation was handled inside `postWithTimeout`, which wrote `error.value` directly;
+- a tournament-A submission could therefore time out after the UI switched to tournament B and overwrite B's visible Submission error.
+
+Repair:
+- `postWithTimeout` now receives the originating tournament id;
+- timeout errors are written only while that tournament is the active Submission scope;
+- regression coverage starts a ballot in A, activates B with its own error, then resolves the A request as canceled and verifies B's error survives.
+
+### P2-1-002 — tournamentStore could publish stale autosave errors after route switch
+
+Finding:
+- `tournamentStore` is global rather than tournament-scoped;
+- admin pages include `tournamentStore.error` in their visible load/save errors;
+- a late tournament-A autosave failure could set the global error after a newer B refresh had become authoritative, even though the caller itself returned on route-context mismatch.
+
+Repair:
+- tournament-store operations now receive a monotonically increasing operation token;
+- only the latest-started operation may publish a global store error;
+- a newer tournament-list refresh therefore invalidates the error side effect of an older update;
+- existing list-state sequencing remains separate and unchanged.
+
+Additional validation:
+- added a behavioral test for concurrent independent `user_defined_data_patch` responses arriving in reverse order;
+- the final local tournament state preserves both intents and unrelated metadata.
+
+### P2-1-003 — raw-result edit/create/delete UI retained stale route context
+
+Finding:
+- `AdminRoundResult.vue` rebuilt the default raw JSON on label/round changes but not on tournament changes;
+- A -> B with the same round could therefore leave `newPayload.tournamentId=A`;
+- edit state and the delete-all modal also survived tournament/round changes;
+- switching the raw-result label while editing could leave an id/payload from the previous collection under the new label.
+
+Repair:
+- changing label now cancels edit state, closes delete-all state, and rebuilds the default payload;
+- changing tournament or round does the same before refreshing;
+- default raw JSON therefore follows the current tournament/round and stale multi-step actions are discarded.
+
+### P2-1-004 — raw-result mutations did not invalidate same-scope stale fetches
+
+Finding:
+- RawResult fetches had per-label request sequencing and cross-tournament scope checks;
+- unlike the other mutated stores, successful same-tournament RawResult mutations did not advance the label sequence;
+- an older fetch could therefore write a pre-mutation snapshot before the caller's follow-up refresh completed.
+
+Repair:
+- successful create/update/delete/bulk-delete invalidates the affected label fetch only when the mutation belongs to the active tournament;
+- inactive-tournament mutations do not invalidate a current tournament fetch;
+- regression coverage verifies an older same-tournament team-result fetch is discarded after an update.
+
+### Phase 2-1 result
+
+Current #38 head:
+- `9664dc92ad97c06fc48a4c1229d91d566f320c81`
+
+Relative to the pre-subphase head `cc3f1db1...`, the repair is confined to:
+- `packages/web/src/stores/submissions.ts` + tests;
+- `packages/web/src/stores/tournament.ts` + tests;
+- `packages/web/src/stores/raw-results.ts` + tests;
+- `packages/web/src/views/admin/round/AdminRoundResult.vue`;
+- `packages/web/src/views/admin/__tests__/AdminRefreshGates.test.ts`.
+
+Exact-head validation:
+- push CI run `35541523005`: passed lint, web typecheck, full tests, and production build;
+- pull-request CI run `35541526816`: passed on the same exact head;
+- GitHub reports #38 mergeable against its current base.
+
+No further high-confidence C38 semantic defect was found in this subphase.
+
+Deferred rather than assumed safe:
+- Phase 3 will assess whether source-text UI tests adequately prove runtime behavior;
+- Phase 4 must re-compose these #38 fixes with #40/#41, especially the allocation UI overlap;
+- Phase 7 remains responsible for broader adversarial loading/error semantics across every route transition.
