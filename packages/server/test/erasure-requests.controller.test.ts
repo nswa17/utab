@@ -20,6 +20,8 @@ vi.mock('../src/models/erasure-request.js', () => ({
 vi.mock('../src/controllers/privacy.js', () => ({
   executeSpeakerPersonalDataErase: mocks.eraseSpeaker,
   executeAdjudicatorPersonalDataErase: mocks.eraseAdjudicator,
+  isPersonalDataEraseBusyError: (error: unknown) =>
+    (error as { code?: unknown } | null)?.code === 'UTAB_PERSONAL_DATA_ERASE_NAMESPACE_BUSY',
 }))
 
 vi.mock('../src/controllers/shared/sensitive-action.js', () => ({
@@ -92,4 +94,42 @@ describe('executeErasureRequest', () => {
     expect(res.json).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledWith(executionError)
   })
+
+  it('restores an approved request when privacy execution is blocked by an entity namespace lease', async () => {
+    const executionError = Object.assign(
+      new Error('Tournament entities are being modified; retry personal data erasure'),
+      { code: 'UTAB_PERSONAL_DATA_ERASE_NAMESPACE_BUSY' }
+    )
+    mocks.eraseSpeaker.mockRejectedValueOnce(executionError)
+    const req = {
+      params: { id: erasureRequestId },
+      body: { tournamentId, reauthPassword: 'password123' },
+      session: { userId: 'operator-1' },
+    }
+    const res = createResponse()
+    const next = vi.fn()
+
+    await executeErasureRequest(req as never, res as never, next)
+
+    expect(mocks.updateOne).toHaveBeenNthCalledWith(
+      2,
+      { _id: erasureRequestId, tournamentId, status: 'running' },
+      {
+        $set: { status: 'approved' },
+        $unset: { executedBy: '', executedAt: '', errorMessage: '' },
+      }
+    )
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(res.json).toHaveBeenCalledWith({
+      data: null,
+      errors: [
+        {
+          name: 'Conflict',
+          message: 'Tournament entities are being modified; retry personal data erasure',
+        },
+      ],
+    })
+    expect(next).not.toHaveBeenCalled()
+  })
+
 })
