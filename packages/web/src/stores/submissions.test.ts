@@ -420,4 +420,28 @@ describe('submissions store', () => {
     ] as any)
   })
 
+  it('does not clear the active tournament error when an inactive submission mutation starts', async () => {
+    const store = useSubmissionsStore()
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament submission error' }] } },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-b' })
+    expect(store.error).toBe('current tournament submission error')
+
+    const deferredUpdate = createDeferred<any>()
+    mockedApi.patch.mockImplementationOnce(() => deferredUpdate.promise)
+    const updatePromise = store.updateSubmission({
+      tournamentId: 'tournament-a',
+      submissionId: 'submission-a',
+      payload: { comment: 'inactive edit' },
+    })
+
+    expect(store.error).toBe('current tournament submission error')
+
+    deferredUpdate.resolve({ data: { data: null } })
+    await updatePromise
+    expect(store.error).toBe('current tournament submission error')
+  })
+
 })
