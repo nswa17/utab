@@ -181,7 +181,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   async function submitBallot(payload: BallotSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       return await postWithTimeout('/submissions/ballots', payload)
     } catch (err: any) {
@@ -197,7 +197,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   async function submitFeedback(payload: FeedbackSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       return await postWithTimeout('/submissions/feedback', payload)
     } catch (err: any) {
@@ -213,7 +213,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   async function updateSubmission(payload: UpdateSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/submissions/${payload.submissionId}`, {
         tournamentId: payload.tournamentId,
@@ -239,7 +239,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   async function deleteSubmission(payload: DeleteSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.delete(`/submissions/${payload.submissionId}`, {
         params: { tournamentId: payload.tournamentId },
