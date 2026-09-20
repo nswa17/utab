@@ -1915,6 +1915,14 @@ describe('Server integration', () => {
         .map((row: any) => String(row.id))
         .sort()
     ).toEqual([teamA, teamB, teamC, teamD].sort())
+
+    const adjudicatorsOnly = await agent.post('/api/compiled/adjudicators').send({
+      tournamentId,
+      source: 'raw',
+      rounds: [1],
+      options: { missing_data_policy: 'error' },
+    })
+    expect(adjudicatorsOnly.status).toBe(201)
   })
 
   it('keeps equivalent submissions and raw sources aligned on compiled metrics', async () => {
