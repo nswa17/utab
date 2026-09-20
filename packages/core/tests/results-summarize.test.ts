@@ -140,4 +140,30 @@ describe('results/results', () => {
     ).toThrow(/score|length/i)
   })
 
+
+  it('keeps valid fractional two-team support rates within [0, 1]', () => {
+    const teams = [{ id: 1 }, { id: 2 }]
+    const style = { team_num: 2 }
+    const rawTeamResults = [
+      { id: 1, r: 1, win: 0, opponents: [2], side: 'gov' },
+      { id: 1, r: 1, win: 0.5, opponents: [2], side: 'gov' },
+      { id: 1, r: 1, win: 1, opponents: [2], side: 'gov' },
+      { id: 2, r: 1, win: 1, opponents: [1], side: 'opp' },
+      { id: 2, r: 1, win: 0.5, opponents: [1], side: 'opp' },
+      { id: 2, r: 1, win: 0, opponents: [1], side: 'opp' },
+    ]
+
+    const results = summarizeTeamResults(teams, rawTeamResults, 1, style)
+    expect(results).toHaveLength(2)
+    for (const result of results) {
+      expect(result.vote_rate).not.toBeNull()
+      expect(result.vote_rate).toBeGreaterThanOrEqual(0)
+      expect(result.vote_rate).toBeLessThanOrEqual(1)
+      expect(result.win).toBeGreaterThanOrEqual(0)
+      expect(result.win).toBeLessThanOrEqual(1)
+    }
+    expect(results.find((result) => result.id === 1)?.vote_rate).toBe(0.5)
+    expect(results.find((result) => result.id === 2)?.vote_rate).toBe(0.5)
+  })
+
 })
