@@ -3304,6 +3304,35 @@ describe('Server integration', () => {
       })
     expect(eraseSpeakerWrongReauth.status).toBe(401)
 
+    const [{ getTournamentConnection }, {
+      acquireEntityNamespaceLease,
+      releaseEntityNamespaceLease,
+    }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/services/entity-namespace-guard.service.js'),
+    ])
+    const privacyConnection = await getTournamentConnection(tournamentId)
+    const privacyTeamLease = await acquireEntityNamespaceLease(
+      privacyConnection,
+      tournamentId,
+      'teams'
+    )
+    expect(privacyTeamLease).toBeTruthy()
+    if (!privacyTeamLease) throw new Error('Failed to acquire privacy team namespace lease')
+    try {
+      const blockedEraseSpeakerRes = await agent
+        .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
+        .send({
+          reason: 'blocked hard delete speaker data',
+          approvedBy: 'ops-hard-delete',
+          eraseMode: 'hard_delete',
+          reauthPassword: 'password123',
+        })
+      expect(blockedEraseSpeakerRes.status).toBe(409)
+    } finally {
+      expect(await releaseEntityNamespaceLease(privacyConnection, privacyTeamLease)).toBe(true)
+    }
+
     const eraseSpeakerRes = await agent
       .delete(`/api/v1/speakers/${speakerId}/personal-data?tournamentId=${tournamentId}`)
       .send({
@@ -3600,6 +3629,7 @@ describe('Server integration', () => {
       ],
     })
     expect(drawRes.status).toBe(201)
+    const drawVersionBeforePrivacyErase = Number(drawRes.body.data.__v ?? 0)
 
     const rawSpeakerRes = await agent.post('/api/v1/raw-results/speakers').send({
       tournamentId,
@@ -3674,6 +3704,9 @@ describe('Server integration', () => {
     const drawsAfterAdjDelete = await agent.get(`/api/v1/draws?tournamentId=${tournamentId}`)
     expect(drawsAfterAdjDelete.status).toBe(200)
     expect(Array.isArray(drawsAfterAdjDelete.body.data)).toBe(true)
+    expect(Number(drawsAfterAdjDelete.body.data[0]?.__v ?? 0)).toBeGreaterThan(
+      drawVersionBeforePrivacyErase
+    )
     const firstAllocation = drawsAfterAdjDelete.body.data[0]?.allocation?.[0]
     expect(firstAllocation).toBeTruthy()
     expect(firstAllocation.chairs).not.toContain(adjudicatorId)
