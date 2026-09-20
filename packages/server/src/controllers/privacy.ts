@@ -175,7 +175,7 @@ export async function executeSpeakerPersonalDataErase(
       tournamentId,
       $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
     },
-    { $unset: { 'payload.comment': '' } }
+    { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
   ).exec()
 
   if (mode === 'hard_delete') {
@@ -237,7 +237,7 @@ export async function executeAdjudicatorPersonalDataErase(
         { submittedBy: entityId },
       ],
     },
-    { $unset: { 'payload.comment': '' } }
+    { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
   ).exec()
 
   if (mode === 'hard_delete') {
