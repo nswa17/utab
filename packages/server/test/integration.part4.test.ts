@@ -2623,6 +2623,131 @@ describe('Server integration', () => {
     expect(statuses).not.toContain(429)
     expect(statuses.every((status) => status === 401)).toBe(true)
   })
+  it('invalidates an in-flight submission edit when privacy erasure clears its comment', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'submission-privacy-race', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'submission-privacy-race', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Submission Privacy Race Open',
+      style: 1,
+      options: { style: { team_num: 2, score_weights: [1] } },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Round 1' })
+    expect(roundRes.status).toBe(201)
+
+    const speakerRes = await organizer.post('/api/speakers').send({
+      tournamentId,
+      name: 'Privacy Race Speaker',
+    })
+    expect(speakerRes.status).toBe(201)
+    const speakerId = String(speakerRes.body.data._id)
+
+    const created = await organizer.post('/api/submissions/ballots').send({
+      tournamentId,
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [75],
+      scoresB: [72],
+      speakerIdsA: [speakerId],
+      speakerIdsB: ['speaker-b'],
+      comment: 'personal comment',
+      submittedEntityId: speakerId,
+    })
+    expect(created.status).toBe(201)
+    const submissionId = String(created.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const { executeSpeakerPersonalDataErase } = await import('../src/controllers/privacy.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const SubmissionModel = getSubmissionModel(connection)
+    const originalFindOneAndUpdate = SubmissionModel.findOneAndUpdate.bind(SubmissionModel)
+
+    let signalUpdateReady: (() => void) | null = null
+    const updateReady = new Promise<void>((resolve) => {
+      signalUpdateReady = resolve
+    })
+    let releaseUpdate: (() => void) | null = null
+    const updateReleased = new Promise<void>((resolve) => {
+      releaseUpdate = resolve
+    })
+    let intercepted = false
+
+    SubmissionModel.findOneAndUpdate = ((...args: any[]) => {
+      const query = originalFindOneAndUpdate(...args)
+      if (intercepted) return query
+      intercepted = true
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        signalUpdateReady?.()
+        await updateReleased
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof SubmissionModel.findOneAndUpdate
+
+    try {
+      const editPromise = organizer
+        .patch(`/api/submissions/${submissionId}`)
+        .send({
+          tournamentId,
+          payload: {
+            teamAId: 'team-a',
+            teamBId: 'team-b',
+            winnerId: 'team-b',
+            scoresA: [70],
+            scoresB: [79],
+            speakerIdsA: [speakerId],
+            speakerIdsB: ['speaker-b'],
+            comment: 'stale restored comment',
+            submittedEntityId: speakerId,
+          },
+        })
+        .then((response) => response)
+
+      await updateReady
+
+      const eraseResult = await executeSpeakerPersonalDataErase({
+        tournamentId,
+        entityId: speakerId,
+        reason: 'privacy race test',
+        approvedBy: 'test',
+        eraseMode: 'anonymize',
+      })
+      expect(eraseResult?.submissionCommentsCleared).toBe(1)
+
+      releaseUpdate?.()
+      const edit = await editPromise
+      expect(edit.status).toBe(409)
+
+      const finalSubmission = await SubmissionModel.findById(submissionId).lean().exec()
+      expect((finalSubmission as any)?.payload?.comment).toBeUndefined()
+    } finally {
+      releaseUpdate?.()
+      SubmissionModel.findOneAndUpdate =
+        originalFindOneAndUpdate as typeof SubmissionModel.findOneAndUpdate
+    }
+  })
+
   it('rejects concurrent admin edits to the same submission instead of silently losing one', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
