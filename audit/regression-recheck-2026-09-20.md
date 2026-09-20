@@ -262,14 +262,18 @@ Finding:
 
 Repair on #41:
 - Draw upsert acquires the adjudicator/team/venue namespace leases before entity reads;
-- the leases are held through structure/reference/availability validation, existing-Draw inspection, and the optimistic Draw save;
+- saved Draw generation (`generateDraw(save=true)`) participates in the same namespaces, holding a stable entity snapshot through allocation generation and persistence;
+- preview-only generation (`save=false`) remains non-mutating and does not take the write-serialization lease;
+- leases are held through structure/reference/availability validation, existing-Draw inspection, and the optimistic Draw save;
 - acquisition follows a fixed namespace order and partial acquisition is released on failure;
-- a held entity namespace now makes Draw mutation return 409 rather than validating against unstable state;
-- integration coverage holds the Team namespace and verifies Draw mutation is rejected until release.
+- a held entity namespace now makes both direct Draw mutation and saved Draw generation return 409 rather than persisting from unstable entity state;
+- integration coverage holds the Team namespace and verifies both write paths are rejected until release.
 
-#41 intermediate repair commits:
-- implementation: `e66d332bf690c1e97ac2d5370cacbd4f1741bc70`;
-- regression test: `738311259956b670533fad2726de300133335f49`.
+#41 Phase-2 repair commits:
+- direct upsert implementation: `e66d332bf690c1e97ac2d5370cacbd4f1741bc70`;
+- direct upsert regression test: `738311259956b670533fad2726de300133335f49`;
+- saved generation implementation: `96cbe1ec91e9c19116dc83100d7f16d49e5e1124`;
+- saved generation regression test: `21ab899aa56c131bcedff9495600872b2ee3b81c`.
 
 ### P2-003 — #40 privacy erasure bypassed entity namespaces and Draw optimistic-lock invalidation
 
@@ -310,6 +314,9 @@ After P2-003, #41 was reconciled with the new #40 head using a true two-parent m
 - parent 1: #41 repaired head `738311259956b670533fad2726de300133335f49`;
 - parent 2: #40 head `3ec3fbc04814c87855222dac4890ef33d6690016`;
 - merge: `a143a022123e6e61f88b96b545f9d0d470979d73`.
+
+After the saved-generation follow-up, current #41 head is:
+- `21ab899aa56c131bcedff9495600872b2ee3b81c`.
 
 Direct comparison confirms:
 - #41 is 0 commits behind current #40;
