@@ -2795,6 +2795,16 @@ describe('Server integration', () => {
     } finally {
       expect(await releaseTournamentMembershipLease(lease)).toBe(true)
     }
+
+    const retryLogin = await request(app).post('/api/auth/login').send({
+      username: 'membership-auth-lock-target',
+      password: 'password123',
+    })
+    expect(retryLogin.status).toBe(200)
+    expect(retryLogin.body.data.tournaments).toContain(tournamentId)
+    expect(
+      await TournamentMemberModel.exists({ tournamentId, userId: targetUserId }).exec()
+    ).not.toBeNull()
   })
 
   it('does not let stale auth backfill resurrect a membership removed concurrently', async () => {
