@@ -77,6 +77,45 @@ describe('raw results store', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('does not let a stale same-tournament fetch overwrite state after a mutation', async () => {
+    const store = useRawResultsStore()
+    store.teamResults = [{ _id: 'current-row', tournamentId: 'tournament-1', r: 1 } as any]
+
+    let resolveFetch: (value: any) => void = () => {}
+    mockedApi.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+    )
+    mockedApi.patch.mockResolvedValueOnce({
+      data: {
+        data: { _id: 'current-row', tournamentId: 'tournament-1', r: 1, win: 1 },
+      },
+    })
+
+    const staleFetch = store.fetchRawResults({
+      tournamentId: 'tournament-1',
+      label: 'teams',
+      round: 1,
+    })
+    await store.updateRawResult('teams', 'current-row', {
+      tournamentId: 'tournament-1',
+      win: 1,
+    })
+
+    resolveFetch({
+      data: {
+        data: [{ _id: 'stale-row', tournamentId: 'tournament-1', r: 1, win: 0 }],
+      },
+    })
+
+    expect(await staleFetch).toEqual([])
+    expect(store.teamResults).toEqual([
+      { _id: 'current-row', tournamentId: 'tournament-1', r: 1 },
+    ] as any)
+  })
+
   it('keeps loading true until concurrent label fetches finish', async () => {
     const store = useRawResultsStore()
     const teamsRequest = createDeferred<any>()
