@@ -150,7 +150,7 @@ export const useCompiledStore = defineStore('compiled', () => {
   ) {
     tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.post('/compiled', toSavePayload(tournamentId, options))
       const savedPayload = extractPayload(res.data?.data)
@@ -178,11 +178,11 @@ export const useCompiledStore = defineStore('compiled', () => {
   async function deleteCompiled(tournamentId: string, compiledId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const targetId = String(compiledId).trim()
       if (!targetId) {
-        error.value = 'Invalid compiled result id'
+        if (tournamentScope.isActive(tournamentId)) error.value = 'Invalid compiled result id'
         return null
       }
       const res = await api.delete(`/compiled/${targetId}`, { params: { tournamentId } })
