@@ -465,13 +465,18 @@ function downloadCsv() {
   URL.revokeObjectURL(url)
 }
 
-watch([activeLabel, round], () => {
+watch(activeLabel, () => {
+  cancelEdit()
+  closeDeleteAllModal()
   buildDefaultPayload()
 })
 
 watch(
   [tournamentId, round],
   () => {
+    cancelEdit()
+    closeDeleteAllModal()
+    buildDefaultPayload()
     refresh()
   },
   { immediate: true }
