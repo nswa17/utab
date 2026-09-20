@@ -78,14 +78,6 @@ async function ensureLegacyMemberships(user: {
   )
 }
 
-async function loadCurrentLegacyTournamentIds(userId: string): Promise<string[]> {
-  const currentUser = await UserModel.findById(userId)
-    .select({ tournaments: 1 })
-    .lean()
-    .exec()
-  return normalizeTournamentIds(currentUser?.tournaments)
-}
-
 async function ensureCreatorMemberships(user: { _id: unknown; role: string }): Promise<void> {
   if (user.role !== 'organizer' && user.role !== 'superuser') return
 
@@ -118,8 +110,7 @@ async function ensureCreatorMemberships(user: { _id: unknown; role: string }): P
 }
 
 async function loadTournamentMembershipSummary(
-  userId: string,
-  legacyTournamentIds: string[] = []
+  userId: string
 ): Promise<TournamentMembershipSummary> {
   const memberships = await TournamentMemberModel.find({ userId })
     .select({ tournamentId: 1, role: 1, _id: 0 })
@@ -130,7 +121,7 @@ async function loadTournamentMembershipSummary(
     .filter((membership) => membership.role === 'organizer')
     .map((membership) => String(membership.tournamentId))
   return {
-    tournamentIds: uniqueIds([...legacyTournamentIds, ...membershipTournamentIds]),
+    tournamentIds: uniqueIds(membershipTournamentIds),
     organizerTournamentIds: uniqueIds(organizerTournamentIds),
   }
 }
@@ -162,8 +153,7 @@ export const login: RequestHandler = async (req, res, next) => {
     await Promise.all([ensureLegacyMemberships(user), ensureCreatorMemberships(user)])
     req.session.userId = user._id.toString()
     req.session.usertype = user.role
-    const legacyTournamentIds = await loadCurrentLegacyTournamentIds(req.session.userId)
-    const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
+    const memberships = await loadTournamentMembershipSummary(req.session.userId)
     req.session.tournaments = memberships.tournamentIds
     await persistSession(req)
 
@@ -228,8 +218,7 @@ export const me: RequestHandler = async (req, res, next) => {
       return
     }
     await Promise.all([ensureLegacyMemberships(user), ensureCreatorMemberships(user)])
-    const legacyTournamentIds = await loadCurrentLegacyTournamentIds(req.session.userId)
-    const memberships = await loadTournamentMembershipSummary(req.session.userId, legacyTournamentIds)
+    const memberships = await loadTournamentMembershipSummary(req.session.userId)
     req.session.tournaments = memberships.tournamentIds
     res.json({
       data: {
