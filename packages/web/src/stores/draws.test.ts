@@ -363,4 +363,28 @@ describe('draws store', () => {
     ] as any)
   })
 
+  it('does not clear the active tournament error when an inactive draw mutation starts', async () => {
+    const store = useDrawsStore()
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament draw error' }] } },
+    })
+    await store.fetchDraws('tournament-b')
+    expect(store.error).toBe('current tournament draw error')
+
+    const deferredSave = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => deferredSave.promise)
+    const savePromise = store.upsertDraw({
+      tournamentId: 'tournament-a',
+      round: 1,
+      allocation: [],
+    })
+
+    expect(store.error).toBe('current tournament draw error')
+
+    deferredSave.resolve({ data: { data: null } })
+    await savePromise
+    expect(store.error).toBe('current tournament draw error')
+  })
+
 })
