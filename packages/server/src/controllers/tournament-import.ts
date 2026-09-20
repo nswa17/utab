@@ -220,6 +220,20 @@ function validateImportedRoundScope(collectionName: string, docs: unknown[]): vo
   })
 }
 
+function validateImportedRawTeamWins(collectionName: string, docs: unknown[]): void {
+  if (collectionName !== 'rawteamresults') return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    const win = record.win
+    if (typeof win === 'number' && Number.isFinite(win) && win >= 0 && win <= 1) return
+    throw new TournamentImportError(
+      400,
+      `Invalid rawteamresults win in backup at index ${index}: expected a finite number in [0, 1]`
+    )
+  })
+}
+
 function validateImportedEntityState(collectionName: string, docs: unknown[]): void {
   const schemas =
     collectionName === 'teams'
@@ -649,6 +663,7 @@ async function importTournamentFromBundle(
       }
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
       validateImportedRoundScope(collectionName, docs)
+      validateImportedRawTeamWins(collectionName, docs)
       validateImportedEntityState(collectionName, docs)
       const revivedDocs = docs.map((doc) =>
         sanitizeImportedTournamentCollectionDocument(
