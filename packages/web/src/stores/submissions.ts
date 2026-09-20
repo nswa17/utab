@@ -77,7 +77,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     participantFetchSequence.value += 1
   }
 
-  async function postWithTimeout(path: string, payload: unknown, timeoutMs = SUBMISSION_TIMEOUT_MS) {
+  async function postWithTimeout(\n    path: string,\n    payload: unknown,\n    tournamentId: string,\n    timeoutMs = SUBMISSION_TIMEOUT_MS\n  ) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
@@ -85,9 +85,11 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       return res.data?.data ?? null
     } catch (err: any) {
       if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
-        error.value = i18n.global.t(
-          '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
-        )
+        if (tournamentScope.isActive(tournamentId)) {
+          error.value = i18n.global.t(
+            '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
+          )
+        }
         return null
       }
       throw err
@@ -183,7 +185,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
-      return await postWithTimeout('/submissions/ballots', payload)
+      return await postWithTimeout('/submissions/ballots', payload, payload.tournamentId)
     } catch (err: any) {
       if (tournamentScope.isActive(payload.tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
@@ -199,7 +201,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     beginRequest()
     if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
-      return await postWithTimeout('/submissions/feedback', payload)
+      return await postWithTimeout('/submissions/feedback', payload, payload.tournamentId)
     } catch (err: any) {
       if (tournamentScope.isActive(payload.tournamentId)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
