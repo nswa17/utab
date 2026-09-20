@@ -45,6 +45,16 @@ describe('Admin refresh gates', () => {
     expect(source).toContain('sectionLoading.value = foregroundRefreshCount > 0')
   })
 
+  it('resets raw-result edit and delete context when route scope changes', () => {
+    const source = load('src/views/admin/round/AdminRoundResult.vue')
+    expect(source).toContain('watch(activeLabel, () => {')
+    expect(source).toContain('watch(\n  [tournamentId, round],')
+    expect(source).toContain('cancelEdit()')
+    expect(source).toContain('closeDeleteAllModal()')
+    expect(source).toContain('buildDefaultPayload()')
+    expect(source).toContain('refresh()')
+  })
+
   it('guards rounds page refresh and loading state across overlapping fetches', () => {
     const source = load('src/views/admin/AdminTournamentRounds.vue')
     expect(source).toContain('createLatestRequestGate')
