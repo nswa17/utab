@@ -3962,4 +3962,98 @@ describe('Server integration', () => {
     expect(unsafePatch.status).toBe(400)
   })
 
+
+  it('serializes round deletion before reading topology against concurrent renumber', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'round-delete-renumber-race', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'round-delete-renumber-race', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Delete Renumber Race Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await organizer
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Race Round' })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const resultRes = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { standings: [] },
+    })
+    expect(resultRes.status).toBe(201)
+
+    const [{ getTournamentConnection }, { getRoundModel }, { getResultModel }] =
+      await Promise.all([
+        import('../src/services/tournament-db.service.js'),
+        import('../src/models/round.js'),
+        import('../src/models/result.js'),
+      ])
+    const connection = await getTournamentConnection(tournamentId)
+    const RoundModel = getRoundModel(connection)
+    const ResultModel = getResultModel(connection)
+    const originalFindOne = RoundModel.findOne.bind(RoundModel)
+
+    let signalDeleteRead: (() => void) | null = null
+    const deleteRead = new Promise<void>((resolve) => {
+      signalDeleteRead = resolve
+    })
+    let releaseDeleteRead: (() => void) | null = null
+    const deleteReadReleased = new Promise<void>((resolve) => {
+      releaseDeleteRead = resolve
+    })
+    let intercepted = false
+
+    RoundModel.findOne = ((...args: any[]) => {
+      const query = originalFindOne(...args)
+      if (intercepted) return query
+      intercepted = true
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        const value = await originalExec(...execArgs)
+        signalDeleteRead?.()
+        await deleteReadReleased
+        return value
+      }
+      return query
+    }) as typeof RoundModel.findOne
+
+    try {
+      const deletePromise = organizer
+        .delete(`/api/rounds/${roundId}?tournamentId=${tournamentId}`)
+        .then((response) => response)
+
+      await deleteRead
+
+      const renumber = await organizer
+        .patch(`/api/rounds/${roundId}`)
+        .send({ tournamentId, round: 2 })
+      expect(renumber.status).toBe(409)
+
+      releaseDeleteRead?.()
+      const deleted = await deletePromise
+      expect(deleted.status).toBe(200)
+      expect(await ResultModel.countDocuments({ tournamentId }).exec()).toBe(0)
+    } finally {
+      releaseDeleteRead?.()
+      RoundModel.findOne = originalFindOne as typeof RoundModel.findOne
+    }
+  })
+
 })
