@@ -1310,6 +1310,15 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       badRequest(res, 'Bulk update ids must be unique')
       return
     }
+    const requestedRenumber = payload.some((item) => item.round !== undefined)
+    const renumberMutationLeases = requestedRenumber
+      ? await acquireRoundTopologyMutationLeases(connection, tournamentId)
+      : null
+    if (requestedRenumber && !renumberMutationLeases) {
+      sendRoundTopologyBusy(res)
+      return
+    }
+    try {
     const allRoundDocs = await RoundModel.find({ tournamentId })
       .select({ _id: 1, round: 1 })
       .lean()
@@ -1354,15 +1363,6 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       })
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
-    const renumberMutationLeases =
-      changes.length > 0
-        ? await acquireRoundTopologyMutationLeases(connection, tournamentId)
-        : null
-    if (changes.length > 0 && !renumberMutationLeases) {
-      sendRoundTopologyBusy(res)
-      return
-    }
-    try {
       if (changes.length > 0) {
         await RoundModel.bulkWrite(
           changes.map((change) => ({
@@ -1456,16 +1456,16 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const filter: Record<string, unknown> = { tournamentId, _id: { $in: idList } }
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const targets = await RoundModel.find(filter).select({ _id: 1, round: 1 }).lean().exec()
-    const deletedRounds = targets
-      .map((item: any) => Number(item?.round))
-      .filter((value) => Number.isInteger(value) && value >= 1)
     const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
     if (!mutationLeases) {
       sendRoundTopologyBusy(res)
       return
     }
     try {
+      const targets = await RoundModel.find(filter).select({ _id: 1, round: 1 }).lean().exec()
+      const deletedRounds = targets
+        .map((item: any) => Number(item?.round))
+        .filter((value) => Number.isInteger(value) && value >= 1)
       await deleteRoundDependencies(connection, tournamentId, deletedRounds)
       const result = await RoundModel.deleteMany(filter).exec()
       if (deletedRounds.length > 0) {
@@ -1845,18 +1845,18 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
     if (!ensureRoundId(res, id)) return
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const existing = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
-    if (!existing) {
-      notFound(res, 'Round not found')
-      return
-    }
-    const deletedRound = Number((existing as any)?.round)
     const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
     if (!mutationLeases) {
       sendRoundTopologyBusy(res)
       return
     }
     try {
+      const existing = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
+      if (!existing) {
+        notFound(res, 'Round not found')
+        return
+      }
+      const deletedRound = Number((existing as any)?.round)
       await deleteRoundDependencies(connection, tournamentId, [deletedRound])
       const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
       if (!deleted) {
