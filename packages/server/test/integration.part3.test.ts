@@ -2171,7 +2171,9 @@ describe('Server integration', () => {
       return Object.values(source).map((value) => String(value))
     }
 
-    for (const row of prelimAllocation) {
+    let privacyFeedbackId = ''
+    let privacyAdjudicatorId = ''
+    for (const [rowIndex, row] of prelimAllocation.entries()) {
       const [teamAId, teamBId] = rowTeamIds(row)
       const chairId = String(row.chairs?.[0] ?? '')
       expect(teamAId).toBeTruthy()
@@ -2201,7 +2203,13 @@ describe('Server integration', () => {
         submittedEntityId: teamAId,
       })
       expect(feedbackRes.status).toBe(201)
+      if (rowIndex === 0) {
+        privacyFeedbackId = String(feedbackRes.body.data._id)
+        privacyAdjudicatorId = chairId
+      }
     }
+    expect(privacyFeedbackId).toBeTruthy()
+    expect(privacyAdjudicatorId).toBeTruthy()
 
     const prelimPreviewRes = await organizer.post('/api/compiled/preview').send({
       tournamentId,
