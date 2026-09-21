@@ -366,7 +366,7 @@ describe('entity stores race handling', () => {
           {
             _id: 'team-created',
             tournamentId: 'tournament-a',
-            name: 'Created Team',
+            name: 'Fetched Current Team',
           },
         ],
       },
@@ -378,7 +378,7 @@ describe('entity stores race handling', () => {
         data: {
           _id: 'team-created',
           tournamentId: 'tournament-a',
-          name: 'Created Team',
+          name: 'Delayed Create Response',
         },
       },
     })
@@ -388,7 +388,7 @@ describe('entity stores race handling', () => {
       {
         _id: 'team-created',
         tournamentId: 'tournament-a',
-        name: 'Created Team',
+        name: 'Fetched Current Team',
       },
     ] as any)
   })
