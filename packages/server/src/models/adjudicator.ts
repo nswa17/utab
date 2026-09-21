@@ -12,7 +12,7 @@ const adjudicatorDetailSchema = new Schema(
     conflicts: { type: [String], default: [] },
     conflict_teams: { type: [String], default: [] },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const adjudicatorTemplateSchema = new Schema(
@@ -21,7 +21,7 @@ const adjudicatorTemplateSchema = new Schema(
     conflicts: { type: [String], default: [] },
     conflict_teams: { type: [String], default: [] },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const adjudicatorSchema = new Schema(
