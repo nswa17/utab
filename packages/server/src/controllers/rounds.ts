@@ -569,6 +569,50 @@ function removeRoundDetails(details: unknown, roundsToRemove: Set<number>) {
     .map((detail) => ({ ...(detail as Record<string, unknown>) }))
 }
 
+async function runIdempotentRoundMutationBatch(
+  label: string,
+  operations: Array<() => Promise<unknown>>
+): Promise<void> {
+  if (operations.length === 0) return
+
+  const firstResults = await Promise.allSettled(operations.map((operation) => operation()))
+  const failed = firstResults
+    .map((result, index) => ({ result, index }))
+    .filter(
+      (entry): entry is { result: PromiseRejectedResult; index: number } =>
+        entry.result.status === 'rejected'
+    )
+  if (failed.length === 0) return
+
+  const retryResults = await Promise.allSettled(
+    failed.map((entry) => operations[entry.index]())
+  )
+  const retryErrors = retryResults
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (retryErrors.length > 0) {
+    throw new AggregateError(
+      [...failed.map((entry) => entry.result.reason), ...retryErrors],
+      `${label} failed after retry`
+    )
+  }
+}
+
+async function runIdempotentRoundMutationWithRetry<T>(
+  label: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (firstError) {
+    try {
+      return await operation()
+    } catch (retryError) {
+      throw new AggregateError([firstError, retryError], `${label} failed after retry`)
+    }
+  }
+}
+
 async function syncEntityRoundDetailsForCreate(
   tournamentId: string,
   createdRounds: number[]
@@ -694,12 +738,12 @@ async function syncEntityRoundDetailsForDelete(
     },
   }))
 
-  await Promise.all([
-    teamOps.length > 0 ? TeamModel.bulkWrite(teamOps, { ordered: false }) : Promise.resolve(),
-    adjudicatorOps.length > 0
-      ? AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })
-      : Promise.resolve(),
-    venueOps.length > 0 ? VenueModel.bulkWrite(venueOps, { ordered: false }) : Promise.resolve(),
+  await runIdempotentRoundMutationBatch('entity round-detail deletion', [
+    ...(teamOps.length > 0 ? [() => TeamModel.bulkWrite(teamOps, { ordered: false })] : []),
+    ...(adjudicatorOps.length > 0
+      ? [() => AdjudicatorModel.bulkWrite(adjudicatorOps, { ordered: false })]
+      : []),
+    ...(venueOps.length > 0 ? [() => VenueModel.bulkWrite(venueOps, { ordered: false })] : []),
   ])
 }
 
@@ -713,25 +757,31 @@ async function deleteRoundDependencies(
   )
   if (uniqueRounds.length === 0) return
 
-  await Promise.all([
-    getDrawModel(connection)
-      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
-      .exec(),
-    getSubmissionModel(connection)
-      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
-      .exec(),
-    getResultModel(connection)
-      .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
-      .exec(),
-    getRawTeamResultModel(connection)
-      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
-      .exec(),
-    getRawSpeakerResultModel(connection)
-      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
-      .exec(),
-    getRawAdjudicatorResultModel(connection)
-      .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
-      .exec(),
+  await runIdempotentRoundMutationBatch('round dependency deletion', [
+    () =>
+      getDrawModel(connection)
+        .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+        .exec(),
+    () =>
+      getSubmissionModel(connection)
+        .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+        .exec(),
+    () =>
+      getResultModel(connection)
+        .deleteMany({ tournamentId, round: { $in: uniqueRounds } })
+        .exec(),
+    () =>
+      getRawTeamResultModel(connection)
+        .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+        .exec(),
+    () =>
+      getRawSpeakerResultModel(connection)
+        .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+        .exec(),
+    () =>
+      getRawAdjudicatorResultModel(connection)
+        .deleteMany({ tournamentId, r: { $in: uniqueRounds } })
+        .exec(),
   ])
 }
 
@@ -846,15 +896,22 @@ async function rewriteStoredRoundReferences(
     rewrite
   )
 
-  await Promise.all([
-    roundOps.length > 0 ? RoundModel.bulkWrite(roundOps, { ordered: true }) : Promise.resolve(),
-    drawOps.length > 0 ? DrawModel.bulkWrite(drawOps, { ordered: true }) : Promise.resolve(),
-    tournament && tournamentRewrite.changed
-      ? TournamentModel.updateOne(
-          { _id: tournamentId },
-          { $set: { user_defined_data: tournamentRewrite.value } }
-        ).exec()
-      : Promise.resolve(),
+  await runIdempotentRoundMutationBatch('stored round-reference rewrite', [
+    ...(roundOps.length > 0
+      ? [() => RoundModel.bulkWrite(roundOps, { ordered: true })]
+      : []),
+    ...(drawOps.length > 0
+      ? [() => DrawModel.bulkWrite(drawOps, { ordered: true })]
+      : []),
+    ...(tournament && tournamentRewrite.changed
+      ? [
+          () =>
+            TournamentModel.updateOne(
+              { _id: tournamentId },
+              { $set: { user_defined_data: tournamentRewrite.value } }
+            ).exec(),
+        ]
+      : []),
   ])
 }
 
@@ -864,64 +921,73 @@ async function moveRoundReferences(
   moves: RoundMove[]
 ): Promise<void> {
   for (const move of moves) {
-    await Promise.all([
-      getDrawModel(connection)
-        .updateMany(
-          { tournamentId, round: move.from },
-          { $set: { round: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getSubmissionModel(connection)
-        .updateMany(
-          { tournamentId, round: move.from },
-          { $set: { round: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getResultModel(connection)
-        .updateMany(
-          { tournamentId, round: move.from },
-          { $set: { round: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getRawTeamResultModel(connection)
-        .updateMany(
-          { tournamentId, r: move.from },
-          { $set: { r: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getRawSpeakerResultModel(connection)
-        .updateMany(
-          { tournamentId, r: move.from },
-          { $set: { r: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getRawAdjudicatorResultModel(connection)
-        .updateMany(
-          { tournamentId, r: move.from },
-          { $set: { r: move.to }, $inc: { __v: 1 } }
-        )
-        .exec(),
-      getTeamModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
-      getAdjudicatorModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
-      getVenueModel(connection)
-        .updateMany(
-          { tournamentId, 'details.r': move.from },
-          { $set: { 'details.$[detail].r': move.to } },
-          { arrayFilters: [{ 'detail.r': move.from }] }
-        )
-        .exec(),
+    await runIdempotentRoundMutationBatch(`round reference move ${move.from}->${move.to}`, [
+      () =>
+        getDrawModel(connection)
+          .updateMany(
+            { tournamentId, round: move.from },
+            { $set: { round: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getSubmissionModel(connection)
+          .updateMany(
+            { tournamentId, round: move.from },
+            { $set: { round: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getResultModel(connection)
+          .updateMany(
+            { tournamentId, round: move.from },
+            { $set: { round: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getRawTeamResultModel(connection)
+          .updateMany(
+            { tournamentId, r: move.from },
+            { $set: { r: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getRawSpeakerResultModel(connection)
+          .updateMany(
+            { tournamentId, r: move.from },
+            { $set: { r: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getRawAdjudicatorResultModel(connection)
+          .updateMany(
+            { tournamentId, r: move.from },
+            { $set: { r: move.to }, $inc: { __v: 1 } }
+          )
+          .exec(),
+      () =>
+        getTeamModel(connection)
+          .updateMany(
+            { tournamentId, 'details.r': move.from },
+            { $set: { 'details.$[detail].r': move.to } },
+            { arrayFilters: [{ 'detail.r': move.from }] }
+          )
+          .exec(),
+      () =>
+        getAdjudicatorModel(connection)
+          .updateMany(
+            { tournamentId, 'details.r': move.from },
+            { $set: { 'details.$[detail].r': move.to } },
+            { arrayFilters: [{ 'detail.r': move.from }] }
+          )
+          .exec(),
+      () =>
+        getVenueModel(connection)
+          .updateMany(
+            { tournamentId, 'details.r': move.from },
+            { $set: { 'details.$[detail].r': move.to } },
+            { arrayFilters: [{ 'detail.r': move.from }] }
+          )
+          .exec(),
     ])
   }
 }
