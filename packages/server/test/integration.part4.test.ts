@@ -2423,6 +2423,83 @@ describe('Server integration', () => {
     expect(copiedFeedbackRes.body.data.length).toBe(1)
   })
 
+  it('rejects copied legacy collections that violate current boundary invariants', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'devtools-copy-boundary-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'devtools-copy-boundary-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const cases = [
+      {
+        suffix: 'round',
+        collection: 'draws',
+        document: { round: 0, allocation: [] },
+        expectedMessage: 'expected a positive integer',
+      },
+      {
+        suffix: 'win',
+        collection: 'rawteamresults',
+        document: {
+          id: 'legacy-team-a',
+          from_id: 'legacy-judge-a',
+          r: 1,
+          weight: 1,
+          win: 2,
+          opponents: ['legacy-team-b'],
+          side: 'gov',
+        },
+        expectedMessage: 'expected a finite number in [0, 1]',
+      },
+      {
+        suffix: 'details',
+        collection: 'teams',
+        document: {
+          name: 'Legacy duplicate-detail team',
+          template: {},
+          details: [
+            { r: 1, available: true, conflicts: [], speakers: [] },
+            { r: 1, available: false, conflicts: [], speakers: [] },
+          ],
+        },
+        expectedMessage: 'duplicate round 1',
+      },
+    ] as const
+
+    for (const item of cases) {
+      const sourceName = `DevTools Boundary Copy ${item.suffix}`
+      const tournamentRes = await organizer
+        .post('/api/tournaments')
+        .send({ name: sourceName, style: 1, options: {} })
+      expect(tournamentRes.status).toBe(201)
+      const sourceTournamentId = String(tournamentRes.body.data._id)
+
+      const connection = await getTournamentConnection(sourceTournamentId)
+      if (!connection.db) throw new Error('Tournament database is not ready')
+      await connection.db.collection(item.collection).insertOne({
+        tournamentId: sourceTournamentId,
+        ...item.document,
+      })
+
+      const copyRes = await organizer
+        .post(`/api/dev-tools/tournaments/${sourceTournamentId}/copy-tournament`)
+        .send({})
+      expect(copyRes.status).toBe(400)
+      expect(String(copyRes.body.errors?.[0]?.message ?? '')).toContain(item.expectedMessage)
+      expect(await TournamentModel.countDocuments({ name: `${sourceName} (Copy)` }).exec()).toBe(0)
+    }
+  })
   it('clears only selected round submissions', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
