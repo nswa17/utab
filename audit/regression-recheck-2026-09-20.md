@@ -1220,7 +1220,19 @@ Intermediate exact head `2839f138a23e39ecdaefc2cac7000cb2ca1142b2`:
 
 Final Phase-7 head:
 - `6acffe60f3d388275af2d152b8741c90a9d381cd`;
-- adds the create-vs-fetch newer-row preservation refinement;
-- exact-head CI is still running when this section is first written.
+- adds the create-vs-fetch newer-row preservation refinement.
 
-Phase 7 is not closed until the final exact-head lint/typecheck/tests/build complete successfully.
+Exact-head validation:
+- push CI `35555427951`: passed lint, web typecheck, full tests, and production build;
+- PR CI `35555429966`: passed lint, web typecheck, full tests, and production build;
+- GitHub reports #38 mergeable.
+
+### Phase 7 conclusion
+
+The web async-state contract now distinguishes not only tournament identity but the specific activation of that tournament. A response started before leaving A cannot become authoritative merely because the UI later returns to A.
+
+The audit also closes the two same-tournament reversed-response cases found here:
+- latest metadata field intent wins over an older delayed response;
+- a delayed create response cannot duplicate or replace a newer fetched copy of the same id.
+
+No additional high-confidence route-context defect was found in the current #41 allocation UI. Phase 7 is closed.
