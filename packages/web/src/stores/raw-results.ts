@@ -37,7 +37,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   function invalidateFetch(label: RawLabel, tournamentId: string) {
-    if (!tournamentScope.isScopeCurrent(scopeToken)) return
+    if (!tournamentScope.isActive(tournamentId)) return
     latestFetchSequence.value[label] += 1
   }
 
@@ -113,6 +113,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   async function updateRawResult(label: RawLabel, rawId: string, payload: Record<string, any>) {
     const tournamentId = String(payload.tournamentId ?? '')
     if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
     if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
       error.value = null
@@ -134,6 +135,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
 
   async function deleteRawResult(label: RawLabel, rawId: string, tournamentId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
     if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
