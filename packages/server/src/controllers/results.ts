@@ -88,6 +88,11 @@ export const updateResult: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
+    const existing = await ResultModel.findOne({ _id: id, tournamentId }).lean().exec()
+    if (!existing) {
+      notFound(res, 'Result not found')
+      return
+    }
     if (round !== undefined) {
       const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
       if (!roundExists) {
@@ -95,16 +100,24 @@ export const updateResult: RequestHandler = async (req, res, next) => {
         return
       }
     }
+    const version = Number.isInteger((existing as any).__v) ? Number((existing as any).__v) : null
     const updated = await ResultModel.findOneAndUpdate(
-      { _id: id, tournamentId },
-      { $set: update },
-      { new: true }
+      {
+        _id: id,
+        tournamentId,
+        ...(version === null ? { __v: { $exists: false } } : { __v: version }),
+      },
+      { $set: update, $inc: { __v: 1 } },
+      { new: true, runValidators: true }
     )
       .lean()
       .exec()
 
     if (!updated) {
-      notFound(res, 'Result not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Result changed or deleted; retry' }],
+      })
       return
     }
 
