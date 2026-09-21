@@ -1319,49 +1319,51 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       return
     }
     try {
-    const allRoundDocs = await RoundModel.find({ tournamentId })
-      .select({ _id: 1, round: 1 })
-      .lean()
-      .exec()
-    const beforeDocs = allRoundDocs.filter((doc: any) => ids.includes(String(doc?._id ?? '')))
-    if (beforeDocs.length !== ids.length) {
-      notFound(res, 'Round not found')
-      return
-    }
-    const beforeRoundById = new Map<string, number>(
-      beforeDocs.map((doc: any) => [String(doc?._id ?? ''), Number(doc?.round)])
-    )
-    const requestedRoundById = new Map(
-      payload
-        .filter((item) => item.round !== undefined)
-        .map((item) => [String(item.id), Number(item.round)])
-    )
-    const finalRoundOwners = new Map<number, string>()
-    for (const doc of allRoundDocs as any[]) {
-      const id = String(doc?._id ?? '')
-      const finalRound = requestedRoundById.get(id) ?? Number(doc?.round)
-      const existingOwner = finalRoundOwners.get(finalRound)
-      if (existingOwner && existingOwner !== id) {
-        res
-          .status(409)
-          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+      const allRoundDocs = await RoundModel.find({ tournamentId })
+        .select({ _id: 1, round: 1 })
+        .lean()
+        .exec()
+      const beforeDocs = allRoundDocs.filter((doc: any) =>
+        ids.includes(String(doc?._id ?? ''))
+      )
+      if (beforeDocs.length !== ids.length) {
+        notFound(res, 'Round not found')
         return
       }
-      finalRoundOwners.set(finalRound, id)
-    }
-    const changes = payload
-      .map((item, index) => {
-        const previousRound = Number(beforeRoundById.get(String(item.id)))
-        const nextRound = item.round === undefined ? previousRound : Number(item.round)
-        if (previousRound === nextRound) return null
-        return {
-          id: String(item.id),
-          previousRound,
-          nextRound,
-          temporaryRound: -1_000_000_000 - index,
+      const beforeRoundById = new Map<string, number>(
+        beforeDocs.map((doc: any) => [String(doc?._id ?? ''), Number(doc?.round)])
+      )
+      const requestedRoundById = new Map(
+        payload
+          .filter((item) => item.round !== undefined)
+          .map((item) => [String(item.id), Number(item.round)])
+      )
+      const finalRoundOwners = new Map<number, string>()
+      for (const doc of allRoundDocs as any[]) {
+        const id = String(doc?._id ?? '')
+        const finalRound = requestedRoundById.get(id) ?? Number(doc?.round)
+        const existingOwner = finalRoundOwners.get(finalRound)
+        if (existingOwner && existingOwner !== id) {
+          res
+            .status(409)
+            .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+          return
         }
-      })
-      .filter((change): change is NonNullable<typeof change> => change !== null)
+        finalRoundOwners.set(finalRound, id)
+      }
+      const changes = payload
+        .map((item, index) => {
+          const previousRound = Number(beforeRoundById.get(String(item.id)))
+          const nextRound = item.round === undefined ? previousRound : Number(item.round)
+          if (previousRound === nextRound) return null
+          return {
+            id: String(item.id),
+            previousRound,
+            nextRound,
+            temporaryRound: -1_000_000_000 - index,
+          }
+        })
+        .filter((change): change is NonNullable<typeof change> => change !== null)
 
       if (changes.length > 0) {
         await runIdempotentRoundMutationWithRetry('bulk round renumber staging', () =>
@@ -1547,17 +1549,17 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       const previousRound = Number((before as any)?.round)
       const nextRound = round === undefined ? previousRound : Number(round)
       if (previousRound !== nextRound) {
-      const conflict = await RoundModel.exists({
-        tournamentId,
-        round: nextRound,
-        _id: { $ne: id },
-      }).exec()
-      if (conflict) {
-        res
-          .status(409)
-          .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
-        return
-      }
+        const conflict = await RoundModel.exists({
+          tournamentId,
+          round: nextRound,
+          _id: { $ne: id },
+        }).exec()
+        if (conflict) {
+          res
+            .status(409)
+            .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
+          return
+        }
         const temporaryRound = -2_000_000_000
         await runIdempotentRoundMutationWithRetry('round renumber staging', () =>
           RoundModel.updateOne(
@@ -1583,10 +1585,10 @@ export const updateRound: RequestHandler = async (req, res, next) => {
             .lean()
             .exec()
       )
-    if (!updated) {
-      notFound(res, 'Round not found')
-      return
-    }
+      if (!updated) {
+        notFound(res, 'Round not found')
+        return
+      }
       if (previousRound !== nextRound) {
         await rewriteStoredRoundReferences(connection, tournamentId, [
           { from: previousRound, to: nextRound },
