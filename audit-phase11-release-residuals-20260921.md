@@ -40,9 +40,12 @@ Fix:
 - add the same membership guard implementation used by #37 so #39 is self-contained.
 - after #37 merges first, GitHub should naturally drop the identical file from #39's effective diff.
 
-Source branch fix:
+Source branch fixes:
 - `audit/recent-pr-regressions-phase8`
-- commit `5a55d18e685bc34749db5aba5af5428cfd2591fe`
+- add the missing guard service,
+- mock lifecycle leases in isolated controller tests,
+- pin the target tournament id in the copy rollback test,
+- current repaired head: `cb1ce63e5bd9330301ad367c176911ff4a21b748`
 
 ### Cumulative stack was missing the latest #37 tournament-create lease
 
@@ -56,6 +59,18 @@ Fix on this Phase 11 branch:
 - synchronize the corrected regression test.
 
 This closes the integration gap before Phase 12.
+
+### Cumulative stack was also missing the latest #39 import/copy lifecycle lease
+
+The Phase 10 cumulative branch contained the earlier #39 rollback and ballot/export fixes, but not the later source-branch change that preallocates the target tournament id and holds the tournament lifecycle lease across import/copy plus organizer membership attachment.
+
+Fix on this Phase 11 branch:
+- import preallocates the target tournament id and holds the lifecycle lease through restore, membership attachment, rollback, and release,
+- devtools copy preallocates the target id before copying and holds the same lifecycle lease through organizer membership attachment,
+- copy service accepts that preallocated id while retaining the Phase 9 boundary validation,
+- isolated rollback tests use mocked leases and deterministic target ids.
+
+This is the only additional source-branch update after the Phase 8 integration cutoff besides #37; the other source PR heads predate the final Phase 8 integration head.
 
 ## Acceptable residual risks
 
