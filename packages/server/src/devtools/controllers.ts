@@ -27,7 +27,7 @@ async function attachOrganizerMembership(
   const userId = String(session?.userId ?? '').trim()
   if (!userId) return
 
-  await Promise.all([
+  const membershipWrites = await Promise.allSettled([
     UserModel.updateOne({ _id: userId }, { $addToSet: { tournaments: tournamentId } }).exec(),
     TournamentMemberModel.updateOne(
       { tournamentId, userId },
@@ -35,6 +35,15 @@ async function attachOrganizerMembership(
       { upsert: true }
     ).exec(),
   ])
+  const membershipErrors = membershipWrites
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (membershipErrors.length > 0) {
+    throw new AggregateError(
+      membershipErrors,
+      `Failed to attach organizer membership for tournament ${tournamentId}`
+    )
+  }
 
   const current = Array.isArray(session?.tournaments)
     ? session?.tournaments.map((value) => String(value))
@@ -106,7 +115,7 @@ export const copyTournament: RequestHandler = async (req, res, next) => {
     }
     if (copiedTournamentId) {
       const userId = req.session?.userId ? String(req.session.userId) : ''
-      await Promise.allSettled([
+      const cleanupResults = await Promise.allSettled([
         TournamentModel.deleteOne({ _id: copiedTournamentId }).exec(),
         TournamentMemberModel.deleteMany({ tournamentId: copiedTournamentId }).exec(),
         userId
@@ -117,6 +126,18 @@ export const copyTournament: RequestHandler = async (req, res, next) => {
           : Promise.resolve(),
         dropTournamentDatabase(copiedTournamentId),
       ])
+      const cleanupErrors = cleanupResults
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (cleanupErrors.length > 0) {
+        next(
+          new AggregateError(
+            [err, ...cleanupErrors],
+            `Failed to roll back copied tournament ${copiedTournamentId}`
+          )
+        )
+        return
+      }
     }
     next(err)
   }
