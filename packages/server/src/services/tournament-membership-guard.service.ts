@@ -29,14 +29,16 @@ export type TournamentMembershipLease = {
 }
 
 function membershipLockKey(tournamentId: string, username: string): string {
-  return `${tournamentId}:${username.trim()}`
+  return `${tournamentId}:member:${username.trim()}`
 }
 
-export async function acquireTournamentMembershipLease(
-  tournamentId: string,
-  username: string
+function lifecycleLockKey(tournamentId: string): string {
+  return `${tournamentId}:lifecycle`
+}
+
+async function acquireTournamentMembershipLeaseByKey(
+  key: string
 ): Promise<TournamentMembershipLease | null> {
-  const key = membershipLockKey(tournamentId, username)
   try {
     await TournamentMembershipLockModel.updateOne(
       { _id: key },
@@ -68,6 +70,49 @@ export async function acquireTournamentMembershipLease(
 
   if (!claimed) return null
   return { key, epoch: Number((claimed as any).epoch ?? 0) }
+}
+
+export async function acquireTournamentMembershipLease(
+  tournamentId: string,
+  username: string
+): Promise<TournamentMembershipLease | null> {
+  return acquireTournamentMembershipLeaseByKey(membershipLockKey(tournamentId, username))
+}
+
+export async function acquireTournamentMembershipLifecycleLease(
+  tournamentId: string
+): Promise<TournamentMembershipLease | null> {
+  return acquireTournamentMembershipLeaseByKey(lifecycleLockKey(tournamentId))
+}
+
+export type TournamentMembershipMutationLeases = {
+  lifecycle: TournamentMembershipLease
+  member: TournamentMembershipLease
+}
+
+export async function acquireTournamentMembershipMutationLeases(
+  tournamentId: string,
+  username: string
+): Promise<TournamentMembershipMutationLeases | null> {
+  const lifecycle = await acquireTournamentMembershipLifecycleLease(tournamentId)
+  if (!lifecycle) return null
+
+  const member = await acquireTournamentMembershipLease(tournamentId, username)
+  if (member) return { lifecycle, member }
+
+  const released = await releaseTournamentMembershipLease(lifecycle)
+  if (!released) {
+    throw new Error('Failed to release tournament membership lifecycle lease')
+  }
+  return null
+}
+
+export async function releaseTournamentMembershipMutationLeases(
+  leases: TournamentMembershipMutationLeases
+): Promise<boolean> {
+  const memberReleased = await releaseTournamentMembershipLease(leases.member)
+  const lifecycleReleased = await releaseTournamentMembershipLease(leases.lifecycle)
+  return memberReleased && lifecycleReleased
 }
 
 export async function releaseTournamentMembershipLease(
