@@ -35,6 +35,7 @@ export const useDrawsStore = defineStore('draws', () => {
     tournamentScope.claimIfEmpty(tournamentId)
     const scopeChanged = tournamentScope.activate(tournamentId)
     if (scopeChanged) draws.value = []
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -46,7 +47,7 @@ export const useDrawsStore = defineStore('draws', () => {
           public: options?.forcePublic ? '1' : undefined,
         },
       })
-      if (sequence !== fetchSequence.value) {
+      if (sequence !== fetchSequence.value || !tournamentScope.isScopeCurrent(scopeToken)) {
         return []
       }
       const fetched = Array.isArray(res.data?.data) ? res.data.data : []
@@ -65,7 +66,7 @@ export const useDrawsStore = defineStore('draws', () => {
       draws.value = mergedTournamentDraws
       return draws.value
     } catch (err: any) {
-      if (sequence !== fetchSequence.value) {
+      if (sequence !== fetchSequence.value || !tournamentScope.isScopeCurrent(scopeToken)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load draws'
@@ -85,12 +86,13 @@ export const useDrawsStore = defineStore('draws', () => {
     locked?: boolean
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/draws', payload)
       const updated = res.data?.data
-      if (updated && tournamentScope.isActive(payload.tournamentId)) {
+      if (updated && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
         draws.value = draws.value.filter(
           (item) => String(item.tournamentId) === String(updated.tournamentId)
@@ -108,7 +110,7 @@ export const useDrawsStore = defineStore('draws', () => {
       }
       return updated
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save draw'
       }
       return null
@@ -119,12 +121,13 @@ export const useDrawsStore = defineStore('draws', () => {
 
   async function deleteDraw(drawId: string, tournamentId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete(`/draws/${drawId}`, { params: { tournamentId } })
       const deleted = res.data?.data
-      if (deleted?._id && tournamentScope.isActive(tournamentId)) {
+      if (deleted?._id && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
         const index = draws.value.findIndex((item) => item._id === deleted._id)
         if (index >= 0) {
@@ -133,7 +136,7 @@ export const useDrawsStore = defineStore('draws', () => {
       }
       return deleted
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete draw'
       }
       return null
