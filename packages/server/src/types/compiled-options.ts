@@ -127,7 +127,10 @@ export function normalizeCompileOptions(
     },
     winner_policy: input?.winner_policy ?? fallback.winner_policy,
     tie_points:
-      typeof input?.tie_points === 'number' && Number.isFinite(input.tie_points)
+      typeof input?.tie_points === 'number' &&
+      Number.isFinite(input.tie_points) &&
+      input.tie_points >= 0 &&
+      input.tie_points <= 1
         ? input.tie_points
         : fallback.tie_points,
     duplicate_normalization: {
