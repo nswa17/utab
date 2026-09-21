@@ -26,6 +26,12 @@ function copiedTournamentName(name: unknown): string {
   return `${normalized} (Copy)`
 }
 
+function requirePositiveInteger(value: unknown, fallback: number, field: string): number {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return value
+  throw new DevToolsServiceError(400, `Cannot copy tournament with invalid ${field}; expected a positive integer`)
+}
+
 function normalizeCollectionName(value: unknown): string {
   return String(value ?? '').trim()
 }
@@ -214,8 +220,16 @@ export async function copyTournamentWithData(
     name: copiedTournamentName((sourceTournament as any)?.name),
     style: Number((sourceTournament as any)?.style ?? 1),
     options: parseJsonClone((sourceTournament as any)?.options ?? {}),
-    total_round_num: Number((sourceTournament as any)?.total_round_num ?? 4),
-    current_round_num: Number((sourceTournament as any)?.current_round_num ?? 1),
+    total_round_num: requirePositiveInteger(
+      (sourceTournament as any)?.total_round_num,
+      4,
+      'total_round_num'
+    ),
+    current_round_num: requirePositiveInteger(
+      (sourceTournament as any)?.current_round_num,
+      1,
+      'current_round_num'
+    ),
     preev_weights: parseJsonClone((sourceTournament as any)?.preev_weights ?? [0, 0, 0, 0, 0, 0]),
     auth: parseJsonClone((sourceTournament as any)?.auth ?? { access: { required: false, version: 1 } }),
     user_defined_data: parseJsonClone((sourceTournament as any)?.user_defined_data ?? {}),
