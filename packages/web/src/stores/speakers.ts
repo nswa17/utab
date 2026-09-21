@@ -51,20 +51,21 @@ export const useSpeakersStore = defineStore('speakers', () => {
     userDefinedData?: Record<string, any>
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/speakers', payload)
       const created = res.data?.data
       if (created) {
-        tournamentScope.invalidateFetches(payload.tournamentId)
-        if (tournamentScope.isActive(payload.tournamentId)) {
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
           speakers.value = [created, ...speakers.value]
         }
       }
       return created
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create speaker'
       }
       return null
@@ -80,8 +81,9 @@ export const useSpeakersStore = defineStore('speakers', () => {
     userDefinedData?: Record<string, any>
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/speakers/${payload.speakerId}`, {
         tournamentId: payload.tournamentId,
@@ -90,8 +92,8 @@ export const useSpeakersStore = defineStore('speakers', () => {
       })
       const updated = res.data?.data
       if (updated) {
-        tournamentScope.invalidateFetches(payload.tournamentId)
-        if (tournamentScope.isActive(payload.tournamentId)) {
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
           speakers.value = speakers.value.map((item) =>
             item._id === updated._id ? updated : item
           )
@@ -99,7 +101,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
       }
       return updated
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update speaker'
       }
       return null
@@ -110,17 +112,18 @@ export const useSpeakersStore = defineStore('speakers', () => {
 
   async function deleteSpeaker(tournamentId: string, speakerId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
-      tournamentScope.invalidateFetches(tournamentId)
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
         speakers.value = speakers.value.filter((item) => item._id !== speakerId)
       }
       return true
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speaker'
       }
       return false
@@ -136,21 +139,22 @@ export const useSpeakersStore = defineStore('speakers', () => {
     if (normalizedIds.length === 0) return 0
 
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete('/speakers', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
       const deletedCount = Number(res.data?.data?.deletedCount)
-      tournamentScope.invalidateFetches(tournamentId)
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
         const deletedIds = new Set(normalizedIds)
         speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speakers'
       }
       return null
