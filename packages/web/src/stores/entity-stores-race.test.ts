@@ -346,4 +346,52 @@ describe('entity stores race handling', () => {
     expect(store.error).toBeNull()
   })
 
+  it('does not duplicate a created entity when a concurrent fetch already contains it', async () => {
+    const store = useTeamsStore()
+    const delayedCreate = createDeferred<any>()
+    const delayedFetch = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => delayedCreate.promise)
+    mockedApi.get.mockImplementationOnce(() => delayedFetch.promise)
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Created Team',
+    })
+    const fetchPromise = store.fetchTeams('tournament-a')
+
+    delayedFetch.resolve({
+      data: {
+        data: [
+          {
+            _id: 'team-created',
+            tournamentId: 'tournament-a',
+            name: 'Created Team',
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    delayedCreate.resolve({
+      data: {
+        data: {
+          _id: 'team-created',
+          tournamentId: 'tournament-a',
+          name: 'Created Team',
+        },
+      },
+    })
+    await createPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-created',
+        tournamentId: 'tournament-a',
+        name: 'Created Team',
+      },
+    ] as any)
+  })
+
+
 })
