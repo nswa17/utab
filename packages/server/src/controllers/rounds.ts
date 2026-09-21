@@ -1489,7 +1489,10 @@ export const previewBreakCandidates: RequestHandler = async (req, res, next) => 
 
     const tournament = await TournamentModel.findById(tournamentId).lean().exec()
     const compileOptions = withTournamentTeamRankingPriority(
-      DEFAULT_COMPILE_OPTIONS,
+      normalizeCompileOptions({
+        ...DEFAULT_COMPILE_OPTIONS,
+        include_labels: ['teams'],
+      }),
       asRecord((tournament as any)?.user_defined_data)
     )
 
