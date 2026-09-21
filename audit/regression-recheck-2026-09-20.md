@@ -552,3 +552,227 @@ The source PRs now preserve their own stated concurrency contracts rather than r
 - auth membership responses use the same central membership source as authorization middleware.
 
 No additional high-confidence C36/C37 semantic defect was found after the writer reverse-search. The tournament-deletion cross-race is not accepted as safe; it is carried forward to Phase 5.
+
+
+## Phase 2-3 — #35/#34/#39 semantic re-audit
+
+Audit targets:
+- #35 compiled-results invariants;
+- #34 core allocation/result invariants;
+- #39 recent-regression repairs.
+
+### P2-3-001 — #35 raw-source Draw completeness was still only a documented scope gap
+
+Finding:
+- #35 enforced Draw-matchup completeness for `source='submissions'`;
+- the corresponding raw-source path could still silently compile a selected Draw while omitting a matchup that had no raw team-result rows;
+- leaving this only on a later cumulative branch was unsafe for the planned merge sequence because #35 itself targets `main`.
+
+Repair on #35:
+- raw compilation now validates selected Draw matchups against raw team-result groups;
+- a completely absent matchup is routed through `missing_data_policy`;
+- a partially present matchup reports the missing team row;
+- warn mode keeps Draw teams in the compiled team universe so missing matchups do not silently disappear;
+- raw completeness validation is scoped through `validationLabels` and runs only when team results are being validated, preventing adjudicator-only/speaker-only subset compilation from being blocked by unrelated raw team gaps.
+
+Regression coverage:
+- error mode rejects a selected Draw with an entirely missing raw matchup;
+- warn mode emits a warning and retains all Draw teams;
+- adjudicator-only raw compilation remains allowed under the same missing team condition.
+
+Current #35 head:
+- `553fa30fd1354e708bdc05f94b9ba778845e1b8c`.
+
+Exact-head CI:
+- push `35543503073`: success;
+- PR `35543505628`: success.
+
+### P2-3-002 — #34 compiled vote_rate preserved the wrong null semantics outside ordinary 2-team observations
+
+Finding:
+- #34 corrected the signed-margin bug by mapping two-team vote margin back to a support rate;
+- however the compiled result type still required `number`;
+- non-two-team formats and teams with no selected-round ballot observations therefore collapsed to numeric `0`, even though round-level `vote_rate` is nullable and there is no meaningful support-rate observation in those cases.
+
+Repair on #34:
+- compiled `vote_rate` now aggregates the actual round-level `vote_rate` observations, weighted by their ballot count;
+- rounds whose `vote_rate` is `null` contribute nothing;
+- if no vote-rate observation exists, the compiled field remains `null`;
+- `CompiledTeamResult.vote_rate` is typed `number | null`.
+
+Regression coverage:
+- four-team result compilation preserves `vote_rate=null`;
+- a two-team entity with no selected-round ballots preserves `vote_rate=null`;
+- ordinary two-team multi-round support-rate aggregation remains 0..1.
+
+Current #34 head:
+- `40b2017afc93967f94e961919ebad37fd0814c75`.
+
+Exact-head CI:
+- push `35543423406`: success;
+- PR `35543425350`: success.
+
+### #39 semantic re-read
+
+The three repaired behaviors were traced again:
+- ballot wizard remembers furthest reached step independently from the active step;
+- import/copy cleanup waits for all cleanup attempts and surfaces cleanup failures with the original failure;
+- detailed-result `speaker_order` sorting is numeric.
+
+No additional high-confidence semantic defect was found in #39. Test quality for the wizard was weaker than the server/export repairs and is addressed in Phase 3 below.
+
+### Phase 2 completion
+
+Phase 2 is complete after subphases 2-1, 2-2, and 2-3.
+
+The final Phase-2 review did not treat CI success as semantic proof. It found and repaired:
+- additional #38 tournament-scope error/mutation races;
+- #36 privacy writers that bypassed Submission/Draw CAS invalidation;
+- #37 auth backfill races against membership removal;
+- #40 privacy writers outside entity namespaces;
+- #41 Draw validation/generation outside entity namespace serialization;
+- #35 raw-source completeness;
+- #34 nullable compiled vote-rate semantics.
+
+The next correctness risks are composition/interleaving/failure-atomicity rather than a known unreviewed individual-PR semantic gap.
+
+
+## Phase 3 — regression-test quality / pre-fix failure audit
+
+### Method
+
+For each open audit PR, the regression tests were classified as:
+1. direct behavioral unit/integration tests;
+2. deterministic concurrency/interleaving tests;
+3. source-text/wiring assertions.
+
+For critical fixes, the corresponding pre-fix implementation was re-read to establish whether the regression assertion would actually be violated before the repair. Historical test-only branches were not created merely to manufacture red CI runs; that would add repository noise without changing the proof where the old control flow directly contradicts the assertion.
+
+### #34
+
+Behavior tests directly exercise:
+- weighted filter ranking;
+- strict availability filtering;
+- two-team support-rate semantics;
+- nullable vote-rate semantics.
+
+Pre-fix failure is structurally established:
+- the weighted implementation used a sparse `Array(n).map`, leaving comparisons tied;
+- strict matching received unfiltered teams;
+- compiled vote rate used signed vote margin / ballot count;
+- the follow-up null cases returned fabricated zero.
+
+Assessment: strong behavioral coverage.
+
+### #35
+
+Coverage includes:
+- core metamorphic invariance to input permutation and duplicate/reordered round selectors;
+- content-sensitive preview revision after same-cardinality ballot mutation;
+- submission-source missing Draw matchup handling;
+- raw-source missing Draw matchup handling;
+- submissions/raw differential team/speaker compilation;
+- subset-validation scoping.
+
+Each assertion contradicts a concrete pre-fix path: duplicate `rs` iteration, count-only revision, absent Draw completeness checks, or unscoped raw validation.
+
+Assessment: strong behavioral coverage.
+
+### #36
+
+Integration tests deliberately interleave:
+- two admin Submission edits from one starting version;
+- stale Submission edit against round renumber;
+- stale Submission edit against privacy erasure;
+- two Draw writes from one starting version;
+- privacy Draw cleanup versus Draw version.
+
+These tests exercise the CAS boundary rather than only checking implementation text.
+
+Assessment: strong deterministic concurrency coverage.
+
+### #37
+
+Coverage directly verifies:
+- managed-user tournament responses do not expose unrelated memberships;
+- hidden tournament remains listing-only rather than becoming an authorization barrier;
+- membership rollback uses the post-lease user state;
+- auth legacy backfill cannot resurrect a membership removed while login was in flight.
+
+The stale pre-lease test explicitly requires a second User read after lease acquisition, which the pre-fix controller did not perform.
+
+Assessment: strong behavior/concurrency coverage.
+
+### #38
+
+The store layer has broad behavioral race coverage:
+- A -> B scope clearing;
+- stale success and stale error suppression;
+- mutation/fetch ordering;
+- concurrent loading state;
+- mutation-only first use;
+- raw-result same-scope invalidation;
+- tournament metadata intent merge.
+
+Several Vue page tests remain source-text/wiring tests. They are not counted as the primary semantic proof:
+- the request-gate primitive itself has behavioral tests;
+- store state machines are behavior-tested;
+- the page source assertions verify that the tested primitives are actually wired into the relevant multi-step UI flow.
+
+A full component-level async adversarial pass remains assigned to Phase 7.
+
+Assessment: acceptable for Phase 3; source-text tests are supplementary, not sole proof of the core state-machine invariants.
+
+### #39
+
+Finding:
+- rollback and detailed-export fixes already had direct behavioral tests;
+- the ballot wizard regression was still primarily protected by source-text assertions.
+
+Repair:
+- wizard progress/revisit rules were extracted into `packages/web/src/utils/ballot-wizard.ts`;
+- the participant ballot component now uses those helpers;
+- behavioral unit tests verify reach-later -> go-back -> revisit-later semantics, step-list shrink clamping, and invalid-step rejection;
+- the existing component source test remains only a wiring assertion.
+
+Current #39 head after Phase-3 strengthening:
+- `3baae8e2c1a0419a8e55ec8a99ef2dc3e12d9259`.
+
+### #40
+
+Boundary tests hit the real API/model/import entry points for:
+- positive integer round fields;
+- raw-team `win` finite [0,1];
+- `tie_points` [0,1];
+- entity template/details structure;
+- duplicate detail rounds;
+- backup import validation;
+- namespace contention around Round/entity synchronization;
+- privacy namespace/CAS behavior.
+
+The pre-fix boundary paths accepted the tested invalid values or bypassed the relevant namespace/version guard.
+
+Assessment: strong multi-entry behavioral coverage.
+
+### #41
+
+Server integration/lifecycle tests cover:
+- Draw-authoritative publication state;
+- pre-publication participant rejection;
+- team-only versus full publication;
+- compile/break/renumber/export-import/delete lifecycle;
+- entity namespace contention for Draw writes and saved generation;
+- moving/removing entities that were already assigned before becoming unavailable while rejecting new unavailable placements.
+
+`AdminRoundAllocation.test.ts` contains source-text assertions for UI wiring, but the product invariants themselves are independently exercised by server integration tests. The source test is therefore not treated as sole correctness evidence.
+
+Assessment: strong server/lifecycle coverage; UI wiring remains supplementary and will be stressed further in Phase 7.
+
+### Phase 3 conclusion
+
+No false-positive regression test was found that could satisfy the critical invariant while leaving the original defect intact.
+
+One material test-quality weakness was found and repaired:
+- #39 ballot wizard behavior no longer relies mainly on source-text assertions.
+
+The remaining source-text Vue tests are explicitly classified as wiring checks. The underlying store/request-gate/server invariants they depend on have behavioral coverage, while full component-level async behavior remains scheduled for Phase 7.
