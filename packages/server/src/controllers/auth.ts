@@ -8,8 +8,8 @@ import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
 import {
-  acquireTournamentMembershipLease,
-  releaseTournamentMembershipLease,
+  acquireTournamentMembershipMutationLeases,
+  releaseTournamentMembershipMutationLeases,
 } from '../services/tournament-membership-guard.service.js'
 
 type RegisterRole = 'organizer' | 'adjudicator' | 'speaker' | 'audience'
@@ -53,8 +53,8 @@ async function ensureLegacyMemberships(user: {
 
   await Promise.all(
     tournamentIds.map(async (tournamentId) => {
-      const lease = await acquireTournamentMembershipLease(tournamentId, username)
-      if (!lease) return
+      const leases = await acquireTournamentMembershipMutationLeases(tournamentId, username)
+      if (!leases) return
       try {
         const currentUser = await UserModel.findById(userId)
           .select({ role: 1, tournaments: 1 })
@@ -62,6 +62,8 @@ async function ensureLegacyMemberships(user: {
           .exec()
         if (!currentUser) return
         if (!normalizeTournamentIds(currentUser.tournaments).includes(tournamentId)) return
+        const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+        if (!tournamentExists) return
 
         const role = toMemberRole(String(currentUser.role ?? ''))
         if (!role) return
@@ -72,7 +74,7 @@ async function ensureLegacyMemberships(user: {
           { upsert: true }
         ).exec()
       } finally {
-        await releaseTournamentMembershipLease(lease)
+        await releaseTournamentMembershipMutationLeases(leases)
       }
     })
   )
@@ -103,11 +105,13 @@ async function ensureCreatorMemberships(user: {
 
   for (const tournament of createdTournaments) {
     const tournamentId = String(tournament._id)
-    const lease = await acquireTournamentMembershipLease(tournamentId, username)
-    if (!lease) continue
+    const leases = await acquireTournamentMembershipMutationLeases(tournamentId, username)
+    if (!leases) continue
     try {
       const currentUser = await UserModel.findById(userId).select({ role: 1 }).lean().exec()
       if (!currentUser) continue
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) continue
       const currentRole = String(currentUser.role ?? '')
       if (currentRole !== 'organizer' && currentRole !== 'superuser') continue
 
@@ -117,7 +121,7 @@ async function ensureCreatorMemberships(user: {
         { upsert: true }
       ).exec()
     } finally {
-      await releaseTournamentMembershipLease(lease)
+      await releaseTournamentMembershipMutationLeases(leases)
     }
   }
 }
