@@ -11,6 +11,7 @@ export const useTournamentStore = defineStore('tournament', () => {
   const pendingRequests = ref(0)
   const listSequence = ref(0)
   const operationSequence = ref(0)
+  const updateIntentSequence = new Map<string, number>()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -34,6 +35,32 @@ export const useTournamentStore = defineStore('tournament', () => {
 
   function isOperationCurrent(sequence: number) {
     return sequence === operationSequence.value
+  }
+
+  function updateIntentKey(tournamentId: string, field: string) {
+    return `${tournamentId}:${field}`
+  }
+
+  function registerUpdateIntent(payload: { tournamentId: string } & Record<string, any>, sequence: number) {
+    Object.keys(payload).forEach((key) => {
+      if (key === 'tournamentId') return
+      if (key === 'user_defined_data_patch') {
+        const patch = payload.user_defined_data_patch
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return
+        Object.keys(patch).forEach((patchKey) => {
+          updateIntentSequence.set(
+            updateIntentKey(payload.tournamentId, `user_defined_data.${patchKey}`),
+            sequence
+          )
+        })
+        return
+      }
+      updateIntentSequence.set(updateIntentKey(payload.tournamentId, key), sequence)
+    })
+  }
+
+  function ownsUpdateIntent(tournamentId: string, field: string, sequence: number) {
+    return updateIntentSequence.get(updateIntentKey(tournamentId, field)) === sequence
   }
 
   async function fetchTournaments() {
@@ -77,7 +104,10 @@ export const useTournamentStore = defineStore('tournament', () => {
       const created = res.data?.data
       if (created) {
         advanceListSequence()
-        tournaments.value = [created, ...tournaments.value]
+        tournaments.value = [
+          created,
+          ...tournaments.value.filter((item) => item._id !== created._id),
+        ]
         // Keep organizer membership in sync so the new tournament appears immediately
         const auth = useAuthStore()
         const hasAccess = auth.tournaments.includes(created._id)
@@ -102,6 +132,7 @@ export const useTournamentStore = defineStore('tournament', () => {
 
   async function updateTournament(payload: { tournamentId: string } & Record<string, any>) {
     const operation = beginOperation()
+    registerUpdateIntent(payload, operation)
     beginRequest()
     error.value = null
     try {
@@ -117,18 +148,34 @@ export const useTournamentStore = defineStore('tournament', () => {
             : null
         tournaments.value = tournaments.value.map((item) => {
           if (item._id !== updated._id) return item
-          if (!userDefinedDataPatch) return updated
 
           const merged: Record<string, any> = { ...item }
           Object.keys(payload).forEach((key) => {
             if (key === 'tournamentId' || key === 'user_defined_data_patch') return
-            if (Object.prototype.hasOwnProperty.call(updated, key)) {
+            if (
+              ownsUpdateIntent(payload.tournamentId, key, operation) &&
+              Object.prototype.hasOwnProperty.call(updated, key)
+            ) {
               merged[key] = updated[key]
             }
           })
-          merged.user_defined_data = {
-            ...(item.user_defined_data ?? {}),
-            ...userDefinedDataPatch,
+
+          if (userDefinedDataPatch) {
+            const mergedUserDefinedData: Record<string, any> = {
+              ...(item.user_defined_data ?? {}),
+            }
+            Object.keys(userDefinedDataPatch).forEach((key) => {
+              if (
+                ownsUpdateIntent(
+                  payload.tournamentId,
+                  `user_defined_data.${key}`,
+                  operation
+                )
+              ) {
+                mergedUserDefinedData[key] = userDefinedDataPatch[key]
+              }
+            })
+            merged.user_defined_data = mergedUserDefinedData
           }
           return merged
         })
