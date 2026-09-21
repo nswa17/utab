@@ -473,4 +473,41 @@ describe('compiled store', () => {
     expect(store.error).toBe('current tournament compiled error')
   })
 
+  it('does not revive an old preview after A -> B -> A through fetchLatest', async () => {
+    const store = useCompiledStore()
+    const oldPreview = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldPreview.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: { _id: 'compiled-b', payload: { compiled_team_results: [{ id: 'b' }] } } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { _id: 'compiled-a-current', payload: { compiled_team_results: [{ id: 'a-current' }] } } },
+      })
+
+    const oldPromise = store.runPreview('tournament-a', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    await store.fetchLatest('tournament-b')
+    await store.fetchLatest('tournament-a')
+
+    oldPreview.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'a-old' }],
+          },
+          preview_signature: 'sig-old-a',
+          revision: 'rev-old-a',
+        },
+      },
+    })
+    expect(await oldPromise).toBeNull()
+    expect(store.previewState).toBeNull()
+    expect(store.compiled?.compiled_team_results).toEqual([{ id: 'a-current' }])
+  })
+
 })
