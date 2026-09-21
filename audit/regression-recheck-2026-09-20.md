@@ -935,3 +935,161 @@ GitHub Actions run for exact integration head:
 - full test/build: pending at the time this section was first written.
 
 Phase 4 is not considered closed until that exact-head run completes successfully.
+
+
+## Phase 6 — all-entry boundary invariant audit
+
+Primary implementation target:
+- #40 `audit/boundary-type-phase9`.
+
+Audited invariants:
+- tournament `total_round_num/current_round_num`: positive integer;
+- round-scoped `round/r`: positive integer;
+- raw-team `win`: finite [0,1];
+- compile `tie_points`: finite [0,1];
+- Team/Adjudicator/Venue template/details: known-field types, detail `r >= 1`, unique detail rounds, and legacy-extra passthrough compatibility.
+
+Audited entry paths:
+- API create;
+- API single update;
+- API bulk update;
+- Mongoose model persistence;
+- tournament backup import (native Mongo insertion);
+- dev-tools tournament copy (native Mongo insertion);
+- internal compile option normalization.
+
+### P6-001 — dev-tools copy bypassed current boundary validation
+
+Finding:
+- tournament copy enumerated source Mongo collections and used native `insertMany` into the target;
+- unlike route/model writes, that native path did not run Mongoose validators;
+- a legacy source tournament containing `round=0`, raw-team `win>1`, duplicate detail rounds, or an invalid compiled `tie_points` value could therefore reproduce invalid state in a newly created tournament.
+
+Repair:
+- copy validates round-scoped collection fields before insertion;
+- raw-team `win` is finite [0,1];
+- compiled snapshot `payload.compile_options.tie_points` is finite [0,1];
+- teams/adjudicators/venues use the same shared detail/template Zod schemas as normal API/import paths;
+- source tournament `total_round_num/current_round_num` are validated as positive integers before target creation;
+- validation failures return a 400-class dev-tools error and copy cleanup leaves no target tournament.
+
+Regression coverage creates legacy-invalid source data through native writes and verifies copy rejection for:
+- Draw `round=0`;
+- raw-team `win=2`;
+- compiled `tie_points=2`;
+- duplicate Team detail round;
+- root tournament `total_round_num=0`.
+
+### P6-002 — tie_points was bounded only at the HTTP boundary
+
+Finding:
+- compiled API routes already restricted `tie_points` to [0,1];
+- `normalizeCompileOptions` accepted any finite internal value;
+- CompiledResult stores payload as Mixed;
+- backup import and tournament copy use native collection insertion;
+- direct/internal or legacy data could therefore retain an out-of-range tie scale despite the API contract.
+
+Repair:
+- `normalizeCompileOptions` accepts an input tie point only when finite and in [0,1];
+- an invalid fallback value also falls back to the repository default rather than propagating invalid state;
+- CompiledResult payload validation independently constrains persisted `compile_options.tie_points`;
+- backup import validates compiled snapshots before native insertion;
+- dev-tools copy performs the same validation.
+
+Coverage includes:
+- HTTP values below 0 and above 1;
+- internal normalization for 0/0.5/1 and out-of-range values;
+- invalid fallback normalization;
+- direct CompiledResult persistence;
+- tampered backup import;
+- legacy-invalid tournament copy.
+
+### P6-003 — entity passthrough semantics differed by persistence path
+
+Finding:
+- shared entity Zod schemas intentionally use `.passthrough()` to preserve legacy extra template/detail fields;
+- Mongoose nested Team/Adjudicator/Venue schemas were strict by default, allowing accepted extra fields to disappear at persistence time;
+- after nested schemas were made `strict:false`, CI exposed a second mismatch: Mongoose `bulkWrite` casting still stripped unknown nested fields while create/single-update preserved them.
+
+Repair:
+- Team/Adjudicator/Venue nested template/detail schemas use `strict:false` while retaining validators for known fields;
+- entity single update now enables `runValidators: true`;
+- controlled entity bulk writes use `strict:false` so nested legacy extras survive;
+- top-level mutation fields remain explicitly selected by `buildUpdateDoc`, and API Zod schemas continue to validate all known nested fields;
+- rollback bulk writes use the same casting mode, preserving before-state semantics.
+
+A red intermediate CI run was valuable here:
+- `integration.part1` reported `bulk-update-kept` as missing while create/single-update passed;
+- this proved passthrough was not yet compositionally consistent and led to the bulkWrite fix.
+
+Final regression coverage verifies:
+- create preserves legacy template/detail extras;
+- single update preserves them;
+- bulk update preserves them;
+- duplicate detail rounds and invalid detail rounds are still rejected.
+
+### Direct model defense-in-depth
+
+Additional direct-model tests verify rejection of:
+- Round/Draw/Submission/Result `round=0`;
+- raw team/speaker/adjudicator `r=0`;
+- raw-team model invalidity remains independently enforced;
+- duplicate Team/Adjudicator/Venue detail rounds;
+- Tournament `total_round_num=0`;
+- CompiledResult `tie_points=2`.
+
+### Phase 6 invariant matrix result
+
+1. **round/r > 0**
+   - request schemas: enforced;
+   - Mongoose models: enforced;
+   - backup import: enforced before native insert;
+   - dev-tools copy: enforced before native insert.
+
+2. **raw-team win in [0,1]**
+   - create/update request schemas: enforced;
+   - Mongoose model: enforced;
+   - backup import: enforced;
+   - copy: enforced.
+
+3. **tie_points in [0,1]**
+   - request schema: enforced;
+   - option normalization: enforced for input and fallback;
+   - CompiledResult model: enforced;
+   - backup import: enforced;
+   - copy: enforced.
+
+4. **entity details/templates**
+   - create/update/bulk API: shared schemas;
+   - allocation input: shared schemas;
+   - model: positive integer detail rounds + uniqueness;
+   - backup import: shared schemas;
+   - copy: shared schemas;
+   - legacy extra fields: preserved consistently on create/single/bulk persistence.
+
+5. **tournament round counters**
+   - request/model/import/copy: positive integer;
+   - no arbitrary maximum is introduced.
+
+Current #40 exact head:
+- `6fde45800e63075e072888f7a27932600cc8ca1f`.
+
+Exact-head validation:
+- push CI `35552437606`: success;
+- PR CI `35552439332`: success.
+
+### #41 stack rehearsal
+
+A fresh stack rehearsal was built from the exact #40 Phase-6 head and the current #41 seven-file delta:
+- branch `audit/phase6-stack-reconcile-final-20260920`;
+- rehearsal head `0467287824679a6a751402e3af7619c2de029387`;
+- compare against #40: behind 0, exactly seven changed files;
+- all seven #41 patch files apply cleanly on top of Phase-6 #40.
+
+The rehearsal must pass exact-head CI before the #41 branch is reconciled. After that, #41 should be updated with a two-parent commit whose tree is exactly this latest-#40-plus-#41-delta tree.
+
+### Residual boundary decisions
+
+Not treated as bugs in Phase 6:
+- no repository/product specification defines a maximum `total_round_num`, so this audit does not invent a cap;
+- already-persisted historical invalid rows are not silently rewritten by a migration; the audit prevents new validated/imported/copied writes from reproducing them and makes critical compile normalization defensive.
