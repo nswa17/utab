@@ -66,7 +66,7 @@ describe('copyTournamentWithData rollback', () => {
 
     let thrown: unknown
     try {
-      await copyTournamentWithData('source', 'actor')
+      await copyTournamentWithData('source', 'actor', '507f1f77bcf86cd799439011')
     } catch (error) {
       thrown = error
     }
