@@ -4773,11 +4773,13 @@ describe('Server integration', () => {
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
 
-    const invalidTiePoints = await agent.post('/api/compiled/preview').send({
-      tournamentId,
-      options: { tie_points: 1.01 },
-    })
-    expect(invalidTiePoints.status).toBe(400)
+    for (const tiePoints of [-0.01, 1.01]) {
+      const invalidTiePoints = await agent.post('/api/compiled/preview').send({
+        tournamentId,
+        options: { tie_points: tiePoints },
+      })
+      expect(invalidTiePoints.status).toBe(400)
+    }
 
     const invalidRawRoundList = await agent.get(
       `/api/raw-results/teams?tournamentId=${tournamentId}&round=abc`
@@ -4823,9 +4825,19 @@ describe('Server integration', () => {
     const teamRes = await agent.post('/api/teams').send({
       tournamentId,
       name: 'Boundary valid team',
-      details: [{ r: 1, available: true, speakers: [] }],
+      template: { available: true, legacy_template_field: 'create-kept' },
+      details: [
+        {
+          r: 1,
+          available: true,
+          speakers: [],
+          legacy_detail_field: 'create-kept',
+        },
+      ],
     })
     expect(teamRes.status).toBe(201)
+    expect(teamRes.body.data.template.legacy_template_field).toBe('create-kept')
+    expect(teamRes.body.data.details[0].legacy_detail_field).toBe('create-kept')
     const teamId = String(teamRes.body.data._id)
 
     const invalidSingleUpdate = await agent.patch(`/api/teams/${teamId}`).send({
@@ -4836,6 +4848,37 @@ describe('Server integration', () => {
       ],
     })
     expect(invalidSingleUpdate.status).toBe(400)
+
+    const legacySingleUpdate = await agent.patch(`/api/teams/${teamId}`).send({
+      tournamentId,
+      details: [
+        {
+          r: 1,
+          available: false,
+          speakers: [],
+          legacy_detail_field: 'single-update-kept',
+        },
+      ],
+    })
+    expect(legacySingleUpdate.status).toBe(200)
+    expect(legacySingleUpdate.body.data.details[0].legacy_detail_field).toBe(
+      'single-update-kept'
+    )
+
+    const legacyBulkUpdate = await agent.patch('/api/teams').send([
+      {
+        id: teamId,
+        tournamentId,
+        template: {
+          available: false,
+          legacy_template_field: 'bulk-update-kept',
+        },
+      },
+    ])
+    expect(legacyBulkUpdate.status).toBe(200)
+    expect(legacyBulkUpdate.body.data[0].template.legacy_template_field).toBe(
+      'bulk-update-kept'
+    )
 
     const invalidBulkUpdate = await agent.patch('/api/teams').send([
       {
