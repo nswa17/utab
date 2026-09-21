@@ -128,13 +128,17 @@ type PlainRecord = Record<string, unknown>
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
 
 type RawResultCrudDocument = {
-  set: (update: PlainRecord) => void
-  save: () => Promise<unknown>
+  __v?: number
 }
 
 type RawResultCrudModel = {
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<unknown[]>
   findOne: (filter: PlainRecord) => { exec: () => Promise<RawResultCrudDocument | null> }
+  findOneAndUpdate: (
+    filter: PlainRecord,
+    update: PlainRecord,
+    options: PlainRecord
+  ) => { lean: () => { exec: () => Promise<unknown | null> } }
   findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<unknown | null> } }
   deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
 }
@@ -207,8 +211,25 @@ function createRawResultCrudHandlers(options: RawResultCrudOptions): {
         notFound(res, options.notFoundMessage)
         return
       }
-      existing.set(rest)
-      const updated = await existing.save()
+      const version = Number.isInteger(existing.__v) ? Number(existing.__v) : null
+      const updated = await Model.findOneAndUpdate(
+        {
+          _id: docId,
+          tournamentId,
+          ...(version === null ? { __v: { $exists: false } } : { __v: version }),
+        },
+        { $set: rest, $inc: { __v: 1 } },
+        { new: true, runValidators: true }
+      )
+        .lean()
+        .exec()
+      if (!updated) {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Raw result changed or deleted; retry' }],
+        })
+        return
+      }
       res.json({ data: updated, errors: [] })
     } catch (err) {
       if (isDuplicateKeyError(err)) {
