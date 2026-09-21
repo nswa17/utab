@@ -62,7 +62,9 @@ export const useVenuesStore = defineStore('venues', () => {
       if (created) {
         if (tournamentScope.isScopeCurrent(scopeToken)) {
           tournamentScope.invalidateFetches(payload.tournamentId)
-          venues.value = [created, ...venues.value.filter((item) => item._id !== created._id)]
+          if (!venues.value.some((item) => item._id === created._id)) {
+            venues.value = [created, ...venues.value]
+          }
         }
       }
       return created
