@@ -229,4 +229,57 @@ describe('tournament store', () => {
     await fetchPromise
     expect(store.loading).toBe(false)
   })
+  it('keeps the latest intent when the same metadata key resolves in reverse order', async () => {
+    const store = useTournamentStore()
+    store.tournaments = [
+      {
+        _id: 'tournament-1',
+        name: 'Tournament',
+        style: 1,
+        user_defined_data: { hidden: false },
+      } as any,
+    ]
+
+    const oldUpdate = createDeferred<any>()
+    const newUpdate = createDeferred<any>()
+    mockedApi.patch
+      .mockImplementationOnce(() => oldUpdate.promise)
+      .mockImplementationOnce(() => newUpdate.promise)
+
+    const oldPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { hidden: true },
+    })
+    const newPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { hidden: false },
+    })
+
+    newUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: { hidden: false },
+        },
+      },
+    })
+    await newPromise
+
+    oldUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: { hidden: true },
+        },
+      },
+    })
+    await oldPromise
+
+    expect(store.tournaments[0]?.user_defined_data?.hidden).toBe(false)
+  })
+
 })
