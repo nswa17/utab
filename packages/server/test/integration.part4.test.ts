@@ -3902,4 +3902,64 @@ describe('Server integration', () => {
     expect(removeExistingUser.body.data.tournaments).toEqual([])
   })
 
+  it('preserves independent tournament metadata patches under concurrent saves', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'tournament-patch-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'tournament-patch-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer.post('/api/tournaments').send({
+      name: 'Tournament Patch Open',
+      style: 1,
+      options: {},
+      user_defined_data: {
+        keep: { marker: 'preserve-me' },
+        break: { source: 'submissions', size: 8 },
+        hidden: false,
+      },
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const [visibilityRes, breakRes] = await Promise.all([
+      organizer.patch(`/api/tournaments/${tournamentId}`).send({
+        user_defined_data_patch: { hidden: true },
+      }),
+      organizer.patch(`/api/tournaments/${tournamentId}`).send({
+        user_defined_data_patch: {
+          break: { source: 'submissions', size: 16, cutoff_tie_policy: 'include_all' },
+        },
+      }),
+    ])
+    expect(visibilityRes.status).toBe(200)
+    expect(breakRes.status).toBe(200)
+
+    const stored = await TournamentModel.findById(tournamentId).lean().exec()
+    expect((stored as any)?.user_defined_data?.hidden).toBe(true)
+    expect((stored as any)?.user_defined_data?.break?.size).toBe(16)
+    expect((stored as any)?.user_defined_data?.keep?.marker).toBe('preserve-me')
+
+    const conflictingPayload = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
+      user_defined_data: { hidden: false },
+      user_defined_data_patch: { hidden: true },
+    })
+    expect(conflictingPayload.status).toBe(400)
+
+    const unsafePatch = await organizer.patch(`/api/tournaments/${tournamentId}`).send({
+      user_defined_data_patch: { 'nested.path': true },
+    })
+    expect(unsafePatch.status).toBe(400)
+  })
+
 })
