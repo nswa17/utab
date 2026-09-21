@@ -164,9 +164,9 @@ function buildPreviewRevision(payload: CompiledPayload): string {
     compile_options: payload.compile_options,
     compile_warnings: payload.compile_warnings,
     compile_diff_meta: payload.compile_diff_meta,
-    team_result_count: payload.compiled_team_results.length,
-    speaker_result_count: payload.compiled_speaker_results.length,
-    adjudicator_result_count: payload.compiled_adjudicator_results.length,
+    team_results_hash: sha256Hex(stableSerialize(payload.compiled_team_results)),
+    speaker_results_hash: sha256Hex(stableSerialize(payload.compiled_speaker_results)),
+    adjudicator_results_hash: sha256Hex(stableSerialize(payload.compiled_adjudicator_results)),
   }
   return sha256Hex(stableSerialize(revisionSeed))
 }
@@ -185,6 +185,7 @@ async function buildCompiledPreviewPayload(params: {
   source?: 'submissions' | 'raw'
   requestedRounds?: number[]
   compileOptions: CompileOptions
+  validationLabels?: CompileIncludeLabel[]
 }): Promise<{
   payload: CompiledPayload
   connection: Connection
@@ -195,7 +196,8 @@ async function buildCompiledPreviewPayload(params: {
     params.tournamentId,
     params.source,
     params.requestedRounds,
-    params.compileOptions
+    params.compileOptions,
+    params.validationLabels
   )
   payload.compile_source =
     payload.compile_source === 'raw' || params.source === 'raw' ? 'raw' : 'submissions'
@@ -714,6 +716,61 @@ function canonicalBallotMatchKey(round: number, payload: BallotPayload): string 
   return `${round}:${ordered[0]}:${ordered[1]}`
 }
 
+function canonicalDrawMatchKey(round: number, row: any): string | null {
+  const rowTeams = row?.teams
+  let teamAId = ''
+  let teamBId = ''
+  if (Array.isArray(rowTeams)) {
+    if (rowTeams.length !== 2) return null
+    teamAId = String(rowTeams[0] ?? '').trim()
+    teamBId = String(rowTeams[1] ?? '').trim()
+  } else if (rowTeams && typeof rowTeams === 'object') {
+    teamAId = String(rowTeams.gov ?? '').trim()
+    teamBId = String(rowTeams.opp ?? '').trim()
+  }
+  if (!teamAId || !teamBId || teamAId === teamBId) return null
+  return canonicalBallotMatchKey(round, { teamAId, teamBId })
+}
+
+function drawRowTeamIds(row: any): string[] {
+  const teams = row?.teams
+  if (Array.isArray(teams)) {
+    return Array.from(
+      new Set(
+        teams
+          .map((teamId) => String(teamId ?? '').trim())
+          .filter((teamId) => teamId.length > 0)
+      )
+    )
+  }
+  if (!teams || typeof teams !== 'object') return []
+  const source = teams as Record<string, unknown>
+  const preferredKeys = ['og', 'oo', 'cg', 'co', 'gov', 'opp']
+  return Array.from(
+    new Set(
+      preferredKeys
+        .map((key) => String(source[key] ?? '').trim())
+        .filter((teamId) => teamId.length > 0)
+    )
+  )
+}
+
+function canonicalTeamGroupKey(round: number, teamIds: string[]): string {
+  const normalized = Array.from(
+    new Set(teamIds.map((teamId) => String(teamId ?? '').trim()).filter(Boolean))
+  ).sort()
+  return `${round}:${normalized.join(':')}`
+}
+
+function rawTeamResultGroupKey(result: any): string {
+  const round = Number(result?.r)
+  const teamId = String(result?.id ?? '').trim()
+  const opponents = Array.isArray(result?.opponents)
+    ? result.opponents.map((opponentId: unknown) => String(opponentId ?? '').trim())
+    : []
+  return canonicalTeamGroupKey(round, [teamId, ...opponents])
+}
+
 function resolveBallotSubmissionActor(submission: any): string {
   const payloadActor = String(
     (submission?.payload as BallotPayload | undefined)?.submittedEntityId ?? ''
@@ -730,6 +787,40 @@ function canonicalBallotDuplicateKey(submission: any): string {
   const matchKey = canonicalBallotMatchKey(round, (submission?.payload ?? {}) as BallotPayload)
   const actor = resolveBallotSubmissionActor(submission)
   return actor ? `${matchKey}:${actor}` : matchKey
+}
+
+type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
+
+function resolveBallotSubmitterRoles(userDefinedData: unknown): BallotSubmitterRole[] {
+  const record =
+    userDefinedData && typeof userDefinedData === 'object' && !Array.isArray(userDefinedData)
+      ? (userDefinedData as Record<string, unknown>)
+      : {}
+  if (Array.isArray(record.ballot_submitter_roles)) {
+    const roles: BallotSubmitterRole[] = []
+    record.ballot_submitter_roles.forEach((value) => {
+      const role = String(value ?? '').trim().toLowerCase()
+      if (role !== 'chair' && role !== 'panel' && role !== 'trainee') return
+      if (!roles.includes(role)) roles.push(role)
+    })
+    return roles
+  }
+  if (typeof record.allow_panel_ballot_submission === 'boolean') {
+    return record.allow_panel_ballot_submission ? ['chair', 'panel'] : ['chair']
+  }
+  return ['chair', 'panel']
+}
+
+function expectedBallotSubmitterIds(row: any, userDefinedData: unknown): string[] {
+  const roles = new Set(resolveBallotSubmitterRoles(userDefinedData))
+  const ids = [
+    ...(roles.has('chair') ? (row?.chairs ?? []) : []),
+    ...(roles.has('panel') ? (row?.panels ?? []) : []),
+    ...(roles.has('trainee') ? (row?.trainees ?? []) : []),
+  ]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+  return Array.from(new Set(ids))
 }
 
 function toStringArray(value: unknown): string[] {
@@ -1074,7 +1165,8 @@ function resolveWinnerForBallot(
 async function buildCompiledPayloadFromRaw(
   tournamentId: string,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -1134,6 +1226,51 @@ async function buildCompiledPayloadFromRaw(
   const scoreWeights = normalizeScoreWeights(styleOptions.score_weights ?? styleDoc?.score_weights)
   const teamNum = normalizeTeamNum(styleOptions.team_num ?? styleDoc?.team_num)
   const style = { team_num: teamNum, score_weights: scoreWeights }
+
+  const validationLabelSet = new Set<CompileIncludeLabel>(
+    validationLabels ?? compileOptions.include_labels
+  )
+  const validatesRawTeamData = validationLabelSet.has('teams')
+  const missingDataIssues: MissingDataIssue[] = []
+  const expectedDrawTeamIds = new Set<string>()
+  if (validatesRawTeamData) {
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+        const teamIds = drawRowTeamIds(row)
+        if (teamIds.length < 2) return
+        teamIds.forEach((teamId) => expectedDrawTeamIds.add(teamId))
+
+        const expectedKey = canonicalTeamGroupKey(round, teamIds)
+        const matchingResults = filteredRawTeamResults.filter(
+          (result: any) => rawTeamResultGroupKey(result) === expectedKey
+        )
+        const presentTeamIds = new Set(
+          matchingResults.map((result: any) => String(result?.id ?? '').trim()).filter(Boolean)
+        )
+
+        if (presentTeamIds.size === 0) {
+          missingDataIssues.push({
+            code: 'missing_ballot',
+            message: `no raw team results exist for matchup ${teamIds.join(' vs ')}`,
+            round,
+          })
+          return
+        }
+
+        teamIds.forEach((teamId) => {
+          if (presentTeamIds.has(teamId)) return
+          missingDataIssues.push({
+            code: 'missing_team_result',
+            message: `raw team result is missing for team ${teamId} in matchup ${teamIds.join(' vs ')}`,
+            round,
+          })
+        })
+      })
+    })
+  }
+  const compileWarnings = finalizeMissingDataIssues(missingDataIssues, compileOptions)
 
   const teamMaps = buildIdMaps(teams)
   const adjudicatorMaps = buildIdMaps(adjudicators)
@@ -1207,6 +1344,10 @@ async function buildCompiledPayloadFromRaw(
     .filter((result): result is Record<string, any> => result !== null)
 
   const teamIds = new Set(mappedRawTeamResults.map((result) => Number(result.id)))
+  expectedDrawTeamIds.forEach((teamId) => {
+    const mappedId = teamMaps.map.get(teamId)
+    if (mappedId !== undefined) teamIds.add(mappedId)
+  })
   const teamInstances = Array.from(teamIds)
     .map((numericId) => {
       if (!Number.isFinite(numericId)) return null
@@ -1367,7 +1508,7 @@ async function buildCompiledPayloadFromRaw(
     compile_source: 'raw',
     rounds: rounds.map((r) => ({ r, name: roundNameMap.get(r) ?? `Round ${r}` })),
     compile_options: compileOptions,
-    compile_warnings: [],
+    compile_warnings: compileWarnings,
     compile_diff_meta: buildDefaultDiffMeta(compileOptions),
     compiled_team_results: applyTeamRankingPriority(
       compiledTeamResults.map((result: any) => ({
@@ -1400,7 +1541,8 @@ async function buildCompiledPayloadFromRaw(
 async function buildCompiledPayloadFromSubmissions(
   tournamentId: string,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   const [tournament, connection] = await Promise.all([
     TournamentModel.findById(tournamentId).lean().exec(),
@@ -1464,8 +1606,15 @@ async function buildCompiledPayloadFromSubmissions(
     const team = teamById.get(teamId)
     if (!team) return []
     const detail = team.details?.find((d: any) => Number(d.r) === round)
-    const detailSpeakers = (detail?.speakers ?? []).map((id: string) => String(id)).filter(Boolean)
-    return detailSpeakers
+    const source =
+      Array.isArray(detail?.speakers) && detail.speakers.length > 0
+        ? detail.speakers
+        : Array.isArray(team?.template?.speakers)
+          ? team.template.speakers
+          : []
+    return Array.from(
+      new Set(source.map((id: unknown) => String(id ?? '').trim()).filter(Boolean))
+    )
   }
 
   const sideByRoundTeam = new Map<number, Map<string, string>>()
@@ -1531,10 +1680,31 @@ async function buildCompiledPayloadFromSubmissions(
     missingDataIssues.push(issue)
   }
 
-  const ballotSubmissions = filteredSubmissions.filter((submission) => submission.type === 'ballot')
-  const feedbackSubmissions = filteredSubmissions.filter(
-    (submission) => submission.type === 'feedback'
+  const ballotDerivedLabels = new Set<CompileIncludeLabel>(['teams', 'speakers', 'poi', 'best'])
+  const validationLabelSet = new Set<CompileIncludeLabel>(
+    validationLabels ?? compileOptions.include_labels
   )
+  const needsBallotResults = compileOptions.include_labels.some((label) =>
+    ballotDerivedLabels.has(label)
+  )
+  const needsFeedbackResults = compileOptions.include_labels.includes('adjudicators')
+  const validatesBallotData = Array.from(validationLabelSet).some((label) =>
+    ballotDerivedLabels.has(label)
+  )
+  const validatesTeamBallotData = validationLabelSet.has('teams')
+  const validatesSpeakerBallotData =
+    validationLabelSet.has('speakers') ||
+    validationLabelSet.has('poi') ||
+    validationLabelSet.has('best')
+  const validatesFeedbackData = validationLabelSet.has('adjudicators')
+  const ballotSubmissions =
+    needsBallotResults || validatesBallotData
+      ? filteredSubmissions.filter((submission) => submission.type === 'ballot')
+      : []
+  const feedbackSubmissions =
+    needsFeedbackResults || validatesFeedbackData
+      ? filteredSubmissions.filter((submission) => submission.type === 'feedback')
+      : []
 
   const ballotGroups = new Map<string, any[]>()
   ballotSubmissions.forEach((submission) => {
@@ -1570,28 +1740,81 @@ async function buildCompiledPayloadFromSubmissions(
     normalizedBallots.push(mergeAverageBallotGroup(grouped, key, compileOptions))
   })
 
+  const roundByNumber = new Map<number, any>(
+    roundDocs.map((round: any) => [Number(round?.round), round])
+  )
+
+  if (validatesBallotData) {
+    const submittedActorMatchKeys = new Set(
+      normalizedBallots.map((submission) => canonicalBallotDuplicateKey(submission))
+    )
+    const submittedMatchKeys = new Set(
+      normalizedBallots
+        .map((submission) =>
+          canonicalBallotMatchKey(
+            Number(submission?.round),
+            (submission?.payload ?? {}) as BallotPayload
+          )
+        )
+        .filter(Boolean)
+    )
+
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      const roundUserDefinedData = roundByNumber.get(round)?.userDefinedData
+      ;(draw?.allocation ?? []).forEach((row: any) => {
+        const matchKey = canonicalDrawMatchKey(round, row)
+        if (!matchKey) return
+        const expectedSubmitterIds = expectedBallotSubmitterIds(row, roundUserDefinedData)
+        if (expectedSubmitterIds.length === 0) {
+          if (!submittedMatchKeys.has(matchKey)) {
+            registerMissingIssue({
+              code: 'missing_ballot',
+              message: 'ballot submission is missing for draw matchup',
+              round,
+            })
+          }
+          return
+        }
+        expectedSubmitterIds.forEach((submitterId) => {
+          if (submittedActorMatchKeys.has(`${matchKey}:${submitterId}`)) return
+          registerMissingIssue({
+            code: 'missing_ballot',
+            message: `ballot submission is missing for draw matchup (submitter ${submitterId})`,
+            round,
+          })
+        })
+      })
+    })
+  }
+
   normalizedBallots.forEach((submission: any) => {
     const round = Number(submission.round)
     const payload = (submission.payload ?? {}) as BallotPayload
     const submissionId = submission._id?.toString()
     if (!Number.isFinite(round)) {
-      registerMissingIssue({
-        code: 'invalid_round',
-        message: 'round is not a finite number in ballot submission',
-        submissionId,
-      })
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_round',
+          message: 'round is not a finite number in ballot submission',
+          submissionId,
+        })
+      }
       return
     }
 
     const teamAId = String(payload.teamAId ?? '').trim()
     const teamBId = String(payload.teamBId ?? '').trim()
     if (!teamAId || !teamBId || teamAId === teamBId) {
-      registerMissingIssue({
-        code: 'invalid_matchup',
-        message: 'teamAId/teamBId is missing or invalid in ballot submission',
-        round,
-        submissionId,
-      })
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_matchup',
+          message: 'teamAId/teamBId is missing or invalid in ballot submission',
+          round,
+          submissionId,
+        })
+      }
       return
     }
 
@@ -1601,13 +1824,17 @@ async function buildCompiledPayloadFromSubmissions(
       scoresA.some((value) => !Number.isFinite(value)) ||
       scoresB.some((value) => !Number.isFinite(value))
     if (hasInvalidScore) {
-      registerMissingIssue({
-        code: 'invalid_score',
-        message: 'score contains non-finite values in ballot submission',
-        round,
-        submissionId,
-      })
-      if (compileOptions.missing_data_policy !== 'warn') return
+      if (validatesBallotData) {
+        registerMissingIssue({
+          code: 'invalid_score',
+          message: 'score contains non-finite values in ballot submission',
+          round,
+          submissionId,
+        })
+        if (compileOptions.missing_data_policy !== 'warn') return
+      } else {
+        return
+      }
     }
 
     const totalA = sumScores(scoresA)
@@ -1618,7 +1845,7 @@ async function buildCompiledPayloadFromSubmissions(
     const ballotVerdict = hasNormalizedWins
       ? ({ winnerId: undefined, draw: true, inferred: false } as BallotResolution)
       : resolveWinnerForBallot(payload, compileOptions.winner_policy, totalA, totalB)
-    if (!hasNormalizedWins && ballotVerdict.inferred) {
+    if (!hasNormalizedWins && ballotVerdict.inferred && validatesTeamBallotData) {
       registerMissingIssue({
         code: 'missing_verdict',
         message: 'winner/draw verdict is missing in ballot submission',
@@ -1722,7 +1949,9 @@ async function buildCompiledPayloadFromSubmissions(
       round,
       submissionId,
       missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamA',
-      registerMissingIssue,
+      registerMissingIssue: (issue) => {
+        if (validatesSpeakerBallotData) registerMissingIssue(issue)
+      },
       speakerIdsWithScores,
     })
     appendSubmissionSpeakerResults({
@@ -1736,32 +1965,124 @@ async function buildCompiledPayloadFromSubmissions(
       round,
       submissionId,
       missingSpeakerMessage: 'speakerId is missing for a scored speaker on teamB',
-      registerMissingIssue,
+      registerMissingIssue: (issue) => {
+        if (validatesSpeakerBallotData) registerMissingIssue(issue)
+      },
       speakerIdsWithScores,
     })
   })
+
+  if (validatesFeedbackData) {
+    const expectedFeedbackKeys = new Set<string>()
+    filteredDraws.forEach((draw: any) => {
+      const round = Number(draw?.round)
+      if (!Number.isFinite(round)) return
+      const userDefined =
+        roundByNumber.get(round)?.userDefinedData &&
+        typeof roundByNumber.get(round)?.userDefinedData === 'object'
+          ? (roundByNumber.get(round).userDefinedData as Record<string, unknown>)
+          : {}
+      const fromTeams = userDefined.evaluate_from_teams !== false
+      const fromAdjudicators = userDefined.evaluate_from_adjudicators !== false
+      const evaluatorInTeam = userDefined.evaluator_in_team === 'speaker' ? 'speaker' : 'team'
+      const chairsAlwaysEvaluated = userDefined.chairs_always_evaluated === true
+
+      ;(Array.isArray(draw?.allocation) ? draw.allocation : []).forEach((row: any) => {
+        const rowTeams = row?.teams
+        const teamIds = Array.from(
+          new Set(
+            [
+              Array.isArray(rowTeams) ? rowTeams[0] : rowTeams?.gov,
+              Array.isArray(rowTeams) ? rowTeams[1] : rowTeams?.opp,
+            ]
+              .map((value) => String(value ?? '').trim())
+              .filter(Boolean)
+          )
+        )
+        const chairIds = Array.from(
+          new Set((row?.chairs ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const panelIds = Array.from(
+          new Set((row?.panels ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const traineeIds = Array.from(
+          new Set((row?.trainees ?? []).map((value: unknown) => String(value ?? '').trim()).filter(Boolean))
+        )
+        const adjudicatorIds = Array.from(new Set([...chairIds, ...panelIds, ...traineeIds]))
+
+        if (fromTeams) {
+          const targetIds = chairsAlwaysEvaluated
+            ? chairIds
+            : Array.from(new Set([...chairIds, ...panelIds]))
+          const actorIds =
+            evaluatorInTeam === 'speaker'
+              ? Array.from(new Set(teamIds.flatMap((teamId) => getSpeakersForTeamRound(teamId, round))))
+              : teamIds
+          actorIds.forEach((actorId) => {
+            targetIds.forEach((targetId) => {
+              if (actorId && targetId) expectedFeedbackKeys.add(`${round}:${actorId}:${targetId}`)
+            })
+          })
+        }
+
+        if (fromAdjudicators) {
+          adjudicatorIds.forEach((actorId) => {
+            adjudicatorIds.forEach((targetId) => {
+              if (actorId && targetId && actorId !== targetId) {
+                expectedFeedbackKeys.add(`${round}:${actorId}:${targetId}`)
+              }
+            })
+          })
+        }
+      })
+    })
+
+    const submittedFeedbackKeys = new Set(
+      feedbackSubmissions
+        .map((submission: any) => {
+          const round = Number(submission?.round)
+          const actorId = resolveBallotSubmissionActor(submission)
+          const targetId = String((submission?.payload as FeedbackPayload | undefined)?.adjudicatorId ?? '').trim()
+          return Number.isFinite(round) && actorId && targetId ? `${round}:${actorId}:${targetId}` : ''
+        })
+        .filter(Boolean)
+    )
+    expectedFeedbackKeys.forEach((key) => {
+      if (submittedFeedbackKeys.has(key)) return
+      const [roundToken, actorId, targetId] = key.split(':')
+      registerMissingIssue({
+        code: 'missing_feedback',
+        message: `feedback submission is missing from ${actorId} for adjudicator ${targetId}`,
+        round: Number(roundToken),
+      })
+    })
+  }
 
   feedbackSubmissions.forEach((submission: any) => {
     const round = Number(submission.round)
     const payload = (submission.payload ?? {}) as FeedbackPayload
     const submissionId = submission._id?.toString()
     if (!Number.isFinite(round)) {
-      registerMissingIssue({
-        code: 'invalid_round',
-        message: 'round is not a finite number in feedback submission',
-        submissionId,
-      })
+      if (validatesFeedbackData) {
+        registerMissingIssue({
+          code: 'invalid_round',
+          message: 'round is not a finite number in feedback submission',
+          submissionId,
+        })
+      }
       return
     }
     const adjudicatorId = String(payload.adjudicatorId ?? '').trim()
     const score = typeof payload.score === 'number' ? payload.score : Number(payload.score)
     if (!adjudicatorId || !Number.isFinite(score)) {
-      registerMissingIssue({
-        code: 'invalid_feedback',
-        message: 'adjudicatorId or score is missing in feedback submission',
-        round,
-        submissionId,
-      })
+      if (validatesFeedbackData) {
+        registerMissingIssue({
+          code: 'invalid_feedback',
+          message: 'adjudicatorId or score is missing in feedback submission',
+          round,
+          submissionId,
+        })
+      }
       return
     }
     const judgedTeams = Array.from(judgedTeamsByRoundAdj.get(`${round}:${adjudicatorId}`) ?? [])
@@ -2012,11 +2333,17 @@ export async function buildCompiledPayload(
   tournamentId: string,
   source: 'submissions' | 'raw' | undefined,
   requestedRounds?: number[],
-  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS
+  compileOptions: CompileOptions = DEFAULT_COMPILE_OPTIONS,
+  validationLabels?: CompileIncludeLabel[]
 ): Promise<{ payload: CompiledPayload; connection: Connection }> {
   return source === 'raw'
-    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions)
-    : buildCompiledPayloadFromSubmissions(tournamentId, requestedRounds, compileOptions)
+    ? buildCompiledPayloadFromRaw(tournamentId, requestedRounds, compileOptions, validationLabels)
+    : buildCompiledPayloadFromSubmissions(
+        tournamentId,
+        requestedRounds,
+        compileOptions,
+        validationLabels
+      )
 }
 
 function toCompiledSubset(doc: any, key: CompiledResultsKey): CompiledSubset {
@@ -2114,14 +2441,21 @@ const makeCreateCompiled =
       }
       if (!ensureTournamentId(res, tournamentId)) return
 
-      const compileOptions = normalizeCompileOptions(
-        req.body?.options as CompileOptionsInput | undefined
-      )
+      const requestedOptions = req.body?.options as CompileOptionsInput | undefined
+      const compileOptions = normalizeCompileOptions(requestedOptions)
+      const validationLabels =
+        requestedOptions?.include_labels ??
+        (key === 'compiled_team_results'
+          ? ['teams']
+          : key === 'compiled_speaker_results'
+            ? ['speakers']
+            : ['adjudicators'])
       const buildResult = await buildCompiledPreviewPayload({
         tournamentId,
         source,
         requestedRounds,
         compileOptions,
+        validationLabels,
       })
       const providedPreview = {
         preview_signature: normalizeRequestToken(req.body?.preview_signature),
