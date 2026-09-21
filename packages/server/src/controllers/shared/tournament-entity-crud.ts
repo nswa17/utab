@@ -28,7 +28,7 @@ type CrudModel = {
   findOneAndUpdate: (
     filter: PlainRecord,
     update: PlainRecord,
-    options: { new: boolean }
+    options: { new: boolean; runValidators?: boolean }
   ) => { lean: () => { exec: () => Promise<any | null> } }
   findOneAndDelete: (filter: PlainRecord) => { lean: () => { exec: () => Promise<any | null> } }
 }
@@ -561,7 +561,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         const updated = await Model.findOneAndUpdate(
         { _id: id, tournamentId },
         { $set: buildUpdateDoc(payload, options.fields) },
-        { new: true }
+        { new: true, runValidators: true }
       )
         .lean()
         .exec()
