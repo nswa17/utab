@@ -2541,21 +2541,41 @@ describe('Server integration', () => {
     const RestoredRawAdjudicatorResultModel = getRawAdjudicatorResultModel(restoredConnection)
     const RestoredRoundModel = getRoundModel(restoredConnection)
 
-    expect(await RestoredDrawModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()).toBe(1)
     expect(
-      await RestoredSubmissionModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+      await RestoredDrawModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        round: 3,
+      }).exec()
     ).toBe(1)
     expect(
-      await RestoredResultModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+      await RestoredSubmissionModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        round: 3,
+      }).exec()
     ).toBe(1)
     expect(
-      await RestoredRawTeamResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+      await RestoredResultModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        round: 3,
+      }).exec()
     ).toBe(1)
     expect(
-      await RestoredRawSpeakerResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+      await RestoredRawTeamResultModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        r: 3,
+      }).exec()
     ).toBe(1)
     expect(
-      await RestoredRawAdjudicatorResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+      await RestoredRawSpeakerResultModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        r: 3,
+      }).exec()
+    ).toBe(1)
+    expect(
+      await RestoredRawAdjudicatorResultModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        r: 3,
+      }).exec()
     ).toBe(1)
 
     const restoredRoundsRes = await organizer
