@@ -9,6 +9,11 @@ import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { UserModel } from '../models/user.js'
 import { mergeTournamentAuth } from '../services/tournament-access.service.js'
+import {
+  acquireTournamentMembershipLifecycleLease,
+  releaseTournamentMembershipLease,
+  type TournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
 import { extractZip } from '../services/zip.js'
 import { badRequest } from './shared/http-errors.js'
@@ -377,22 +382,28 @@ async function importTournamentFromBundle(
   }
   const sourceStyleId = normalizeNumber(tournamentSnapshot.style, 1)
 
-  const createdTournament = await TournamentModel.create({
-    name: normalizeString(tournamentSnapshot.name, normalizeString(metadata.tournamentName, 'Tournament')),
-    style: sourceStyleId,
-    options: asRecord(tournamentSnapshot.options),
-    total_round_num: normalizeNumber(tournamentSnapshot.total_round_num, 4),
-    current_round_num: normalizeNumber(tournamentSnapshot.current_round_num, 1),
-    preev_weights: normalizeNumberArray(tournamentSnapshot.preev_weights, [0, 0, 0, 0, 0, 0]),
-    auth: mergedAuth.auth,
-    user_defined_data: asRecord(tournamentSnapshot.user_defined_data),
-    createdBy: actorUserId ?? (normalizeString(tournamentSnapshot.createdBy) || undefined),
-  })
+  const tournamentObjectId = new Types.ObjectId()
+  const tournamentId = tournamentObjectId.toHexString()
+  let membershipLifecycleLease: TournamentMembershipLease | null =
+    await acquireTournamentMembershipLifecycleLease(tournamentId)
+  if (!membershipLifecycleLease) {
+    throw new TournamentImportError(409, 'Tournament lifecycle is busy; retry import')
+  }
 
-  const tournamentId = String(createdTournament._id)
   let createdStyleId: number | null = null
-
   try {
+    const createdTournament = await TournamentModel.create({
+      _id: tournamentObjectId,
+      name: normalizeString(tournamentSnapshot.name, normalizeString(metadata.tournamentName, 'Tournament')),
+      style: sourceStyleId,
+      options: asRecord(tournamentSnapshot.options),
+      total_round_num: normalizeNumber(tournamentSnapshot.total_round_num, 4),
+      current_round_num: normalizeNumber(tournamentSnapshot.current_round_num, 1),
+      preev_weights: normalizeNumberArray(tournamentSnapshot.preev_weights, [0, 0, 0, 0, 0, 0]),
+      auth: mergedAuth.auth,
+      user_defined_data: asRecord(tournamentSnapshot.user_defined_data),
+      createdBy: actorUserId ?? (normalizeString(tournamentSnapshot.createdBy) || undefined),
+    })
     const importedStyle = await ensureImportedStyle(entryMap, sourceStyleId)
     createdStyleId = importedStyle.createdStyleId
     if (importedStyle.styleId !== sourceStyleId) {
@@ -470,6 +481,14 @@ async function importTournamentFromBundle(
       )
     }
     throw error
+  } finally {
+    if (membershipLifecycleLease) {
+      const released = await releaseTournamentMembershipLease(membershipLifecycleLease)
+      membershipLifecycleLease = null
+      if (!released) {
+        throw new Error('Failed to release tournament membership lifecycle lease after import')
+      }
+    }
   }
 }
 
