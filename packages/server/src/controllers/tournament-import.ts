@@ -221,6 +221,30 @@ function validateImportedRawTeamWins(collectionName: string, docs: unknown[]): v
   })
 }
 
+function validateImportedCompiledTiePoints(collectionName: string, docs: unknown[]): void {
+  if (collectionName !== 'compiledresults') return
+
+  docs.forEach((doc, index) => {
+    const record = requireRecord(doc, `json/collections/${collectionName}.json[${index}]`)
+    const payload = asRecord(record.payload)
+    const compileOptions = asRecord(payload.compile_options)
+    const tiePoints = compileOptions.tie_points
+    if (
+      tiePoints === undefined ||
+      (typeof tiePoints === 'number' &&
+        Number.isFinite(tiePoints) &&
+        tiePoints >= 0 &&
+        tiePoints <= 1)
+    ) {
+      return
+    }
+    throw new TournamentImportError(
+      400,
+      `Invalid compiledresults tie_points in backup at index ${index}: expected a finite number in [0, 1]`
+    )
+  })
+}
+
 function validateImportedEntityState(collectionName: string, docs: unknown[]): void {
   const schemas =
     collectionName === 'teams'
@@ -503,6 +527,7 @@ async function importTournamentFromBundle(
       const docs = requireArray(parseJsonEntry(entry.content, entry.path), entry.path)
       validateImportedRoundScope(collectionName, docs)
       validateImportedRawTeamWins(collectionName, docs)
+      validateImportedCompiledTiePoints(collectionName, docs)
       validateImportedEntityState(collectionName, docs)
       const revivedDocs = docs.map((doc) => reviveTournamentDocument(doc, tournamentId))
       if (revivedDocs.length > 0) {
