@@ -2298,6 +2298,46 @@ describe('Server integration', () => {
     })
     expect(breakBallotRes.status).toBe(201)
 
+    const round2ResultRes = await organizer.post('/api/results').send({
+      tournamentId,
+      round: 2,
+      payload: { standings: [] },
+    })
+    expect(round2ResultRes.status).toBe(201)
+
+    const rawTeamRound2Res = await organizer.post('/api/raw-results/teams').send({
+      tournamentId,
+      id: breakTeamAId,
+      from_id: breakChairId,
+      r: 2,
+      weight: 1,
+      win: 1,
+      sum: 77,
+      margin: 4,
+      opponents: [breakTeamBId],
+      side: 'gov',
+    })
+    expect(rawTeamRound2Res.status).toBe(201)
+
+    const rawSpeakerRound2Res = await organizer.post('/api/raw-results/speakers').send({
+      tournamentId,
+      id: speakerIdByTeamId.get(breakTeamAId),
+      from_id: breakChairId,
+      r: 2,
+      scores: [77],
+    })
+    expect(rawSpeakerRound2Res.status).toBe(201)
+
+    const rawAdjudicatorRound2Res = await organizer.post('/api/raw-results/adjudicators').send({
+      tournamentId,
+      id: breakChairId,
+      from_id: breakTeamAId,
+      r: 2,
+      score: 8,
+      judged_teams: [breakTeamAId, breakTeamBId],
+    })
+    expect(rawAdjudicatorRound2Res.status).toBe(201)
+
     const finalPreviewBody = {
       tournamentId,
       source: 'submissions',
@@ -2316,6 +2356,51 @@ describe('Server integration', () => {
       revision: finalPreviewRes.body.data.revision,
     })
     expect(finalSaveRes.status).toBe(201)
+
+    const referenceRoundRes = await organizer.patch(`/api/rounds/${round1Id}`).send({
+      tournamentId,
+      userDefinedData: {
+        compile: { source: 'submissions', source_rounds: [2] },
+      },
+    })
+    expect(referenceRoundRes.status).toBe(200)
+
+    const [
+      { getTournamentConnection },
+      { getDrawModel },
+      { getSubmissionModel },
+      { getResultModel },
+      { getRawTeamResultModel },
+      { getRawSpeakerResultModel },
+      { getRawAdjudicatorResultModel },
+      { getRoundModel },
+    ] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/draw.js'),
+      import('../src/models/submission.js'),
+      import('../src/models/result.js'),
+      import('../src/models/raw-team-result.js'),
+      import('../src/models/raw-speaker-result.js'),
+      import('../src/models/raw-adjudicator-result.js'),
+      import('../src/models/round.js'),
+    ])
+    const lifecycleConnection = await getTournamentConnection(tournamentId)
+    const DrawModel = getDrawModel(lifecycleConnection)
+    const SubmissionModel = getSubmissionModel(lifecycleConnection)
+    const ResultModel = getResultModel(lifecycleConnection)
+    const RawTeamResultModel = getRawTeamResultModel(lifecycleConnection)
+    const RawSpeakerResultModel = getRawSpeakerResultModel(lifecycleConnection)
+    const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(lifecycleConnection)
+    const RoundModel = getRoundModel(lifecycleConnection)
+
+    const breakDrawBeforeRenumber = await DrawModel.findById(breakDrawRes.body.data._id).lean().exec()
+    const breakBallotBeforeRenumber = await SubmissionModel.findById(breakBallotRes.body.data._id)
+      .lean()
+      .exec()
+    expect(breakDrawBeforeRenumber).toBeTruthy()
+    expect(breakBallotBeforeRenumber).toBeTruthy()
+    const breakDrawVersionBeforeRenumber = Number((breakDrawBeforeRenumber as any).__v ?? 0)
+    const breakBallotVersionBeforeRenumber = Number((breakBallotBeforeRenumber as any).__v ?? 0)
 
     const renumberRes = await organizer.patch(`/api/rounds/${round2Id}`).send({
       tournamentId,
