@@ -36,6 +36,16 @@ pnpm --filter @utab/web test
 
 `VITE_BRAND_LOGO_URL=/logo.png` を使う場合は、`packages/web/public/logo.png` をリポジトリに置いてからデプロイする。
 
+### MongoDB の整合性に関する既知の制約
+
+ラウンド番号変更・ラウンド削除など、一部の操作は複数 collection を更新する。
+アプリケーション側では mutation lease、version check、idempotent retry により通常の競合や一時的な write failure を抑制しているが、現状は MongoDB multi-document transaction を使用していない。
+
+そのため、操作途中の process termination、永続的な DB 障害、接続断などでは、複数 collection 全体の原子性は保証されない。
+特に `docker-compose.vps.yml` の同梱 MongoDB は standalone 構成であるため、この制約を前提にバックアップと復旧手順を用意すること。
+
+transaction-level の原子性を保証するには、transaction 対応 MongoDB 構成に加えて、サーバー側 lifecycle mutation 自体を transaction 化する必要がある。Replica set へ変更するだけでは、この制約は解消しない。
+
 ## 1-1. HTTPS ドメイン設定（初回のみ）
 
 ### Server（Heroku）
