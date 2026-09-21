@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { TournamentMemberModel } from '../models/tournament-member.js'
+import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
 import { hashPassword } from '../services/hash.service.js'
 import {
@@ -77,6 +78,11 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
     let responseStatus = 200
     let responseData: ReturnType<typeof sanitizeTournamentUserResponse>
     try {
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) {
+        notFound(res, 'Tournament not found')
+        return
+      }
       const existing = await UserModel.findOne({ username }).exec()
       if (!existing) {
         const passwordHash = await hashPassword(password)
@@ -207,6 +213,11 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     let saved = user
     let membership: { role?: string } | null = null
     try {
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) {
+        notFound(res, 'Tournament not found')
+        return
+      }
       const refreshedUser = await UserModel.findOne({ _id: user._id }).exec()
       if (!refreshedUser) {
         notFound(res, 'User not found')
