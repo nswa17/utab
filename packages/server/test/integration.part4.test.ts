@@ -2516,10 +2516,10 @@ describe('Server integration', () => {
       .send({ name: invalidRootName, style: 1, options: {} })
     expect(invalidRootTournament.status).toBe(201)
     const invalidRootTournamentId = String(invalidRootTournament.body.data._id)
-    await TournamentModel.collection.updateOne(
-      { _id: invalidRootTournament.body.data._id },
+    await TournamentModel.updateOne(
+      { _id: invalidRootTournamentId },
       { $set: { total_round_num: 0 } }
-    )
+    ).exec()
 
     const invalidRootCopy = await organizer
       .post(`/api/dev-tools/tournaments/${invalidRootTournamentId}/copy-tournament`)
