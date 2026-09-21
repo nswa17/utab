@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   cleanupUser: vi.fn(),
   updateMembership: vi.fn(),
   cleanupMembership: vi.fn(),
+  acquireLifecycleLease: vi.fn(),
+  releaseMembershipLease: vi.fn(),
 }))
 
 vi.mock('../src/models/style.js', () => ({
@@ -39,6 +41,11 @@ vi.mock('../src/services/tournament-db.service.js', () => ({
   dropTournamentDatabase: vi.fn(),
 }))
 
+vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
+  acquireTournamentMembershipLifecycleLease: mocks.acquireLifecycleLease,
+  releaseTournamentMembershipLease: mocks.releaseMembershipLease,
+}))
+
 import { createTournament } from '../src/controllers/tournaments.js'
 
 const tournamentId = '507f1f77bcf86cd799439011'
@@ -68,6 +75,8 @@ beforeEach(() => {
   mocks.cleanupUser.mockReturnValue(writeResult({ modifiedCount: 1 }))
   mocks.updateMembership.mockReturnValue(writeResult({ upsertedCount: 1 }))
   mocks.cleanupMembership.mockReturnValue(writeResult({ deletedCount: 1 }))
+  mocks.acquireLifecycleLease.mockResolvedValue({ key: 'test:lifecycle', epoch: 1 })
+  mocks.releaseMembershipLease.mockResolvedValue(true)
 })
 
 describe('createTournament', () => {
@@ -83,12 +92,15 @@ describe('createTournament', () => {
 
     await createTournament(req as never, res as never, next)
 
-    expect(mocks.deleteTournament).toHaveBeenCalledWith({ _id: tournamentId })
+    const createdPayload = mocks.createTournament.mock.calls[0]?.[0] as { _id?: unknown }
+    const createdTournamentId = String(createdPayload?._id ?? '')
+    expect(createdTournamentId).toMatch(/^[a-f0-9]{24}$/)
+    expect(mocks.deleteTournament).toHaveBeenCalledWith({ _id: createdTournamentId })
     expect(mocks.cleanupUser).toHaveBeenCalledWith(
       { _id: 'user-1' },
-      { $pull: { tournaments: tournamentId } }
+      { $pull: { tournaments: createdTournamentId } }
     )
-    expect(mocks.cleanupMembership).toHaveBeenCalledWith({ tournamentId })
+    expect(mocks.cleanupMembership).toHaveBeenCalledWith({ tournamentId: createdTournamentId })
     expect(req.session.tournaments).toEqual([])
     expect(res.json).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledWith(membershipError)
