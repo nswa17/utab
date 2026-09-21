@@ -22,6 +22,12 @@ vi.mock('../src/models/user.js', () => ({
   },
 }))
 
+vi.mock('../src/models/tournament.js', () => ({
+  TournamentModel: {
+    exists: vi.fn(() => ({ exec: async () => ({ _id: tournamentId }) })),
+  },
+}))
+
 vi.mock('../src/models/tournament-member.js', () => ({
   TournamentMemberModel: {
     findOne: mocks.findMembership,
@@ -36,12 +42,11 @@ vi.mock('../src/services/hash.service.js', () => ({
 }))
 
 vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
-  acquireTournamentMembershipLease: vi.fn(async () => ({
-    tournamentId,
-    username: 'test-user',
-    token: 'test-token',
+  acquireTournamentMembershipMutationLeases: vi.fn(async () => ({
+    lifecycle: { key: `${tournamentId}:lifecycle`, epoch: 1 },
+    member: { key: `${tournamentId}:member:test-user`, epoch: 1 },
   })),
-  releaseTournamentMembershipLease: vi.fn(async () => true),
+  releaseTournamentMembershipMutationLeases: vi.fn(async () => true),
 }))
 
 import { addTournamentUser, removeTournamentUser } from '../src/controllers/tournament-users.js'
