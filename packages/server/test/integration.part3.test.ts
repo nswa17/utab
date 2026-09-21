@@ -1937,6 +1937,7 @@ describe('Server integration', () => {
       .post('/api/auth/register')
       .send({ username: 'phase10-lifecycle-user', password: 'password123', role: 'organizer' })
     expect(registerRes.status).toBe(201)
+    const organizerUserId = String(registerRes.body.data.userId)
     const loginRes = await organizer
       .post('/api/auth/login')
       .send({ username: 'phase10-lifecycle-user', password: 'password123' })
@@ -1951,6 +1952,14 @@ describe('Server integration', () => {
     })
     expect(tournamentRes.status).toBe(201)
     const tournamentId = String(tournamentRes.body.data._id)
+
+    const originalMembership = await TournamentMemberModel.findOne({
+      tournamentId,
+      userId: organizerUserId,
+    })
+      .lean()
+      .exec()
+    expect(originalMembership?.role).toBe('organizer')
 
     const speakerNames = ['Alpha Speaker', 'Beta Speaker', 'Gamma Speaker', 'Delta Speaker']
     const speakerRes = await organizer.post('/api/speakers').send(
