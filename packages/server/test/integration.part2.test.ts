@@ -859,6 +859,152 @@ describe('Server integration', () => {
     expect(listRes.body.data[0].scores).toEqual([75, 76])
   })
 
+  it('rejects stale result and raw-result updates after round renumber', async () => {
+    const agent = request.agent(app)
+    expect(
+      (
+        await agent
+          .post('/api/auth/register')
+          .send({ username: 'round-result-cas-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent
+          .post('/api/auth/login')
+          .send({ username: 'round-result-cas-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent.post('/api/tournaments').send({
+      name: 'Round Result CAS Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const teamARes = await agent.post('/api/teams').send({ tournamentId, name: 'CAS Team A' })
+    const teamBRes = await agent.post('/api/teams').send({ tournamentId, name: 'CAS Team B' })
+    expect(teamARes.status).toBe(201)
+    expect(teamBRes.status).toBe(201)
+    const teamAId = String(teamARes.body.data._id)
+    const teamBId = String(teamBRes.body.data._id)
+
+    const resultRes = await agent.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { marker: 'original' },
+    })
+    expect(resultRes.status).toBe(201)
+    const resultId = String(resultRes.body.data._id)
+
+    const rawRes = await agent.post('/api/raw-results/teams').send({
+      tournamentId,
+      id: teamAId,
+      from_id: 'round-result-cas-source',
+      r: 1,
+      weight: 1,
+      win: 1,
+      side: 'gov',
+      opponents: [teamBId],
+    })
+    expect(rawRes.status).toBe(201)
+    const rawId = String(rawRes.body.data._id)
+
+    const [
+      { getTournamentConnection },
+      { getResultModel },
+      { getRawTeamResultModel },
+    ] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/result.js'),
+      import('../src/models/raw-team-result.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+    const ResultModel = getResultModel(connection)
+    const RawTeamModel = getRawTeamResultModel(connection)
+
+    const originalResultUpdate = ResultModel.findOneAndUpdate.bind(ResultModel)
+    const originalRawUpdate = RawTeamModel.findOneAndUpdate.bind(RawTeamModel)
+    let signalResultReady: (() => void) | null = null
+    const resultReady = new Promise<void>((resolve) => {
+      signalResultReady = resolve
+    })
+    let signalRawReady: (() => void) | null = null
+    const rawReady = new Promise<void>((resolve) => {
+      signalRawReady = resolve
+    })
+    let releaseUpdates: (() => void) | null = null
+    const updatesReleased = new Promise<void>((resolve) => {
+      releaseUpdates = resolve
+    })
+
+    ResultModel.findOneAndUpdate = ((...args: any[]) => {
+      const query = originalResultUpdate(...args)
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        signalResultReady?.()
+        await updatesReleased
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof ResultModel.findOneAndUpdate
+
+    RawTeamModel.findOneAndUpdate = ((...args: any[]) => {
+      const query = originalRawUpdate(...args)
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        signalRawReady?.()
+        await updatesReleased
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof RawTeamModel.findOneAndUpdate
+
+    try {
+      const staleResultUpdate = agent
+        .patch(`/api/results/${resultId}`)
+        .send({ tournamentId, round: 1, payload: { marker: 'stale' } })
+        .then((response) => response)
+      const staleRawUpdate = agent
+        .patch(`/api/raw-results/teams/${rawId}`)
+        .send({ tournamentId, r: 1, win: 0.5 })
+        .then((response) => response)
+
+      await Promise.all([resultReady, rawReady])
+
+      const renumber = await agent
+        .patch(`/api/rounds/${roundId}`)
+        .send({ tournamentId, round: 2 })
+      expect(renumber.status).toBe(200)
+
+      releaseUpdates?.()
+      const [resultUpdate, rawUpdate] = await Promise.all([staleResultUpdate, staleRawUpdate])
+      expect(resultUpdate.status).toBe(409)
+      expect(rawUpdate.status).toBe(409)
+
+      const storedResult = await ResultModel.findById(resultId).lean().exec()
+      const storedRaw = await RawTeamModel.findById(rawId).lean().exec()
+      expect(Number(storedResult?.round)).toBe(2)
+      expect((storedResult?.payload as any)?.marker).toBe('original')
+      expect(Number(storedRaw?.r)).toBe(2)
+      expect(Number(storedRaw?.win)).toBe(1)
+    } finally {
+      releaseUpdates?.()
+      ResultModel.findOneAndUpdate = originalResultUpdate as typeof ResultModel.findOneAndUpdate
+      RawTeamModel.findOneAndUpdate = originalRawUpdate as typeof RawTeamModel.findOneAndUpdate
+    }
+  })
+
   it('enforces a unique draw per round at the model layer', async () => {
     const agent = request.agent(app)
 
