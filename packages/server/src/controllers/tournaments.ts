@@ -7,6 +7,11 @@ import { getAuthenticatedActorId, getAuthenticatedActorRole } from '../middlewar
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
 import { verifyPassword } from '../services/hash.service.js'
 import {
+  acquireTournamentMembershipLifecycleLease,
+  releaseTournamentMembershipLease,
+  type TournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
+import {
   getTournamentAccessConfig,
   mergeTournamentAuth,
 } from '../services/tournament-access.service.js'
@@ -295,6 +300,7 @@ export const updateTournament: RequestHandler = async (req, res, next) => {
 }
 
 export const deleteTournament: RequestHandler = async (req, res, next) => {
+  let membershipLifecycleLease: TournamentMembershipLease | null = null
   try {
     const { id } = req.params
     if (!ensureTournamentId(res, id)) return
@@ -304,6 +310,20 @@ export const deleteTournament: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedId = String(tournament._id)
+    membershipLifecycleLease = await acquireTournamentMembershipLifecycleLease(deletedId)
+    if (!membershipLifecycleLease) {
+      res.status(409).json({
+        data: null,
+        errors: [
+          {
+            name: 'Conflict',
+            message: 'Tournament memberships are being modified; retry tournament deletion',
+          },
+        ],
+      })
+      return
+    }
+
     const [memberships, affectedUsers] = await Promise.all([
       TournamentMemberModel.find({ tournamentId: deletedId }).lean().exec(),
       UserModel.find({ tournaments: deletedId }).select({ _id: 1 }).lean().exec(),
@@ -386,9 +406,20 @@ export const deleteTournament: RequestHandler = async (req, res, next) => {
     if (req.session?.tournaments) {
       req.session.tournaments = req.session.tournaments.filter((t) => String(t) !== deletedId)
     }
+
+    const released = await releaseTournamentMembershipLease(membershipLifecycleLease)
+    membershipLifecycleLease = null
+    if (!released) {
+      throw new Error('Failed to release tournament membership lifecycle lease')
+    }
+
     res.json({ data: sanitizeTournamentForAdmin(tournament), errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (membershipLifecycleLease) {
+      await releaseTournamentMembershipLease(membershipLifecycleLease)
+    }
   }
 }
 

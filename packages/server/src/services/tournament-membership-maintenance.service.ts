@@ -2,6 +2,10 @@ import { Types } from 'mongoose'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
+import {
+  acquireTournamentMembershipLifecycleLease,
+  releaseTournamentMembershipLease,
+} from './tournament-membership-guard.service.js'
 
 type MemberRole = 'organizer' | 'adjudicator' | 'speaker' | 'audience'
 
@@ -62,13 +66,25 @@ function normalizeIdList(value: unknown): string[] {
   return Array.from(new Set(normalized))
 }
 
-async function backfillMembership(tournamentId: string, userId: string, role: MemberRole): Promise<number> {
-  const result = await TournamentMemberModel.updateOne(
-    { tournamentId, userId },
-    { $setOnInsert: { role } },
-    { upsert: true }
-  ).exec()
-  return result.upsertedCount ?? 0
+async function backfillMembership(
+  tournamentId: string,
+  userId: string,
+  role: MemberRole
+): Promise<number> {
+  const lifecycleLease = await acquireTournamentMembershipLifecycleLease(tournamentId)
+  if (!lifecycleLease) return 0
+  try {
+    const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+    if (!tournamentExists) return 0
+    const result = await TournamentMemberModel.updateOne(
+      { tournamentId, userId },
+      { $setOnInsert: { role } },
+      { upsert: true }
+    ).exec()
+    return result.upsertedCount ?? 0
+  } finally {
+    await releaseTournamentMembershipLease(lifecycleLease)
+  }
 }
 
 export async function runTournamentMembershipMaintenance(): Promise<TournamentMembershipMaintenanceSummary> {
