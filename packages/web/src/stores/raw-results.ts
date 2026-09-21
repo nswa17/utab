@@ -37,7 +37,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   }
 
   function invalidateFetch(label: RawLabel, tournamentId: string) {
-    if (!tournamentScope.isActive(tournamentId)) return
+    if (!tournamentScope.isScopeCurrent(scopeToken)) return
     latestFetchSequence.value[label] += 1
   }
 
@@ -53,6 +53,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       speakerResults.value = []
       adjudicatorResults.value = []
     }
+    const scopeToken = tournamentScope.captureScope(params.tournamentId)
     latestFetchSequence.value[params.label] += 1
     const sequence = latestFetchSequence.value[params.label]
     beginRequest()
@@ -63,7 +64,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       })
       if (
         sequence !== latestFetchSequence.value[params.label] ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -73,7 +74,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     } catch (err: any) {
       if (
         sequence !== latestFetchSequence.value[params.label] ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -89,17 +90,18 @@ export const useRawResultsStore = defineStore('raw-results', () => {
       (Array.isArray(payload) ? payload[0]?.tournamentId : payload?.tournamentId) ?? ''
     )
     if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+    if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
       error.value = null
     }
     try {
       const res = await api.post(`/raw-results/${label}`, payload)
       const created = res.data?.data ?? []
-      if (tournamentId) invalidateFetch(label, tournamentId)
+      if (tournamentId && tournamentScope.isScopeCurrent(scopeToken)) invalidateFetch(label, tournamentId)
       return created
     } catch (err: any) {
-      if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create raw results'
       }
       return null
@@ -112,16 +114,16 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     const tournamentId = String(payload.tournamentId ?? '')
     if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+    if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
       error.value = null
     }
     try {
       const res = await api.patch(`/raw-results/${label}/${rawId}`, payload)
       const updated = res.data?.data ?? null
-      if (tournamentId) invalidateFetch(label, tournamentId)
+      if (tournamentId && tournamentScope.isScopeCurrent(scopeToken)) invalidateFetch(label, tournamentId)
       return updated
     } catch (err: any) {
-      if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update raw result'
       }
       return null
@@ -133,16 +135,16 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   async function deleteRawResult(label: RawLabel, rawId: string, tournamentId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete(`/raw-results/${label}/${rawId}`, {
         params: { tournamentId },
       })
       const deleted = res.data?.data ?? null
-      invalidateFetch(label, tournamentId)
+      if (tournamentScope.isScopeCurrent(scopeToken)) invalidateFetch(label, tournamentId)
       return deleted
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw result'
       }
       return null
@@ -155,16 +157,16 @@ export const useRawResultsStore = defineStore('raw-results', () => {
     const tournamentId = String(params.tournamentId ?? '')
     if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+    if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
       error.value = null
     }
     try {
       const res = await api.delete(`/raw-results/${label}`, { params })
       const deleted = res.data?.data ?? null
-      if (tournamentId) invalidateFetch(label, tournamentId)
+      if (tournamentId && tournamentScope.isScopeCurrent(scopeToken)) invalidateFetch(label, tournamentId)
       return deleted
     } catch (err: any) {
-      if (!tournamentId || tournamentScope.isActive(tournamentId)) {
+      if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete raw results'
       }
       return null
