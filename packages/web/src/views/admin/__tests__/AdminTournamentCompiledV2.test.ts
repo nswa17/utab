@@ -104,8 +104,20 @@ describe('AdminTournamentCompiled V2', () => {
     expect(source).toContain('const compiledHistoryGate = createLatestRequestGate()')
     expect(source).toContain('compiledHistoryGate.invalidate()')
     expect(source).toContain('if (!refreshGate.isCurrent(token)) return')
-    expect(source).toContain('if (!compiledHistoryGate.isCurrent(token)) return')
+    expect(source).toContain('!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId')
     expect(source).toContain('hasLoaded.value = false')
+  })
+
+  it('guards compile, preview, and save completion against tournament switches', () => {
+    const source = load('src/views/admin/AdminTournamentCompiled.vue')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return false')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
+    expect(source).toContain('compiledStore.runCompile(currentTournamentId')
+    expect(source).toContain('compiledStore.runPreview(currentTournamentId')
+    expect(source).toContain('compiledStore.saveCompiled(currentTournamentId')
+    expect(source).toContain('refreshCompiledHistory(currentTournamentId)')
+    expect(source).toContain('teams.fetchTeams(currentTournamentId)')
   })
 
   it('keeps rankings focused and removes operation-risk frame content', () => {

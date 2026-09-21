@@ -104,6 +104,51 @@ describe('entity bulk delete stores', () => {
   })
 
   cases.forEach(({ label, useStore, listKey, fetchMethod, method }) => {
+    it(`does not let a ${label} mutation in tournament A invalidate a newer tournament B fetch`, async () => {
+      const store = useStore() as any
+
+      mockedApi.get.mockResolvedValueOnce({
+        data: {
+          data: [
+            { _id: 'a-1', name: 'A 1' },
+            { _id: 'a-2', name: 'A 2' },
+          ],
+        },
+      })
+      await store[fetchMethod]('tournament-a')
+      expect(store[listKey]).toHaveLength(2)
+
+      const deleteDeferred = createDeferred<any>()
+      const fetchBDeferred = createDeferred<any>()
+      mockedApi.delete.mockImplementationOnce(() => deleteDeferred.promise)
+      mockedApi.get.mockImplementationOnce(() => fetchBDeferred.promise)
+
+      const deletePromise = store[method]('tournament-a', ['a-1'])
+      const fetchBPromise = store[fetchMethod]('tournament-b')
+
+      deleteDeferred.resolve({ data: { data: { deletedCount: 1 } } })
+      await deletePromise
+      expect(store[listKey]).toEqual([])
+
+      fetchBDeferred.resolve({
+        data: {
+          data: [
+            { _id: 'b-1', name: 'B 1' },
+            { _id: 'b-2', name: 'B 2' },
+          ],
+        },
+      })
+      await fetchBPromise
+
+      expect(store[listKey]).toEqual([
+        { _id: 'b-1', name: 'B 1' },
+        { _id: 'b-2', name: 'B 2' },
+      ])
+      expect(store.error).toBeNull()
+    })
+  })
+
+  cases.forEach(({ label, useStore, listKey, fetchMethod, method }) => {
     it(`keeps ${label} deleted when an older fetch resolves later`, async () => {
       const store = useStore() as any
       store[listKey] = [

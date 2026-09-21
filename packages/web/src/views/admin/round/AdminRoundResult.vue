@@ -292,24 +292,28 @@ function entityName(id: string) {
   )
 }
 
-async function refresh() {
+async function refresh(
+  currentTournamentId = tournamentId.value,
+  currentRound = round.value
+) {
+  if (!currentTournamentId) return
   await Promise.all([
-    raw.fetchRawResults({ tournamentId: tournamentId.value, label: 'teams', round: round.value }),
+    raw.fetchRawResults({ tournamentId: currentTournamentId, label: 'teams', round: currentRound }),
     raw.fetchRawResults({
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       label: 'speakers',
-      round: round.value,
+      round: currentRound,
     }),
     raw.fetchRawResults({
-      tournamentId: tournamentId.value,
+      tournamentId: currentTournamentId,
       label: 'adjudicators',
-      round: round.value,
+      round: currentRound,
     }),
-    draws.fetchDraws(tournamentId.value, round.value),
-    venues.fetchVenues(tournamentId.value),
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
+    draws.fetchDraws(currentTournamentId, currentRound),
+    venues.fetchVenues(currentTournamentId),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
   ])
 }
 
@@ -337,10 +341,29 @@ function cancelEdit() {
 
 async function saveEdit() {
   if (!editingId.value) return
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentEditingId = editingId.value
+  const currentLabel = activeLabel.value
+  if (!currentTournamentId) return
   try {
     const payload = JSON.parse(editPayload.value)
-    await raw.updateRawResult(activeLabel.value, editingId.value, payload)
-    await refresh()
+    await raw.updateRawResult(currentLabel, currentEditingId, payload)
+    if (
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound ||
+      editingId.value !== currentEditingId
+    ) {
+      return
+    }
+    await refresh(currentTournamentId, currentRound)
+    if (
+      tournamentId.value !== currentTournamentId ||
+      round.value !== currentRound ||
+      editingId.value !== currentEditingId
+    ) {
+      return
+    }
     cancelEdit()
   } catch {
     raw.error = t('JSON形式が正しくありません')
@@ -348,9 +371,13 @@ async function saveEdit() {
 }
 
 async function remove(id?: string) {
-  if (!id) return
-  await raw.deleteRawResult(activeLabel.value, id, tournamentId.value)
-  await refresh()
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentLabel = activeLabel.value
+  if (!id || !currentTournamentId) return
+  await raw.deleteRawResult(currentLabel, id, currentTournamentId)
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
+  await refresh(currentTournamentId, currentRound)
 }
 
 function openDeleteAllModal() {
@@ -365,18 +392,23 @@ function closeDeleteAllModal() {
 }
 
 async function confirmDeleteAll() {
+  const currentTournamentId = tournamentId.value
+  const currentRound = round.value
+  const currentLabel = activeLabel.value
+  if (!currentTournamentId) return
   deleteAllError.value = ''
-  const deleted = await raw.deleteRawResults(activeLabel.value, {
-    tournamentId: tournamentId.value,
-    round: round.value,
+  const deleted = await raw.deleteRawResults(currentLabel, {
+    tournamentId: currentTournamentId,
+    round: currentRound,
   })
+  if (tournamentId.value !== currentTournamentId || round.value !== currentRound) return
   if (!deleted) {
     deleteAllError.value = raw.error ?? t('全削除に失敗しました。')
     raw.error = null
     return
   }
   closeDeleteAllModal()
-  await refresh()
+  await refresh(currentTournamentId, currentRound)
 }
 
 function csvEscape(value: any) {
@@ -433,13 +465,18 @@ function downloadCsv() {
   URL.revokeObjectURL(url)
 }
 
-watch([activeLabel, round], () => {
+watch(activeLabel, () => {
+  cancelEdit()
+  closeDeleteAllModal()
   buildDefaultPayload()
 })
 
 watch(
   [tournamentId, round],
   () => {
+    cancelEdit()
+    closeDeleteAllModal()
+    buildDefaultPayload()
     refresh()
   },
   { immediate: true }

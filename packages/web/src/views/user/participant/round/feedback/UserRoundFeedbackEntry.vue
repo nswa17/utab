@@ -642,17 +642,29 @@ async function submitConfirmed() {
     closeConfirm()
     return
   }
+  const currentTournamentId = tournamentId.value
+  const currentRound = Number(round.value)
+  const currentTargetJudgeId = effectiveTargetJudgeId.value
+  const currentSubmittedEntityId = submittedEntityId.value
   saved.value = false
   const created = await submissions.submitFeedback({
-    tournamentId: tournamentId.value,
-    round: Number(round.value),
-    adjudicatorId: effectiveTargetJudgeId.value,
+    tournamentId: currentTournamentId,
+    round: currentRound,
+    adjudicatorId: currentTargetJudgeId,
     score: computedScore.value,
     comment: comment.value,
-    submittedEntityId: submittedEntityId.value || undefined,
+    submittedEntityId: currentSubmittedEntityId || undefined,
     matter: useMatterManner.value ? matter.value : undefined,
     manner: useMatterManner.value ? manner.value : undefined,
   })
+  if (
+    tournamentId.value !== currentTournamentId ||
+    Number(round.value) !== currentRound ||
+    effectiveTargetJudgeId.value !== currentTargetJudgeId ||
+    submittedEntityId.value !== currentSubmittedEntityId
+  ) {
+    return
+  }
   if (created) {
     closeConfirm()
     saved.value = true

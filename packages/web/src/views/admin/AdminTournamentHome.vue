@@ -3176,31 +3176,34 @@ async function refresh() {
   }
 }
 
-async function refreshEntities() {
+async function refreshEntities(currentTournamentId = tournamentId.value) {
+  if (!currentTournamentId) return
   await Promise.all([
-    rounds.fetchRounds(tournamentId.value),
-    draws.fetchDraws(tournamentId.value),
-    teams.fetchTeams(tournamentId.value),
-    adjudicators.fetchAdjudicators(tournamentId.value),
-    venues.fetchVenues(tournamentId.value),
-    speakers.fetchSpeakers(tournamentId.value),
-    institutions.fetchInstitutions(tournamentId.value),
-    submissions.fetchSubmissions({ tournamentId: tournamentId.value }),
+    rounds.fetchRounds(currentTournamentId),
+    draws.fetchDraws(currentTournamentId),
+    teams.fetchTeams(currentTournamentId),
+    adjudicators.fetchAdjudicators(currentTournamentId),
+    venues.fetchVenues(currentTournamentId),
+    speakers.fetchSpeakers(currentTournamentId),
+    institutions.fetchInstitutions(currentTournamentId),
+    submissions.fetchSubmissions({ tournamentId: currentTournamentId }),
   ])
 }
 
 async function saveTournament(options: { includeName?: boolean; includeInfo?: boolean } = {}) {
   if (!tournament.value) return false
+  const currentTournamentId = String(tournament.value._id)
   const includeName = options.includeName ?? true
   const includeInfo = options.includeInfo ?? false
   const passwordInput = String(tournamentForm.accessPassword ?? '').trim()
   const currentAccess = readTournamentAccessState(tournament.value.auth)
   const currentHasPassword = currentAccess.hasPassword
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
+  const currentUserDefined = {
+    ...(tournament.value.user_defined_data ?? {}),
+  } as Record<string, any>
   const currentInfo =
-    nextUserDefined.info && typeof nextUserDefined.info === 'object'
-      ? { ...(nextUserDefined.info as Record<string, any>) }
+    currentUserDefined.info && typeof currentUserDefined.info === 'object'
+      ? { ...(currentUserDefined.info as Record<string, any>) }
       : {}
   const info = includeInfo
     ? {
@@ -3226,16 +3229,16 @@ async function saveTournament(options: { includeName?: boolean; includeInfo?: bo
     }
   }
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
+    tournamentId: currentTournamentId,
     name: includeName ? tournamentForm.name : tournament.value.name,
     style: tournamentForm.style,
     auth: authPayload,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       hidden: tournamentForm.hidden,
-      info,
+      ...(includeInfo ? { info } : {}),
     },
   })
+  if (tournamentId.value !== currentTournamentId) return false
   if (updated) {
     isApplyingTournamentForm.value = true
     applyAccessForm(updated.auth, { preserveExistingPassword: true })
@@ -3264,10 +3267,12 @@ async function saveTournamentName() {
 
 async function saveTournamentNotice() {
   if (!canSaveTournamentNotice.value || isSavingNotice.value) return
+  const currentTournamentId = tournamentId.value
   noticeSaveError.value = ''
   noticeSaved.value = false
   isSavingNotice.value = true
   const ok = await saveTournament({ includeName: false, includeInfo: true })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingNotice.value = false
   if (!ok) {
     noticeSaveError.value = tournamentStore.error ?? t('重要なお知らせの更新に失敗しました。')
@@ -3297,10 +3302,12 @@ async function flushTournamentAutosave() {
   if (isApplyingTournamentForm.value || !pendingTournamentAutosave.value || !tournament.value)
     return
   if (isSavingTournamentAutosave.value) return
+  const currentTournamentId = tournamentId.value
   pendingTournamentAutosave.value = false
   isSavingTournamentAutosave.value = true
   tournamentAutosaveStatus.value = 'saving'
   await saveTournament({ includeName: false, includeInfo: false })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentAutosave.value = false
   if (pendingTournamentAutosave.value) {
     void flushTournamentAutosave()
@@ -3329,12 +3336,9 @@ function serializeRoundDefaultsForTournamentStorage() {
 
 async function saveRoundDefaults() {
   if (!tournament.value) return
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   await tournamentStore.updateTournament({
     tournamentId: tournament.value._id,
-    user_defined_data: {
-      ...nextUserDefined,
+    user_defined_data_patch: {
       round_defaults: serializeRoundDefaultsForTournamentStorage(),
     },
   })
@@ -3342,19 +3346,18 @@ async function saveRoundDefaults() {
 
 async function saveTournamentBreakSettings() {
   if (!tournament.value || isSavingTournamentBreak.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentBreak.value = true
   tournamentBreakSaveError.value = ''
   tournamentBreakSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedBreak = normalizeTournamentBreakConfig(tournamentBreakForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
-    user_defined_data: {
-      ...nextUserDefined,
+    tournamentId: currentTournamentId,
+    user_defined_data_patch: {
       break: normalizedBreak,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentBreak.value = false
   if (!updated?._id) {
     tournamentBreakSaveError.value =
@@ -3376,19 +3379,18 @@ async function saveTournamentBreakSettings() {
 
 async function saveTournamentTeamRankingSettings() {
   if (!tournament.value || isSavingTournamentTeamRanking.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentTeamRanking.value = true
   tournamentTeamRankingSaveError.value = ''
   tournamentTeamRankingSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedTeamRanking = normalizeTournamentTeamRankingConfig(tournamentTeamRankingForm)
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
-    user_defined_data: {
-      ...nextUserDefined,
+    tournamentId: currentTournamentId,
+    user_defined_data_patch: {
       team_ranking_priority: normalizedTeamRanking,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentTeamRanking.value = false
   if (!updated?._id) {
     tournamentTeamRankingSaveError.value =
@@ -3410,21 +3412,20 @@ async function saveTournamentTeamRankingSettings() {
 
 async function saveTournamentAdjudicatorRankingSettings() {
   if (!tournament.value || isSavingTournamentAdjudicatorRanking.value) return
+  const currentTournamentId = String(tournament.value._id)
   isSavingTournamentAdjudicatorRanking.value = true
   tournamentAdjudicatorRankingSaveError.value = ''
   tournamentAdjudicatorRankingSaved.value = false
-  const nextUserDefined = { ...(tournament.value.user_defined_data ?? {}) } as Record<string, any>
-  delete nextUserDefined.submission_policy
   const normalizedAdjudicatorRanking = normalizeTournamentAdjudicatorRankingConfig(
     tournamentAdjudicatorRankingForm
   )
   const updated = await tournamentStore.updateTournament({
-    tournamentId: tournament.value._id,
-    user_defined_data: {
-      ...nextUserDefined,
+    tournamentId: currentTournamentId,
+    user_defined_data_patch: {
       adjudicator_ranking_priority: normalizedAdjudicatorRanking,
     },
   })
+  if (tournamentId.value !== currentTournamentId) return
   isSavingTournamentAdjudicatorRanking.value = false
   if (!updated?._id) {
     tournamentAdjudicatorRankingSaveError.value =
@@ -3462,6 +3463,7 @@ function applyBreakRoundConstraints(userDefinedData: Record<string, any>, breakE
 
 async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) {
   if (setupRoundBreakUpdating.value) return
+  const currentTournamentId = tournamentId.value
   setupRoundBreakError.value = ''
 
   const targetRound = Number(round?.round)
@@ -3488,15 +3490,16 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       applyBreakRoundConstraints(nextUserDefined, nextEnabled)
       return {
         id: String(item._id),
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         userDefinedData: nextUserDefined,
       }
     })
 
     const updated = await rounds.bulkUpdateRounds(payload)
+    if (tournamentId.value !== currentTournamentId) return
     if (updated.length === 0) {
       setupRoundBreakError.value = rounds.error ?? t('ブレイク設定の保存に失敗しました。')
-      await rounds.fetchRounds(tournamentId.value)
+      await rounds.fetchRounds(currentTournamentId)
       return
     }
 
@@ -3513,18 +3516,22 @@ async function onSetupRoundBreakEnabledChange(round: any, nextEnabled: boolean) 
       }
     }
   } finally {
-    setupRoundBreakUpdating.value = false
+    if (tournamentId.value === currentTournamentId) {
+      setupRoundBreakUpdating.value = false
+    }
   }
 }
 
 async function onSetupMotionOpenedChange(round: any, checked: boolean) {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   const updated = await rounds.updateRound({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     roundId: String(round._id),
     motionOpened: Boolean(checked),
   })
-  if (updated?._id) {
-    await rounds.fetchRounds(tournamentId.value)
+  if (updated?._id && tournamentId.value === currentTournamentId) {
+    await rounds.fetchRounds(currentTournamentId)
   }
 }
 
@@ -3532,11 +3539,13 @@ async function saveSetupDrawPublication(
   round: any,
   nextState: Partial<{ drawOpened: boolean; allocationOpened: boolean }>
 ): Promise<boolean> {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return false
   const roundNumber = Number(round?.round)
   const draw = setupRoundDraw(roundNumber)
   if (!Number.isInteger(roundNumber) || !draw) return false
   const updated = await draws.upsertDraw({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     round: roundNumber,
     allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
     userDefinedData: draw.userDefinedData,
@@ -3544,9 +3553,9 @@ async function saveSetupDrawPublication(
     allocationOpened: nextState.allocationOpened ?? Boolean(draw.allocationOpened),
     locked: Boolean(draw.locked),
   })
-  if (!updated?._id) return false
-  await draws.fetchDraws(tournamentId.value)
-  return true
+  if (!updated?._id || tournamentId.value !== currentTournamentId) return false
+  await draws.fetchDraws(currentTournamentId)
+  return tournamentId.value === currentTournamentId
 }
 
 async function onSetupTeamAllocationChange(round: any, checked: boolean) {
@@ -3638,7 +3647,8 @@ function normalizeCompileSourceRoundsForRound(
 }
 
 async function createRoundFromSetup() {
-  if (!tournamentId.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   setupRoundError.value = ''
   setupRoundBreakError.value = ''
   const roundNumber = Number(setupRoundForm.round)
@@ -3679,7 +3689,7 @@ async function createRoundFromSetup() {
   userDefinedData.break_round = false
 
   const created = await rounds.createRound({
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     round: roundNumber,
     name: setupRoundForm.name || t('ラウンド {round}', { round: roundNumber }),
     motionOpened: false,
@@ -3687,6 +3697,7 @@ async function createRoundFromSetup() {
     adjudicatorAllocationOpened: false,
     userDefinedData,
   })
+  if (tournamentId.value !== currentTournamentId) return
   if (!created?._id) {
     setupRoundError.value = rounds.error ?? t('ラウンド追加に失敗しました。')
     return
@@ -3708,9 +3719,11 @@ function closeSetupRoundDeleteModal() {
 
 async function confirmRemoveRoundFromSetup() {
   const roundId = String(setupRoundDeleteId.value ?? '').trim()
-  if (!roundId) return
+  const currentTournamentId = tournamentId.value
+  if (!roundId || !currentTournamentId) return
   setupRoundDeleteError.value = ''
-  const deleted = await rounds.deleteRound(tournamentId.value, roundId)
+  const deleted = await rounds.deleteRound(currentTournamentId, roundId)
+  if (tournamentId.value !== currentTournamentId) return
   if (!deleted) {
     setupRoundDeleteError.value = rounds.error ?? t('ラウンドの削除に失敗しました。')
     rounds.error = null
@@ -4689,7 +4702,11 @@ function adjudicatorInstitutionsLabel(adjudicator: any) {
   return unique.length > 0 ? unique.join(', ') : t('未設定')
 }
 
-function buildEntityImportRequest(type: EntityTabKey, text: string) {
+function buildEntityImportRequest(
+  type: EntityTabKey,
+  text: string,
+  currentTournamentId = tournamentId.value
+) {
   const roundNumbers = sortedRounds.value
     .map((round) => Number(round.round))
     .filter((roundNumber) => Number.isInteger(roundNumber) && roundNumber >= 1)
@@ -4715,7 +4732,7 @@ function buildEntityImportRequest(type: EntityTabKey, text: string) {
   } = buildEntityImportPayload({
     type,
     text,
-    tournamentId: tournamentId.value,
+    tournamentId: currentTournamentId,
     roundNumbers,
     teams: teams.teams.map((team) => ({
       _id: String(team._id),
@@ -4779,7 +4796,19 @@ function missingEntityNamesByKind(
   return Array.from(new Set(names))
 }
 
-async function createMissingEntitiesForImport(warnings: MissingEntityWarning[]) {
+function assertEntityImportContext(currentTournamentId: string) {
+  if (tournamentId.value === currentTournamentId) return
+  const err = new Error('Tournament context changed during import') as Error & {
+    code: 'IMPORT_CONTEXT_CHANGED'
+  }
+  err.code = 'IMPORT_CONTEXT_CHANGED'
+  throw err
+}
+
+async function createMissingEntitiesForImport(
+  warnings: MissingEntityWarning[],
+  currentTournamentId: string
+) {
   const missingInstitutions = missingEntityNamesByKind(warnings, 'institution')
   const missingSpeakers = missingEntityNamesByKind(warnings, 'speaker')
   const missingTeams = missingEntityNamesByKind(warnings, 'team')
@@ -4798,26 +4827,29 @@ async function createMissingEntitiesForImport(warnings: MissingEntityWarning[]) 
     await api.post(
       '/institutions',
       missingInstitutions.map((name) => ({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         name,
         category: 'institution',
         priority: 1,
       }))
     )
+    assertEntityImportContext(currentTournamentId)
   }
 
   if (missingSpeakers.length > 0) {
     await api.post(
       '/speakers',
       missingSpeakers.map((name) => ({
-        tournamentId: tournamentId.value,
+        tournamentId: currentTournamentId,
         name,
       }))
     )
+    assertEntityImportContext(currentTournamentId)
   }
 
   if (missingInstitutions.length > 0 || missingSpeakers.length > 0) {
-    await refreshEntities()
+    await refreshEntities(currentTournamentId)
+    assertEntityImportContext(currentTournamentId)
   }
 }
 
@@ -4826,6 +4858,8 @@ async function importEntitiesFromText(
   text: string,
   options: { autoCreateMissing?: boolean; skipDuplicateNames?: boolean } = {}
 ) {
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) throw new Error('Tournament is not selected')
   const { autoCreateMissing = false, skipDuplicateNames = false } = options
   const {
     payload,
@@ -4835,7 +4869,7 @@ async function importEntitiesFromText(
     missingEntityWarnings,
     duplicateNameWarnings,
     endpoint,
-  } = buildEntityImportRequest(type, text)
+  } = buildEntityImportRequest(type, text, currentTournamentId)
 
   if (errors.length > 0) {
     throw new Error(errors.join('\n'))
@@ -4886,9 +4920,10 @@ async function importEntitiesFromText(
     }
 
     if (missingEntityWarnings.length > 0) {
-      await createMissingEntitiesForImport(missingEntityWarnings)
+      await createMissingEntitiesForImport(missingEntityWarnings, currentTournamentId)
+      assertEntityImportContext(currentTournamentId)
     }
-    const rebuilt = buildEntityImportRequest(type, text)
+    const rebuilt = buildEntityImportRequest(type, text, currentTournamentId)
     if (rebuilt.errors.length > 0) {
       throw new Error(rebuilt.errors.join('\n'))
     }
@@ -4915,7 +4950,9 @@ async function importEntitiesFromText(
       throw new Error(t('取り込み可能な行がありません。'))
     }
     await api.post(rebuilt.endpoint, filteredPayload)
-    await refreshEntities()
+    assertEntityImportContext(currentTournamentId)
+    await refreshEntities(currentTournamentId)
+    assertEntityImportContext(currentTournamentId)
     return
   }
 
@@ -4923,19 +4960,25 @@ async function importEntitiesFromText(
     throw new Error(t('取り込み可能な行がありません。'))
   }
   await api.post(endpoint, payload)
-  await refreshEntities()
+  assertEntityImportContext(currentTournamentId)
+  await refreshEntities(currentTournamentId)
+  assertEntityImportContext(currentTournamentId)
 }
 
 async function applyEntityImport() {
   if (!entityImportType.value) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   entityImportError.value = null
   csvError.value = null
   pendingMissingEntityImport.value = null
   pendingMissingEntityImportError.value = ''
   try {
     await importEntitiesFromText(entityImportType.value, entityImportText.value)
+    if (tournamentId.value !== currentTournamentId) return
     closeEntityImportModal()
   } catch (err: any) {
+    if (tournamentId.value !== currentTournamentId) return
     if (err?.code === 'IMPORT_REVIEW_REQUIRED') {
       pendingMissingEntityImport.value = {
         type: err.importType ?? entityImportType.value,
@@ -4970,6 +5013,8 @@ function closePendingMissingEntityImportModal() {
 async function confirmEntityImportWithMissingCreate() {
   const pending = pendingMissingEntityImport.value
   if (!pending) return
+  const currentTournamentId = tournamentId.value
+  if (!currentTournamentId) return
   pendingMissingEntityImportError.value = ''
   entityImportError.value = null
   csvError.value = null
@@ -4978,8 +5023,10 @@ async function confirmEntityImportWithMissingCreate() {
       autoCreateMissing: pending.missingEntityWarnings.length > 0,
       skipDuplicateNames: pending.duplicateNameWarnings.length > 0,
     })
+    if (tournamentId.value !== currentTournamentId) return
     closeEntityImportModal()
   } catch (err: any) {
+    if (tournamentId.value !== currentTournamentId) return
     const message =
       err?.response?.data?.errors?.[0]?.message ?? err?.message ?? t('CSV取り込みに失敗しました')
     pendingMissingEntityImportError.value = message
@@ -5022,6 +5069,7 @@ watch(
     isSavingTournamentBreak.value = false
     isSavingTournamentTeamRanking.value = false
     isSavingTournamentAdjudicatorRanking.value = false
+    setupRoundBreakUpdating.value = false
     tournamentAutosaveStatus.value = 'idle'
     tournamentAutosaveError.value = ''
     noticeSaveError.value = ''

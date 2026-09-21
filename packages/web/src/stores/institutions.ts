@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Institution } from '@/types/institution'
 
 export const useInstitutionsStore = defineStore('institutions', () => {
@@ -8,7 +9,7 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -20,24 +21,21 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchInstitutions(tournamentId: string) {
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) institutions.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/institutions', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       institutions.value = res.data?.data ?? []
       return institutions.value
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load institutions'
@@ -54,18 +52,26 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     priority?: number
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/institutions', payload)
       const created = res.data?.data
       if (created) {
-        advanceFetchSequence()
-        institutions.value = [created, ...institutions.value]
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
+          if (!institutions.value.some((item) => item._id === created._id)) {
+            institutions.value = [created, ...institutions.value]
+          }
+        }
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create institution'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create institution'
+      }
       return null
     } finally {
       endRequest()
@@ -80,8 +86,10 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     priority?: number
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/institutions/${payload.institutionId}`, {
         tournamentId: payload.tournamentId,
@@ -92,14 +100,18 @@ export const useInstitutionsStore = defineStore('institutions', () => {
       })
       const updated = res.data?.data
       if (updated) {
-        advanceFetchSequence()
-        institutions.value = institutions.value.map((item) =>
-          item._id === updated._id ? updated : item
-        )
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
+          institutions.value = institutions.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update institution'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update institution'
+      }
       return null
     } finally {
       endRequest()
@@ -107,15 +119,21 @@ export const useInstitutionsStore = defineStore('institutions', () => {
   }
 
   async function deleteInstitution(tournamentId: string, institutionId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       await api.delete(`/institutions/${institutionId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      institutions.value = institutions.value.filter((item) => item._id !== institutionId)
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
+        institutions.value = institutions.value.filter((item) => item._id !== institutionId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institution'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institution'
+      }
       return false
     } finally {
       endRequest()
@@ -128,21 +146,27 @@ export const useInstitutionsStore = defineStore('institutions', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete('/institutions', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
-      institutions.value = institutions.value.filter(
+      const deletedCount = Number(res.data?.data?.deletedCount)
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
+        const deletedIds = new Set(normalizedIds)
+        institutions.value = institutions.value.filter(
         (item) => !deletedIds.has(String(item._id ?? ''))
       )
-      const deletedCount = Number(res.data?.data?.deletedCount)
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete institutions'
+      }
       return null
     } finally {
       endRequest()

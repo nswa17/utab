@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Result } from '@/types/result'
 
 export const useResultsStore = defineStore('results', () => {
@@ -9,6 +10,7 @@ export const useResultsStore = defineStore('results', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -26,17 +28,21 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   async function fetchResults(tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) results.value = []
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/results', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (sequence !== latestFetchSequence.value || !tournamentScope.isScopeCurrent(scopeToken)) {
         return
       }
       results.value = res.data?.data ?? []
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (sequence !== latestFetchSequence.value || !tournamentScope.isScopeCurrent(scopeToken)) {
         return
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load results'
@@ -50,18 +56,24 @@ export const useResultsStore = defineStore('results', () => {
     round: number
     payload: Record<string, unknown>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/results', payload)
       const created = res.data?.data
-      if (created) {
+      if (created && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
-        results.value = [created, ...results.value]
+        if (!results.value.some((item) => item._id === created._id)) {
+          results.value = [created, ...results.value]
+        }
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create result'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create result'
+      }
       return null
     } finally {
       endRequest()
@@ -74,8 +86,10 @@ export const useResultsStore = defineStore('results', () => {
     round?: number
     payload?: Record<string, unknown>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/results/${payload.resultId}`, {
         tournamentId: payload.tournamentId,
@@ -83,13 +97,15 @@ export const useResultsStore = defineStore('results', () => {
         payload: payload.payload,
       })
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
         results.value = results.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update result'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update result'
+      }
       return null
     } finally {
       endRequest()
@@ -97,15 +113,21 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   async function deleteResult(tournamentId: string, resultId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       await api.delete(`/results/${resultId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      results.value = results.value.filter((item) => item._id !== resultId)
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        advanceFetchSequence()
+        results.value = results.value.filter((item) => item._id !== resultId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete result'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete result'
+      }
       return false
     } finally {
       endRequest()

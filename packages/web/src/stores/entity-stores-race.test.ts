@@ -13,6 +13,7 @@ vi.mock('@/utils/api', () => ({
 import { api } from '@/utils/api'
 import { useTeamsStore } from './teams'
 import { useResultsStore } from './results'
+import { useRoundsStore } from './rounds'
 
 type MockedApi = {
   get: ReturnType<typeof vi.fn>
@@ -64,6 +65,54 @@ describe('entity stores race handling', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('clears old results immediately when switching tournaments', async () => {
+    const store = useResultsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'result-a', tournamentId: 'tournament-a', round: 1, payload: {} }],
+      },
+    })
+    await store.fetchResults('tournament-a')
+    expect(store.results).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchResults('tournament-b')
+
+    expect(store.results).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'result-b', tournamentId: 'tournament-b', round: 1, payload: {} }],
+      },
+    })
+    await nextFetch
+  })
+
+  it('clears old rounds immediately when switching tournaments', async () => {
+    const store = useRoundsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'round-a', tournamentId: 'tournament-a', round: 1, name: 'Round A' }],
+      },
+    })
+    await store.fetchRounds('tournament-a')
+    expect(store.rounds).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchRounds('tournament-b')
+
+    expect(store.rounds).toEqual([])
+
+    deferred.resolve({
+      data: {
+        data: [{ _id: 'round-b', tournamentId: 'tournament-b', round: 1, name: 'Round B' }],
+      },
+    })
+    await nextFetch
+  })
+
   it('keeps results loading true until concurrent fetches finish', async () => {
     const store = useResultsStore()
     const first = createDeferred<any>()
@@ -110,4 +159,274 @@ describe('entity stores race handling', () => {
     expect(store.teams).toEqual([{ _id: 'team-created', name: 'Created Team' } as any])
     expect(store.loading).toBe(false)
   })
+  it('does not let a mutation from the previous tournament contaminate the newly fetched tournament', async () => {
+    const store = useTeamsStore()
+    const createDeferredResponse = createDeferred<any>()
+    const fetchDeferredResponse = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => createDeferredResponse.promise)
+    mockedApi.get.mockImplementationOnce(() => fetchDeferredResponse.promise)
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Late Team A',
+    })
+
+    const fetchPromise = store.fetchTeams('tournament-b')
+
+    createDeferredResponse.resolve({
+      data: {
+        data: {
+          _id: 'team-a-late',
+          tournamentId: 'tournament-a',
+          name: 'Late Team A',
+        },
+      },
+    })
+    await createPromise
+
+    fetchDeferredResponse.resolve({
+      data: {
+        data: [
+          {
+            _id: 'team-b-current',
+            tournamentId: 'tournament-b',
+            name: 'Current Team B',
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-b-current',
+        tournamentId: 'tournament-b',
+        name: 'Current Team B',
+      },
+    ] as any)
+    expect(store.error).toBeNull()
+  })
+
+  it('does not surface an error from a mutation belonging to the previous tournament', async () => {
+    const store = useTeamsStore()
+    const createDeferredResponse = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => createDeferredResponse.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            _id: 'team-b-current',
+            tournamentId: 'tournament-b',
+            name: 'Current Team B',
+          },
+        ],
+      },
+    })
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Late Team A',
+    })
+    await store.fetchTeams('tournament-b')
+
+    createDeferredResponse.reject({
+      response: { data: { errors: [{ message: 'Tournament A write failed' }] } },
+    })
+    await createPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-b-current',
+        tournamentId: 'tournament-b',
+        name: 'Current Team B',
+      },
+    ] as any)
+    expect(store.error).toBeNull()
+  })
+
+
+  it('claims round store scope on a mutation-only first use', async () => {
+    const store = useRoundsStore()
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'round-created',
+          tournamentId: 'tournament-a',
+          round: 1,
+          name: 'Created Round',
+        },
+      },
+    })
+
+    const created = await store.createRound({
+      tournamentId: 'tournament-a',
+      round: 1,
+      name: 'Created Round',
+    })
+
+    expect(created?._id).toBe('round-created')
+    expect(store.rounds).toEqual([
+      {
+        _id: 'round-created',
+        tournamentId: 'tournament-a',
+        round: 1,
+        name: 'Created Round',
+      },
+    ] as any)
+  })
+
+  it('does not clear the active tournament round error when an inactive mutation starts', async () => {
+    const store = useRoundsStore()
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'Tournament B fetch failed' }] } },
+    })
+    await store.fetchRounds('tournament-b')
+    expect(store.error).toBe('Tournament B fetch failed')
+
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'round-a-late',
+          tournamentId: 'tournament-a',
+          round: 1,
+          name: 'Late A Round',
+        },
+      },
+    })
+    await store.createRound({
+      tournamentId: 'tournament-a',
+      round: 1,
+      name: 'Late A Round',
+    })
+
+    expect(store.rounds).toEqual([])
+    expect(store.error).toBe('Tournament B fetch failed')
+  })
+
+  it('does not revive a mutation from an earlier A activation after A -> B -> A', async () => {
+    const store = useTeamsStore()
+    const oldMutation = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldMutation.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-b', tournamentId: 'tournament-b', name: 'Team B' }] },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-a-current', tournamentId: 'tournament-a', name: 'Current A' }] },
+      })
+
+    const oldPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Old A mutation',
+    })
+
+    await store.fetchTeams('tournament-b')
+    await store.fetchTeams('tournament-a')
+
+    oldMutation.resolve({
+      data: {
+        data: {
+          _id: 'team-a-old',
+          tournamentId: 'tournament-a',
+          name: 'Old A mutation',
+        },
+      },
+    })
+    await oldPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-a-current',
+        tournamentId: 'tournament-a',
+        name: 'Current A',
+      },
+    ] as any)
+    expect(store.error).toBeNull()
+  })
+
+  it('does not duplicate a created entity when a concurrent fetch already contains it', async () => {
+    const store = useTeamsStore()
+    const delayedCreate = createDeferred<any>()
+    const delayedFetch = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => delayedCreate.promise)
+    mockedApi.get.mockImplementationOnce(() => delayedFetch.promise)
+
+    const createPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Created Team',
+    })
+    const fetchPromise = store.fetchTeams('tournament-a')
+
+    delayedFetch.resolve({
+      data: {
+        data: [
+          {
+            _id: 'team-created',
+            tournamentId: 'tournament-a',
+            name: 'Fetched Current Team',
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    delayedCreate.resolve({
+      data: {
+        data: {
+          _id: 'team-created',
+          tournamentId: 'tournament-a',
+          name: 'Delayed Create Response',
+        },
+      },
+    })
+    await createPromise
+
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-created',
+        tournamentId: 'tournament-a',
+        name: 'Fetched Current Team',
+      },
+    ] as any)
+  })
+
+
+  it('does not revive an old mutation error after A -> B -> A', async () => {
+    const store = useTeamsStore()
+    const oldMutation = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldMutation.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-b', tournamentId: 'tournament-b', name: 'Team B' }] },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-a-current', tournamentId: 'tournament-a', name: 'Current A' }] },
+      })
+
+    const oldPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Old A mutation',
+    })
+    await store.fetchTeams('tournament-b')
+    await store.fetchTeams('tournament-a')
+
+    oldMutation.reject({
+      response: { data: { errors: [{ message: 'old A failure' }] } },
+    })
+    expect(await oldPromise).toBeNull()
+
+    expect(store.error).toBeNull()
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-a-current',
+        tournamentId: 'tournament-a',
+        name: 'Current A',
+      },
+    ] as any)
+  })
+
+
 })

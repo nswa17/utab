@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Speaker } from '@/types/speaker'
 
 export const useSpeakersStore = defineStore('speakers', () => {
@@ -8,7 +9,7 @@ export const useSpeakersStore = defineStore('speakers', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -20,24 +21,21 @@ export const useSpeakersStore = defineStore('speakers', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchSpeakers(tournamentId: string) {
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) speakers.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/speakers', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       speakers.value = res.data?.data ?? []
       return speakers.value
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return []
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load speakers'
@@ -52,18 +50,26 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name: string
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/speakers', payload)
       const created = res.data?.data
       if (created) {
-        advanceFetchSequence()
-        speakers.value = [created, ...speakers.value]
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
+          if (!speakers.value.some((item) => item._id === created._id)) {
+            speakers.value = [created, ...speakers.value]
+          }
+        }
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create speaker'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create speaker'
+      }
       return null
     } finally {
       endRequest()
@@ -76,8 +82,10 @@ export const useSpeakersStore = defineStore('speakers', () => {
     name?: string
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/speakers/${payload.speakerId}`, {
         tournamentId: payload.tournamentId,
@@ -86,12 +94,18 @@ export const useSpeakersStore = defineStore('speakers', () => {
       })
       const updated = res.data?.data
       if (updated) {
-        advanceFetchSequence()
-        speakers.value = speakers.value.map((item) => (item._id === updated._id ? updated : item))
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
+          speakers.value = speakers.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update speaker'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update speaker'
+      }
       return null
     } finally {
       endRequest()
@@ -99,15 +113,21 @@ export const useSpeakersStore = defineStore('speakers', () => {
   }
 
   async function deleteSpeaker(tournamentId: string, speakerId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       await api.delete(`/speakers/${speakerId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      speakers.value = speakers.value.filter((item) => item._id !== speakerId)
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
+        speakers.value = speakers.value.filter((item) => item._id !== speakerId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speaker'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speaker'
+      }
       return false
     } finally {
       endRequest()
@@ -120,19 +140,25 @@ export const useSpeakersStore = defineStore('speakers', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete('/speakers', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
-      speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
+        const deletedIds = new Set(normalizedIds)
+        speakers.value = speakers.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speakers'
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete speakers'
+      }
       return null
     } finally {
       endRequest()

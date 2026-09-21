@@ -22,6 +22,16 @@ type MockedApi = {
 
 const mockedApi = api as unknown as MockedApi
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('submissions store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -49,6 +59,31 @@ describe('submissions store', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('does not let an old tournament timeout replace the active tournament error', async () => {
+    const store = useSubmissionsStore()
+    const oldBallot = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldBallot.promise)
+
+    const ballotPromise = store.submitBallot({
+      tournamentId: 'tournament-a',
+      round: 1,
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      scoresA: [75],
+      scoresB: [72],
+    })
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament error' }] } },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-b' })
+    expect(store.error).toBe('current tournament error')
+
+    oldBallot.reject({ code: 'ERR_CANCELED' })
+    expect(await ballotPromise).toBeNull()
+    expect(store.error).toBe('current tournament error')
+  })
+
   it('loads admin submissions list with filters', async () => {
     const store = useSubmissionsStore()
     const rows = [{ _id: 's-1', type: 'ballot', round: 1, payload: {} }]
@@ -70,6 +105,26 @@ describe('submissions store', () => {
     expect(data).toEqual(rows)
     expect(store.submissions).toEqual(rows)
     expect(store.error).toBeNull()
+  })
+
+  it('clears old tournament submissions immediately when switching tournaments', async () => {
+    const store = useSubmissionsStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: [{ _id: 'submission-a', tournamentId: 'tournament-a', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    expect(store.submissions).toHaveLength(1)
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchSubmissions({ tournamentId: 'tournament-b' })
+
+    expect(store.submissions).toEqual([])
+
+    deferred.resolve({
+      data: { data: [{ _id: 'submission-b', tournamentId: 'tournament-b', type: 'ballot', round: 1, payload: {} }] },
+    })
+    await nextFetch
   })
 
   it('keeps only the latest admin submissions response when requests resolve out of order', async () => {
@@ -278,4 +333,178 @@ describe('submissions store', () => {
       },
     ])
   })
+  it('does not let an old-tournament update invalidate the current tournament submissions', async () => {
+    const store = useSubmissionsStore()
+    const updateDeferred = createDeferred<any>()
+    const fetchDeferred = createDeferred<any>()
+
+    mockedApi.patch.mockImplementationOnce(() => updateDeferred.promise)
+    mockedApi.get.mockImplementationOnce(() => fetchDeferred.promise)
+
+    const updatePromise = store.updateSubmission({
+      tournamentId: 'tournament-a',
+      submissionId: 'submission-a',
+      payload: { comment: 'late A edit' },
+    })
+
+    const fetchPromise = store.fetchSubmissions({ tournamentId: 'tournament-b' })
+
+    updateDeferred.resolve({
+      data: {
+        data: {
+          _id: 'submission-a',
+          tournamentId: 'tournament-a',
+          type: 'ballot',
+          round: 1,
+          payload: { comment: 'late A edit' },
+        },
+      },
+    })
+    await updatePromise
+
+    fetchDeferred.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-b',
+            tournamentId: 'tournament-b',
+            type: 'feedback',
+            round: 1,
+            payload: { comment: 'current B row' },
+          },
+        ],
+      },
+    })
+    await fetchPromise
+
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-b',
+        tournamentId: 'tournament-b',
+        type: 'feedback',
+        round: 1,
+        payload: { comment: 'current B row' },
+      },
+    ] as any)
+  })
+
+  it('rejects an old admin response after a participant fetch activates another tournament', async () => {
+    const store = useSubmissionsStore()
+    const oldAdmin = createDeferred<any>()
+    const currentParticipant = createDeferred<any>()
+
+    mockedApi.get
+      .mockImplementationOnce(() => oldAdmin.promise)
+      .mockImplementationOnce(() => currentParticipant.promise)
+
+    const oldRequest = store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    const currentRequest = store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-b',
+      submittedEntityId: 'team-b',
+    })
+
+    currentParticipant.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-b',
+            tournamentId: 'tournament-b',
+            type: 'feedback',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    await currentRequest
+
+    oldAdmin.resolve({
+      data: {
+        data: [
+          {
+            _id: 'submission-a-late',
+            tournamentId: 'tournament-a',
+            type: 'ballot',
+            round: 1,
+            payload: {},
+          },
+        ],
+      },
+    })
+    const staleResult = await oldRequest
+
+    expect(staleResult).toEqual([])
+    expect(store.submissions).toEqual([
+      {
+        _id: 'submission-b',
+        tournamentId: 'tournament-b',
+        type: 'feedback',
+        round: 1,
+        payload: {},
+      },
+    ] as any)
+  })
+
+  it('does not clear the active tournament error when an inactive submission mutation starts', async () => {
+    const store = useSubmissionsStore()
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament submission error' }] } },
+    })
+    await store.fetchSubmissions({ tournamentId: 'tournament-b' })
+    expect(store.error).toBe('current tournament submission error')
+
+    const deferredUpdate = createDeferred<any>()
+    mockedApi.patch.mockImplementationOnce(() => deferredUpdate.promise)
+    const updatePromise = store.updateSubmission({
+      tournamentId: 'tournament-a',
+      submissionId: 'submission-a',
+      payload: { comment: 'inactive edit' },
+    })
+
+    expect(store.error).toBe('current tournament submission error')
+
+    deferredUpdate.resolve({ data: { data: null } })
+    await updatePromise
+    expect(store.error).toBe('current tournament submission error')
+  })
+
+  it('does not revive an old admin response after A -> B -> A through participant fetches', async () => {
+    const store = useSubmissionsStore()
+    const oldAdmin = createDeferred<any>()
+    mockedApi.get
+      .mockImplementationOnce(() => oldAdmin.promise)
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: 'submission-b', tournamentId: 'tournament-b', type: 'feedback', round: 1, payload: {} }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: 'submission-a-current', tournamentId: 'tournament-a', type: 'feedback', round: 1, payload: {} }],
+        },
+      })
+
+    const oldPromise = store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    await store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-b',
+      submittedEntityId: 'entity-b',
+    })
+    await store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-a',
+      submittedEntityId: 'entity-a',
+    })
+
+    oldAdmin.resolve({
+      data: {
+        data: [{ _id: 'submission-a-old', tournamentId: 'tournament-a', type: 'ballot', round: 1, payload: {} }],
+      },
+    })
+
+    expect(await oldPromise).toEqual([])
+    expect(store.submissions).toEqual([
+      { _id: 'submission-a-current', tournamentId: 'tournament-a', type: 'feedback', round: 1, payload: {} },
+    ] as any)
+  })
+
 })

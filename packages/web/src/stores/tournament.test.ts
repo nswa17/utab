@@ -23,6 +23,16 @@ type MockedApi = {
 
 const mockedApi = api as unknown as MockedApi
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('tournament store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -84,6 +94,102 @@ describe('tournament store', () => {
     expect(auth.organizerTournaments).toContain('new-tournament')
   })
 
+  it('merges concurrent metadata patch responses by request intent', async () => {
+    const store = useTournamentStore()
+    store.tournaments = [
+      {
+        _id: 'tournament-1',
+        name: 'Tournament',
+        style: 1,
+        user_defined_data: {
+          hidden: false,
+          break: { size: 8 },
+          keep: { marker: 'preserve' },
+        },
+      } as any,
+    ]
+
+    const hiddenUpdate = createDeferred<any>()
+    const breakUpdate = createDeferred<any>()
+    mockedApi.patch
+      .mockImplementationOnce(() => hiddenUpdate.promise)
+      .mockImplementationOnce(() => breakUpdate.promise)
+
+    const hiddenPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { hidden: true },
+    })
+    const breakPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { break: { size: 16 } },
+    })
+
+    breakUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: {
+            hidden: false,
+            break: { size: 16 },
+            keep: { marker: 'preserve' },
+          },
+        },
+      },
+    })
+    await breakPromise
+
+    hiddenUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: {
+            hidden: true,
+            break: { size: 8 },
+            keep: { marker: 'preserve' },
+          },
+        },
+      },
+    })
+    await hiddenPromise
+
+    expect(store.tournaments[0]?.user_defined_data).toEqual({
+      hidden: true,
+      break: { size: 16 },
+      keep: { marker: 'preserve' },
+    })
+  })
+
+  it('does not let an older tournament update error overwrite a newer refresh state', async () => {
+    const store = useTournamentStore()
+    const staleUpdate = createDeferred<any>()
+    mockedApi.patch.mockImplementationOnce(() => staleUpdate.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: [{ _id: 'tournament-b', name: 'Tournament B', style: 1 }],
+      },
+    })
+
+    const stalePromise = store.updateTournament({
+      tournamentId: 'tournament-a',
+      user_defined_data_patch: { hidden: true },
+    })
+    await store.fetchTournaments()
+    expect(store.error).toBeNull()
+
+    staleUpdate.reject({
+      response: { data: { errors: [{ message: 'stale tournament A error' }] } },
+    })
+    expect(await stalePromise).toBeNull()
+    expect(store.error).toBeNull()
+    expect(store.tournaments).toEqual([
+      { _id: 'tournament-b', name: 'Tournament B', style: 1 },
+    ] as any)
+  })
+
   it('keeps loading true until overlapping tournament requests finish', async () => {
     const store = useTournamentStore()
     let resolveFetch: (value: any) => void = () => {}
@@ -123,4 +229,57 @@ describe('tournament store', () => {
     await fetchPromise
     expect(store.loading).toBe(false)
   })
+  it('keeps the latest intent when the same metadata key resolves in reverse order', async () => {
+    const store = useTournamentStore()
+    store.tournaments = [
+      {
+        _id: 'tournament-1',
+        name: 'Tournament',
+        style: 1,
+        user_defined_data: { hidden: false },
+      } as any,
+    ]
+
+    const oldUpdate = createDeferred<any>()
+    const newUpdate = createDeferred<any>()
+    mockedApi.patch
+      .mockImplementationOnce(() => oldUpdate.promise)
+      .mockImplementationOnce(() => newUpdate.promise)
+
+    const oldPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { hidden: true },
+    })
+    const newPromise = store.updateTournament({
+      tournamentId: 'tournament-1',
+      user_defined_data_patch: { hidden: false },
+    })
+
+    newUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: { hidden: false },
+        },
+      },
+    })
+    await newPromise
+
+    oldUpdate.resolve({
+      data: {
+        data: {
+          _id: 'tournament-1',
+          name: 'Tournament',
+          style: 1,
+          user_defined_data: { hidden: true },
+        },
+      },
+    })
+    await oldPromise
+
+    expect(store.tournaments[0]?.user_defined_data?.hidden).toBe(false)
+  })
+
 })

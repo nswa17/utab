@@ -268,6 +268,27 @@ describe('compiled store', () => {
     })
   })
 
+  it('clears compiled state immediately when switching tournaments', async () => {
+    const store = useCompiledStore()
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: { _id: 'compiled-a', payload: { compiled_team_results: [{ id: 'a' }] } } },
+    })
+    await store.fetchLatest('tournament-a')
+    expect(store.compiled).not.toBeNull()
+
+    const deferred = createDeferred<any>()
+    mockedApi.get.mockImplementationOnce(() => deferred.promise)
+    const nextFetch = store.fetchLatest('tournament-b')
+
+    expect(store.compiled).toBeNull()
+    expect(store.previewState).toBeNull()
+
+    deferred.resolve({
+      data: { data: { _id: 'compiled-b', payload: { compiled_team_results: [{ id: 'b' }] } } },
+    })
+    await nextFetch
+  })
+
   it('keeps loading true until concurrent compiled requests finish', async () => {
     const store = useCompiledStore()
     const first = createDeferred<any>()
@@ -393,4 +414,100 @@ describe('compiled store', () => {
     })
     expect(store.previewState).toBeNull()
   })
+  it('does not let a preview from the previous tournament appear after switching tournaments', async () => {
+    const store = useCompiledStore()
+    const previewDeferred = createDeferred<any>()
+
+    mockedApi.post.mockImplementationOnce(() => previewDeferred.promise)
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          _id: 'compiled-b',
+          payload: {
+            compiled_team_results: [{ id: 'team-b' }],
+          },
+        },
+      },
+    })
+
+    const previewPromise = store.runPreview('tournament-a', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    await store.fetchLatest('tournament-b')
+
+    previewDeferred.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'team-a' }],
+          },
+          preview_signature: 'sig-a',
+          revision: 'rev-a',
+        },
+      },
+    })
+    const stalePreview = await previewPromise
+
+    expect(stalePreview).toBeNull()
+    expect(store.previewState).toBeNull()
+    expect(store.compiled).toEqual({
+      _id: 'compiled-b',
+      compiled_team_results: [{ id: 'team-b' }],
+    })
+  })
+
+  it('does not let an inactive compiled mutation replace the active tournament error', async () => {
+    const store = useCompiledStore()
+
+    mockedApi.get.mockRejectedValueOnce({
+      response: { data: { errors: [{ message: 'current tournament compiled error' }] } },
+    })
+    await store.fetchLatest('tournament-b')
+    expect(store.error).toBe('current tournament compiled error')
+
+    const deleted = await store.deleteCompiled('tournament-a', '')
+    expect(deleted).toBeNull()
+    expect(store.error).toBe('current tournament compiled error')
+  })
+
+  it('does not revive an old preview after A -> B -> A through fetchLatest', async () => {
+    const store = useCompiledStore()
+    const oldPreview = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldPreview.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: { _id: 'compiled-b', payload: { compiled_team_results: [{ id: 'b' }] } } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { _id: 'compiled-a-current', payload: { compiled_team_results: [{ id: 'a-current' }] } } },
+      })
+
+    const oldPromise = store.runPreview('tournament-a', {
+      source: 'submissions',
+      rounds: [1],
+    })
+
+    await store.fetchLatest('tournament-b')
+    await store.fetchLatest('tournament-a')
+
+    oldPreview.resolve({
+      data: {
+        data: {
+          preview: {
+            compile_source: 'submissions',
+            compiled_team_results: [{ id: 'a-old' }],
+          },
+          preview_signature: 'sig-old-a',
+          revision: 'rev-old-a',
+        },
+      },
+    })
+    expect(await oldPromise).toBeNull()
+    expect(store.previewState).toBeNull()
+    expect(store.compiled?.compiled_team_results).toEqual([{ id: 'a-current' }])
+  })
+
 })
