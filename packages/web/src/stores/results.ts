@@ -85,6 +85,7 @@ export const useResultsStore = defineStore('results', () => {
     payload?: Record<string, unknown>
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
     if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
