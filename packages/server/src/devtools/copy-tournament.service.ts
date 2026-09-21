@@ -1,5 +1,13 @@
 import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
+import {
+  adjudicatorDetailsSchema,
+  adjudicatorTemplateSchema,
+  teamDetailsSchema,
+  teamTemplateSchema,
+  venueDetailsSchema,
+  venueTemplateSchema,
+} from '../schemas/entity-details.js'
 import { dropTournamentDatabase, getTournamentConnection } from '../services/tournament-db.service.js'
 import { isTournamentRuntimeCollection } from '../services/tournament-runtime-collections.service.js'
 import {
@@ -26,6 +34,84 @@ function shouldSkipCollection(name: string): boolean {
   return !name || name.startsWith('system.') || isTournamentRuntimeCollection(name)
 }
 
+function validateCopiedCollectionBoundaries(
+  collectionName: string,
+  documents: Array<Record<string, unknown>>
+): void {
+  const roundField =
+    collectionName === 'rounds' ||
+    collectionName === 'draws' ||
+    collectionName === 'submissions' ||
+    collectionName === 'results'
+      ? 'round'
+      : collectionName === 'rawteamresults' ||
+          collectionName === 'rawspeakerresults' ||
+          collectionName === 'rawadjudicatorresults'
+        ? 'r'
+        : null
+
+  if (roundField) {
+    documents.forEach((document, index) => {
+      const value = document[roundField]
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 1) return
+      throw new DevToolsServiceError(
+        400,
+        'Cannot copy invalid ' +
+          collectionName +
+          ' ' +
+          roundField +
+          ' at index ' +
+          index +
+          '; expected a positive integer'
+      )
+    })
+  }
+
+  if (collectionName === 'rawteamresults') {
+    documents.forEach((document, index) => {
+      const win = document.win
+      if (typeof win === 'number' && Number.isFinite(win) && win >= 0 && win <= 1) return
+      throw new DevToolsServiceError(
+        400,
+        'Cannot copy invalid rawteamresults win at index ' +
+          index +
+          '; expected a finite number in [0, 1]'
+      )
+    })
+  }
+
+  const schemas =
+    collectionName === 'teams'
+      ? { details: teamDetailsSchema, template: teamTemplateSchema }
+      : collectionName === 'adjudicators'
+        ? { details: adjudicatorDetailsSchema, template: adjudicatorTemplateSchema }
+        : collectionName === 'venues'
+          ? { details: venueDetailsSchema, template: venueTemplateSchema }
+          : null
+  if (!schemas) return
+
+  documents.forEach((document, index) => {
+    for (const field of ['template', 'details'] as const) {
+      if (document[field] === undefined) continue
+      const parsed = schemas[field].safeParse(document[field])
+      if (parsed.success) continue
+      const issue = parsed.error.issues[0]
+      const suffix = issue?.path?.length ? ' at ' + field + '.' + issue.path.join('.') : ''
+      throw new DevToolsServiceError(
+        400,
+        'Cannot copy invalid ' +
+          collectionName +
+          ' ' +
+          field +
+          ' at index ' +
+          index +
+          suffix +
+          ': ' +
+          (issue?.message ?? 'invalid ' + field)
+      )
+    }
+  })
+}
 function remapTournamentId(value: unknown, targetTournamentId: string): unknown {
   if (typeof value === 'string') return targetTournamentId
   return new Types.ObjectId(targetTournamentId)
@@ -70,6 +156,8 @@ async function copyTournamentCollections(
       copied.push({ name, count: 0 })
       continue
     }
+
+    validateCopiedCollectionBoundaries(name, sourceDocuments)
 
     const targetDocuments = sourceDocuments.map((document) =>
       remapDocumentTournamentId(document, targetTournamentId)
