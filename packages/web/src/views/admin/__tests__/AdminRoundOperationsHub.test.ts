@@ -178,7 +178,18 @@ describe('AdminRoundOperationsHub', () => {
     expect(source).toContain('if (!refreshGate.isCurrent(token)) return')
     expect(source).toContain('if (!hubSubmissionsGate.isCurrent(token)) return')
     expect(source).toContain('if (!autoCompilePreviewGate.isCurrent(token)) return')
-    expect(source).toContain('if (!compiledHistoryGate.isCurrent(token)) return')
+    expect(source).toContain('!compiledHistoryGate.isCurrent(token) || tournamentId.value !== currentTournamentId')
+  })
+
+  it('guards compile actions against tournament switches while requests are in flight', () => {
+    const source = load('src/views/admin/AdminRoundOperationsHub.vue')
+    expect(source).toContain('const currentTournamentId = tournamentId.value')
+    expect(source).toContain('if (tournamentId.value !== currentTournamentId) return')
+    expect(source).toContain('compiledStore.runCompile(currentTournamentId')
+    expect(source).toContain('compiledStore.runPreview(currentTournamentId')
+    expect(source).toContain('compiledStore.saveCompiled(currentTournamentId')
+    expect(source).toContain('compiledStore.fetchLatest(currentTournamentId)')
+    expect(source).toContain('refreshCompiledHistory(currentTournamentId)')
   })
 
   it('reads compiled rounds using r-or-round fallback for status chips', () => {

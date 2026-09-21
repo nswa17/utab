@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Draw, DrawAllocationRow } from '@/types/draw'
 
 export const useDrawsStore = defineStore('draws', () => {
@@ -9,6 +10,7 @@ export const useDrawsStore = defineStore('draws', () => {
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
   const fetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -30,6 +32,9 @@ export const useDrawsStore = defineStore('draws', () => {
     round?: number,
     options?: { forcePublic?: boolean }
   ) {
+    tournamentScope.claimIfEmpty(tournamentId)
+    const scopeChanged = tournamentScope.activate(tournamentId)
+    if (scopeChanged) draws.value = []
     const sequence = advanceFetchSequence()
     beginRequest()
     error.value = null
@@ -54,13 +59,10 @@ export const useDrawsStore = defineStore('draws', () => {
       const sameTournament = draws.value.filter(
         (item) => String(item.tournamentId) === String(tournamentId)
       )
-      const otherTournaments = draws.value.filter(
-        (item) => String(item.tournamentId) !== String(tournamentId)
-      )
       const mergedTournamentDraws = sameTournament
         .filter((item) => Number(item.round) !== normalizedRound)
         .concat(fetched)
-      draws.value = otherTournaments.concat(mergedTournamentDraws)
+      draws.value = mergedTournamentDraws
       return draws.value
     } catch (err: any) {
       if (sequence !== fetchSequence.value) {
@@ -82,18 +84,21 @@ export const useDrawsStore = defineStore('draws', () => {
     allocationOpened?: boolean
     locked?: boolean
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/draws', payload)
       const updated = res.data?.data
-      if (updated) {
+      if (updated && tournamentScope.isActive(payload.tournamentId)) {
         advanceFetchSequence()
+        draws.value = draws.value.filter(
+          (item) => String(item.tournamentId) === String(updated.tournamentId)
+        )
         const index = draws.value.findIndex(
           (item) =>
             item._id === updated._id ||
-            (String(item.tournamentId) === String(updated.tournamentId) &&
-              Number(item.round) === Number(updated.round))
+            Number(item.round) === Number(updated.round)
         )
         if (index >= 0) {
           draws.value.splice(index, 1, updated)
@@ -103,7 +108,9 @@ export const useDrawsStore = defineStore('draws', () => {
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save draw'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to save draw'
+      }
       return null
     } finally {
       endRequest()
@@ -111,12 +118,13 @@ export const useDrawsStore = defineStore('draws', () => {
   }
 
   async function deleteDraw(drawId: string, tournamentId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete(`/draws/${drawId}`, { params: { tournamentId } })
       const deleted = res.data?.data
-      if (deleted?._id) {
+      if (deleted?._id && tournamentScope.isActive(tournamentId)) {
         advanceFetchSequence()
         const index = draws.value.findIndex((item) => item._id === deleted._id)
         if (index >= 0) {
@@ -125,7 +133,9 @@ export const useDrawsStore = defineStore('draws', () => {
       }
       return deleted
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete draw'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete draw'
+      }
       return null
     } finally {
       endRequest()

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/utils/api'
+import { createTournamentStoreScope } from '@/utils/tournament-store-scope'
 import type { Team } from '@/types/team'
 
 export const useTeamsStore = defineStore('teams', () => {
@@ -8,7 +9,7 @@ export const useTeamsStore = defineStore('teams', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingRequests = ref(0)
-  const latestFetchSequence = ref(0)
+  const tournamentScope = createTournamentStoreScope()
 
   function beginRequest() {
     pendingRequests.value += 1
@@ -20,23 +21,20 @@ export const useTeamsStore = defineStore('teams', () => {
     loading.value = pendingRequests.value > 0
   }
 
-  function advanceFetchSequence() {
-    latestFetchSequence.value += 1
-    return latestFetchSequence.value
-  }
-
   async function fetchTeams(tournamentId: string) {
-    const sequence = advanceFetchSequence()
+    tournamentScope.claimIfEmpty(tournamentId)
+    const { scopeChanged, token } = tournamentScope.beginFetch(tournamentId)
+    if (scopeChanged) teams.value = []
     beginRequest()
     error.value = null
     try {
       const res = await api.get('/teams', { params: { tournamentId } })
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return
       }
       teams.value = res.data?.data ?? []
     } catch (err: any) {
-      if (sequence !== latestFetchSequence.value) {
+      if (!tournamentScope.isFetchCurrent(token)) {
         return
       }
       error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to load teams'
@@ -52,18 +50,23 @@ export const useTeamsStore = defineStore('teams', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.post('/teams', payload)
       const created = res.data?.data
       if (created) {
-        advanceFetchSequence()
-        teams.value = [created, ...teams.value]
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          teams.value = [created, ...teams.value]
+        }
       }
       return created
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create team'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create team'
+      }
       return null
     } finally {
       endRequest()
@@ -78,8 +81,9 @@ export const useTeamsStore = defineStore('teams', () => {
     details?: any[]
     userDefinedData?: Record<string, any>
   }) {
+    tournamentScope.claimIfEmpty(payload.tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
     try {
       const res = await api.patch(`/teams/${payload.teamId}`, {
         tournamentId: payload.tournamentId,
@@ -90,12 +94,18 @@ export const useTeamsStore = defineStore('teams', () => {
       })
       const updated = res.data?.data
       if (updated) {
-        advanceFetchSequence()
-        teams.value = teams.value.map((item) => (item._id === updated._id ? updated : item))
+        tournamentScope.invalidateFetches(payload.tournamentId)
+        if (tournamentScope.isActive(payload.tournamentId)) {
+          teams.value = teams.value.map((item) =>
+            item._id === updated._id ? updated : item
+          )
+        }
       }
       return updated
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update team'
+      if (tournamentScope.isActive(payload.tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update team'
+      }
       return null
     } finally {
       endRequest()
@@ -103,15 +113,20 @@ export const useTeamsStore = defineStore('teams', () => {
   }
 
   async function deleteTeam(tournamentId: string, teamId: string) {
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       await api.delete(`/teams/${teamId}`, { params: { tournamentId } })
-      advanceFetchSequence()
-      teams.value = teams.value.filter((item) => item._id !== teamId)
+      tournamentScope.invalidateFetches(tournamentId)
+      if (tournamentScope.isActive(tournamentId)) {
+        teams.value = teams.value.filter((item) => item._id !== teamId)
+      }
       return true
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete team'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete team'
+      }
       return false
     } finally {
       endRequest()
@@ -124,19 +139,24 @@ export const useTeamsStore = defineStore('teams', () => {
     )
     if (normalizedIds.length === 0) return 0
 
+    tournamentScope.claimIfEmpty(tournamentId)
     beginRequest()
-    error.value = null
+    if (tournamentScope.isActive(tournamentId)) error.value = null
     try {
       const res = await api.delete('/teams', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
-      advanceFetchSequence()
-      const deletedIds = new Set(normalizedIds)
-      teams.value = teams.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       const deletedCount = Number(res.data?.data?.deletedCount)
+      tournamentScope.invalidateFetches(tournamentId)
+      if (tournamentScope.isActive(tournamentId)) {
+        const deletedIds = new Set(normalizedIds)
+        teams.value = teams.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
+      }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete teams'
+      if (tournamentScope.isActive(tournamentId)) {
+        error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete teams'
+      }
       return null
     } finally {
       endRequest()

@@ -1792,12 +1792,17 @@ async function submitConfirmed() {
     closeConfirm()
     return
   }
+  const currentTournamentId = tournamentId.value
+  const currentRound = Number(round.value)
+  const currentTeamAId = teamAId.value
+  const currentTeamBId = teamBId.value
+  const currentIdentityId = identityId.value
   saved.value = false
   const created = await submissions.submitBallot({
-    tournamentId: tournamentId.value,
-    round: Number(round.value),
-    teamAId: teamAId.value,
-    teamBId: teamBId.value,
+    tournamentId: currentTournamentId,
+    round: currentRound,
+    teamAId: currentTeamAId,
+    teamBId: currentTeamBId,
     winnerId: effectiveWinnerId.value || undefined,
     draw: winnerDrawSelected.value || undefined,
     submittedEntityId: identityId.value || undefined,
@@ -1821,6 +1826,15 @@ async function submitConfirmed() {
     poiA: poiEnabled.value ? poiA.value : undefined,
     poiB: poiEnabled.value ? poiB.value : undefined,
   })
+  if (
+    tournamentId.value !== currentTournamentId ||
+    Number(round.value) !== currentRound ||
+    teamAId.value !== currentTeamAId ||
+    teamBId.value !== currentTeamBId ||
+    identityId.value !== currentIdentityId
+  ) {
+    return
+  }
   if (created) {
     const currentPayload = buildCurrentPrefillPayload()
     if (currentPayload) {

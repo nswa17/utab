@@ -1000,11 +1000,12 @@ function closeMissingModal() {
 }
 
 async function onTeamAllocationChange(round: any, event: Event) {
+  const currentTournamentId = tournamentId.value
   const target = event.target as HTMLInputElement | null
   const draw = roundDraw(Number(round?.round))
   if (!draw) return
-  await drawsStore.upsertDraw({
-    tournamentId: tournamentId.value,
+  const saved = await drawsStore.upsertDraw({
+    tournamentId: currentTournamentId,
     round: Number(round.round),
     allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
     userDefinedData: draw.userDefinedData,
@@ -1012,15 +1013,17 @@ async function onTeamAllocationChange(round: any, event: Event) {
     allocationOpened: Boolean(draw.allocationOpened),
     locked: Boolean(draw.locked),
   })
-  await drawsStore.fetchDraws(tournamentId.value)
+  if (!saved || tournamentId.value !== currentTournamentId) return
+  await drawsStore.fetchDraws(currentTournamentId)
 }
 
 async function onAdjudicatorAllocationChange(round: any, event: Event) {
+  const currentTournamentId = tournamentId.value
   const target = event.target as HTMLInputElement | null
   const draw = roundDraw(Number(round?.round))
   if (!draw) return
-  await drawsStore.upsertDraw({
-    tournamentId: tournamentId.value,
+  const saved = await drawsStore.upsertDraw({
+    tournamentId: currentTournamentId,
     round: Number(round.round),
     allocation: Array.isArray(draw.allocation) ? draw.allocation : [],
     userDefinedData: draw.userDefinedData,
@@ -1028,7 +1031,8 @@ async function onAdjudicatorAllocationChange(round: any, event: Event) {
     allocationOpened: Boolean(target?.checked),
     locked: Boolean(draw.locked),
   })
-  await drawsStore.fetchDraws(tournamentId.value)
+  if (!saved || tournamentId.value !== currentTournamentId) return
+  await drawsStore.fetchDraws(currentTournamentId)
 }
 
 function requestRemoveRound(id: string) {
@@ -1043,9 +1047,11 @@ function closeRoundDeleteModal() {
 
 async function confirmRemoveRound() {
   const id = roundDeleteModalId.value
-  if (!id) return
+  const currentTournamentId = tournamentId.value
+  if (!id || !currentTournamentId) return
   roundDeleteError.value = ''
-  const deleted = await roundsStore.deleteRound(tournamentId.value, id)
+  const deleted = await roundsStore.deleteRound(currentTournamentId, id)
+  if (tournamentId.value !== currentTournamentId) return
   if (!deleted) {
     roundDeleteError.value = roundsStore.error ?? t('ラウンドの削除に失敗しました。')
     return
