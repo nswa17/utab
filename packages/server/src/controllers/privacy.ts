@@ -7,6 +7,11 @@ import { getSpeakerModel } from '../models/speaker.js'
 import { getSubmissionModel } from '../models/submission.js'
 import { getTeamModel } from '../models/team.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  acquireEntityNamespaceLease,
+  releaseEntityNamespaceLease,
+  type EntityNamespaceLease,
+} from '../services/entity-namespace-guard.service.js'
 import { ensureSensitiveActionReauthentication } from './shared/sensitive-action.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId } from './shared/request-validators.js'
@@ -56,6 +61,49 @@ function normalizeStringList(value: unknown): string[] {
 }
 
 type TournamentConnection = Awaited<ReturnType<typeof getTournamentConnection>>
+
+const PERSONAL_DATA_ERASE_BUSY_CODE = 'UTAB_PERSONAL_DATA_ERASE_NAMESPACE_BUSY'
+
+function createPersonalDataEraseBusyError(): Error & { code: string } {
+  return Object.assign(
+    new Error('Tournament entities are being modified; retry personal data erasure'),
+    { code: PERSONAL_DATA_ERASE_BUSY_CODE }
+  )
+}
+
+export function isPersonalDataEraseBusyError(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === PERSONAL_DATA_ERASE_BUSY_CODE
+}
+
+async function acquirePersonalDataEraseLeases(
+  connection: TournamentConnection,
+  tournamentId: string,
+  namespaces: readonly string[]
+): Promise<EntityNamespaceLease[] | null> {
+  const leases: EntityNamespaceLease[] = []
+  for (const namespace of [...namespaces].sort()) {
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, namespace)
+    if (lease) {
+      leases.push(lease)
+      continue
+    }
+    await Promise.all(leases.map((current) => releaseEntityNamespaceLease(connection, current)))
+    return null
+  }
+  return leases
+}
+
+async function releasePersonalDataEraseLeases(
+  connection: TournamentConnection,
+  leases: EntityNamespaceLease[]
+): Promise<void> {
+  const released = await Promise.all(
+    leases.map((lease) => releaseEntityNamespaceLease(connection, lease))
+  )
+  if (released.some((value) => !value)) {
+    throw new Error('Failed to release one or more personal data erasure entity namespace leases')
+  }
+}
 
 async function removeSpeakerRefsFromTeams(
   connection: TournamentConnection,
@@ -164,6 +212,13 @@ export async function executeSpeakerPersonalDataErase(
   const RawSpeakerResultModel = getRawSpeakerResultModel(connection)
 
   const mode: EraseMode = eraseMode === 'hard_delete' ? 'hard_delete' : 'anonymize'
+  const entityLeases = await acquirePersonalDataEraseLeases(
+    connection,
+    tournamentId,
+    mode === 'hard_delete' ? ['speakers', 'teams'] : ['speakers']
+  )
+  if (!entityLeases) throw createPersonalDataEraseBusyError()
+  try {
   const existing = await SpeakerModel.findOne({ _id: entityId, tournamentId })
     .select({ _id: 1 })
     .lean()
@@ -211,6 +266,9 @@ export async function executeSpeakerPersonalDataErase(
     targetRefs: normalizeRefs(targetRefs),
     submissionCommentsCleared: clearResult.modifiedCount ?? 0,
   }
+  } finally {
+    await releasePersonalDataEraseLeases(connection, entityLeases)
+  }
 }
 
 export async function executeAdjudicatorPersonalDataErase(
@@ -223,6 +281,13 @@ export async function executeAdjudicatorPersonalDataErase(
   const RawAdjudicatorResultModel = getRawAdjudicatorResultModel(connection)
 
   const mode: EraseMode = eraseMode === 'hard_delete' ? 'hard_delete' : 'anonymize'
+  const entityLeases = await acquirePersonalDataEraseLeases(
+    connection,
+    tournamentId,
+    ['adjudicators']
+  )
+  if (!entityLeases) throw createPersonalDataEraseBusyError()
+  try {
   const existing = await AdjudicatorModel.findOne({ _id: entityId, tournamentId })
     .select({ _id: 1 })
     .lean()
@@ -277,6 +342,9 @@ export async function executeAdjudicatorPersonalDataErase(
     targetRefs: normalizeRefs(targetRefs),
     submissionCommentsCleared: clearResult.modifiedCount ?? 0,
   }
+  } finally {
+    await releasePersonalDataEraseLeases(connection, entityLeases)
+  }
 }
 
 export const eraseSpeakerPersonalData: RequestHandler = async (req, res, next) => {
@@ -308,6 +376,13 @@ export const eraseSpeakerPersonalData: RequestHandler = async (req, res, next) =
     }
     res.json({ data: result, errors: [] })
   } catch (err) {
+    if (isPersonalDataEraseBusyError(err)) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: (err as Error).message }],
+      })
+      return
+    }
     next(err)
   }
 }
@@ -341,6 +416,13 @@ export const eraseAdjudicatorPersonalData: RequestHandler = async (req, res, nex
     }
     res.json({ data: result, errors: [] })
   } catch (err) {
+    if (isPersonalDataEraseBusyError(err)) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: (err as Error).message }],
+      })
+      return
+    }
     next(err)
   }
 }
