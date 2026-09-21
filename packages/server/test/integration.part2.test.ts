@@ -1013,6 +1013,47 @@ describe('Server integration', () => {
     const unavailableTeamId = String(unavailableTeamRes.body.data._id)
     const adjudicatorId = String(adjudicatorRes.body.data._id)
 
+    const [{ getTournamentConnection }, {
+      acquireEntityNamespaceLease,
+      releaseEntityNamespaceLease,
+    }] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/services/entity-namespace-guard.service.js'),
+    ])
+    const tournamentConnection = await getTournamentConnection(tournamentId)
+    const teamLease = await acquireEntityNamespaceLease(
+      tournamentConnection,
+      tournamentId,
+      'teams'
+    )
+    expect(teamLease).toBeTruthy()
+    if (!teamLease) throw new Error('Failed to acquire draw validation namespace lease')
+    try {
+      const blockedDrawRes = await agent.post('/api/draws').send({
+        tournamentId,
+        round: 1,
+        allocation: [
+          {
+            venue: null,
+            teams: { gov: teamAId, opp: teamBId },
+            chairs: [adjudicatorId],
+            panels: [],
+            trainees: [],
+          },
+        ],
+      })
+      expect(blockedDrawRes.status).toBe(409)
+
+      const blockedGeneratedDrawRes = await agent.post('/api/draws/generate').send({
+        tournamentId,
+        round: 1,
+        save: true,
+      })
+      expect(blockedGeneratedDrawRes.status).toBe(409)
+    } finally {
+      expect(await releaseEntityNamespaceLease(tournamentConnection, teamLease)).toBe(true)
+    }
+
     const unknownReferenceRes = await agent.post('/api/draws').send({
       tournamentId,
       round: 1,
@@ -1084,6 +1125,12 @@ describe('Server integration', () => {
     expect(lockedCreateRes.status).toBe(201)
     const drawId = String(lockedCreateRes.body.data._id)
 
+    const makeAssignedTeamUnavailableRes = await agent.patch(`/api/teams/${teamBId}`).send({
+      tournamentId,
+      template: { available: false },
+    })
+    expect(makeAssignedTeamUnavailableRes.status).toBe(200)
+
     const publicationUpdateRes = await agent.post('/api/draws').send({
       tournamentId,
       round: 1,
@@ -1119,6 +1166,22 @@ describe('Server integration', () => {
       locked: false,
     })
     expect(unlockRes.status).toBe(201)
+
+    const moveUnavailableAssignedRes = await agent.post('/api/draws').send({
+      tournamentId,
+      round: 1,
+      allocation: [
+        {
+          ...allocation[0],
+          teams: { gov: teamBId, opp: teamAId },
+        },
+      ],
+      drawOpened: true,
+      allocationOpened: true,
+      locked: false,
+    })
+    expect(moveUnavailableAssignedRes.status).toBe(201)
+
     const deleteUnlockedRes = await agent.delete(
       `/api/draws/${drawId}?tournamentId=${tournamentId}`
     )
