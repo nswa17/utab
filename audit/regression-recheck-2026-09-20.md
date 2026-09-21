@@ -776,3 +776,162 @@ One material test-quality weakness was found and repaired:
 - #39 ballot wizard behavior no longer relies mainly on source-text assertions.
 
 The remaining source-text Vue tests are explicitly classified as wiring checks. The underlying store/request-gate/server invariants they depend on have behavioral coverage, while full component-level async behavior remains scheduled for Phase 7.
+
+
+## Phase 4 — cross-PR composition audit
+
+A real integration tree was constructed on:
+- branch: `audit/integration-phase4-20260920`
+- base main: `6438f0b3b9586a96fe40e2ea887950bee34c3571`
+- composed head: `fbcb3b408bd54ec8fa0ca9672ea7a81cb0de9151`
+
+Composition order:
+1. #34
+2. #35
+3. #36
+4. #37
+5. #38
+6. #39
+7. #40
+8. #41's delta relative to #40
+
+The integration tree is synthetic/audit-only: it copies non-overlap blobs directly and applies overlap hunks onto the accumulated tree. It does not replace the source PRs or alter their merge bases.
+
+### File-set completeness
+
+Expected union of changed paths across #34-#41:
+- 99 files.
+
+Actual `main...audit/integration-phase4-20260920` changed paths:
+- 99 files.
+
+Result:
+- missing: 0;
+- extra: 0;
+- integration branch is ahead of frozen main and 0 commits behind that frozen base.
+
+### Conflict resolutions
+
+#### #34 + #35 — `packages/core/src/results/results.ts`
+
+Resolved by hunk composition, retaining:
+- #34 support-rate/null semantics;
+- #35 round-selector set normalization/metamorphic behavior.
+
+Post-composition semantic markers and all added implementation lines from both PRs are present.
+
+#### #36 + #37 + #38 + #40 — `packages/server/test/integration.part4.test.ts`
+
+These PRs independently append regression coverage near the same file tail.
+
+Resolution rule:
+- union all independent tests; never pick one side wholesale.
+
+Final tree contains, among others:
+- concurrent Submission CAS;
+- round-renumber stale Submission invalidation;
+- Draw CAS / omitted publication-field preservation;
+- hidden-listing-only semantics;
+- membership lease/backfill races and unrelated-membership privacy;
+- concurrent independent tournament metadata patches;
+- Round/entity namespace serialization;
+- privacy Submission/Draw version tests.
+
+#### #38 + #39 — participant ballot view/tests
+
+Final component retains:
+- #38 late-completion participant-context guard;
+- #39 furthest-step wizard behavior;
+- Phase-3 tested wizard helper wiring.
+
+The source-test conflict was resolved by keeping both the stale-context assertions and wizard/clamping assertions.
+
+#### #39 + #40 — tournament import/copy
+
+Hunk composition retains simultaneously:
+- rollback waiting and `AggregateError` cleanup visibility from #39;
+- #40 backup/boundary validation and runtime-collection exclusion.
+
+Final implementation contains both `Promise.allSettled`/aggregate cleanup behavior and the #40 validation/runtime-collection paths.
+
+#### #38 + #40 — tournament metadata route
+
+Final route retains:
+- validated `user_defined_data_patch` support from #38;
+- #40 tournament numeric/boundary validation.
+
+No full-object overwrite was reintroduced.
+
+#### #36 + #40 — privacy
+
+#40 had already received the Phase-2-2 #36 CAS propagation, so the #40 privacy file is used in the composed tree.
+
+Verified simultaneously:
+- comment erasure only updates rows where `payload.comment` exists;
+- Submission `__v` increments on comment erase;
+- Draw `__v` increments on adjudicator allocation cleanup;
+- entity namespace leases protect speaker/adjudicator privacy mutation paths;
+- retryable namespace conflict semantics remain present.
+
+#### #36 + #40 + #41 — rounds
+
+The current #41 file contains all added implementation lines from both #36 and #40 plus #41.
+
+Verified:
+- Draw and Submission round migration both increment `__v`;
+- Round detail synchronization participates in entity namespace serialization;
+- public Round publication fields are derived from Draw publication state.
+
+#### #36 + #41 — draws
+
+The current #41 Draw controller contains every added implementation line from #36 plus #41.
+
+Verified:
+- optimistic Draw version CAS;
+- omitted `drawOpened` / `allocationOpened` / `locked` preserve stored values;
+- direct Draw writes acquire entity namespace leases;
+- saved generated Draws hold the same namespaces through generation/persistence.
+
+#### #38 + #41 — AdminRoundAllocation
+
+The current #41 allocation UI/test contains every added implementation line from #38 and adds #41 PDA handling.
+
+Verified together:
+- refresh / compiled-history / allocation request gates;
+- tournament+round context guards around multi-step async actions;
+- atomic tournament break metadata patching;
+- route-change invalidation;
+- an entity already assigned in the saved Draw may be moved/removed after becoming unavailable;
+- unavailable unassigned entities cannot be introduced by the same handlers.
+
+### Added-line overlap audit
+
+For the critical overlapping implementation files, every non-trivial added source line from each contributing PR is present in the composed final file:
+- #34/#35 `results.ts`;
+- #36/#40/#41 `rounds.ts`;
+- #36/#40 `privacy.ts`;
+- #38/#40 tournament route;
+- #39/#40 import and copy services;
+- #38/#39 participant ballot;
+- #38/#41 allocation UI.
+
+Observed missing added lines: 0.
+
+### Integrated regression-test union
+
+The final test tree includes:
+- #35 missing Draw/revision/raw-source completeness tests;
+- #40 raw-team boundary/import tests;
+- #41 full public lifecycle/PDA tests;
+- #34 nullable `vote_rate` tests;
+- #39 behavioral wizard tests;
+- all independent #36/#37/#38/#40 integration.part4 tests.
+
+### CI
+
+GitHub Actions run for exact integration head:
+- `35547679722`
+- lint and web typecheck: passed;
+- full test/build: pending at the time this section was first written.
+
+Phase 4 is not considered closed until that exact-head run completes successfully.
