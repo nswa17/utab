@@ -1249,12 +1249,12 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       })
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
-    const renumberEntityLeases =
+    const renumberMutationLeases =
       changes.length > 0
-        ? await acquireRoundEntityNamespaceLeases(connection, tournamentId)
-        : []
-    if (renumberEntityLeases === null) {
-      sendEntityNamespaceBusy(res)
+        ? await acquireRoundTopologyMutationLeases(connection, tournamentId)
+        : null
+    if (changes.length > 0 && !renumberMutationLeases) {
+      sendRoundTopologyBusy(res)
       return
     }
     try {
@@ -1314,8 +1314,8 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
         .exec()
       res.json({ data: updated, errors: [] })
     } finally {
-      if (renumberEntityLeases.length > 0) {
-        await releaseRoundEntityNamespaceLeases(connection, renumberEntityLeases)
+      if (renumberMutationLeases) {
+        await releaseRoundTopologyMutationLeases(connection, renumberMutationLeases)
       }
     }
   } catch (err) {
@@ -1355,9 +1355,9 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const deletedRounds = targets
       .map((item: any) => Number(item?.round))
       .filter((value) => Number.isInteger(value) && value >= 1)
-    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
-    if (!entityLeases) {
-      sendEntityNamespaceBusy(res)
+    const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
+    if (!mutationLeases) {
+      sendRoundTopologyBusy(res)
       return
     }
     try {
@@ -1369,7 +1369,7 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
       }
       res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
     } finally {
-      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      await releaseRoundTopologyMutationLeases(connection, mutationLeases)
     }
   } catch (err) {
     next(err)
@@ -1438,9 +1438,9 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
         return
       }
-      const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
-      if (!entityLeases) {
-        sendEntityNamespaceBusy(res)
+      const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
+      if (!mutationLeases) {
+        sendRoundTopologyBusy(res)
         return
       }
       try {
@@ -1456,7 +1456,7 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           { from: temporaryRound, to: nextRound },
         ])
       } finally {
-        await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+        await releaseRoundTopologyMutationLeases(connection, mutationLeases)
       }
     }
     const updated = await RoundModel.findOneAndUpdate(
@@ -1743,9 +1743,9 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedRound = Number((existing as any)?.round)
-    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
-    if (!entityLeases) {
-      sendEntityNamespaceBusy(res)
+    const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
+    if (!mutationLeases) {
+      sendRoundTopologyBusy(res)
       return
     }
     try {
@@ -1761,7 +1761,7 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       }
       res.json({ data: deleted, errors: [] })
     } finally {
-      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      await releaseRoundTopologyMutationLeases(connection, mutationLeases)
     }
   } catch (err) {
     next(err)
