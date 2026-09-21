@@ -11,14 +11,15 @@ import {
 } from '../controllers/venues.js'
 import { requireTournamentAdmin, requireTournamentView } from '../middleware/auth.js'
 import { validateRequest } from '../middleware/validation.js'
+import { venueDetailsSchema, venueTemplateSchema } from '../schemas/entity-details.js'
 
 const router: Router = Router()
 
 const createBodySchema = z.object({
   tournamentId: z.string().min(1),
   name: z.string().trim().min(1),
-  template: z.any().optional(),
-  details: z.any().optional(),
+  template: venueTemplateSchema.optional(),
+  details: venueDetailsSchema.optional(),
   userDefinedData: z.any().optional(),
 })
 
@@ -38,8 +39,8 @@ const updateSchema = {
     .object({
       tournamentId: z.string().min(1),
       name: z.string().trim().min(1).optional(),
-      template: z.any().optional(),
-      details: z.any().optional(),
+      template: venueTemplateSchema.optional(),
+      details: venueDetailsSchema.optional(),
       userDefinedData: z.any().optional(),
     })
     .refine(
@@ -59,8 +60,8 @@ const bulkUpdateSchema = {
         id: z.string().min(1),
         tournamentId: z.string().min(1),
         name: z.string().trim().min(1).optional(),
-        template: z.any().optional(),
-        details: z.any().optional(),
+        template: venueTemplateSchema.optional(),
+        details: venueDetailsSchema.optional(),
         userDefinedData: z.any().optional(),
       })
       .refine(

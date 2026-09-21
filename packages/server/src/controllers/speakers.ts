@@ -4,6 +4,7 @@ import { sanitizeSpeakerForPublic } from '../services/response-sanitizer.js'
 import { createTournamentEntityCrudHandlers } from './shared/tournament-entity-crud.js'
 
 const handlers = createTournamentEntityCrudHandlers({
+  mutationNamespace: 'speakers',
   fields: ['name', 'userDefinedData'],
   getModel: getSpeakerModel,
   sanitizeForPublic: sanitizeSpeakerForPublic,

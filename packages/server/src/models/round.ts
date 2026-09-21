@@ -3,7 +3,12 @@ import { Schema, type Connection, type InferSchemaType, type Model } from 'mongo
 const roundSchema = new Schema(
   {
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
-    round: { type: Number, required: true },
+    round: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: Number.isInteger, message: 'round must be an integer' },
+    },
     name: { type: String, default: 'Round' },
     motions: { type: [String], default: [] },
     motionOpened: { type: Boolean, default: false },

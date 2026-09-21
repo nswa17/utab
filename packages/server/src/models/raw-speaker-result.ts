@@ -5,7 +5,12 @@ const rawSpeakerResultSchema = new Schema(
     tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
     id: { type: String, required: true },
     from_id: { type: String, required: true },
-    r: { type: Number, required: true },
+    r: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: Number.isInteger, message: 'r must be an integer' },
+    },
     weight: { type: Number, default: 1 },
     scores: { type: [Number], required: true },
     user_defined_data: { type: Schema.Types.Mixed, default: {} },

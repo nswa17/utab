@@ -3,6 +3,11 @@ import { Types } from 'mongoose'
 import { hasTournamentAdminAccess } from '../../middleware/auth.js'
 import { getTournamentConnection } from '../../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../../services/mongo-error.service.js'
+import {
+  acquireEntityNamespaceLease,
+  releaseEntityNamespaceLease,
+  type EntityNamespaceLease,
+} from '../../services/entity-namespace-guard.service.js'
 import { badRequest, isValidObjectId, notFound } from './http-errors.js'
 import {
   ensureObjectId,
@@ -30,6 +35,7 @@ type CrudModel = {
 
 type CrudOptions = {
   fields: readonly string[]
+  mutationNamespace: string
   uniqueField?: string
   getModel: (connection: TournamentConnection) => CrudModel
   sanitizeForPublic: (value: unknown) => unknown
@@ -88,6 +94,40 @@ function buildRestoreUpdate(record: PlainRecord, fields: readonly string[]): Pla
   return Object.keys(unset).length > 0 ? { $set: set, $unset: unset } : { $set: set }
 }
 
+function updatedAtFilter(record: PlainRecord): PlainRecord {
+  const value = record.updatedAt
+  if (value === undefined || value === null) {
+    return { updatedAt: { $exists: false } }
+  }
+  return { updatedAt: value }
+}
+
+function buildRestoreUpdateWithTimestamp(
+  record: PlainRecord,
+  fields: readonly string[]
+): PlainRecord {
+  const update = buildRestoreUpdate(record, fields) as {
+    $set: PlainRecord
+    $unset?: PlainRecord
+  }
+  if (record.updatedAt === undefined || record.updatedAt === null) {
+    update.$unset = { ...(update.$unset ?? {}), updatedAt: 1 }
+  } else {
+    update.$set = { ...update.$set, updatedAt: record.updatedAt }
+  }
+  return update
+}
+
+function bulkMatchedCount(result: unknown): number | null {
+  const value = Number((result as { matchedCount?: unknown } | null)?.matchedCount)
+  return Number.isFinite(value) ? value : null
+}
+
+function createBulkMutationConflictError(): Error & { code: string } {
+  const error = new Error('Bulk update changed concurrently; retry')
+  return Object.assign(error, { code: 'UTAB_BULK_MUTATION_CONFLICT' })
+}
+
 export function createTournamentEntityCrudHandlers(options: CrudOptions): {
   list: RequestHandler
   get: RequestHandler
@@ -104,6 +144,34 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       data: null,
       errors: [{ name: 'Conflict', message: options.duplicateConflictMessage }],
     })
+  }
+
+  const acquireMutationLeaseOrRespond = async (
+    connection: TournamentConnection,
+    tournamentId: string,
+    res: Parameters<RequestHandler>[1]
+  ): Promise<EntityNamespaceLease | null> => {
+    const lease = await acquireEntityNamespaceLease(
+      connection,
+      tournamentId,
+      options.mutationNamespace
+    )
+    if (lease) return lease
+    res.status(409).json({
+      data: null,
+      errors: [{ name: 'Conflict', message: 'Entity namespace changed concurrently; retry' }],
+    })
+    return null
+  }
+
+  const releaseMutationLease = async (
+    connection: TournamentConnection,
+    lease: EntityNamespaceLease
+  ): Promise<void> => {
+    const released = await releaseEntityNamespaceLease(connection, lease)
+    if (!released) {
+      throw new Error('Failed to release entity namespace lease')
+    }
   }
 
   const list: RequestHandler = async (req, res, next) => {
@@ -168,8 +236,11 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         const tournamentId = requireSingleTournamentPayload(res, payload)
         if (!tournamentId) return
         const connection = await getTournamentConnection(tournamentId)
-        const Model = options.getModel(connection)
-        const docs: PlainRecord[] = payload.map((item) => ({
+        const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+        if (!mutationLease) return
+        try {
+          const Model = options.getModel(connection)
+          const docs: PlainRecord[] = payload.map((item) => ({
           _id: new Types.ObjectId(),
           ...buildCreateDoc(item, tournamentId, options.fields),
         }))
@@ -203,7 +274,10 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           }
           throw createError
         }
-        res.status(201).json({ data: created, errors: [] })
+          res.status(201).json({ data: created, errors: [] })
+        } finally {
+          await releaseMutationLease(connection, mutationLease)
+        }
         return
       }
 
@@ -211,9 +285,15 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       const tournamentId = payload.tournamentId
       if (!ensureTournamentId(res, tournamentId)) return
       const connection = await getTournamentConnection(tournamentId)
-      const Model = options.getModel(connection)
-      const created = await Model.create(buildCreateDoc(payload, tournamentId, options.fields))
-      res.status(201).json({ data: created.toJSON(), errors: [] })
+      const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+      if (!mutationLease) return
+      try {
+        const Model = options.getModel(connection)
+        const created = await Model.create(buildCreateDoc(payload, tournamentId, options.fields))
+        res.status(201).json({ data: created.toJSON(), errors: [] })
+      } finally {
+        await releaseMutationLease(connection, mutationLease)
+      }
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
@@ -247,8 +327,11 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       }
 
       const connection = await getTournamentConnection(tournamentId)
-      const Model = options.getModel(connection)
-      const existing = await Model.find({ tournamentId }).lean().exec()
+      const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+      if (!mutationLease) return
+      try {
+        const Model = options.getModel(connection)
+        const existing = await Model.find({ tournamentId }).lean().exec()
       const existingById = new Map(existing.map((record) => [String(record?._id ?? ''), record]))
       if (ids.some((id) => !existingById.has(id))) {
         notFound(res, options.notFoundMessage)
@@ -269,12 +352,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         }
         finalUniqueValues.set(value, id)
       }
-      const ops = payload.map((item) => ({
-        updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: { $set: buildUpdateDoc(item, options.fields) },
-        },
-      }))
+      const operationTimestamp = new Date()
       const changedUniqueIds = payload
         .filter((item) => {
           const update = updateById.get(String(item.id)) ?? {}
@@ -285,6 +363,7 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           )
         })
         .map((item) => String(item.id))
+      const changedUniqueIdSet = new Set(changedUniqueIds)
       const occupiedUniqueValues = new Set<string>([
         ...existing.map((record) => String(record?.[uniqueField] ?? '')),
         ...Array.from(finalUniqueValues.keys()),
@@ -302,14 +381,65 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       })
       const stageOps = changedUniqueIds.map((id) => ({
         updateOne: {
-          filter: { _id: id, tournamentId },
-          update: { $set: { [uniqueField]: temporaryUniqueValueById.get(id) } },
+          filter: {
+            _id: id,
+            tournamentId,
+            ...updatedAtFilter(existingById.get(id) ?? {}),
+          },
+          update: {
+            $set: {
+              [uniqueField]: temporaryUniqueValueById.get(id),
+              updatedAt: operationTimestamp,
+            },
+          },
+          timestamps: false,
+        },
+      }))
+      const ops = payload.map((item) => {
+        const id = String(item.id)
+        return {
+          updateOne: {
+            filter: {
+              _id: item.id,
+              tournamentId,
+              ...(changedUniqueIdSet.has(id)
+                ? { updatedAt: operationTimestamp }
+                : updatedAtFilter(existingById.get(id) ?? {})),
+            },
+            update: {
+              $set: {
+                ...buildUpdateDoc(item, options.fields),
+                updatedAt: operationTimestamp,
+              },
+            },
+            timestamps: false,
+          },
+        }
+      })
+      const rollbackStageOps = changedUniqueIds.map((id) => ({
+        updateOne: {
+          filter: { _id: id, tournamentId, updatedAt: operationTimestamp },
+          update: {
+            $set: {
+              [uniqueField]: temporaryUniqueValueById.get(id),
+              updatedAt: operationTimestamp,
+            },
+          },
+          timestamps: false,
         },
       }))
       const restoreOps = payload.map((item) => ({
         updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: buildRestoreUpdate(existingById.get(String(item.id)) ?? {}, options.fields),
+          filter: {
+            _id: item.id,
+            tournamentId,
+            updatedAt: operationTimestamp,
+          },
+          update: buildRestoreUpdateWithTimestamp(
+            existingById.get(String(item.id)) ?? {},
+            options.fields
+          ),
+          timestamps: false,
         },
       }))
 
@@ -317,16 +447,24 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       try {
         if (stageOps.length > 0) {
           mutationStarted = true
-          await Model.bulkWrite(stageOps, { ordered: true })
+          const stageResult = await Model.bulkWrite(stageOps, { ordered: true })
+          const matched = bulkMatchedCount(stageResult)
+          if (matched !== null && matched !== stageOps.length) {
+            throw createBulkMutationConflictError()
+          }
         }
         mutationStarted = true
-        await Model.bulkWrite(ops, { ordered: true })
+        const updateResult = await Model.bulkWrite(ops, { ordered: true })
+        const matched = bulkMatchedCount(updateResult)
+        if (matched !== null && matched !== ops.length) {
+          throw createBulkMutationConflictError()
+        }
       } catch (updateError) {
         if (mutationStarted) {
           const rollbackErrors: unknown[] = []
-          if (stageOps.length > 0) {
+          if (rollbackStageOps.length > 0) {
             try {
-              await Model.bulkWrite(stageOps, { ordered: true })
+              await Model.bulkWrite(rollbackStageOps, { ordered: true })
             } catch (rollbackStageError) {
               rollbackErrors.push(rollbackStageError)
             }
@@ -346,11 +484,21 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         throw updateError
       }
 
-      const updated = await Model.find({ _id: { $in: ids }, tournamentId })
-        .lean()
-        .exec()
-      res.json({ data: updated, errors: [] })
+        const updated = await Model.find({ _id: { $in: ids }, tournamentId })
+          .lean()
+          .exec()
+        res.json({ data: updated, errors: [] })
+      } finally {
+        await releaseMutationLease(connection, mutationLease)
+      }
     } catch (err: any) {
+      if (err?.code === 'UTAB_BULK_MUTATION_CONFLICT') {
+        res.status(409).json({
+          data: null,
+          errors: [{ name: 'Conflict', message: 'Bulk update changed concurrently; retry' }],
+        })
+        return
+      }
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
           data: null,
@@ -376,9 +524,15 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         return
       }
       const connection = await getTournamentConnection(tournamentId)
-      const Model = options.getModel(connection)
-      const result = await Model.deleteMany({ tournamentId, _id: { $in: idList } }).exec()
-      res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+      const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+      if (!mutationLease) return
+      try {
+        const Model = options.getModel(connection)
+        const result = await Model.deleteMany({ tournamentId, _id: { $in: idList } }).exec()
+        res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+      } finally {
+        await releaseMutationLease(connection, mutationLease)
+      }
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
@@ -400,8 +554,11 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       if (!ensureObjectId(res, id, options.invalidEntityIdMessage)) return
 
       const connection = await getTournamentConnection(tournamentId)
-      const Model = options.getModel(connection)
-      const updated = await Model.findOneAndUpdate(
+      const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+      if (!mutationLease) return
+      try {
+        const Model = options.getModel(connection)
+        const updated = await Model.findOneAndUpdate(
         { _id: id, tournamentId },
         { $set: buildUpdateDoc(payload, options.fields) },
         { new: true }
@@ -409,11 +566,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
         .lean()
         .exec()
 
-      if (!updated) {
-        notFound(res, options.notFoundMessage)
-        return
+        if (!updated) {
+          notFound(res, options.notFoundMessage)
+          return
+        }
+        res.json({ data: updated, errors: [] })
+      } finally {
+        await releaseMutationLease(connection, mutationLease)
       }
-      res.json({ data: updated, errors: [] })
     } catch (err: any) {
       if (isDuplicateKeyError(err)) {
         res.status(409).json({
@@ -434,13 +594,19 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       if (!ensureObjectId(res, id, options.invalidEntityIdMessage)) return
 
       const connection = await getTournamentConnection(tournamentId)
-      const Model = options.getModel(connection)
-      const deleted = await Model.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-      if (!deleted) {
-        notFound(res, options.notFoundMessage)
-        return
+      const mutationLease = await acquireMutationLeaseOrRespond(connection, tournamentId, res)
+      if (!mutationLease) return
+      try {
+        const Model = options.getModel(connection)
+        const deleted = await Model.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+        if (!deleted) {
+          notFound(res, options.notFoundMessage)
+          return
+        }
+        res.json({ data: deleted, errors: [] })
+      } finally {
+        await releaseMutationLease(connection, mutationLease)
       }
-      res.json({ data: deleted, errors: [] })
     } catch (err) {
       next(err)
     }

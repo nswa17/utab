@@ -25,7 +25,7 @@ const router: Router = Router()
 const listSchema = {
   query: z.object({
     tournamentId: z.string().min(1),
-    round: z.string().optional(),
+    round: z.coerce.number().int().min(1).optional(),
     id: z.string().optional(),
     fromId: z.string().optional(),
   }),
@@ -37,7 +37,7 @@ const rawTeamBodySchema = z.object({
   from_id: z.string().trim().min(1),
   r: z.number().int().min(1),
   weight: z.number().optional(),
-  win: z.number(),
+  win: z.number().finite().min(0).max(1),
   opponents: z.array(z.string().trim().min(1)),
   side: z.string().trim().min(1),
   user_defined_data: z.any().optional(),
@@ -98,7 +98,7 @@ const deleteSchema = {
 const deleteManySchema = {
   query: z.object({
     tournamentId: z.string().min(1),
-    round: z.string().optional(),
+    round: z.coerce.number().int().min(1).optional(),
     id: z.string().optional(),
     fromId: z.string().optional(),
   }),

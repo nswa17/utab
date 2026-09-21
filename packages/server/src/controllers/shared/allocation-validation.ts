@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  adjudicatorDetailsSchema,
+  teamDetailsSchema,
+  venueDetailsSchema,
+} from '../../schemas/entity-details.js'
 
 type TeamAlgorithm = 'standard' | 'min_warnings' | 'strict' | 'powerpair' | 'random' | 'break'
 type AdjudicatorAlgorithm = 'standard' | 'traditional' | 'class_based' | 'random'
@@ -31,7 +36,6 @@ const adjudicatorStandardFilters = [
 
 const nonNegativeNumberSchema = z.number().finite().min(0)
 const nonNegativeIntegerSchema = z.number().int().min(0)
-const positiveRoundSchema = z.number().int().min(1)
 
 const teamStandardOptionsSchema = z
   .object({
@@ -134,32 +138,6 @@ const allocationOptionsEnvelopeSchema = z
     venue_allocation_algorithm_options: z.unknown().optional(),
   })
   .strict()
-
-const teamDetailSchema = z
-  .object({
-    r: positiveRoundSchema,
-    available: z.boolean().optional(),
-    conflicts: z.array(z.string().min(1)).optional(),
-    speakers: z.array(z.string().min(1)).optional(),
-  })
-  .passthrough()
-
-const adjudicatorDetailSchema = z
-  .object({
-    r: positiveRoundSchema,
-    available: z.boolean().optional(),
-    conflicts: z.array(z.string().min(1)).optional(),
-    conflict_teams: z.array(z.string().min(1)).optional(),
-  })
-  .passthrough()
-
-const venueDetailSchema = z
-  .object({
-    r: positiveRoundSchema,
-    available: z.boolean().optional(),
-    priority: z.number().finite().optional(),
-  })
-  .passthrough()
 
 export type ValidatedAllocationOptions = {
   team_allocation_algorithm: TeamAlgorithm
@@ -299,19 +277,17 @@ export function validateEntityDetailsShape(
   details: unknown
 ): void {
   if (details === undefined || details === null) return
-  if (!Array.isArray(details)) {
-    throw createBadRequestError(`Invalid ${kind} details format for ${entityLabel}: details must be an array`)
-  }
-
-  details.forEach((detail, index) => {
-    const schema =
-      kind === 'team' ? teamDetailSchema : kind === 'adjudicator' ? adjudicatorDetailSchema : venueDetailSchema
-    const parsed = schema.safeParse(detail)
-    if (parsed.success) return
-    const firstIssue = parsed.error.issues[0]
-    const detailMessage = firstIssue ? formatIssue(firstIssue) : 'invalid detail'
-    throw createBadRequestError(
-      `Invalid ${kind} details format for ${entityLabel} at details[${index}]: ${detailMessage}`
-    )
-  })
+  const schema =
+    kind === 'team'
+      ? teamDetailsSchema
+      : kind === 'adjudicator'
+        ? adjudicatorDetailsSchema
+        : venueDetailsSchema
+  const parsed = schema.safeParse(details)
+  if (parsed.success) return
+  const firstIssue = parsed.error.issues[0]
+  const detailMessage = firstIssue ? formatIssue(firstIssue) : 'invalid details'
+  throw createBadRequestError(
+    `Invalid ${kind} details format for ${entityLabel}: ${detailMessage}`
+  )
 }
