@@ -4187,7 +4187,7 @@ function canDragEntity(kind: 'team' | 'adjudicator' | 'venue', id: string | null
   if (locked.value) return false
   const normalizedId = String(id ?? '').trim()
   if (!normalizedId) return false
-  if (kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)) return true
+  if (isEntityAssignedInAllocation(kind, normalizedId)) return true
   return isEntityAvailableInRound(kind, normalizedId)
 }
 
@@ -6015,7 +6015,10 @@ function dropTeam(row: DrawAllocationRow, side: 'gov' | 'opp') {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'team') return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !isEntityAssignedInAllocation(payload.kind, payload.id)
+  ) {
     onDragEnd()
     return
   }
@@ -6059,7 +6062,10 @@ function dropVenue(row: DrawAllocationRow) {
   if (locked.value) return
   const payload = dragPayload.value
   if (!payload || payload.kind !== 'venue') return
-  if (!isEntityAvailableInRound(payload.kind, payload.id)) {
+  if (
+    !isEntityAvailableInRound(payload.kind, payload.id) &&
+    !isEntityAssignedInAllocation(payload.kind, payload.id)
+  ) {
     onDragEnd()
     return
   }
@@ -6083,7 +6089,7 @@ function dropToWaiting(kind: DragKind) {
   if (!payload || payload.kind !== kind) return
   if (
     !isEntityAvailableInRound(payload.kind, payload.id) &&
-    !(kind === 'adjudicator' && isEntityAssignedInAllocation(kind, payload.id))
+    !isEntityAssignedInAllocation(kind, payload.id)
   ) {
     onDragEnd()
     return
