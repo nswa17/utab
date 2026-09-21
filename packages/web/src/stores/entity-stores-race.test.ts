@@ -394,4 +394,39 @@ describe('entity stores race handling', () => {
   })
 
 
+  it('does not revive an old mutation error after A -> B -> A', async () => {
+    const store = useTeamsStore()
+    const oldMutation = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldMutation.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-b', tournamentId: 'tournament-b', name: 'Team B' }] },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'team-a-current', tournamentId: 'tournament-a', name: 'Current A' }] },
+      })
+
+    const oldPromise = store.createTeam({
+      tournamentId: 'tournament-a',
+      name: 'Old A mutation',
+    })
+    await store.fetchTeams('tournament-b')
+    await store.fetchTeams('tournament-a')
+
+    oldMutation.reject({
+      response: { data: { errors: [{ message: 'old A failure' }] } },
+    })
+    expect(await oldPromise).toBeNull()
+
+    expect(store.error).toBeNull()
+    expect(store.teams).toEqual([
+      {
+        _id: 'team-a-current',
+        tournamentId: 'tournament-a',
+        name: 'Current A',
+      },
+    ] as any)
+  })
+
+
 })
