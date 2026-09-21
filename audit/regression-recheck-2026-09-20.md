@@ -1093,3 +1093,134 @@ The rehearsal must pass exact-head CI before the #41 branch is reconciled. After
 Not treated as bugs in Phase 6:
 - no repository/product specification defines a maximum `total_round_num`, so this audit does not invent a cap;
 - already-persisted historical invalid rows are not silently rewritten by a migration; the audit prevents new validated/imported/copied writes from reproducing them and makes critical compile normalization defensive.
+
+
+## Phase 7 — adversarial web async-state audit
+
+Primary source PR:
+- #38 `audit/web-state-sync-phase7`.
+
+Cross-PR UI checked:
+- #41 `AdminRoundAllocation.vue` / wiring tests.
+
+Adversarial scenarios explicitly re-audited:
+- A -> B -> A tournament switching;
+- stale success after returning to the original tournament;
+- stale error after returning to the original tournament;
+- mutation completion after route/scope changes;
+- cross-request-family races (compiled fetch vs preview; submissions admin vs participant);
+- cross-label raw-result races;
+- same-tournament create vs fetch response reversal;
+- same metadata key saved twice with reverse response order;
+- loading/error preservation under overlapping requests;
+- allocation-page refresh/history/generation route-context guards.
+
+### P7-001 — tournament id alone did not distinguish separate activations of the same tournament
+
+Finding:
+- the shared store scope tracked only `activeTournamentId` and per-tournament fetch generation;
+- after A -> B -> A, work started during the first A activation could again satisfy `isActive('A')`;
+- entity mutation success/error could therefore reappear after returning to A;
+- fetch families with independent sequence counters had the same ABA hole.
+
+Concrete affected patterns:
+- entity mutation started in A, then B fetch, then current A fetch, then old A mutation completion;
+- Compiled preview A -> fetchLatest B -> fetchLatest A -> old A preview;
+- Submissions admin fetch A -> participant fetch B -> participant fetch A -> old admin response;
+- RawResult teams A -> speakers B -> speakers A -> old teams response;
+- Draw mutation A -> fetch B -> fetch A -> old Draw mutation.
+
+Repair:
+- `createTournamentStoreScope` now maintains an activation generation;
+- scope tokens contain tournament id + activation generation;
+- every actual scope transition, including A -> B -> A and explicit clear, advances the generation;
+- fetch tokens include the activation generation;
+- mutations capture the scope token at start and may publish state/error or invalidate current fetches only while that exact activation is still current.
+
+Coverage:
+- direct helper tests verify A -> B -> A invalidates old scope/fetch tokens;
+- Teams mutation success and error ABA tests;
+- Compiled cross-family ABA test;
+- Submissions admin/participant ABA test;
+- RawResult cross-label ABA test;
+- Draw mutation ABA test.
+
+### P7-002 — same-key tournament metadata response reversal could restore an older intent
+
+Finding:
+- independent `user_defined_data_patch` keys were already intent-merged safely;
+- two concurrent writes to the same key still applied in response-arrival order;
+- an older `hidden=true` response arriving after a newer `hidden=false` response could therefore revert local state.
+
+Repair:
+- tournament updates register intent ownership per tournament + field;
+- nested metadata patch keys receive independent intent versions;
+- a response may update only fields for which it still owns the latest intent;
+- independent metadata keys continue to compose rather than suppressing each other.
+
+Coverage:
+- existing reverse-order independent-key test retained;
+- added reverse-order same-key test and verified the newest intent survives.
+
+### P7-003 — delayed create responses could duplicate or regress a newer fetched row
+
+Finding:
+- create mutations inserted their response into local entity/round/result/tournament lists;
+- if a same-tournament fetch completed first and already contained the created id, a delayed create response could duplicate that row;
+- simply deduplicating by replacing the fetched row with the delayed create response could still regress a newer fetched representation.
+
+Repair:
+- Team/Speaker/Adjudicator/Venue/Institution/Round/Result/Tournament create completion now inserts only if that id is not already present;
+- if a later fetch already contains the id, the fetched representation remains authoritative.
+
+Coverage:
+- Teams regression test starts create and fetch concurrently, lets fetch return the same id with newer content, then resolves the older create response and verifies exactly one row remains with the fetched content.
+
+### P7-004 — inactive mutation invalidation hardened across all touched stores
+
+Mutation state/error publication was upgraded from an id-only `isActive` check to exact captured-scope checks for:
+- Teams;
+- Speakers;
+- Adjudicators;
+- Venues;
+- Institutions;
+- Rounds;
+- Results;
+- Draws;
+- Compiled;
+- Submissions;
+- Raw Results.
+
+This also prevents a stale mutation from invalidating a current A fetch merely because the user eventually returned to A.
+
+### Allocation / multi-step UI audit
+
+The current #41 allocation UI was re-read against the new store semantics.
+
+Verified present:
+- separate latest-request gates for page refresh, compiled history, and allocation generation;
+- explicit tournament+round snapshots around multi-step reference compilation, save, generation, and delete;
+- route-change invalidation of allocation generation;
+- context checks after awaited server/store operations;
+- atomic `user_defined_data_patch` for break metadata.
+
+The #41 source wiring tests retain:
+- route-change stop during reference compilation;
+- generation pinned to original route context;
+- stale refresh/history invalidation.
+
+No additional high-confidence #41 UI defect was found in Phase 7, so no #41 source edit was made here.
+
+### Validation status
+
+Intermediate exact head `2839f138a23e39ecdaefc2cac7000cb2ca1142b2`:
+- push CI `35555282435`: success;
+- PR CI `35555285352`: success;
+- includes activation-epoch logic and the A-B-A stale success/error regressions.
+
+Final Phase-7 head:
+- `6acffe60f3d388275af2d152b8741c90a9d381cd`;
+- adds the create-vs-fetch newer-row preservation refinement;
+- exact-head CI is still running when this section is first written.
+
+Phase 7 is not closed until the final exact-head lint/typecheck/tests/build complete successfully.
