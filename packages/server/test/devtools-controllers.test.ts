@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   fillTournamentSetupData: vi.fn(),
   fillRoundSubmissions: vi.fn(),
   clearRoundSubmissions: vi.fn(),
+  acquireLifecycleLease: vi.fn(),
+  releaseMembershipLease: vi.fn(),
 }))
 
 vi.mock('../src/devtools/copy-tournament.service.js', () => ({
@@ -50,6 +52,11 @@ vi.mock('../src/services/tournament-db.service.js', () => ({
   dropTournamentDatabase: mocks.dropTournamentDatabase,
 }))
 
+vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
+  acquireTournamentMembershipLifecycleLease: mocks.acquireLifecycleLease,
+  releaseTournamentMembershipLease: mocks.releaseMembershipLease,
+}))
+
 import { copyTournament } from '../src/devtools/controllers.js'
 
 function execResult(value: unknown = {}) {
@@ -87,6 +94,8 @@ describe('devtools copyTournament rollback', () => {
     mocks.membershipCleanup.mockReturnValue(execResult({ deletedCount: 1 }))
     mocks.tournamentCleanup.mockReturnValue(execResult({ deletedCount: 1 }))
     mocks.dropTournamentDatabase.mockResolvedValue(undefined)
+    mocks.acquireLifecycleLease.mockResolvedValue({ key: 'test:lifecycle', epoch: 1 })
+    mocks.releaseMembershipLease.mockResolvedValue(true)
   })
 
   it('waits for membership writes and surfaces cleanup failures', async () => {
