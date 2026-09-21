@@ -3802,11 +3802,16 @@ describe('Server integration', () => {
     })
     expect(resultRes.status).toBe(201)
 
-    const submissionRes = await agent.post('/api/submissions').send({
+    const submissionRes = await agent.post('/api/submissions/ballots').send({
       tournamentId,
       round: 1,
-      type: 'ballot',
-      payload: { marker: 'transient-delete' },
+      teamAId: 'team-a',
+      teamBId: 'team-b',
+      winnerId: 'team-a',
+      scoresA: [],
+      scoresB: [],
+      comment: 'transient-delete',
+      submittedEntityId: 'judge-a',
     })
     expect(submissionRes.status).toBe(201)
 
@@ -3826,9 +3831,7 @@ describe('Server integration', () => {
       const query = originalResultUpdateMany(...args)
       if (!failResultMoveOnce) return query
       failResultMoveOnce = false
-      const originalExec = query.exec.bind(query)
-      query.exec = async (...execArgs: any[]) => {
-        void execArgs
+      query.exec = async () => {
         throw new Error('injected transient result move failure')
       }
       return query
