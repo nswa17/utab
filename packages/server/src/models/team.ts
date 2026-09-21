@@ -12,7 +12,7 @@ const teamDetailSchema = new Schema(
     conflicts: { type: [String], default: [] },
     speakers: { type: [String], default: [] },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const teamTemplateSchema = new Schema(
@@ -21,7 +21,7 @@ const teamTemplateSchema = new Schema(
     conflicts: { type: [String], default: [] },
     speakers: { type: [String], default: [] },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const teamSchema = new Schema(
