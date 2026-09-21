@@ -1816,6 +1816,57 @@ describe('Server integration', () => {
     ).toBe(0)
 
 
+    const invalidCompiledTiePointsBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid compiled tie points backup',
+          collectionNames: ['compiledresults'],
+          collectionFiles: [
+            {
+              path: 'json/collections/compiledresults.json',
+              collectionName: 'compiledresults',
+            },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid compiled tie points backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/compiledresults.json',
+        value: [
+          {
+            payload: {
+              compile_options: { tie_points: 2 },
+            },
+          },
+        ],
+      },
+    ])
+
+    const invalidCompiledTiePointsRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidCompiledTiePointsBundle)
+    expect(invalidCompiledTiePointsRes.status).toBe(400)
+    expect(invalidCompiledTiePointsRes.body.errors[0].message).toContain(
+      'Invalid compiledresults tie_points in backup'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: 'Invalid compiled tie points backup' }).exec()
+    ).toBe(0)
+
     const invalidRawTeamWinBundle = zip([
       {
         path: 'metadata.json',
