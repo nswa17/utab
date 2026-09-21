@@ -3580,6 +3580,8 @@ describe('Server integration', () => {
       { getDrawModel },
       { getSubmissionModel },
       { getResultModel },
+      { getCompiledModel },
+      { getRawTeamResultModel },
       { getRawSpeakerResultModel },
       { getRawAdjudicatorResultModel },
       { getTeamModel },
@@ -3591,6 +3593,8 @@ describe('Server integration', () => {
       import('../src/models/draw.js'),
       import('../src/models/submission.js'),
       import('../src/models/result.js'),
+      import('../src/models/compiled.js'),
+      import('../src/models/raw-team-result.js'),
       import('../src/models/raw-speaker-result.js'),
       import('../src/models/raw-adjudicator-result.js'),
       import('../src/models/team.js'),
@@ -3614,6 +3618,24 @@ describe('Server integration', () => {
     await expect(
       getResultModel(connection).create({ tournamentId, round: 0, payload: {} })
     ).rejects.toThrow()
+    await expect(
+      getCompiledModel(connection).create({
+        tournamentId,
+        payload: { compile_options: { tie_points: 2 } },
+      })
+    ).rejects.toThrow()
+    await expect(
+      getRawTeamResultModel(connection).create({
+        tournamentId,
+        id: 'team-a',
+        from_id: 'judge-a',
+        r: 0,
+        win: 0.5,
+        opponents: ['team-b'],
+        side: 'gov',
+      })
+    ).rejects.toThrow()
+
     await expect(
       getRawSpeakerResultModel(connection).create({
         tournamentId,
