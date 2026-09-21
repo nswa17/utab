@@ -3765,4 +3765,111 @@ describe('Server integration', () => {
     ).rejects.toThrow()
   })
 
+
+  it('retries transient partial round renumber and delete writes to convergence', async () => {
+    const agent = request.agent(app)
+    expect(
+      (
+        await agent
+          .post('/api/auth/register')
+          .send({ username: 'round-transient-failure-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent
+          .post('/api/auth/login')
+          .send({ username: 'round-transient-failure-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Round Transient Failure Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const roundRes = await agent
+      .post('/api/rounds')
+      .send({ tournamentId, round: 1, name: 'Transient Round' })
+    expect(roundRes.status).toBe(201)
+    const roundId = String(roundRes.body.data._id)
+
+    const resultRes = await agent.post('/api/results').send({
+      tournamentId,
+      round: 1,
+      payload: { standings: [] },
+    })
+    expect(resultRes.status).toBe(201)
+
+    const submissionRes = await agent.post('/api/submissions').send({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      payload: { marker: 'transient-delete' },
+    })
+    expect(submissionRes.status).toBe(201)
+
+    const [{ getTournamentConnection }, { getResultModel }, { getSubmissionModel }] =
+      await Promise.all([
+        import('../src/services/tournament-db.service.js'),
+        import('../src/models/result.js'),
+        import('../src/models/submission.js'),
+      ])
+    const connection = await getTournamentConnection(tournamentId)
+    const ResultModel = getResultModel(connection)
+    const SubmissionModel = getSubmissionModel(connection)
+
+    const originalResultUpdateMany = ResultModel.updateMany.bind(ResultModel)
+    let failResultMoveOnce = true
+    ResultModel.updateMany = ((...args: any[]) => {
+      const query = originalResultUpdateMany(...args)
+      if (!failResultMoveOnce) return query
+      failResultMoveOnce = false
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        void execArgs
+        throw new Error('injected transient result move failure')
+      }
+      return query
+    }) as typeof ResultModel.updateMany
+
+    try {
+      const renumberRes = await agent
+        .patch(`/api/rounds/${roundId}`)
+        .send({ tournamentId, round: 2 })
+      expect(renumberRes.status).toBe(200)
+      expect(failResultMoveOnce).toBe(false)
+      expect(await ResultModel.countDocuments({ tournamentId, round: 1 }).exec()).toBe(0)
+      expect(await ResultModel.countDocuments({ tournamentId, round: 2 }).exec()).toBe(1)
+    } finally {
+      ResultModel.updateMany = originalResultUpdateMany as typeof ResultModel.updateMany
+    }
+
+    const originalSubmissionDeleteMany = SubmissionModel.deleteMany.bind(SubmissionModel)
+    let failSubmissionDeleteOnce = true
+    SubmissionModel.deleteMany = ((...args: any[]) => {
+      const query = originalSubmissionDeleteMany(...args)
+      if (!failSubmissionDeleteOnce) return query
+      failSubmissionDeleteOnce = false
+      query.exec = async () => {
+        throw new Error('injected transient submission delete failure')
+      }
+      return query
+    }) as typeof SubmissionModel.deleteMany
+
+    try {
+      const deleteRes = await agent.delete(
+        `/api/rounds/${roundId}?tournamentId=${tournamentId}`
+      )
+      expect(deleteRes.status).toBe(200)
+      expect(failSubmissionDeleteOnce).toBe(false)
+      expect(await SubmissionModel.countDocuments({ tournamentId, round: 2 }).exec()).toBe(0)
+      expect(await ResultModel.countDocuments({ tournamentId, round: 2 }).exec()).toBe(0)
+    } finally {
+      SubmissionModel.deleteMany =
+        originalSubmissionDeleteMany as typeof SubmissionModel.deleteMany
+    }
+  })
+
 })
