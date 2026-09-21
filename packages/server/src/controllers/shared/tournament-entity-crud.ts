@@ -23,7 +23,7 @@ type CrudModel = {
   findOne: (filter: PlainRecord) => { lean: () => { exec: () => Promise<any | null> } }
   insertMany: (docs: PlainRecord[], options: { ordered: boolean }) => Promise<any[]>
   create: (doc: PlainRecord) => Promise<{ toJSON: () => any }>
-  bulkWrite: (ops: any[], options: { ordered: boolean }) => Promise<unknown>
+  bulkWrite: (ops: any[], options: { ordered: boolean; strict?: boolean }) => Promise<unknown>
   deleteMany: (filter: PlainRecord) => { exec: () => Promise<{ deletedCount?: number }> }
   findOneAndUpdate: (
     filter: PlainRecord,
@@ -447,14 +447,14 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
       try {
         if (stageOps.length > 0) {
           mutationStarted = true
-          const stageResult = await Model.bulkWrite(stageOps, { ordered: true })
+          const stageResult = await Model.bulkWrite(stageOps, { ordered: true, strict: false })
           const matched = bulkMatchedCount(stageResult)
           if (matched !== null && matched !== stageOps.length) {
             throw createBulkMutationConflictError()
           }
         }
         mutationStarted = true
-        const updateResult = await Model.bulkWrite(ops, { ordered: true })
+        const updateResult = await Model.bulkWrite(ops, { ordered: true, strict: false })
         const matched = bulkMatchedCount(updateResult)
         if (matched !== null && matched !== ops.length) {
           throw createBulkMutationConflictError()
@@ -464,13 +464,13 @@ export function createTournamentEntityCrudHandlers(options: CrudOptions): {
           const rollbackErrors: unknown[] = []
           if (rollbackStageOps.length > 0) {
             try {
-              await Model.bulkWrite(rollbackStageOps, { ordered: true })
+              await Model.bulkWrite(rollbackStageOps, { ordered: true, strict: false })
             } catch (rollbackStageError) {
               rollbackErrors.push(rollbackStageError)
             }
           }
           try {
-            await Model.bulkWrite(restoreOps, { ordered: true })
+            await Model.bulkWrite(restoreOps, { ordered: true, strict: false })
           } catch (rollbackRestoreError) {
             rollbackErrors.push(rollbackRestoreError)
           }
