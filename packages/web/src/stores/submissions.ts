@@ -80,7 +80,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   async function postWithTimeout(
     path: string,
     payload: unknown,
-    tournamentId: string,
+    scopeToken: ReturnType<typeof tournamentScope.captureScope>,
     timeoutMs = SUBMISSION_TIMEOUT_MS
   ) {
     const controller = new AbortController()
@@ -90,7 +90,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       return res.data?.data ?? null
     } catch (err: any) {
       if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
-        if (tournamentScope.isActive(tournamentId)) {
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
           error.value = i18n.global.t(
             '送信がタイムアウトしました。通信状況を確認してもう一度お試しください。'
           )
@@ -111,6 +111,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     tournamentScope.claimIfEmpty(params.tournamentId)
     const scopeChanged = tournamentScope.activate(params.tournamentId)
     if (scopeChanged) submissions.value = []
+    const scopeToken = tournamentScope.captureScope(params.tournamentId)
     const sequence = ++adminFetchSequence.value
     beginRequest()
     error.value = null
@@ -118,7 +119,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       const res = await api.get('/submissions', { params })
       if (
         sequence !== adminFetchSequence.value ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -127,7 +128,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     } catch (err: any) {
       if (
         sequence !== adminFetchSequence.value ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -146,6 +147,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
   }) {
     const scopeChanged = tournamentScope.activate(params.tournamentId)
     if (scopeChanged) submissions.value = []
+    const scopeToken = tournamentScope.captureScope(params.tournamentId)
     const sequence = ++participantFetchSequence.value
     beginRequest()
     error.value = null
@@ -153,7 +155,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
       const res = await api.get('/submissions/mine', { params })
       if (
         sequence !== participantFetchSequence.value ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -162,7 +164,7 @@ export const useSubmissionsStore = defineStore('submissions', () => {
     } catch (err: any) {
       if (
         sequence !== participantFetchSequence.value ||
-        !tournamentScope.isActive(params.tournamentId)
+        !tournamentScope.isScopeCurrent(scopeToken)
       ) {
         return []
       }
@@ -187,12 +189,13 @@ export const useSubmissionsStore = defineStore('submissions', () => {
 
   async function submitBallot(payload: BallotSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
-      return await postWithTimeout('/submissions/ballots', payload, payload.tournamentId)
+      return await postWithTimeout('/submissions/ballots', payload, scopeToken)
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit ballot'
       }
       return null
@@ -203,12 +206,13 @@ export const useSubmissionsStore = defineStore('submissions', () => {
 
   async function submitFeedback(payload: FeedbackSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
-      return await postWithTimeout('/submissions/feedback', payload, payload.tournamentId)
+      return await postWithTimeout('/submissions/feedback', payload, scopeToken)
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to submit feedback'
       }
       return null
@@ -219,8 +223,9 @@ export const useSubmissionsStore = defineStore('submissions', () => {
 
   async function updateSubmission(payload: UpdateSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/submissions/${payload.submissionId}`, {
         tournamentId: payload.tournamentId,
@@ -228,13 +233,13 @@ export const useSubmissionsStore = defineStore('submissions', () => {
         payload: payload.payload,
       })
       const updated = res.data?.data ?? null
-      if (updated?._id && tournamentScope.isActive(payload.tournamentId)) {
+      if (updated?._id && tournamentScope.isScopeCurrent(scopeToken)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.map((item) => (item._id === updated._id ? updated : item))
       }
       return updated
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update submission'
       }
       return null
@@ -245,20 +250,21 @@ export const useSubmissionsStore = defineStore('submissions', () => {
 
   async function deleteSubmission(payload: DeleteSubmissionPayload) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete(`/submissions/${payload.submissionId}`, {
         params: { tournamentId: payload.tournamentId },
       })
       const deleted = res.data?.data ?? null
-      if (deleted?._id && tournamentScope.isActive(payload.tournamentId)) {
+      if (deleted?._id && tournamentScope.isScopeCurrent(scopeToken)) {
         invalidateFetchSequences()
         submissions.value = submissions.value.filter((item) => item._id !== deleted._id)
       }
       return deleted
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete submission'
       }
       return null
