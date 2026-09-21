@@ -55,6 +55,26 @@ describe('results/results', () => {
     expect(team2?.win).toBe(0.5)
   })
 
+  it('keeps compiled vote_rate null when the round format has no vote-rate semantics', () => {
+    const teams = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+    const style = { team_num: 4 }
+    const rawTeamResults = [
+      { id: 1, r: 1, win: 3, opponents: [2, 3, 4], side: 'og' },
+      { id: 2, r: 1, win: 2, opponents: [1, 3, 4], side: 'oo' },
+      { id: 3, r: 1, win: 1, opponents: [1, 2, 4], side: 'cg' },
+      { id: 4, r: 1, win: 0, opponents: [1, 2, 3], side: 'co' },
+    ]
+
+    const compiled = compileTeamResults(teams, rawTeamResults, [1], style)
+    expect(compiled.every((row) => row.vote_rate === null)).toBe(true)
+  })
+
+  it('keeps compiled vote_rate null when a team has no selected-round ballots', () => {
+    const teams = [{ id: 1 }, { id: 2 }]
+    const compiled = compileTeamResults(teams, [], [1], { team_num: 2 })
+    expect(compiled.map((row) => row.vote_rate)).toEqual([null, null])
+  })
+
   it('summarizes speaker results with weighted average', () => {
     const speakers = [{ id: 11 }, { id: 12 }]
     const style = { score_weights: [1, 1] }
@@ -95,6 +115,8 @@ describe('results/results', () => {
     expect(team2?.win).toBe(1)
     expect(team1?.past_sides).toEqual(['gov', 'opp'])
     expect(team2?.past_sides).toEqual(['opp', 'gov'])
+    expect(team1?.vote_rate).toBe(0.5)
+    expect(team2?.vote_rate).toBe(0.5)
     expect(team1?.sum).toBeNull()
     expect(team2?.sum).toBeNull()
   })
