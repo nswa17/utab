@@ -2469,4 +2469,247 @@ describe('Server integration', () => {
     expect(adjudicatorsComplete.body.data.preview.compiled_adjudicator_results).toHaveLength(1)
   })
 
+
+  it('rejects malformed tournament backup boundary values without leaving metadata behind', async () => {
+    const agent = request.agent(app)
+    const registerRes = await agent
+      .post('/api/auth/register')
+      .send({ username: 'boundary-backup-user', password: 'password123', role: 'organizer' })
+    expect(registerRes.status).toBe(201)
+    const loginRes = await agent
+      .post('/api/auth/login')
+      .send({ username: 'boundary-backup-user', password: 'password123' })
+    expect(loginRes.status).toBe(200)
+
+    const { buildZip } = await import('../src/services/zip.js')
+    const modifiedAt = new Date('2026-01-01T00:00:00Z')
+    const zip = (entries: Array<{ path: string; value: unknown }>) =>
+      buildZip(
+        entries.map((entry) => ({
+          path: entry.path,
+          content: JSON.stringify(entry.value),
+          modifiedAt,
+        }))
+      )
+
+    const invalidRoundBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid round backup',
+          collectionNames: [],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid round backup',
+          style: 1,
+          options: {},
+          total_round_num: 0,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+    ])
+
+    const invalidRoundRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidRoundBundle)
+    expect(invalidRoundRes.status).toBe(400)
+    expect(invalidRoundRes.body.errors[0].message).toContain(
+      'total_round_num must be a positive integer'
+    )
+    expect(await TournamentModel.countDocuments({ name: 'Invalid round backup' }).exec()).toBe(0)
+
+    const invalidDetailsBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid details backup',
+          collectionNames: ['teams'],
+          collectionFiles: [
+            { path: 'json/collections/teams.json', collectionName: 'teams' },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid details backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/teams.json',
+        value: [
+          {
+            name: 'Malformed imported team',
+            details: [
+              { r: 1, available: true },
+              { r: 1, available: false },
+            ],
+          },
+        ],
+      },
+    ])
+
+    const invalidDetailsRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidDetailsBundle)
+    expect(invalidDetailsRes.status).toBe(400)
+    expect(invalidDetailsRes.body.errors[0].message).toContain(
+      'Invalid teams details in backup'
+    )
+    expect(await TournamentModel.countDocuments({ name: 'Invalid details backup' }).exec()).toBe(0)
+
+    const invalidTemplateBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid template backup',
+          collectionNames: ['venues'],
+          collectionFiles: [
+            { path: 'json/collections/venues.json', collectionName: 'venues' },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid template backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/venues.json',
+        value: [{ name: 'Malformed imported venue', template: ['invalid'] }],
+      },
+    ])
+
+    const invalidTemplateRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidTemplateBundle)
+    expect(invalidTemplateRes.status).toBe(400)
+    expect(invalidTemplateRes.body.errors[0].message).toContain(
+      'Invalid venues template in backup'
+    )
+    expect(await TournamentModel.countDocuments({ name: 'Invalid template backup' }).exec()).toBe(0)
+
+    const invalidScopedRoundBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid scoped round backup',
+          collectionNames: ['draws'],
+          collectionFiles: [
+            { path: 'json/collections/draws.json', collectionName: 'draws' },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid scoped round backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/draws.json',
+        value: [{ round: 0, allocation: [] }],
+      },
+    ])
+
+    const invalidScopedRoundRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidScopedRoundBundle)
+    expect(invalidScopedRoundRes.status).toBe(400)
+    expect(invalidScopedRoundRes.body.errors[0].message).toContain(
+      'Invalid draws round in backup'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: 'Invalid scoped round backup' }).exec()
+    ).toBe(0)
+
+
+    const invalidRawTeamWinBundle = zip([
+      {
+        path: 'metadata.json',
+        value: {
+          format: 'utab.tournament.export/v2',
+          tournamentName: 'Invalid raw team win backup',
+          collectionNames: ['rawteamresults'],
+          collectionFiles: [
+            {
+              path: 'json/collections/rawteamresults.json',
+              collectionName: 'rawteamresults',
+            },
+          ],
+        },
+      },
+      {
+        path: 'json/tournament.json',
+        value: {
+          name: 'Invalid raw team win backup',
+          style: 1,
+          options: {},
+          total_round_num: 2,
+          current_round_num: 1,
+          auth: {},
+        },
+      },
+      { path: 'json/audit-logs.json', value: [] },
+      {
+        path: 'json/collections/rawteamresults.json',
+        value: [
+          {
+            id: 'team-a',
+            from_id: 'judge-a',
+            r: 1,
+            weight: 1,
+            win: 2,
+            opponents: ['team-b'],
+            side: 'gov',
+          },
+        ],
+      },
+    ])
+
+    const invalidRawTeamWinRes = await agent
+      .post('/api/tournaments/import')
+      .set('Content-Type', 'application/zip')
+      .send(invalidRawTeamWinBundle)
+    expect(invalidRawTeamWinRes.status).toBe(400)
+    expect(invalidRawTeamWinRes.body.errors[0].message).toContain(
+      'Invalid rawteamresults win in backup'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: 'Invalid raw team win backup' }).exec()
+    ).toBe(0)
+  })
+
 })
