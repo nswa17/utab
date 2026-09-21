@@ -143,7 +143,7 @@ async function removeAdjudicatorRefsFromDraws(
       return {
         updateOne: {
           filter: { _id: draw._id, tournamentId },
-          update: { $set: { allocation: nextAllocation } },
+          update: { $set: { allocation: nextAllocation }, $inc: { __v: 1 } },
         },
       }
     })
@@ -173,9 +173,10 @@ export async function executeSpeakerPersonalDataErase(
   const clearResult = await SubmissionModel.updateMany(
     {
       tournamentId,
+      'payload.comment': { $exists: true },
       $or: [{ 'payload.submittedEntityId': entityId }, { submittedBy: entityId }],
     },
-    { $unset: { 'payload.comment': '' } }
+    { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
   ).exec()
 
   if (mode === 'hard_delete') {
@@ -231,13 +232,14 @@ export async function executeAdjudicatorPersonalDataErase(
   const clearResult = await SubmissionModel.updateMany(
     {
       tournamentId,
+      'payload.comment': { $exists: true },
       $or: [
         { 'payload.adjudicatorId': entityId },
         { 'payload.submittedEntityId': entityId },
         { submittedBy: entityId },
       ],
     },
-    { $unset: { 'payload.comment': '' } }
+    { $unset: { 'payload.comment': '' }, $inc: { __v: 1 } }
   ).exec()
 
   if (mode === 'hard_delete') {
