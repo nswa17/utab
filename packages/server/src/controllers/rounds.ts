@@ -1524,14 +1524,23 @@ export const updateRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const before = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
-    if (!before) {
-      notFound(res, 'Round not found')
+    const requestedRenumber = round !== undefined
+    const mutationLeases = requestedRenumber
+      ? await acquireRoundTopologyMutationLeases(connection, tournamentId)
+      : null
+    if (requestedRenumber && !mutationLeases) {
+      sendRoundTopologyBusy(res)
       return
     }
-    const previousRound = Number((before as any)?.round)
-    const nextRound = round === undefined ? previousRound : Number(round)
-    if (previousRound !== nextRound) {
+    try {
+      const before = await RoundModel.findOne({ _id: id, tournamentId }).lean().exec()
+      if (!before) {
+        notFound(res, 'Round not found')
+        return
+      }
+      const previousRound = Number((before as any)?.round)
+      const nextRound = round === undefined ? previousRound : Number(round)
+      if (previousRound !== nextRound) {
       const conflict = await RoundModel.exists({
         tournamentId,
         round: nextRound,
@@ -1543,28 +1552,21 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
         return
       }
-      const mutationLeases = await acquireRoundTopologyMutationLeases(connection, tournamentId)
-      if (!mutationLeases) {
-        sendRoundTopologyBusy(res)
-        return
-      }
-      try {
         const temporaryRound = -2_000_000_000
-        await RoundModel.updateOne(
-          { _id: id, tournamentId, round: previousRound },
-          { $set: { round: temporaryRound } }
-        ).exec()
+        await runIdempotentRoundMutationWithRetry('round renumber staging', () =>
+          RoundModel.updateOne(
+            { _id: id, tournamentId, round: previousRound },
+            { $set: { round: temporaryRound } }
+          ).exec()
+        )
         await moveRoundReferences(connection, tournamentId, [
           { from: previousRound, to: temporaryRound },
         ])
         await moveRoundReferences(connection, tournamentId, [
           { from: temporaryRound, to: nextRound },
         ])
-      } finally {
-        await releaseRoundTopologyMutationLeases(connection, mutationLeases)
       }
-    }
-    const updated = await RoundModel.findOneAndUpdate(
+      const updated = await RoundModel.findOneAndUpdate(
       { _id: id, tournamentId },
       { $set: update },
       { new: true }
@@ -1575,12 +1577,17 @@ export const updateRound: RequestHandler = async (req, res, next) => {
       notFound(res, 'Round not found')
       return
     }
-    if (previousRound !== nextRound) {
-      await rewriteStoredRoundReferences(connection, tournamentId, [
-        { from: previousRound, to: nextRound },
-      ])
+      if (previousRound !== nextRound) {
+        await rewriteStoredRoundReferences(connection, tournamentId, [
+          { from: previousRound, to: nextRound },
+        ])
+      }
+      res.json({ data: updated, errors: [] })
+    } finally {
+      if (mutationLeases) {
+        await releaseRoundTopologyMutationLeases(connection, mutationLeases)
+      }
     }
-    res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
       res
