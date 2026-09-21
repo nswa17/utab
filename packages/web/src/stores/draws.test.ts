@@ -387,4 +387,41 @@ describe('draws store', () => {
     expect(store.error).toBe('current tournament draw error')
   })
 
+  it('does not revive an old A mutation after A -> B -> A', async () => {
+    const store = useDrawsStore()
+    const oldSave = createDeferred<any>()
+    mockedApi.post.mockImplementationOnce(() => oldSave.promise)
+    mockedApi.get
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'draw-b', tournamentId: 'tournament-b', round: 1, allocation: [] }] },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'draw-a-current', tournamentId: 'tournament-a', round: 1, allocation: [] }] },
+      })
+
+    const oldPromise = store.upsertDraw({
+      tournamentId: 'tournament-a',
+      round: 1,
+      allocation: [],
+    })
+    await store.fetchDraws('tournament-b')
+    await store.fetchDraws('tournament-a')
+
+    oldSave.resolve({
+      data: {
+        data: {
+          _id: 'draw-a-old',
+          tournamentId: 'tournament-a',
+          round: 1,
+          allocation: [{ teams: { gov: 'old', opp: 'old-2' } }],
+        },
+      },
+    })
+    await oldPromise
+
+    expect(store.draws).toEqual([
+      { _id: 'draw-a-current', tournamentId: 'tournament-a', round: 1, allocation: [] },
+    ] as any)
+  })
+
 })
