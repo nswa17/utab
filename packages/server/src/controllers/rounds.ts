@@ -16,6 +16,11 @@ import { getTournamentConnection } from '../services/tournament-db.service.js'
 import { isDuplicateKeyError } from '../services/mongo-error.service.js'
 import { sanitizeRoundForPublic } from '../services/response-sanitizer.js'
 import {
+  acquireEntityNamespaceLease,
+  releaseEntityNamespaceLease,
+  type EntityNamespaceLease,
+} from '../services/entity-namespace-guard.service.js'
+import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
   type CompileOptionsInput,
@@ -70,6 +75,44 @@ type RoundDefaults = {
 
 type BallotSubmitterRole = 'chair' | 'panel' | 'trainee'
 const DEFAULT_BALLOT_SUBMITTER_ROLES: BallotSubmitterRole[] = ['chair', 'panel']
+const ROUND_ENTITY_NAMESPACES = ['adjudicators', 'teams', 'venues'] as const
+
+async function acquireRoundEntityNamespaceLeases(
+  connection: Connection,
+  tournamentId: string,
+  namespaces: readonly string[] = ROUND_ENTITY_NAMESPACES
+): Promise<EntityNamespaceLease[] | null> {
+  const leases: EntityNamespaceLease[] = []
+  for (const namespace of [...namespaces].sort()) {
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, namespace)
+    if (lease) {
+      leases.push(lease)
+      continue
+    }
+    await Promise.all(leases.map((current) => releaseEntityNamespaceLease(connection, current)))
+    return null
+  }
+  return leases
+}
+
+async function releaseRoundEntityNamespaceLeases(
+  connection: Connection,
+  leases: EntityNamespaceLease[]
+): Promise<void> {
+  const released = await Promise.all(
+    leases.map((lease) => releaseEntityNamespaceLease(connection, lease))
+  )
+  if (released.some((value) => !value)) {
+    throw new Error('Failed to release one or more entity namespace leases')
+  }
+}
+
+function sendEntityNamespaceBusy(res: Parameters<RequestHandler>[1]): void {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Tournament entities are being modified; retry round change' }],
+  })
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -982,12 +1025,21 @@ export const createRound: RequestHandler = async (req, res, next) => {
           ),
         }
       })
-      const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
-      await syncEntityRoundDetailsForCreate(
-        tournamentId,
-        preparedPayload.map((item) => Number(item.round))
-      )
-      res.status(201).json({ data: created, errors: [] })
+      const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!entityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      try {
+        const created = await RoundModel.insertMany(preparedPayload, { ordered: true })
+        await syncEntityRoundDetailsForCreate(
+          tournamentId,
+          preparedPayload.map((item) => Number(item.round))
+        )
+        res.status(201).json({ data: created, errors: [] })
+      } finally {
+        await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      }
       return
     }
 
@@ -1034,21 +1086,30 @@ export const createRound: RequestHandler = async (req, res, next) => {
 
     const connection = await getTournamentConnection(tournamentId)
     const RoundModel = getRoundModel(connection)
-    const created = await RoundModel.create({
-      tournamentId,
-      round,
-      name,
-      motions,
-      motionOpened,
-      teamAllocationOpened,
-      adjudicatorAllocationOpened,
-      weightsOfAdjudicators,
-      userDefinedData: applyBreakConstraintsToUserDefined(
-        buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
-      ),
-    })
-    await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
-    res.status(201).json({ data: created.toJSON(), errors: [] })
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const created = await RoundModel.create({
+        tournamentId,
+        round,
+        name,
+        motions,
+        motionOpened,
+        teamAllocationOpened,
+        adjudicatorAllocationOpened,
+        weightsOfAdjudicators,
+        userDefinedData: applyBreakConstraintsToUserDefined(
+          buildRoundUserDefinedFromDefaults(defaultsWithTournamentBreak, userDefinedData)
+        ),
+      })
+      await syncEntityRoundDetailsForCreate(tournamentId, [Number(round)])
+      res.status(201).json({ data: created.toJSON(), errors: [] })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
       res
@@ -1135,61 +1196,75 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       })
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
-    if (changes.length > 0) {
-      await RoundModel.bulkWrite(
-        changes.map((change) => ({
+    const renumberEntityLeases =
+      changes.length > 0
+        ? await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+        : []
+    if (renumberEntityLeases === null) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      if (changes.length > 0) {
+        await RoundModel.bulkWrite(
+          changes.map((change) => ({
+            updateOne: {
+              filter: { _id: change.id, tournamentId, round: change.previousRound },
+              update: { $set: { round: change.temporaryRound } },
+            },
+          })),
+          { ordered: true }
+        )
+        await moveRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.previousRound, to: change.temporaryRound }))
+        )
+        await moveRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
+        )
+      }
+      const ops = payload.map((item) => {
+        const update: Record<string, unknown> = {}
+        if (item.round !== undefined) update.round = item.round
+        if (item.name !== undefined) update.name = item.name
+        if (item.motions !== undefined) update.motions = item.motions
+        if (item.motionOpened !== undefined) update.motionOpened = item.motionOpened
+        if (item.teamAllocationOpened !== undefined)
+          update.teamAllocationOpened = item.teamAllocationOpened
+        if (item.adjudicatorAllocationOpened !== undefined)
+          update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
+        if (item.weightsOfAdjudicators !== undefined)
+          update.weightsOfAdjudicators = item.weightsOfAdjudicators
+        if (item.userDefinedData !== undefined) {
+          update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
+        }
+        return {
           updateOne: {
-            filter: { _id: change.id, tournamentId, round: change.previousRound },
-            update: { $set: { round: change.temporaryRound } },
+            filter: { _id: item.id, tournamentId },
+            update: { $set: update },
           },
-        })),
-        { ordered: true }
-      )
-      await moveRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.previousRound, to: change.temporaryRound }))
-      )
-      await moveRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.temporaryRound, to: change.nextRound }))
-      )
-    }
-    const ops = payload.map((item) => {
-      const update: Record<string, unknown> = {}
-      if (item.round !== undefined) update.round = item.round
-      if (item.name !== undefined) update.name = item.name
-      if (item.motions !== undefined) update.motions = item.motions
-      if (item.motionOpened !== undefined) update.motionOpened = item.motionOpened
-      if (item.teamAllocationOpened !== undefined)
-        update.teamAllocationOpened = item.teamAllocationOpened
-      if (item.adjudicatorAllocationOpened !== undefined)
-        update.adjudicatorAllocationOpened = item.adjudicatorAllocationOpened
-      if (item.weightsOfAdjudicators !== undefined)
-        update.weightsOfAdjudicators = item.weightsOfAdjudicators
-      if (item.userDefinedData !== undefined) {
-        update.userDefinedData = applyBreakConstraintsToUserDefined(item.userDefinedData)
+        }
+      })
+      await RoundModel.bulkWrite(ops, { ordered: true })
+      if (changes.length > 0) {
+        await rewriteStoredRoundReferences(
+          connection,
+          tournamentId,
+          changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
+        )
       }
-      return {
-        updateOne: {
-          filter: { _id: item.id, tournamentId },
-          update: { $set: update },
-        },
+      const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
+        .lean()
+        .exec()
+      res.json({ data: updated, errors: [] })
+    } finally {
+      if (renumberEntityLeases.length > 0) {
+        await releaseRoundEntityNamespaceLeases(connection, renumberEntityLeases)
       }
-    })
-    await RoundModel.bulkWrite(ops, { ordered: true })
-    if (changes.length > 0) {
-      await rewriteStoredRoundReferences(
-        connection,
-        tournamentId,
-        changes.map((change) => ({ from: change.previousRound, to: change.nextRound }))
-      )
     }
-    const updated = await RoundModel.find({ _id: { $in: ids }, tournamentId })
-      .lean()
-      .exec()
-    res.json({ data: updated, errors: [] })
   } catch (err) {
     if (isDuplicateKeyError(err)) {
       res
@@ -1227,13 +1302,22 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
     const deletedRounds = targets
       .map((item: any) => Number(item?.round))
       .filter((value) => Number.isInteger(value) && value >= 1)
-    await deleteRoundDependencies(connection, tournamentId, deletedRounds)
-    const result = await RoundModel.deleteMany(filter).exec()
-    if (deletedRounds.length > 0) {
-      await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
-      await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
     }
-    res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+    try {
+      await deleteRoundDependencies(connection, tournamentId, deletedRounds)
+      const result = await RoundModel.deleteMany(filter).exec()
+      if (deletedRounds.length > 0) {
+        await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
+        await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
+      }
+      res.json({ data: { deletedCount: result.deletedCount }, errors: [] })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err) {
     next(err)
   }
@@ -1301,15 +1385,26 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           .json({ data: null, errors: [{ name: 'Conflict', message: 'Round already exists' }] })
         return
       }
-      const temporaryRound = -2_000_000_000
-      await RoundModel.updateOne(
-        { _id: id, tournamentId, round: previousRound },
-        { $set: { round: temporaryRound } }
-      ).exec()
-      await moveRoundReferences(connection, tournamentId, [
-        { from: previousRound, to: temporaryRound },
-      ])
-      await moveRoundReferences(connection, tournamentId, [{ from: temporaryRound, to: nextRound }])
+      const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+      if (!entityLeases) {
+        sendEntityNamespaceBusy(res)
+        return
+      }
+      try {
+        const temporaryRound = -2_000_000_000
+        await RoundModel.updateOne(
+          { _id: id, tournamentId, round: previousRound },
+          { $set: { round: temporaryRound } }
+        ).exec()
+        await moveRoundReferences(connection, tournamentId, [
+          { from: previousRound, to: temporaryRound },
+        ])
+        await moveRoundReferences(connection, tournamentId, [
+          { from: temporaryRound, to: nextRound },
+        ])
+      } finally {
+        await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+      }
     }
     const updated = await RoundModel.findOneAndUpdate(
       { _id: id, tournamentId },
@@ -1461,9 +1556,15 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const teams = await TeamModel.find({ tournamentId }).lean().exec()
-    const teamIds = new Set(teams.map((team) => String(team._id)))
-    const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId, ['teams'])
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
+      return
+    }
+    try {
+      const teams = await TeamModel.find({ tournamentId }).lean().exec()
+      const teamIds = new Set(teams.map((team) => String(team._id)))
+      const currentUserDefined = asRecord((roundDoc as any).userDefinedData)
     const currentRoundBreakEnabled = isRoundBreakEnabled(roundNumber, currentUserDefined)
     const breakInputRecord = asRecord(breakInput)
     const explicitBreakEnabled =
@@ -1559,14 +1660,17 @@ export const updateRoundBreak: RequestHandler = async (req, res, next) => {
       }
     }
 
-    res.json({
-      data: {
-        round: updatedRound,
-        break: normalizedBreak,
-        updatedTeamCount,
-      },
-      errors: [],
-    })
+      res.json({
+        data: {
+          round: updatedRound,
+          break: normalizedBreak,
+          updatedTeamCount,
+        },
+        errors: [],
+      })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
+    }
   } catch (err) {
     next(err)
   }
@@ -1586,17 +1690,26 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       return
     }
     const deletedRound = Number((existing as any)?.round)
-    await deleteRoundDependencies(connection, tournamentId, [deletedRound])
-    const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
-    if (!deleted) {
-      notFound(res, 'Round not found')
+    const entityLeases = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+    if (!entityLeases) {
+      sendEntityNamespaceBusy(res)
       return
     }
-    if (Number.isInteger(deletedRound) && deletedRound >= 1) {
-      await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
-      await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
+    try {
+      await deleteRoundDependencies(connection, tournamentId, [deletedRound])
+      const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+      if (!deleted) {
+        notFound(res, 'Round not found')
+        return
+      }
+      if (Number.isInteger(deletedRound) && deletedRound >= 1) {
+        await syncEntityRoundDetailsForDelete(tournamentId, [deletedRound])
+        await rewriteStoredRoundReferences(connection, tournamentId, [], [deletedRound])
+      }
+      res.json({ data: deleted, errors: [] })
+    } finally {
+      await releaseRoundEntityNamespaceLeases(connection, entityLeases)
     }
-    res.json({ data: deleted, errors: [] })
   } catch (err) {
     next(err)
   }
