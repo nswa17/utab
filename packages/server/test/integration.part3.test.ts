@@ -2524,6 +2524,40 @@ describe('Server integration', () => {
     const restoredTournamentId = String(importRes.body.data.tournament._id)
     expect(restoredTournamentId).not.toBe(tournamentId)
 
+    const restoredMembership = await TournamentMemberModel.findOne({
+      tournamentId: restoredTournamentId,
+      userId: organizerUserId,
+    })
+      .lean()
+      .exec()
+    expect(restoredMembership?.role).toBe('organizer')
+
+    const restoredConnection = await getTournamentConnection(restoredTournamentId)
+    const RestoredDrawModel = getDrawModel(restoredConnection)
+    const RestoredSubmissionModel = getSubmissionModel(restoredConnection)
+    const RestoredResultModel = getResultModel(restoredConnection)
+    const RestoredRawTeamResultModel = getRawTeamResultModel(restoredConnection)
+    const RestoredRawSpeakerResultModel = getRawSpeakerResultModel(restoredConnection)
+    const RestoredRawAdjudicatorResultModel = getRawAdjudicatorResultModel(restoredConnection)
+    const RestoredRoundModel = getRoundModel(restoredConnection)
+
+    expect(await RestoredDrawModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()).toBe(1)
+    expect(
+      await RestoredSubmissionModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+    ).toBe(1)
+    expect(
+      await RestoredResultModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+    ).toBe(1)
+    expect(
+      await RestoredRawTeamResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+    ).toBe(1)
+    expect(
+      await RestoredRawSpeakerResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+    ).toBe(1)
+    expect(
+      await RestoredRawAdjudicatorResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+    ).toBe(1)
+
     const restoredRoundsRes = await organizer
       .get('/api/rounds')
       .query({ tournamentId: restoredTournamentId })
@@ -2556,6 +2590,19 @@ describe('Server integration', () => {
     const restoredRound1 = (restoredRoundsRes.body.data as Array<any>).find(
       (row) => Number(row.round) === 1
     )
+    expect(restoredRound1?.userDefinedData?.compile?.source_rounds).toEqual([3])
+
+    const restoredRedactedAdjudicatorRes = await organizer
+      .get(`/api/adjudicators/${privacyAdjudicatorId}`)
+      .query({ tournamentId: restoredTournamentId })
+    expect(restoredRedactedAdjudicatorRes.status).toBe(200)
+    expect(String(restoredRedactedAdjudicatorRes.body.data.name)).toContain('Deleted Adjudicator')
+
+    const restoredPrivacyFeedback = await RestoredSubmissionModel.findById(privacyFeedbackId)
+      .lean()
+      .exec()
+    expect((restoredPrivacyFeedback as any)?.payload?.comment).toBeUndefined()
+
     const restoredDraw1 = (restoredDrawsRes.body.data as Array<any>).find(
       (row) => Number(row.round) === 1
     )
@@ -2603,6 +2650,52 @@ describe('Server integration', () => {
     for (const team of restoredTeamsAfterDeleteRes.body.data as Array<any>) {
       expect((team.details ?? []).some((detail: any) => Number(detail.r) === 3)).toBe(false)
     }
+
+    expect(
+      await RestoredDrawModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+    ).toBe(0)
+    expect(
+      await RestoredSubmissionModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        round: 3,
+      }).exec()
+    ).toBe(0)
+    expect(
+      await RestoredResultModel.countDocuments({ tournamentId: restoredTournamentId, round: 3 }).exec()
+    ).toBe(0)
+    expect(
+      await RestoredRawTeamResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+    ).toBe(0)
+    expect(
+      await RestoredRawSpeakerResultModel.countDocuments({ tournamentId: restoredTournamentId, r: 3 }).exec()
+    ).toBe(0)
+    expect(
+      await RestoredRawAdjudicatorResultModel.countDocuments({
+        tournamentId: restoredTournamentId,
+        r: 3,
+      }).exec()
+    ).toBe(0)
+
+    const restoredReferenceAfterDelete = await RestoredRoundModel.findById(
+      String(restoredRound1._id)
+    )
+      .lean()
+      .exec()
+    expect(
+      (restoredReferenceAfterDelete as any)?.userDefinedData?.compile?.source_rounds
+    ).toEqual([])
+
+    for (const namespace of ['teams', 'adjudicators', 'venues']) {
+      const state = await readEntityNamespaceLeaseState(
+        restoredConnection,
+        restoredTournamentId,
+        namespace
+      )
+      expect(state.active).toBe(false)
+    }
+    expect((await readRoundTopologyState(restoredConnection, restoredTournamentId)).active).toBe(
+      false
+    )
   })
 
 
