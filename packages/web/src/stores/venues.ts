@@ -53,20 +53,21 @@ export const useVenuesStore = defineStore('venues', () => {
     userDefinedData?: Record<string, any>
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.post('/venues', payload)
       const created = res.data?.data
       if (created) {
-        tournamentScope.invalidateFetches(payload.tournamentId)
-        if (tournamentScope.isActive(payload.tournamentId)) {
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
           venues.value = [created, ...venues.value]
         }
       }
       return created
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to create venue'
       }
       return null
@@ -84,8 +85,9 @@ export const useVenuesStore = defineStore('venues', () => {
     userDefinedData?: Record<string, any>
   }) {
     tournamentScope.claimIfEmpty(payload.tournamentId)
+    const scopeToken = tournamentScope.captureScope(payload.tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(payload.tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.patch(`/venues/${payload.venueId}`, {
         tournamentId: payload.tournamentId,
@@ -96,8 +98,8 @@ export const useVenuesStore = defineStore('venues', () => {
       })
       const updated = res.data?.data
       if (updated) {
-        tournamentScope.invalidateFetches(payload.tournamentId)
-        if (tournamentScope.isActive(payload.tournamentId)) {
+        if (tournamentScope.isScopeCurrent(scopeToken)) {
+          tournamentScope.invalidateFetches(payload.tournamentId)
           venues.value = venues.value.map((item) =>
             item._id === updated._id ? updated : item
           )
@@ -105,7 +107,7 @@ export const useVenuesStore = defineStore('venues', () => {
       }
       return updated
     } catch (err: any) {
-      if (tournamentScope.isActive(payload.tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to update venue'
       }
       return null
@@ -116,17 +118,18 @@ export const useVenuesStore = defineStore('venues', () => {
 
   async function deleteVenue(tournamentId: string, venueId: string) {
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       await api.delete(`/venues/${venueId}`, { params: { tournamentId } })
-      tournamentScope.invalidateFetches(tournamentId)
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
         venues.value = venues.value.filter((item) => item._id !== venueId)
       }
       return true
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete venue'
       }
       return false
@@ -142,21 +145,22 @@ export const useVenuesStore = defineStore('venues', () => {
     if (normalizedIds.length === 0) return 0
 
     tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
-    if (tournamentScope.isActive(tournamentId)) error.value = null
+    if (tournamentScope.isScopeCurrent(scopeToken)) error.value = null
     try {
       const res = await api.delete('/venues', {
         params: { tournamentId, ids: normalizedIds.join(',') },
       })
       const deletedCount = Number(res.data?.data?.deletedCount)
-      tournamentScope.invalidateFetches(tournamentId)
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
+        tournamentScope.invalidateFetches(tournamentId)
         const deletedIds = new Set(normalizedIds)
         venues.value = venues.value.filter((item) => !deletedIds.has(String(item._id ?? '')))
       }
       return Number.isFinite(deletedCount) ? deletedCount : normalizedIds.length
     } catch (err: any) {
-      if (tournamentScope.isActive(tournamentId)) {
+      if (tournamentScope.isScopeCurrent(scopeToken)) {
         error.value = err?.response?.data?.errors?.[0]?.message ?? 'Failed to delete venues'
       }
       return null
