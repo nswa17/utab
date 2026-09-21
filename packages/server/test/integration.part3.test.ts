@@ -2374,6 +2374,8 @@ describe('Server integration', () => {
       { getRawSpeakerResultModel },
       { getRawAdjudicatorResultModel },
       { getRoundModel },
+      { readEntityNamespaceLeaseState },
+      { readRoundTopologyState },
     ] = await Promise.all([
       import('../src/services/tournament-db.service.js'),
       import('../src/models/draw.js'),
@@ -2383,6 +2385,8 @@ describe('Server integration', () => {
       import('../src/models/raw-speaker-result.js'),
       import('../src/models/raw-adjudicator-result.js'),
       import('../src/models/round.js'),
+      import('../src/services/entity-namespace-guard.service.js'),
+      import('../src/services/round-topology-guard.service.js'),
     ])
     const lifecycleConnection = await getTournamentConnection(tournamentId)
     const DrawModel = getDrawModel(lifecycleConnection)
@@ -2429,12 +2433,80 @@ describe('Server integration', () => {
     expect(movedBallotsRes.status).toBe(200)
     expect(movedBallotsRes.body.data).toHaveLength(1)
 
+    const breakDrawAfterRenumber = await DrawModel.findById(breakDrawRes.body.data._id).lean().exec()
+    const breakBallotAfterRenumber = await SubmissionModel.findById(breakBallotRes.body.data._id)
+      .lean()
+      .exec()
+    expect(Number((breakDrawAfterRenumber as any)?.round)).toBe(3)
+    expect(Number((breakBallotAfterRenumber as any)?.round)).toBe(3)
+    expect(Number((breakDrawAfterRenumber as any)?.__v ?? 0)).toBe(
+      breakDrawVersionBeforeRenumber + 2
+    )
+    expect(Number((breakBallotAfterRenumber as any)?.__v ?? 0)).toBe(
+      breakBallotVersionBeforeRenumber + 2
+    )
+    expect(await ResultModel.countDocuments({ tournamentId, round: 3 }).exec()).toBe(1)
+    expect(await RawTeamResultModel.countDocuments({ tournamentId, r: 3 }).exec()).toBe(1)
+    expect(await RawSpeakerResultModel.countDocuments({ tournamentId, r: 3 }).exec()).toBe(1)
+    expect(await RawAdjudicatorResultModel.countDocuments({ tournamentId, r: 3 }).exec()).toBe(1)
+
+    const referenceRoundAfterRenumber = await RoundModel.findById(round1Id).lean().exec()
+    expect(
+      (referenceRoundAfterRenumber as any)?.userDefinedData?.compile?.source_rounds
+    ).toEqual([3])
+
     const movedTeamsRes = await organizer.get('/api/teams').query({ tournamentId })
     expect(movedTeamsRes.status).toBe(200)
     for (const team of movedTeamsRes.body.data as Array<any>) {
       expect((team.details ?? []).some((detail: any) => Number(detail.r) === 2)).toBe(false)
       expect((team.details ?? []).some((detail: any) => Number(detail.r) === 3)).toBe(true)
     }
+
+    const privacyFeedbackBeforeErase = await SubmissionModel.findById(privacyFeedbackId)
+      .lean()
+      .exec()
+    expect((privacyFeedbackBeforeErase as any)?.payload?.comment).toBe('Lifecycle feedback')
+    const privacyFeedbackVersionBeforeErase = Number(
+      (privacyFeedbackBeforeErase as any)?.__v ?? 0
+    )
+
+    const privacyEraseRes = await organizer
+      .delete(
+        `/api/v1/adjudicators/${privacyAdjudicatorId}/personal-data?tournamentId=${tournamentId}`
+      )
+      .send({
+        reason: 'phase 10 cumulative lifecycle privacy audit',
+        approvedBy: 'phase10-audit',
+        eraseMode: 'anonymize',
+        reauthPassword: 'password123',
+      })
+    expect(privacyEraseRes.status).toBe(200)
+    expect(privacyEraseRes.body.data.submissionCommentsCleared).toBeGreaterThan(0)
+
+    const privacyFeedbackAfterErase = await SubmissionModel.findById(privacyFeedbackId)
+      .lean()
+      .exec()
+    expect((privacyFeedbackAfterErase as any)?.payload?.comment).toBeUndefined()
+    expect(Number((privacyFeedbackAfterErase as any)?.__v ?? 0)).toBe(
+      privacyFeedbackVersionBeforeErase + 1
+    )
+
+    const redactedAdjudicatorRes = await organizer
+      .get(`/api/adjudicators/${privacyAdjudicatorId}`)
+      .query({ tournamentId })
+    expect(redactedAdjudicatorRes.status).toBe(200)
+    expect(String(redactedAdjudicatorRes.body.data.name)).toContain('Deleted Adjudicator')
+    expect(redactedAdjudicatorRes.body.data.userDefinedData).toEqual({})
+
+    for (const namespace of ['teams', 'adjudicators', 'venues']) {
+      const state = await readEntityNamespaceLeaseState(
+        lifecycleConnection,
+        tournamentId,
+        namespace
+      )
+      expect(state.active).toBe(false)
+    }
+    expect((await readRoundTopologyState(lifecycleConnection, tournamentId)).active).toBe(false)
 
     const exportRes = await organizer
       .get(`/api/tournaments/${tournamentId}/export`)
