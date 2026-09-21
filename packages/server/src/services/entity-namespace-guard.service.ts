@@ -32,6 +32,31 @@ function lockKey(tournamentId: string, namespace: string): string {
   return `${namespace}:${tournamentId}`
 }
 
+export type EntityNamespaceLeaseState = {
+  active: boolean
+  epoch: number
+}
+
+export async function readEntityNamespaceLeaseState(
+  connection: Connection,
+  tournamentId: string,
+  namespace: string
+): Promise<EntityNamespaceLeaseState> {
+  const LockModel = getEntityNamespaceLockModel(connection)
+  const lock = await LockModel.findById(lockKey(tournamentId, namespace)).lean().exec()
+  if (!lock) return { active: false, epoch: 0 }
+
+  const touchedAt = (lock as any).touchedAt
+  const touchedAtMs =
+    touchedAt instanceof Date ? touchedAt.getTime() : new Date(String(touchedAt ?? '')).getTime()
+  const fresh =
+    Number.isFinite(touchedAtMs) && touchedAtMs >= Date.now() - ENTITY_NAMESPACE_LEASE_STALE_MS
+  return {
+    active: (lock as any).locked === true && fresh,
+    epoch: Number((lock as any).epoch ?? 0),
+  }
+}
+
 export async function acquireEntityNamespaceLease(
   connection: Connection,
   tournamentId: string,
