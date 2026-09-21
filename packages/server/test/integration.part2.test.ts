@@ -3802,19 +3802,6 @@ describe('Server integration', () => {
     })
     expect(resultRes.status).toBe(201)
 
-    const submissionRes = await agent.post('/api/submissions/ballots').send({
-      tournamentId,
-      round: 1,
-      teamAId: 'team-a',
-      teamBId: 'team-b',
-      winnerId: 'team-a',
-      scoresA: [],
-      scoresB: [],
-      comment: 'transient-delete',
-      submittedEntityId: 'judge-a',
-    })
-    expect(submissionRes.status).toBe(201)
-
     const [{ getTournamentConnection }, { getResultModel }, { getSubmissionModel }] =
       await Promise.all([
         import('../src/services/tournament-db.service.js'),
@@ -3824,6 +3811,12 @@ describe('Server integration', () => {
     const connection = await getTournamentConnection(tournamentId)
     const ResultModel = getResultModel(connection)
     const SubmissionModel = getSubmissionModel(connection)
+    await SubmissionModel.create({
+      tournamentId,
+      round: 1,
+      type: 'ballot',
+      payload: { marker: 'transient-delete' },
+    })
 
     const originalResultUpdateMany = ResultModel.updateMany.bind(ResultModel)
     let failResultMoveOnce = true
