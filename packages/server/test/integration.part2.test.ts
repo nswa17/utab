@@ -3551,4 +3551,128 @@ describe('Server integration', () => {
     ).resolves.toBeTruthy()
   })
 
+  it('enforces round and entity-detail invariants at the model persistence boundary', async () => {
+    const agent = request.agent(app)
+    expect(
+      (
+        await agent
+          .post('/api/auth/register')
+          .send({ username: 'model-boundary-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await agent
+          .post('/api/auth/login')
+          .send({ username: 'model-boundary-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await agent
+      .post('/api/tournaments')
+      .send({ name: 'Model Boundary Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const [
+      { getTournamentConnection },
+      { getRoundModel },
+      { getDrawModel },
+      { getSubmissionModel },
+      { getResultModel },
+      { getRawSpeakerResultModel },
+      { getRawAdjudicatorResultModel },
+      { getTeamModel },
+      { getAdjudicatorModel },
+      { getVenueModel },
+    ] = await Promise.all([
+      import('../src/services/tournament-db.service.js'),
+      import('../src/models/round.js'),
+      import('../src/models/draw.js'),
+      import('../src/models/submission.js'),
+      import('../src/models/result.js'),
+      import('../src/models/raw-speaker-result.js'),
+      import('../src/models/raw-adjudicator-result.js'),
+      import('../src/models/team.js'),
+      import('../src/models/adjudicator.js'),
+      import('../src/models/venue.js'),
+    ])
+    const connection = await getTournamentConnection(tournamentId)
+
+    await expect(getRoundModel(connection).create({ tournamentId, round: 0 })).rejects.toThrow()
+    await expect(
+      getDrawModel(connection).create({ tournamentId, round: 0, allocation: [] })
+    ).rejects.toThrow()
+    await expect(
+      getSubmissionModel(connection).create({
+        tournamentId,
+        round: 0,
+        type: 'ballot',
+        payload: {},
+      })
+    ).rejects.toThrow()
+    await expect(
+      getResultModel(connection).create({ tournamentId, round: 0, payload: {} })
+    ).rejects.toThrow()
+    await expect(
+      getRawSpeakerResultModel(connection).create({
+        tournamentId,
+        id: 'speaker-a',
+        from_id: 'judge-a',
+        r: 0,
+        scores: [],
+      })
+    ).rejects.toThrow()
+    await expect(
+      getRawAdjudicatorResultModel(connection).create({
+        tournamentId,
+        id: 'judge-a',
+        from_id: 'team-a',
+        r: 0,
+        score: 1,
+        judged_teams: [],
+      })
+    ).rejects.toThrow()
+
+    await expect(
+      getTeamModel(connection).create({
+        tournamentId,
+        name: 'Invalid duplicate-detail model team',
+        details: [
+          { r: 1, available: true },
+          { r: 1, available: false },
+        ],
+      })
+    ).rejects.toThrow()
+    await expect(
+      getAdjudicatorModel(connection).create({
+        tournamentId,
+        name: 'Invalid duplicate-detail model judge',
+        details: [
+          { r: 1, available: true },
+          { r: 1, available: false },
+        ],
+      })
+    ).rejects.toThrow()
+    await expect(
+      getVenueModel(connection).create({
+        tournamentId,
+        name: 'Invalid duplicate-detail model venue',
+        details: [
+          { r: 1, available: true },
+          { r: 1, available: false },
+        ],
+      })
+    ).rejects.toThrow()
+
+    await expect(
+      TournamentModel.create({
+        name: 'Invalid direct-model tournament',
+        style: 1,
+        total_round_num: 0,
+        current_round_num: 1,
+      })
+    ).rejects.toThrow()
+  })
+
 })
