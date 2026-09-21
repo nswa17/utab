@@ -80,6 +80,37 @@ function validateCopiedCollectionBoundaries(
     })
   }
 
+  if (collectionName === 'compiledresults') {
+    documents.forEach((document, index) => {
+      const payload =
+        document.payload && typeof document.payload === 'object' && !Array.isArray(document.payload)
+          ? (document.payload as Record<string, unknown>)
+          : {}
+      const compileOptions =
+        payload.compile_options &&
+        typeof payload.compile_options === 'object' &&
+        !Array.isArray(payload.compile_options)
+          ? (payload.compile_options as Record<string, unknown>)
+          : {}
+      const tiePoints = compileOptions.tie_points
+      if (
+        tiePoints === undefined ||
+        (typeof tiePoints === 'number' &&
+          Number.isFinite(tiePoints) &&
+          tiePoints >= 0 &&
+          tiePoints <= 1)
+      ) {
+        return
+      }
+      throw new DevToolsServiceError(
+        400,
+        'Cannot copy invalid compiledresults tie_points at index ' +
+          index +
+          '; expected a finite number in [0, 1]'
+      )
+    })
+  }
+
   const schemas =
     collectionName === 'teams'
       ? { details: teamDetailsSchema, template: teamTemplateSchema }
