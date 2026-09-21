@@ -60,7 +60,7 @@ export const useTeamsStore = defineStore('teams', () => {
       if (created) {
         if (tournamentScope.isScopeCurrent(scopeToken)) {
           tournamentScope.invalidateFetches(payload.tournamentId)
-          teams.value = [created, ...teams.value]
+          teams.value = [created, ...teams.value.filter((item) => item._id !== created._id)]
         }
       }
       return created
