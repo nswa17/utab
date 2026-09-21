@@ -571,6 +571,12 @@ import {
   normalizeBallotPrefillPayload,
   type BallotPrefillPayload,
 } from '@/utils/ballot-prefill'
+import {
+  advanceWizardProgress,
+  canVisitWizardStep,
+  isWizardStepCompleted,
+  normalizeWizardStepIndex,
+} from '@/utils/ballot-wizard'
 
 const route = useRoute()
 const router = useRouter()
@@ -1674,15 +1680,18 @@ function clearCountdown(reset = true) {
 }
 
 function normalizeStepIndex(index: number) {
-  if (ballotSteps.value.length === 0) return 0
-  return Math.min(Math.max(index, 0), ballotSteps.value.length - 1)
+  return normalizeWizardStepIndex(index, ballotSteps.value.length)
 }
 
 function goToNextStep() {
   if (isLastStep.value || stepActionDisabled.value) return
-  const nextIndex = normalizeStepIndex(activeStepIndex.value + 1)
-  activeStepIndex.value = nextIndex
-  furthestStepIndex.value = Math.max(furthestStepIndex.value, nextIndex)
+  const next = advanceWizardProgress(
+    activeStepIndex.value,
+    furthestStepIndex.value,
+    ballotSteps.value.length
+  )
+  activeStepIndex.value = next.active
+  furthestStepIndex.value = next.furthest
 }
 
 function goToPreviousStep() {
@@ -1697,7 +1706,7 @@ function goToStep(index: number) {
 
 function canGoToStep(index: number) {
   if (submissions.loading || !scoreInputReady.value) return false
-  return index <= furthestStepIndex.value
+  return canVisitWizardStep(index, furthestStepIndex.value)
 }
 
 const previousActionLabel = computed(() => t('戻る'))
@@ -1715,7 +1724,7 @@ function goToNextAction() {
 function isStepCompleted(stepId: BallotStepId) {
   const index = ballotSteps.value.findIndex((step) => step.id === stepId)
   if (index === -1) return false
-  return index < furthestStepIndex.value
+  return isWizardStepCompleted(index, furthestStepIndex.value)
 }
 
 function validateBeforeSubmit() {
