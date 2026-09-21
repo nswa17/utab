@@ -117,6 +117,13 @@ export function normalizeCompileOptions(
         ? rankingOrder
         : [...fallback.ranking_priority.order]
   const includeLabels = dedupe(input?.include_labels ?? fallback.include_labels)
+  const fallbackTiePoints =
+    typeof fallback.tie_points === 'number' &&
+    Number.isFinite(fallback.tie_points) &&
+    fallback.tie_points >= 0 &&
+    fallback.tie_points <= 1
+      ? fallback.tie_points
+      : DEFAULT_COMPILE_OPTIONS.tie_points
   return {
     ranking_priority: {
       preset: rankingPreset,
@@ -132,7 +139,7 @@ export function normalizeCompileOptions(
       input.tie_points >= 0 &&
       input.tie_points <= 1
         ? input.tie_points
-        : fallback.tie_points,
+        : fallbackTiePoints,
     duplicate_normalization: {
       merge_policy:
         input?.duplicate_normalization?.merge_policy ??
