@@ -831,16 +831,28 @@ async function moveRoundReferences(
         .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
         .exec(),
       getResultModel(connection)
-        .updateMany({ tournamentId, round: move.from }, { $set: { round: move.to } })
+        .updateMany(
+          { tournamentId, round: move.from },
+          { $set: { round: move.to }, $inc: { __v: 1 } }
+        )
         .exec(),
       getRawTeamResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .updateMany(
+          { tournamentId, r: move.from },
+          { $set: { r: move.to }, $inc: { __v: 1 } }
+        )
         .exec(),
       getRawSpeakerResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .updateMany(
+          { tournamentId, r: move.from },
+          { $set: { r: move.to }, $inc: { __v: 1 } }
+        )
         .exec(),
       getRawAdjudicatorResultModel(connection)
-        .updateMany({ tournamentId, r: move.from }, { $set: { r: move.to } })
+        .updateMany(
+          { tournamentId, r: move.from },
+          { $set: { r: move.to }, $inc: { __v: 1 } }
+        )
         .exec(),
       getTeamModel(connection)
         .updateMany(
