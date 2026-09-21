@@ -83,7 +83,8 @@ async function copyTournamentCollections(
 
 export async function copyTournamentWithData(
   sourceTournamentId: string,
-  actorUserId?: string
+  actorUserId?: string,
+  targetTournamentId = new Types.ObjectId().toHexString()
 ): Promise<CopyTournamentResponse> {
   const sourceTournament = await TournamentModel.findById(sourceTournamentId).lean().exec()
   if (!sourceTournament) {
@@ -91,6 +92,7 @@ export async function copyTournamentWithData(
   }
 
   const createdTournament = await TournamentModel.create({
+    _id: new Types.ObjectId(targetTournamentId),
     name: copiedTournamentName((sourceTournament as any)?.name),
     style: Number((sourceTournament as any)?.style ?? 1),
     options: parseJsonClone((sourceTournament as any)?.options ?? {}),
@@ -103,7 +105,6 @@ export async function copyTournamentWithData(
       actorUserId || String((sourceTournament as any)?.createdBy ?? '').trim() || undefined,
   })
 
-  const targetTournamentId = String(createdTournament._id)
   try {
     const copiedCollections = await copyTournamentCollections(sourceTournamentId, targetTournamentId)
     const copiedDocuments = copiedCollections.reduce((sum, item) => sum + item.count, 0)
