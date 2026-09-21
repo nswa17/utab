@@ -1,10 +1,11 @@
 import type { RequestHandler } from 'express'
 import { TournamentMemberModel } from '../models/tournament-member.js'
+import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
 import { hashPassword } from '../services/hash.service.js'
 import {
-  acquireTournamentMembershipLease,
-  releaseTournamentMembershipLease,
+  acquireTournamentMembershipMutationLeases,
+  releaseTournamentMembershipMutationLeases,
 } from '../services/tournament-membership-guard.service.js'
 import { badRequest, isValidObjectId, notFound } from './shared/http-errors.js'
 
@@ -65,8 +66,11 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const membershipLease = await acquireTournamentMembershipLease(tournamentId, username)
-    if (!membershipLease) {
+    const membershipLeases = await acquireTournamentMembershipMutationLeases(
+      tournamentId,
+      username
+    )
+    if (!membershipLeases) {
       sendMembershipMutationConflict(res)
       return
     }
@@ -74,6 +78,11 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
     let responseStatus = 200
     let responseData: ReturnType<typeof sanitizeTournamentUserResponse>
     try {
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) {
+        notFound(res, 'Tournament not found')
+        return
+      }
       const existing = await UserModel.findOne({ username }).exec()
       if (!existing) {
         const passwordHash = await hashPassword(password)
@@ -157,7 +166,7 @@ export const addTournamentUser: RequestHandler = async (req, res, next) => {
         responseData = sanitizeTournamentUserResponse(saved.toJSON(), tournamentId, role)
       }
     } finally {
-      await releaseTournamentMembershipLease(membershipLease)
+      await releaseTournamentMembershipMutationLeases(membershipLeases)
     }
 
     res.status(responseStatus).json({ data: responseData!, errors: [] })
@@ -192,11 +201,11 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
       return
     }
 
-    const membershipLease = await acquireTournamentMembershipLease(
+    const membershipLeases = await acquireTournamentMembershipMutationLeases(
       tournamentId,
       String(user.username ?? '')
     )
-    if (!membershipLease) {
+    if (!membershipLeases) {
       sendMembershipMutationConflict(res)
       return
     }
@@ -204,6 +213,11 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
     let saved = user
     let membership: { role?: string } | null = null
     try {
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) {
+        notFound(res, 'Tournament not found')
+        return
+      }
       const refreshedUser = await UserModel.findOne({ _id: user._id }).exec()
       if (!refreshedUser) {
         notFound(res, 'User not found')
@@ -255,7 +269,7 @@ export const removeTournamentUser: RequestHandler = async (req, res, next) => {
         )
       }
     } finally {
-      await releaseTournamentMembershipLease(membershipLease)
+      await releaseTournamentMembershipMutationLeases(membershipLeases)
     }
 
     if (req.session?.userId && String(req.session.userId) === String(user._id)) {
