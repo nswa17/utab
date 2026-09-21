@@ -60,7 +60,9 @@ export const useSpeakersStore = defineStore('speakers', () => {
       if (created) {
         if (tournamentScope.isScopeCurrent(scopeToken)) {
           tournamentScope.invalidateFetches(payload.tournamentId)
-          speakers.value = [created, ...speakers.value.filter((item) => item._id !== created._id)]
+          if (!speakers.value.some((item) => item._id === created._id)) {
+            speakers.value = [created, ...speakers.value]
+          }
         }
       }
       return created
