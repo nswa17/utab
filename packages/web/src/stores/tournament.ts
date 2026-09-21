@@ -177,7 +177,7 @@ export const useTournamentStore = defineStore('tournament', () => {
             })
             merged.user_defined_data = mergedUserDefinedData
           }
-          return merged
+          return merged as Tournament
         })
       }
       return updated
