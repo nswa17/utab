@@ -1,8 +1,14 @@
 import type { RequestHandler } from 'express'
+import { Types } from 'mongoose'
 import { TournamentMemberModel } from '../models/tournament-member.js'
 import { TournamentModel } from '../models/tournament.js'
 import { UserModel } from '../models/user.js'
 import { dropTournamentDatabase } from '../services/tournament-db.service.js'
+import {
+  acquireTournamentMembershipLifecycleLease,
+  releaseTournamentMembershipLease,
+  type TournamentMembershipLease,
+} from '../services/tournament-membership-guard.service.js'
 import { copyTournamentWithData } from './copy-tournament.service.js'
 import { clearRoundSubmissions, fillRoundSubmissions } from './fill-round-submissions.service.js'
 import { fillTournamentSetupData } from './fill-setup.service.js'
@@ -101,12 +107,30 @@ export const clearRoundSubmissionsForRound: RequestHandler = async (req, res, ne
 
 export const copyTournament: RequestHandler = async (req, res, next) => {
   let copiedTournamentId = ''
+  let membershipLifecycleLease: TournamentMembershipLease | null = null
   try {
     const tournamentId = String(req.params.tournamentId ?? '').trim()
     const actorUserId = req.session?.userId ? String(req.session.userId) : undefined
-    const data = await copyTournamentWithData(tournamentId, actorUserId)
+    const targetTournamentId = new Types.ObjectId().toHexString()
+    membershipLifecycleLease = await acquireTournamentMembershipLifecycleLease(targetTournamentId)
+    if (!membershipLifecycleLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Tournament lifecycle is busy; retry copy' }],
+      })
+      return
+    }
+
+    const data = await copyTournamentWithData(tournamentId, actorUserId, targetTournamentId)
     copiedTournamentId = data.tournamentId
     await attachOrganizerMembership(req.session as any, data.tournamentId)
+
+    const released = await releaseTournamentMembershipLease(membershipLifecycleLease)
+    membershipLifecycleLease = null
+    if (!released) {
+      throw new Error('Failed to release tournament membership lifecycle lease after copy')
+    }
+
     res.status(201).json({ data, errors: [] })
   } catch (err) {
     if (err instanceof DevToolsServiceError) {
@@ -140,5 +164,9 @@ export const copyTournament: RequestHandler = async (req, res, next) => {
       }
     }
     next(err)
+  } finally {
+    if (membershipLifecycleLease) {
+      await releaseTournamentMembershipLease(membershipLifecycleLease)
+    }
   }
 }
