@@ -1364,14 +1364,16 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
       .filter((change): change is NonNullable<typeof change> => change !== null)
 
       if (changes.length > 0) {
-        await RoundModel.bulkWrite(
-          changes.map((change) => ({
-            updateOne: {
-              filter: { _id: change.id, tournamentId, round: change.previousRound },
-              update: { $set: { round: change.temporaryRound } },
-            },
-          })),
-          { ordered: true }
+        await runIdempotentRoundMutationWithRetry('bulk round renumber staging', () =>
+          RoundModel.bulkWrite(
+            changes.map((change) => ({
+              updateOne: {
+                filter: { _id: change.id, tournamentId, round: change.previousRound },
+                update: { $set: { round: change.temporaryRound } },
+              },
+            })),
+            { ordered: true }
+          )
         )
         await moveRoundReferences(
           connection,
@@ -1406,7 +1408,9 @@ export const bulkUpdateRounds: RequestHandler = async (req, res, next) => {
           },
         }
       })
-      await RoundModel.bulkWrite(ops, { ordered: true })
+      await runIdempotentRoundMutationWithRetry('bulk round final update', () =>
+        RoundModel.bulkWrite(ops, { ordered: true })
+      )
       if (changes.length > 0) {
         await rewriteStoredRoundReferences(
           connection,
@@ -1467,7 +1471,9 @@ export const bulkDeleteRounds: RequestHandler = async (req, res, next) => {
         .map((item: any) => Number(item?.round))
         .filter((value) => Number.isInteger(value) && value >= 1)
       await deleteRoundDependencies(connection, tournamentId, deletedRounds)
-      const result = await RoundModel.deleteMany(filter).exec()
+      const result = await runIdempotentRoundMutationWithRetry('bulk round deletion', () =>
+        RoundModel.deleteMany(filter).exec()
+      )
       if (deletedRounds.length > 0) {
         await syncEntityRoundDetailsForDelete(tournamentId, deletedRounds)
         await rewriteStoredRoundReferences(connection, tournamentId, [], deletedRounds)
@@ -1566,13 +1572,17 @@ export const updateRound: RequestHandler = async (req, res, next) => {
           { from: temporaryRound, to: nextRound },
         ])
       }
-      const updated = await RoundModel.findOneAndUpdate(
-      { _id: id, tournamentId },
-      { $set: update },
-      { new: true }
-    )
-      .lean()
-      .exec()
+      const updated = await runIdempotentRoundMutationWithRetry(
+        'round final update',
+        () =>
+          RoundModel.findOneAndUpdate(
+            { _id: id, tournamentId },
+            { $set: update },
+            { new: true }
+          )
+            .lean()
+            .exec()
+      )
     if (!updated) {
       notFound(res, 'Round not found')
       return
@@ -1865,7 +1875,10 @@ export const deleteRound: RequestHandler = async (req, res, next) => {
       }
       const deletedRound = Number((existing as any)?.round)
       await deleteRoundDependencies(connection, tournamentId, [deletedRound])
-      const deleted = await RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+      const deleted = await runIdempotentRoundMutationWithRetry(
+        'round deletion',
+        () => RoundModel.findOneAndDelete({ _id: id, tournamentId }).lean().exec()
+      )
       if (!deleted) {
         notFound(res, 'Round not found')
         return
