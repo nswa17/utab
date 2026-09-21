@@ -2509,7 +2509,30 @@ describe('Server integration', () => {
       expect(String(copyRes.body.errors?.[0]?.message ?? '')).toContain(item.expectedMessage)
       expect(await TournamentModel.countDocuments({ name: `${sourceName} (Copy)` }).exec()).toBe(0)
     }
+
+    const invalidRootName = 'DevTools Boundary Copy root'
+    const invalidRootTournament = await organizer
+      .post('/api/tournaments')
+      .send({ name: invalidRootName, style: 1, options: {} })
+    expect(invalidRootTournament.status).toBe(201)
+    const invalidRootTournamentId = String(invalidRootTournament.body.data._id)
+    await TournamentModel.collection.updateOne(
+      { _id: invalidRootTournament.body.data._id },
+      { $set: { total_round_num: 0 } }
+    )
+
+    const invalidRootCopy = await organizer
+      .post(`/api/dev-tools/tournaments/${invalidRootTournamentId}/copy-tournament`)
+      .send({})
+    expect(invalidRootCopy.status).toBe(400)
+    expect(String(invalidRootCopy.body.errors?.[0]?.message ?? '')).toContain(
+      'invalid total_round_num'
+    )
+    expect(
+      await TournamentModel.countDocuments({ name: `${invalidRootName} (Copy)` }).exec()
+    ).toBe(0)
   })
+
   it('clears only selected round submissions', async () => {
     const organizer = request.agent(app)
     const registerRes = await organizer
