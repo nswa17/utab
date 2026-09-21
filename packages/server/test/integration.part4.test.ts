@@ -2463,6 +2463,16 @@ describe('Server integration', () => {
         expectedMessage: 'expected a finite number in [0, 1]',
       },
       {
+        suffix: 'tie-points',
+        collection: 'compiledresults',
+        document: {
+          payload: {
+            compile_options: { tie_points: 2 },
+          },
+        },
+        expectedMessage: 'expected a finite number in [0, 1]',
+      },
+      {
         suffix: 'details',
         collection: 'teams',
         document: {
