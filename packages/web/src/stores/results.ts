@@ -65,7 +65,7 @@ export const useResultsStore = defineStore('results', () => {
       const created = res.data?.data
       if (created && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
-        results.value = [created, ...results.value]
+        results.value = [created, ...results.value.filter((item) => item._id !== created._id)]
       }
       return created
     } catch (err: any) {
