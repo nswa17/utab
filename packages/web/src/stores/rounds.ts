@@ -99,7 +99,10 @@ export const useRoundsStore = defineStore('rounds', () => {
       const created = res.data?.data
       if (created && tournamentScope.isScopeCurrent(scopeToken)) {
         advanceFetchSequence()
-        rounds.value = [...rounds.value, created].sort((a, b) => a.round - b.round)
+        rounds.value = [
+          ...rounds.value.filter((item) => item._id !== created._id),
+          created,
+        ].sort((a, b) => a.round - b.round)
       }
       return created
     } catch (err: any) {
