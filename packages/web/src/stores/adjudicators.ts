@@ -61,7 +61,9 @@ export const useAdjudicatorsStore = defineStore('adjudicators', () => {
       if (created) {
         if (tournamentScope.isScopeCurrent(scopeToken)) {
           tournamentScope.invalidateFetches(payload.tournamentId)
-          adjudicators.value = [created, ...adjudicators.value.filter((item) => item._id !== created._id)]
+          if (!adjudicators.value.some((item) => item._id === created._id)) {
+            adjudicators.value = [created, ...adjudicators.value]
+          }
         }
       }
       return created
