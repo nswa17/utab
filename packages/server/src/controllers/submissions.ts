@@ -58,6 +58,11 @@ function isDuplicateSubmissionKeyError(error: unknown): boolean {
   return Boolean((error as { code?: unknown } | null)?.code === 11000)
 }
 
+function readSubmissionVersion(submission: unknown): number | null {
+  const version = (submission as { __v?: unknown } | null)?.__v
+  return typeof version === 'number' && Number.isInteger(version) ? version : null
+}
+
 function sumScores(scores: number[]): number {
   return scores.reduce((acc, value) => acc + (Number.isFinite(value) ? value : 0), 0)
 }
@@ -1505,15 +1510,20 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       unsetPayload.dedupeKey = 1
     }
 
+    const existingVersion = readSubmissionVersion(existing)
+    const versionFilter =
+      existingVersion === null ? { __v: { $exists: false } } : { __v: existingVersion }
     const updated = await SubmissionModel.findOneAndUpdate(
-      { _id: id, tournamentId },
+      { _id: id, tournamentId, ...versionFilter },
       Object.keys(unsetPayload).length > 0
         ? {
             $set: setPayload,
             $unset: unsetPayload,
+            $inc: { __v: 1 },
           }
         : {
             $set: setPayload,
+            $inc: { __v: 1 },
           },
       { new: true }
     )
@@ -1521,7 +1531,10 @@ export const updateSubmission: RequestHandler = async (req, res, next) => {
       .exec()
 
     if (!updated) {
-      notFound(res, 'Submission not found')
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Submission changed or deleted' }],
+      })
       return
     }
 
