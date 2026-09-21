@@ -1013,6 +1013,95 @@ describe('Server integration', () => {
     expect(retryAdd.status).toBe(200)
   })
 
+  it('serializes tournament deletion against concurrent membership additions', async () => {
+    const owner = request.agent(app)
+    expect(
+      (
+        await owner
+          .post('/api/auth/register')
+          .send({ username: 'membership-delete-owner', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await owner
+          .post('/api/auth/login')
+          .send({ username: 'membership-delete-owner', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const targetRegister = await request(app).post('/api/auth/register').send({
+      username: 'membership-delete-target',
+      password: 'password123',
+      role: 'speaker',
+    })
+    expect(targetRegister.status).toBe(201)
+    const targetUserId = String(targetRegister.body.data.userId)
+
+    const tournamentRes = await owner.post('/api/tournaments').send({
+      name: 'Membership Delete Race Open',
+      style: 1,
+      options: {},
+    })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const originalFind = TournamentMemberModel.find.bind(TournamentMemberModel)
+    let intercepted = false
+    let signalSnapshotReady: (() => void) | null = null
+    const snapshotReady = new Promise<void>((resolve) => {
+      signalSnapshotReady = resolve
+    })
+    let releaseSnapshot: (() => void) | null = null
+    const snapshotReleased = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve
+    })
+
+    TournamentMemberModel.find = ((...args: any[]) => {
+      const query = originalFind(...args)
+      const filter = args[0] as Record<string, unknown> | undefined
+      if (intercepted || String(filter?.tournamentId ?? '') !== tournamentId) {
+        return query
+      }
+      intercepted = true
+      const originalExec = query.exec.bind(query)
+      query.exec = async (...execArgs: any[]) => {
+        signalSnapshotReady?.()
+        await snapshotReleased
+        return originalExec(...execArgs)
+      }
+      return query
+    }) as typeof TournamentMemberModel.find
+
+    try {
+      const deletePromise = owner
+        .delete(`/api/tournaments/${tournamentId}`)
+        .then((response) => response)
+
+      await snapshotReady
+
+      const blockedAdd = await owner.post(`/api/tournaments/${tournamentId}/users`).send({
+        username: 'membership-delete-target',
+        password: 'ignored-password',
+        role: 'speaker',
+      })
+      expect(blockedAdd.status).toBe(409)
+
+      releaseSnapshot?.()
+      const deleted = await deletePromise
+      expect(deleted.status).toBe(200)
+
+      const targetAfter = await UserModel.findById(targetUserId).lean().exec()
+      expect((targetAfter?.tournaments ?? []).map(String)).not.toContain(tournamentId)
+      expect(
+        await TournamentMemberModel.exists({ tournamentId, userId: targetUserId }).exec()
+      ).toBeNull()
+    } finally {
+      releaseSnapshot?.()
+      TournamentMemberModel.find = originalFind as typeof TournamentMemberModel.find
+    }
+  })
+
   it('revokes organizer admin access immediately when membership is removed in another session', async () => {
     const owner = request.agent(app)
     const ownerRegisterRes = await owner
