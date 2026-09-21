@@ -157,8 +157,14 @@ For every retarget/reconciliation:
 - run focused lifecycle/concurrency tests,
 - do not merge a red or stale head.
 
+## CI receipts
+
+- PR #37 repaired head `7ec1333c712b72f3c3df1e0361f29fa32bba99de`: CI run `35615716557` succeeded.
+- PR #39 repaired head `cb1ce63e5bd9330301ad367c176911ff4a21b748`: CI run `35616884295` succeeded.
+- cumulative Phase 11 code head `ed51ddc8339591c445b3cbc5d0ab971ed1c75da1`: CI run `35616882442` succeeded.
+
 ## Phase 11 release assessment
 
-Provided the corrected source heads (#37 and #39) and this cumulative Phase 11 head are green, there is no remaining identified **code blocker** to starting Phase 12.
+The corrected source heads and cumulative code stack are green. There is no remaining identified **code blocker** to starting Phase 12.
 
 Production release still retains R1/R2 and the explicit P1/P2 product decisions above.
