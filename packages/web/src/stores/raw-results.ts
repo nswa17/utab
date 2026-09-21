@@ -158,6 +158,7 @@ export const useRawResultsStore = defineStore('raw-results', () => {
   async function deleteRawResults(label: RawLabel, params: Record<string, any>) {
     const tournamentId = String(params.tournamentId ?? '')
     if (tournamentId) tournamentScope.claimIfEmpty(tournamentId)
+    const scopeToken = tournamentScope.captureScope(tournamentId)
     beginRequest()
     if (!tournamentId || tournamentScope.isScopeCurrent(scopeToken)) {
       error.value = null
