@@ -160,15 +160,16 @@ describe('AdminRoundAllocation', () => {
     expect(source).not.toContain('Team A and Team B')
   })
 
-  it('lets an assigned unavailable adjudicator be removed to waiting', () => {
+  it('lets any assigned unavailable entity be moved or removed from the saved draw', () => {
     const source = load('src/views/admin/round/AdminRoundAllocation.vue')
-    expect(source).toContain(
-      "if (kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)) return true"
-    )
-    expect(source).toContain(
-      "!(kind === 'adjudicator' && isEntityAssignedInAllocation(kind, payload.id))"
-    )
+    expect(source).toContain('if (isEntityAssignedInAllocation(kind, normalizedId)) return true')
+    expect(source).toContain('!isEntityAssignedInAllocation(kind, payload.id)')
+    expect(source).toContain("if (kind === 'team') removeTeamFromAllocation(payload.id)")
     expect(source).toContain("if (kind === 'adjudicator') removeAdjudicatorFromAllocation(payload.id)")
+    expect(source).toContain("if (kind === 'venue') removeVenueFromAllocation(payload.id)")
+    expect(source).not.toContain(
+      "kind === 'adjudicator' && isEntityAssignedInAllocation(kind, normalizedId)"
+    )
   })
 
   it('does not continue reference compilation after the route context changes', () => {
