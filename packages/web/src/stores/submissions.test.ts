@@ -469,4 +469,42 @@ describe('submissions store', () => {
     expect(store.error).toBe('current tournament submission error')
   })
 
+  it('does not revive an old admin response after A -> B -> A through participant fetches', async () => {
+    const store = useSubmissionsStore()
+    const oldAdmin = createDeferred<any>()
+    mockedApi.get
+      .mockImplementationOnce(() => oldAdmin.promise)
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: 'submission-b', tournamentId: 'tournament-b', type: 'feedback', round: 1, payload: {} }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: 'submission-a-current', tournamentId: 'tournament-a', type: 'feedback', round: 1, payload: {} }],
+        },
+      })
+
+    const oldPromise = store.fetchSubmissions({ tournamentId: 'tournament-a' })
+    await store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-b',
+      submittedEntityId: 'entity-b',
+    })
+    await store.fetchParticipantSubmissions({
+      tournamentId: 'tournament-a',
+      submittedEntityId: 'entity-a',
+    })
+
+    oldAdmin.resolve({
+      data: {
+        data: [{ _id: 'submission-a-old', tournamentId: 'tournament-a', type: 'ballot', round: 1, payload: {} }],
+      },
+    })
+
+    expect(await oldPromise).toEqual([])
+    expect(store.submissions).toEqual([
+      { _id: 'submission-a-current', tournamentId: 'tournament-a', type: 'feedback', round: 1, payload: {} },
+    ] as any)
+  })
+
 })
