@@ -62,6 +62,8 @@ async function ensureLegacyMemberships(user: {
           .exec()
         if (!currentUser) return
         if (!normalizeTournamentIds(currentUser.tournaments).includes(tournamentId)) return
+        const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+        if (!tournamentExists) return
 
         const role = toMemberRole(String(currentUser.role ?? ''))
         if (!role) return
@@ -108,6 +110,8 @@ async function ensureCreatorMemberships(user: {
     try {
       const currentUser = await UserModel.findById(userId).select({ role: 1 }).lean().exec()
       if (!currentUser) continue
+      const tournamentExists = await TournamentModel.exists({ _id: tournamentId }).exec()
+      if (!tournamentExists) continue
       const currentRole = String(currentUser.role ?? '')
       if (currentRole !== 'organizer' && currentRole !== 'superuser') continue
 
