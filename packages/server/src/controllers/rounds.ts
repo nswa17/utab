@@ -21,6 +21,10 @@ import {
   type EntityNamespaceLease,
 } from '../services/entity-namespace-guard.service.js'
 import {
+  acquireRoundTopologyLease,
+  releaseRoundTopologyLease,
+} from '../services/round-topology-guard.service.js'
+import {
   DEFAULT_COMPILE_OPTIONS,
   normalizeCompileOptions,
   type CompileOptionsInput,
@@ -111,6 +115,46 @@ function sendEntityNamespaceBusy(res: Parameters<RequestHandler>[1]): void {
   res.status(409).json({
     data: null,
     errors: [{ name: 'Conflict', message: 'Tournament entities are being modified; retry round change' }],
+  })
+}
+
+type RoundTopologyMutationLeases = {
+  topology: EntityNamespaceLease
+  entities: EntityNamespaceLease[]
+}
+
+async function acquireRoundTopologyMutationLeases(
+  connection: Connection,
+  tournamentId: string
+): Promise<RoundTopologyMutationLeases | null> {
+  const topology = await acquireRoundTopologyLease(connection, tournamentId)
+  if (!topology) return null
+
+  const entities = await acquireRoundEntityNamespaceLeases(connection, tournamentId)
+  if (entities) return { topology, entities }
+
+  const topologyReleased = await releaseRoundTopologyLease(connection, topology)
+  if (!topologyReleased) {
+    throw new Error('Failed to release round topology lease after entity namespace conflict')
+  }
+  return null
+}
+
+async function releaseRoundTopologyMutationLeases(
+  connection: Connection,
+  leases: RoundTopologyMutationLeases
+): Promise<void> {
+  await releaseRoundEntityNamespaceLeases(connection, leases.entities)
+  const topologyReleased = await releaseRoundTopologyLease(connection, leases.topology)
+  if (!topologyReleased) {
+    throw new Error('Failed to release round topology lease')
+  }
+}
+
+function sendRoundTopologyBusy(res: Parameters<RequestHandler>[1]): void {
+  res.status(409).json({
+    data: null,
+    errors: [{ name: 'Conflict', message: 'Round topology is being modified; retry' }],
   })
 }
 
