@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   membershipUpdate: vi.fn(),
   getTournamentConnection: vi.fn(),
   dropTournamentDatabase: vi.fn(),
+  acquireLifecycleLease: vi.fn(),
+  releaseMembershipLease: vi.fn(),
 }))
 
 vi.mock('../src/middleware/auth.js', () => ({
@@ -66,6 +68,11 @@ vi.mock('../src/models/user.js', () => ({
 vi.mock('../src/services/tournament-db.service.js', () => ({
   getTournamentConnection: mocks.getTournamentConnection,
   dropTournamentDatabase: mocks.dropTournamentDatabase,
+}))
+
+vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
+  acquireTournamentMembershipLifecycleLease: mocks.acquireLifecycleLease,
+  releaseTournamentMembershipLease: mocks.releaseMembershipLease,
 }))
 
 import { importTournamentBundle } from '../src/controllers/tournament-import.js'
@@ -150,6 +157,8 @@ beforeEach(() => {
   mocks.membershipUpdate.mockReturnValue(execResult({ upsertedCount: 1 }))
   mocks.getTournamentConnection.mockResolvedValue({ db: null })
   mocks.dropTournamentDatabase.mockResolvedValue(undefined)
+  mocks.acquireLifecycleLease.mockResolvedValue({ key: 'test:lifecycle', epoch: 1 })
+  mocks.releaseMembershipLease.mockResolvedValue(true)
 })
 
 describe('importTournamentBundle rollback', () => {
@@ -168,13 +177,16 @@ describe('importTournamentBundle rollback', () => {
 
     await importTournamentBundle(req as never, res as never, next)
 
-    expect(mocks.deleteTournament).toHaveBeenCalledWith({ _id: tournamentId })
-    expect(mocks.deleteMemberships).toHaveBeenCalledWith({ tournamentId })
+    const createPayload = mocks.createTournament.mock.calls[0]?.[0] as { _id?: unknown }
+    const targetTournamentId = String(createPayload?._id ?? '')
+    expect(targetTournamentId).toMatch(/^[a-f0-9]{24}$/)
+    expect(mocks.deleteTournament).toHaveBeenCalledWith({ _id: targetTournamentId })
+    expect(mocks.deleteMemberships).toHaveBeenCalledWith({ tournamentId: targetTournamentId })
     expect(mocks.cleanupUser).toHaveBeenCalledWith(
       { _id: 'user-1' },
-      { $pull: { tournaments: tournamentId } }
+      { $pull: { tournaments: targetTournamentId } }
     )
-    expect(mocks.dropTournamentDatabase).toHaveBeenCalledWith(tournamentId)
+    expect(mocks.dropTournamentDatabase).toHaveBeenCalledWith(targetTournamentId)
     expect(res.json).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
 
@@ -215,11 +227,14 @@ describe('importTournamentBundle rollback', () => {
     userWrite.resolve({ modifiedCount: 1 })
     await importPromise
 
+    const createPayload = mocks.createTournament.mock.calls[0]?.[0] as { _id?: unknown }
+    const targetTournamentId = String(createPayload?._id ?? '')
+    expect(targetTournamentId).toMatch(/^[a-f0-9]{24}$/)
     expect(mocks.cleanupUser).toHaveBeenCalledWith(
       { _id: 'user-1' },
-      { $pull: { tournaments: tournamentId } }
+      { $pull: { tournaments: targetTournamentId } }
     )
-    expect(mocks.deleteMemberships).toHaveBeenCalledWith({ tournamentId })
+    expect(mocks.deleteMemberships).toHaveBeenCalledWith({ tournamentId: targetTournamentId })
     expect(next).toHaveBeenCalledOnce()
     expect(next.mock.calls[0]?.[0]).toBeInstanceOf(AggregateError)
   })
