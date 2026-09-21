@@ -11,7 +11,7 @@ const venueDetailSchema = new Schema(
     available: { type: Boolean, default: true },
     priority: { type: Number, default: 1 },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const venueTemplateSchema = new Schema(
@@ -19,7 +19,7 @@ const venueTemplateSchema = new Schema(
     available: { type: Boolean, default: true },
     priority: { type: Number, default: 1 },
   },
-  { _id: false }
+  { _id: false, strict: false }
 )
 
 const venueSchema = new Schema(
