@@ -55,7 +55,14 @@ describe('UserRoundBallotEntry winner selection rules', () => {
     expect(source).toContain('function goToStep(index: number) {')
     expect(source).toContain('function canGoToStep(index: number) {')
     expect(source).toContain(':disabled="!canGoToStep(index)"')
-    expect(source).toContain('return index <= activeStepIndex.value')
+    expect(source).toContain('const furthestStepIndex = ref(0)')
+    expect(source).toContain('advanceWizardProgress(')
+    expect(source).toContain('canVisitWizardStep(index, furthestStepIndex.value)')
+    expect(source).toContain('isWizardStepCompleted(index, furthestStepIndex.value)')
+    expect(source).toContain('furthestStepIndex.value = 0')
+    expect(source).toContain('watch([tournamentId, round], () => {')
+    expect(source).toContain('confirmOpen.value = false')
+    expect(source).toContain('successOpen.value = false')
     expect(source).toContain('@click="goToStep(index)"')
     expect(source).toContain(":aria-current=\"index === activeStepIndex ? 'step' : undefined\"")
     expect(source).toContain('function goToNextAction() {')
@@ -162,4 +169,14 @@ describe('UserRoundBallotEntry winner selection rules', () => {
       'Enter scores and awards for every speaker on this screen.'
     )
   })
+  it('clamps both active and furthest wizard progress when dynamic steps change', () => {
+    const source = load('src/views/user/participant/round/ballot/UserRoundBallotEntry.vue')
+    expect(source).toContain(
+      'activeStepIndex.value = normalizeStepIndex(activeStepIndex.value)'
+    )
+    expect(source).toContain(
+      'furthestStepIndex.value = normalizeStepIndex(furthestStepIndex.value)'
+    )
+  })
+
 })
