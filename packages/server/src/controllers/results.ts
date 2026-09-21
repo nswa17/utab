@@ -4,6 +4,10 @@ import { getResultModel } from '../models/result.js'
 import { getRoundModel } from '../models/round.js'
 import { sanitizeResultForPublic } from '../services/response-sanitizer.js'
 import { getTournamentConnection } from '../services/tournament-db.service.js'
+import {
+  readRoundTopologyState,
+  roundTopologyChanged,
+} from '../services/round-topology-guard.service.js'
 import { notFound } from './shared/http-errors.js'
 import { ensureObjectId, ensureTournamentId } from './shared/request-validators.js'
 
@@ -52,6 +56,14 @@ export const createResult: RequestHandler = async (req, res, next) => {
     if (!ensureTournamentId(res, tournamentId)) return
 
     const connection = await getTournamentConnection(tournamentId)
+    const topologyBefore = await readRoundTopologyState(connection, tournamentId)
+    if (topologyBefore.active) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round topology is being modified; retry' }],
+      })
+      return
+    }
     const ResultModel = getResultModel(connection)
     const roundExists = await getRoundModel(connection).exists({ tournamentId, round }).exec()
     if (!roundExists) {
@@ -64,6 +76,22 @@ export const createResult: RequestHandler = async (req, res, next) => {
       payload,
       createdBy: req.session.userId,
     })
+    const topologyAfter = await readRoundTopologyState(connection, tournamentId)
+    if (roundTopologyChanged(topologyBefore, topologyAfter)) {
+      try {
+        await ResultModel.deleteOne({ _id: created._id, tournamentId }).exec()
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [new Error('Round topology changed during result creation'), rollbackError],
+          'Failed to roll back result created during round topology mutation'
+        )
+      }
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Round topology changed; retry result creation' }],
+      })
+      return
+    }
     res.status(201).json({ data: created.toJSON(), errors: [] })
   } catch (err) {
     next(err)
