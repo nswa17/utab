@@ -223,4 +223,43 @@ describe('raw results store', () => {
     ] as any)
   })
 
+  it('does not revive an old label response after A -> B -> A through another label', async () => {
+    const store = useRawResultsStore()
+    const oldTeams = createDeferred<any>()
+    mockedApi.get
+      .mockImplementationOnce(() => oldTeams.promise)
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'speaker-b', tournamentId: 'tournament-b', r: 1 }] },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [{ _id: 'speaker-a-current', tournamentId: 'tournament-a', r: 1 }] },
+      })
+
+    const oldPromise = store.fetchRawResults({
+      tournamentId: 'tournament-a',
+      label: 'teams',
+      round: 1,
+    })
+    await store.fetchRawResults({
+      tournamentId: 'tournament-b',
+      label: 'speakers',
+      round: 1,
+    })
+    await store.fetchRawResults({
+      tournamentId: 'tournament-a',
+      label: 'speakers',
+      round: 1,
+    })
+
+    oldTeams.resolve({
+      data: { data: [{ _id: 'team-a-old', tournamentId: 'tournament-a', r: 1 }] },
+    })
+
+    expect(await oldPromise).toEqual([])
+    expect(store.teamResults).toEqual([])
+    expect(store.speakerResults).toEqual([
+      { _id: 'speaker-a-current', tournamentId: 'tournament-a', r: 1 },
+    ] as any)
+  })
+
 })
