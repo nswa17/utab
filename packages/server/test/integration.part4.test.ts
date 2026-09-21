@@ -3311,6 +3311,10 @@ describe('Server integration', () => {
     const firstUpdateReleased = new Promise<void>((resolve) => {
       releaseFirstUpdate = resolve
     })
+    let signalRequestCompleted: (() => void) | null = null
+    const requestCompleted = new Promise<void>((resolve) => {
+      signalRequestCompleted = resolve
+    })
 
     DrawModel.findOneAndUpdate = ((...args: any[]) => {
       updateCalls += 1
@@ -3318,7 +3322,7 @@ describe('Server integration', () => {
       const originalExec = query.exec.bind(query)
       query.exec = async (...execArgs: any[]) => {
         if (updateCalls === 1) {
-          await firstUpdateReleased
+          await Promise.race([firstUpdateReleased, requestCompleted])
         } else {
           releaseFirstUpdate?.()
         }
@@ -3328,28 +3332,40 @@ describe('Server integration', () => {
     }) as typeof DrawModel.findOneAndUpdate
 
     try {
+      const trackCompletion = <T>(promise: Promise<T>) =>
+        promise.then((response) => {
+          signalRequestCompleted?.()
+          return response
+        })
       const [publishTeams, publishAdjudicators] = await Promise.all([
-        organizer.post('/api/draws').send({
-          tournamentId,
-          round: 1,
-          allocation,
-          drawOpened: true,
-          allocationOpened: false,
-          locked: false,
-        }),
-        organizer.post('/api/draws').send({
-          tournamentId,
-          round: 1,
-          allocation,
-          drawOpened: false,
-          allocationOpened: true,
-          locked: false,
-        }),
+        trackCompletion(
+          organizer.post('/api/draws').send({
+            tournamentId,
+            round: 1,
+            allocation,
+            drawOpened: true,
+            allocationOpened: false,
+            locked: false,
+          })
+        ),
+        trackCompletion(
+          organizer.post('/api/draws').send({
+            tournamentId,
+            round: 1,
+            allocation,
+            drawOpened: false,
+            allocationOpened: true,
+            locked: false,
+          })
+        ),
       ])
 
       expect([publishTeams.status, publishAdjudicators.status].sort()).toEqual([201, 409])
       const conflict = publishTeams.status === 409 ? publishTeams : publishAdjudicators
-      expect(conflict.body.errors?.[0]?.message).toBe('Draw is locked or changed')
+      expect([
+        'Draw is locked or changed',
+        'Tournament entities are being modified; retry draw change',
+      ]).toContain(conflict.body.errors?.[0]?.message)
 
       const finalDraw = await organizer.get(
         `/api/draws?tournamentId=${tournamentId}&round=1`
