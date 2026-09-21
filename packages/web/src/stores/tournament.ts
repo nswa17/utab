@@ -104,10 +104,9 @@ export const useTournamentStore = defineStore('tournament', () => {
       const created = res.data?.data
       if (created) {
         advanceListSequence()
-        tournaments.value = [
-          created,
-          ...tournaments.value.filter((item) => item._id !== created._id),
-        ]
+        if (!tournaments.value.some((item) => item._id === created._id)) {
+          tournaments.value = [created, ...tournaments.value]
+        }
         // Keep organizer membership in sync so the new tournament appears immediately
         const auth = useAuthStore()
         const hasAccess = auth.tournaments.includes(created._id)
