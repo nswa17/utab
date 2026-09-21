@@ -2730,6 +2730,72 @@ describe('Server integration', () => {
     expect(unsafePatch.status).toBe(400)
   })
 
+  it('serializes round detail synchronization with entity CRUD namespace leases', async () => {
+    const organizer = request.agent(app)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/register')
+          .send({ username: 'round-entity-lease-user', password: 'password123', role: 'organizer' })
+      ).status
+    ).toBe(201)
+    expect(
+      (
+        await organizer
+          .post('/api/auth/login')
+          .send({ username: 'round-entity-lease-user', password: 'password123' })
+      ).status
+    ).toBe(200)
+
+    const tournamentRes = await organizer
+      .post('/api/tournaments')
+      .send({ name: 'Round Entity Lease Open', style: 1, options: {} })
+    expect(tournamentRes.status).toBe(201)
+    const tournamentId = String(tournamentRes.body.data._id)
+
+    const teamRes = await organizer.post('/api/teams').send({
+      tournamentId,
+      name: 'Round Entity Lease Team',
+    })
+    expect(teamRes.status).toBe(201)
+    const teamId = String(teamRes.body.data._id)
+
+    const { getTournamentConnection } = await import('../src/services/tournament-db.service.js')
+    const {
+      acquireEntityNamespaceLease,
+      releaseEntityNamespaceLease,
+    } = await import('../src/services/entity-namespace-guard.service.js')
+    const connection = await getTournamentConnection(tournamentId)
+    const lease = await acquireEntityNamespaceLease(connection, tournamentId, 'teams')
+    expect(lease).toBeTruthy()
+    if (!lease) throw new Error('expected teams namespace lease')
+
+    try {
+      const blockedRound = await organizer.post('/api/rounds').send({
+        tournamentId,
+        round: 1,
+        name: 'Blocked Round',
+      })
+      expect(blockedRound.status).toBe(409)
+      expect(blockedRound.body.errors?.[0]?.message).toContain('entities are being modified')
+    } finally {
+      expect(await releaseEntityNamespaceLease(connection, lease)).toBe(true)
+    }
+
+    const roundRes = await organizer.post('/api/rounds').send({
+      tournamentId,
+      round: 1,
+      name: 'Round 1',
+    })
+    expect(roundRes.status).toBe(201)
+
+    const teamsRes = await organizer.get(`/api/teams?tournamentId=${tournamentId}`)
+    expect(teamsRes.status).toBe(200)
+    const storedTeam = teamsRes.body.data.find((team: any) => String(team._id) === teamId)
+    expect(storedTeam).toBeTruthy()
+    expect(storedTeam.details.some((detail: any) => Number(detail?.r) === 1)).toBe(true)
+  })
+
   it('keeps auth endpoints responsive under repeated attempts in test mode', async () => {
     const statuses: number[] = []
     const agent = request.agent(app)
