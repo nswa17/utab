@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   deleteMembers: vi.fn(),
   restoreMembers: vi.fn(),
   dropTournamentDatabase: vi.fn(),
+  acquireMembershipLifecycle: vi.fn(),
+  releaseMembershipLease: vi.fn(),
 }))
 
 vi.mock('../src/models/tournament.js', () => ({
@@ -37,6 +39,11 @@ vi.mock('../src/models/tournament-member.js', () => ({
 
 vi.mock('../src/services/tournament-db.service.js', () => ({
   dropTournamentDatabase: mocks.dropTournamentDatabase,
+}))
+
+vi.mock('../src/services/tournament-membership-guard.service.js', () => ({
+  acquireTournamentMembershipLifecycleLease: mocks.acquireMembershipLifecycle,
+  releaseTournamentMembershipLease: mocks.releaseMembershipLease,
 }))
 
 import { deleteTournament } from '../src/controllers/tournaments.js'
@@ -87,9 +94,30 @@ beforeEach(() => {
   mocks.deleteMembers.mockReturnValue(writeResult({ deletedCount: 1 }))
   mocks.restoreMembers.mockResolvedValue({ modifiedCount: 1 })
   mocks.dropTournamentDatabase.mockResolvedValue(undefined)
+  mocks.acquireMembershipLifecycle.mockResolvedValue({ key: 'lifecycle', epoch: 1 })
+  mocks.releaseMembershipLease.mockResolvedValue(true)
 })
 
 describe('deleteTournament', () => {
+  it('returns conflict when a membership mutation owns the tournament lifecycle lease', async () => {
+    mocks.acquireMembershipLifecycle.mockResolvedValueOnce(null)
+    const req = {
+      params: { id: tournamentId },
+      session: { tournaments: [tournamentId] },
+    }
+    const res = createResponse()
+    const next = vi.fn()
+
+    await deleteTournament(req as never, res as never, next)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(mocks.findMembers).not.toHaveBeenCalled()
+    expect(mocks.deleteOne).not.toHaveBeenCalled()
+    expect(mocks.dropTournamentDatabase).not.toHaveBeenCalled()
+    expect(mocks.releaseMembershipLease).not.toHaveBeenCalled()
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it('restores all central metadata when database deletion fails', async () => {
     const dropError = new Error('drop failed')
     mocks.dropTournamentDatabase.mockRejectedValueOnce(dropError)
@@ -112,6 +140,7 @@ describe('deleteTournament', () => {
     expect(mocks.restoreMembers).toHaveBeenCalledOnce()
     expect(req.session.tournaments).toEqual([tournamentId])
     expect(res.json).not.toHaveBeenCalled()
+    expect(mocks.releaseMembershipLease).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(dropError)
   })
 
@@ -130,6 +159,7 @@ describe('deleteTournament', () => {
     expect(mocks.updateUsers).toHaveBeenCalled()
     expect(mocks.deleteMembers).toHaveBeenCalled()
     expect(req.session.tournaments).toEqual([])
+    expect(mocks.releaseMembershipLease).toHaveBeenCalledOnce()
     expect(res.json).toHaveBeenCalledOnce()
     expect(next).not.toHaveBeenCalled()
   })
@@ -152,6 +182,7 @@ describe('deleteTournament', () => {
     expect(mocks.restoreMembers).toHaveBeenCalledOnce()
     expect(mocks.dropTournamentDatabase).not.toHaveBeenCalled()
     expect(req.session.tournaments).toEqual([tournamentId])
+    expect(mocks.releaseMembershipLease).toHaveBeenCalledOnce()
     expect(res.json).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledWith(expect.any(AggregateError))
   })
