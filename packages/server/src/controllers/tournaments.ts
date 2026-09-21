@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import { Types } from 'mongoose'
 import { TournamentModel } from '../models/tournament.js'
 import { StyleModel } from '../models/style.js'
 import { TournamentMemberModel } from '../models/tournament-member.js'
@@ -168,6 +169,7 @@ export const getTournament: RequestHandler = async (req, res, next) => {
 }
 
 export const createTournament: RequestHandler = async (req, res, next) => {
+  let membershipLifecycleLease: TournamentMembershipLease | null = null
   try {
     const {
       name,
@@ -199,7 +201,19 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       return
     }
 
+    const tournamentObjectId = new Types.ObjectId()
+    const tournamentId = tournamentObjectId.toHexString()
+    membershipLifecycleLease = await acquireTournamentMembershipLifecycleLease(tournamentId)
+    if (!membershipLifecycleLease) {
+      res.status(409).json({
+        data: null,
+        errors: [{ name: 'Conflict', message: 'Tournament lifecycle is busy; retry creation' }],
+      })
+      return
+    }
+
     const created = await TournamentModel.create({
+      _id: tournamentObjectId,
       name,
       style,
       options,
@@ -211,7 +225,6 @@ export const createTournament: RequestHandler = async (req, res, next) => {
       createdBy: getAuthenticatedActorId(req),
     })
     if (req.session?.userId) {
-      const tournamentId = created._id.toString()
       try {
         await Promise.all([
           UserModel.updateOne(
@@ -249,9 +262,20 @@ export const createTournament: RequestHandler = async (req, res, next) => {
         req.session.tournaments = [...current, tournamentId]
       }
     }
+
+    const released = await releaseTournamentMembershipLease(membershipLifecycleLease)
+    membershipLifecycleLease = null
+    if (!released) {
+      throw new Error('Failed to release tournament membership lifecycle lease after creation')
+    }
+
     res.status(201).json({ data: sanitizeTournamentForAdmin(created.toJSON()), errors: [] })
   } catch (err) {
     next(err)
+  } finally {
+    if (membershipLifecycleLease) {
+      await releaseTournamentMembershipLease(membershipLifecycleLease)
+    }
   }
 }
 
